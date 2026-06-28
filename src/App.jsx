@@ -1007,6 +1007,110 @@ function RegulamentoView({ onBack }) {
 }
 
 
+// ── ADMIN HISTÓRICO ───────────────────────────────────────────────────────────
+function AdminHistorico({ state }) {
+  const [filtroRodada, setFiltroRodada] = useState("todas");
+  const [filtroAtleta, setFiltroAtleta] = useState("");
+
+  const validadas = state.matches.filter(m => m.validated);
+  const rodadas = [...new Set(validadas.map(m => m.round))].sort((a,b) => a-b);
+
+  const filtradas = validadas.filter(m => {
+    const rodadaOk = filtroRodada === "todas" || m.round === parseInt(filtroRodada);
+    if (!rodadaOk) return false;
+    if (!filtroAtleta.trim()) return true;
+    const p1 = state.athletes.find(a => a.id === m.p1Id);
+    const p2 = state.athletes.find(a => a.id === m.p2Id);
+    const busca = filtroAtleta.toLowerCase();
+    return (p1?.name?.toLowerCase().includes(busca) || p2?.name?.toLowerCase().includes(busca));
+  }).sort((a,b) => a.round - b.round);
+
+  const totalPartidas = validadas.length;
+  const totalRodadas = rodadas.length;
+  const totalAtletas = new Set([...validadas.map(m=>m.p1Id), ...validadas.map(m=>m.p2Id)]).size;
+
+  const inp = { background:"#0a1628", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:"#e8edf2", padding:"9px 12px", fontSize:13, width:"100%", outline:"none", boxSizing:"border-box" };
+  const sel = { background:"#0a1628", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:"#e8edf2", padding:"9px 12px", fontSize:13, width:"100%", outline:"none" };
+
+  return (
+    <div>
+      <SecTitle>📋 Histórico de Confrontos</SecTitle>
+      <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:14}}>
+        {[{label:"Partidas",val:totalPartidas,color:"#4da3ff"},{label:"Rodadas",val:totalRodadas,color:"#a78bfa"},{label:"Atletas",val:totalAtletas,color:"#4ade80"}].map(s => (
+          <Card key={s.label} style={{padding:"10px 12px",textAlign:"center"}}>
+            <div style={{fontSize:20,fontWeight:800,color:s.color}}>{s.val}</div>
+            <div style={{fontSize:10,color:"#6b7a8d",marginTop:2}}>{s.label}</div>
+          </Card>
+        ))}
+      </div>
+
+      <Card style={{marginBottom:12}}>
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,fontWeight:700,color:"#6b7a8d",marginBottom:4,textTransform:"uppercase",letterSpacing:0.8}}>Rodada</div>
+            <select style={sel} value={filtroRodada} onChange={e=>setFiltroRodada(e.target.value)}>
+              <option value="todas">Todas</option>
+              {rodadas.map(r=><option key={r} value={r}>Rodada {r}</option>)}
+            </select>
+          </div>
+          <div style={{flex:2}}>
+            <div style={{fontSize:10,fontWeight:700,color:"#6b7a8d",marginBottom:4,textTransform:"uppercase",letterSpacing:0.8}}>Buscar atleta</div>
+            <input style={inp} value={filtroAtleta} onChange={e=>setFiltroAtleta(e.target.value)} placeholder="Nome do atleta..."/>
+          </div>
+        </div>
+        <div style={{fontSize:11,color:"#374151"}}>{filtradas.length} partida(s) encontrada(s)</div>
+      </Card>
+
+      {filtradas.length === 0 && (
+        <Card><div style={{fontSize:13,color:"#6b7a8d",textAlign:"center",padding:20}}>
+          {validadas.length === 0 ? "Nenhuma partida validada ainda." : "Nenhuma partida encontrada para os filtros."}
+        </div></Card>
+      )}
+
+      {rodadas.filter(r => filtroRodada==="todas" || r===parseInt(filtroRodada)).map(rodada => {
+        const partidasRodada = filtradas.filter(m => m.round === rodada);
+        if (partidasRodada.length === 0) return null;
+        return (
+          <div key={rodada}>
+            <div style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0 6px",fontSize:11,fontWeight:700,color:"#a78bfa",textTransform:"uppercase",letterSpacing:1}}>
+              <div style={{flex:1,height:1,background:"rgba(167,139,250,0.2)"}}/>
+              🏓 RODADA {rodada}
+              <div style={{flex:1,height:1,background:"rgba(167,139,250,0.2)"}}/>
+            </div>
+            {partidasRodada.map(m => {
+              const p1 = state.athletes.find(a=>a.id===m.p1Id);
+              const p2 = state.athletes.find(a=>a.id===m.p2Id);
+              const p1venceu = m.score1 > m.score2;
+              return (
+                <Card key={m.id} style={{marginBottom:8,border:"1px solid rgba(74,222,128,0.1)"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                    <Badge label={`Rodada ${m.round}`} color="#a78bfa"/>
+                    {m.validadoPorAdmin && <Badge label="✓ Admin aprovou" color="#4ade80"/>}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:700,color:p1venceu?"#4ade80":"#e8edf2"}}>{p1venceu?"🏆 ":""}{p1?.name}</div>
+                      <div style={{fontSize:10,color:"#6b7a8d"}}>ELO: {p1?.rating}</div>
+                    </div>
+                    <div style={{background:"#0a1628",borderRadius:10,padding:"8px 14px",textAlign:"center",minWidth:64,flexShrink:0}}>
+                      <div style={{fontSize:20,fontWeight:800,color:"#fff",letterSpacing:2}}>{m.score1}<span style={{color:"#374151",fontSize:14}}> × </span>{m.score2}</div>
+                      <div style={{fontSize:9,color:"#6b7a8d",marginTop:1}}>sets</div>
+                    </div>
+                    <div style={{flex:1,textAlign:"right"}}>
+                      <div style={{fontSize:13,fontWeight:700,color:!p1venceu?"#4ade80":"#e8edf2"}}>{!p1venceu?"🏆 ":""}{p2?.name}</div>
+                      <div style={{fontSize:10,color:"#6b7a8d"}}>ELO: {p2?.rating}</div>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function App() {
   const [state, dispatch] = useReducer(reducer, INIT);
   const [isAdmin, setIsAdmin] = useState(false);

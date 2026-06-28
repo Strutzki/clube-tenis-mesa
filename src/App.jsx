@@ -241,6 +241,19 @@ function reducer(state, action) {
       return { ...state, athletes, matches, keys, phase };
     }
 
+    case "EDITAR_ATLETA": {
+      const { id, nome, telefone, rating, status } = action.payload;
+      const athletes = state.athletes.map(a =>
+        a.id === id ? { ...a, name: nome, phone: telefone, rating, status } : a
+      );
+      return { ...state, athletes };
+    }
+
+    case "EXCLUIR_ATLETA": {
+      const athletes = state.athletes.filter(a => a.id !== action.payload.id);
+      return { ...state, athletes };
+    }
+
     default: return state;
   }
 }
@@ -1193,9 +1206,13 @@ export default function App() {
     }
     else if (action.type === "INSCRICAO_VALIDAR") {
       const {id,rating,approved,motivo} = action.payload;
-      await db.updateAtleta(id, approved
+      // Buscar o atleta no Supabase para garantir uso do UUID correto
+      const atletas = await supaFetch(`atletas?id=eq.${id}`);
+      const uuid = atletas?.[0]?.id || id;
+      await db.updateAtleta(uuid, approved
         ? {status:"ativo",rating,rating_inicial:rating,saldo_temp:0}
         : {status:"reprovado",motivo_reprovacao:motivo});
+      await loadFromSupabase();
     }
     else if (action.type === "SUBMIT_RESULT") {
       const {matchId,athleteId,score1,score2} = action.payload;
@@ -1251,6 +1268,13 @@ export default function App() {
     }
     else if (action.type === "AVANCAR_RODADA") {
       await loadFromSupabase();
+    }
+    else if (action.type === "EDITAR_ATLETA") {
+      const { id, nome, telefone, rating, status } = action.payload;
+      await db.updateAtleta(id, { nome, telefone, rating, status });
+    }
+    else if (action.type === "EXCLUIR_ATLETA") {
+      await supaFetch(`atletas?id=eq.${action.payload.id}`, { method: "DELETE", prefer: "return=minimal" });
     }
   }
 
@@ -1418,7 +1442,7 @@ function AdminDashboard({ state, setTab, dispatch }) {
         <Card style={{border:"1px solid rgba(74,222,128,0.3)"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#4ade80",marginBottom:6}}>✅ Rodada {currentRound} concluída!</div>
           <div style={{fontSize:12,color:"#8b9ab5",marginBottom:10}}>Todos os resultados validados. Pronto para avançar.</div>
-          <Btn onClick={()=>dispatchAndSync({type:"AVANCAR_RODADA"})} color="#4ade80">▶️ Confirmar Rodada {currentRound+1}</Btn>
+          <Btn onClick={()=>dispatch({type:"AVANCAR_RODADA"})} color="#4ade80">▶️ Confirmar Rodada {currentRound+1}</Btn>
         </Card>
       )}
 
@@ -1450,7 +1474,7 @@ function IniciarEtapaPanel({ state, dispatch }) {
         ))}
       </div>
       <div style={{fontSize:11,color:"#6b7a8d",marginBottom:10}}>≈ {perKey} atleta(s) por chave · {ativos.length} ativos</div>
-      <Btn onClick={()=>dispatchAndSync({type:"INICIAR_ETAPA",payload:{numKeys}})} color="#4ade80" full>
+      <Btn onClick={()=>dispatch({type:"INICIAR_ETAPA",payload:{numKeys}})} color="#4ade80" full>
         🚀 Iniciar Etapa · {numKeys} {numKeys===1?"Chave":"Chaves"}
       </Btn>
     </div>
@@ -1459,27 +1483,55 @@ function IniciarEtapaPanel({ state, dispatch }) {
 
 // ── ADMIN INSCRIÇÕES ──────────────────────────────────────────────────────────
 function AdminInscricoes({ state, dispatch }) {
+  const [modo, setModo] = useState("lista"); // lista | revisar | editar
   const [selected, setSelected] = useState(null);
   const [ratingEdit, setRatingEdit] = useState("");
   const [motivo, setMotivo] = useState("");
+  const [confirmExcluir, setConfirmExcluir] = useState(null);
+  // Campos de edição
+  const [editNome, setEditNome] = useState("");
+  const [editTelefone, setEditTelefone] = useState("");
+  const [editRating, setEditRating] = useState("");
+  const [editStatus, setEditStatus] = useState("");
 
   const pendentes = state.athletes.filter(a => a.status === "pendente");
   const aprovados = state.athletes.filter(a => a.status === "ativo");
   const reprovados = state.athletes.filter(a => a.status === "reprovado");
 
-  // Federado sem rating precisa que admin preencha antes de aprovar
   const ratingFinal = ratingEdit ? parseInt(ratingEdit) : selected?.rating;
   const needsRating = selected?.federated && !ratingFinal;
 
+  const inp = {background:"#0a1628",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#e8edf2",padding:"10px 12px",fontSize:14,width:"100%",marginBottom:10,outline:"none",boxSizing:"border-box"};
+  const lbl = {fontSize:11,fontWeight:700,color:"#8b9ab5",textTransform:"uppercase",letterSpacing:0.8,display:"block",marginBottom:5,marginTop:10};
+
   function approve() {
     if (needsRating) return;
-    dispatchAndSync({type:"INSCRICAO_VALIDAR",payload:{id:selected.id,rating:ratingFinal,approved:true}});
-    setSelected(null); setRatingEdit(""); setMotivo("");
+    dispatch({type:"INSCRICAO_VALIDAR",payload:{id:selected.id,rating:ratingFinal,approved:true}});
+    setSelected(null); setRatingEdit(""); setMotivo(""); setModo("lista");
   }
   function reject() {
     if (!motivo.trim()) return;
-    dispatchAndSync({type:"INSCRICAO_VALIDAR",payload:{id:selected.id,approved:false,motivo}});
-    setSelected(null); setRatingEdit(""); setMotivo("");
+    dispatch({type:"INSCRICAO_VALIDAR",payload:{id:selected.id,approved:false,motivo}});
+    setSelected(null); setRatingEdit(""); setMotivo(""); setModo("lista");
+  }
+  function excluir(id) {
+    dispatch({type:"EXCLUIR_ATLETA",payload:{id}});
+    setConfirmExcluir(null); setSelected(null); setModo("lista");
+  }
+  function abrirEditar(a) {
+    setSelected(a);
+    setEditNome(a.name);
+    setEditTelefone(a.phone);
+    setEditRating(a.rating || "");
+    setEditStatus(a.status);
+    setModo("editar");
+  }
+  function salvarEdicao() {
+    dispatch({type:"EDITAR_ATLETA",payload:{
+      id:selected.id, nome:editNome, telefone:editTelefone,
+      rating:parseInt(editRating)||selected.rating, status:editStatus
+    }});
+    setSelected(null); setModo("lista");
   }
 
   const MsgBtn = ({ath}) => {
@@ -1491,8 +1543,55 @@ function AdminInscricoes({ state, dispatch }) {
     </a>;
   };
 
-  if (selected) return (
+  // ── MODAL CONFIRMAR EXCLUSÃO ──────────────────────────────────────────────
+  const ModalExcluir = () => confirmExcluir ? (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:999,padding:20}}>
+      <div style={{background:"#111d2b",borderRadius:16,padding:24,maxWidth:340,width:"100%",border:"1px solid rgba(248,113,113,0.3)"}}>
+        <div style={{fontSize:32,textAlign:"center",marginBottom:12}}>⚠️</div>
+        <div style={{fontSize:15,fontWeight:700,color:"#e8edf2",textAlign:"center",marginBottom:8}}>Excluir atleta?</div>
+        <div style={{fontSize:13,color:"#8b9ab5",textAlign:"center",marginBottom:20}}>
+          <b style={{color:"#e8edf2"}}>{confirmExcluir.name}</b> será removido permanentemente do banco de dados. Esta ação não pode ser desfeita.
+        </div>
+        <Btn onClick={()=>excluir(confirmExcluir.id)} color="#ef4444" full>🗑️ Sim, excluir</Btn>
+        <button onClick={()=>setConfirmExcluir(null)} style={{background:"none",border:"none",color:"#6b7a8d",cursor:"pointer",fontSize:13,width:"100%",marginTop:8,padding:"8px"}}>Cancelar</button>
+      </div>
+    </div>
+  ) : null;
+
+  // ── MODO EDITAR ───────────────────────────────────────────────────────────
+  if (modo === "editar" && selected) return (
     <div>
+      <ModalExcluir/>
+      <SecTitle>✏️ Editar Atleta</SecTitle>
+      <Card>
+        <div style={{fontSize:15,fontWeight:700,color:"#e8edf2",marginBottom:14}}>{selected.name}</div>
+        <label style={lbl}>Nome completo</label>
+        <input style={inp} value={editNome} onChange={e=>setEditNome(e.target.value)}/>
+        <label style={lbl}>WhatsApp</label>
+        <input style={inp} value={editTelefone} onChange={e=>setEditTelefone(e.target.value)} type="tel"/>
+        <label style={lbl}>Rating</label>
+        <input style={inp} value={editRating} onChange={e=>setEditRating(e.target.value)} type="number"/>
+        <label style={lbl}>Status</label>
+        <select value={editStatus} onChange={e=>setEditStatus(e.target.value)}
+          style={{...inp,marginBottom:16}}>
+          <option value="pendente">⏳ Pendente</option>
+          <option value="ativo">✅ Ativo</option>
+          <option value="reprovado">❌ Reprovado</option>
+          <option value="suspenso">🚫 Suspenso</option>
+        </select>
+        <Btn onClick={salvarEdicao} color="#4da3ff" full>💾 Salvar alterações</Btn>
+        <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <Btn onClick={()=>setConfirmExcluir(selected)} color="#ef4444" full small>🗑️ Excluir este atleta</Btn>
+        </div>
+        <button onClick={()=>setModo("lista")} style={{background:"none",border:"none",color:"#6b7a8d",cursor:"pointer",fontSize:12,marginTop:8}}>← Voltar</button>
+      </Card>
+    </div>
+  );
+
+  // ── MODO REVISAR (aprovação) ──────────────────────────────────────────────
+  if (modo === "revisar" && selected) return (
+    <div>
+      <ModalExcluir/>
       <SecTitle>Validar Inscrição</SecTitle>
       <Card>
         <div style={{fontSize:15,fontWeight:700,color:"#e8edf2",marginBottom:4}}>{selected.name}</div>
@@ -1526,7 +1625,10 @@ function AdminInscricoes({ state, dispatch }) {
             style={{background:"#0a1628",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,color:"#e8edf2",padding:"10px 12px",fontSize:13,width:"100%",marginBottom:8,outline:"none",boxSizing:"border-box",resize:"none"}}/>
           <Btn onClick={reject} color="#ef4444" full small disabled={!motivo.trim()}>❌ Reprovar</Btn>
         </div>
-        <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:"#6b7a8d",cursor:"pointer",fontSize:12,marginTop:4}}>← Voltar</button>
+        <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <Btn onClick={()=>setConfirmExcluir(selected)} color="#6b7280" full small>🗑️ Excluir atleta</Btn>
+        </div>
+        <button onClick={()=>setModo("lista")} style={{background:"none",border:"none",color:"#6b7a8d",cursor:"pointer",fontSize:12,marginTop:4}}>← Voltar</button>
       </Card>
     </div>
   );
@@ -1536,13 +1638,16 @@ function AdminInscricoes({ state, dispatch }) {
       {pendentes.length > 0 && <>
         <SecTitle>⏳ Pendentes ({pendentes.length})</SecTitle>
         {pendentes.map(a => (
-          <Card key={a.id} style={{cursor:"pointer"}} >
+          <Card key={a.id}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
                 <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{a.name}</div>
                 <div style={{fontSize:11,color:"#8b9ab5"}}>{a.phone} · {a.federated?"Federado":"Não fed."} · Rating: {a.rating}</div>
               </div>
-              <Btn small onClick={()=>{setSelected(a);setRatingEdit(a.rating)}}>Revisar</Btn>
+              <div style={{display:"flex",gap:6}}>
+                <Btn small onClick={()=>{setSelected(a);setRatingEdit(a.rating);setModo("revisar")}}>Revisar</Btn>
+                <Btn small color="#6b7280" onClick={()=>abrirEditar(a)}>✏️</Btn>
+              </div>
             </div>
           </Card>
         ))}
@@ -1553,17 +1658,18 @@ function AdminInscricoes({ state, dispatch }) {
         {aprovados.map(a => (
           <Card key={a.id}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
+              <div style={{flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{a.name}</div>
-                <div style={{fontSize:11,color:"#8b9ab5"}}>
-                  {a.phone} · ELO: {a.rating}
-                </div>
+                <div style={{fontSize:11,color:"#8b9ab5"}}>{a.phone} · ELO: {a.rating}</div>
                 <div style={{display:"flex",gap:4,marginTop:3}}>
                   {a.aceiteRegulamento && <span style={{fontSize:9,background:"rgba(74,222,128,0.15)",color:"#4ade80",padding:"1px 6px",borderRadius:8,fontWeight:700}}>📋 Reg. aceito</span>}
                   {a.aceiteLGPD && <span style={{fontSize:9,background:"rgba(77,163,255,0.15)",color:"#4da3ff",padding:"1px 6px",borderRadius:8,fontWeight:700}}>🔒 LGPD</span>}
                 </div>
               </div>
-              <MsgBtn ath={a}/>
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <MsgBtn ath={a}/>
+                <Btn small color="#4da3ff" onClick={()=>abrirEditar(a)}>✏️</Btn>
+              </div>
             </div>
           </Card>
         ))}
@@ -1574,11 +1680,14 @@ function AdminInscricoes({ state, dispatch }) {
         {reprovados.map(a => (
           <Card key={a.id}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
+              <div style={{flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{a.name}</div>
                 <div style={{fontSize:11,color:"#f87171"}}>{a.motivo || "Sem motivo registrado"}</div>
               </div>
-              <MsgBtn ath={a}/>
+              <div style={{display:"flex",gap:6}}>
+                <MsgBtn ath={a}/>
+                <Btn small color="#4da3ff" onClick={()=>abrirEditar(a)}>✏️</Btn>
+              </div>
             </div>
           </Card>
         ))}
@@ -1620,11 +1729,11 @@ function AdminPendencias({ state, dispatch }) {
   function validate(m) {
     const s1 = m.p1Submitted, s2 = m.p2Submitted;
     const consistent = s1.score1 === s2.score1 && s1.score2 === s2.score2;
-    if (consistent) dispatchAndSync({type:"VALIDATE_RESULT",payload:{matchId:m.id,approved:true}});
+    if (consistent) dispatch({type:"VALIDATE_RESULT",payload:{matchId:m.id,approved:true}});
     else alert("⚠️ Resultados divergentes! Verifique antes de aprovar.");
   }
   function reject(m) {
-    dispatchAndSync({type:"VALIDATE_RESULT",payload:{matchId:m.id,approved:false,motivo:motivo[m.id]||"Resultado inconsistente"}});
+    dispatch({type:"VALIDATE_RESULT",payload:{matchId:m.id,approved:false,motivo:motivo[m.id]||"Resultado inconsistente"}});
   }
 
   return (
@@ -1806,7 +1915,7 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
 
   function submit() {
     if (!s1||!s2) return;
-    dispatchAndSync({type:"SUBMIT_RESULT",payload:{matchId:m.id,athleteId:athlete.id,score1:parseInt(s1),score2:parseInt(s2)}});
+    dispatch({type:"SUBMIT_RESULT",payload:{matchId:m.id,athleteId:athlete.id,score1:parseInt(s1),score2:parseInt(s2)}});
     setSent(true);
   }
 

@@ -660,13 +660,13 @@ function RegulamentoView({ onBack }) {
     );
     if (id===2) return (
       <div>
-        <p style={s.p}>A <span style={s.dest}>Temporada Inaugural</span> é exclusiva para homens com 18 anos ou mais. O ranking masculino adulto é o ponto de partida e o modelo de referência para todas as expansões futuras.</p>
+        <p style={s.p}>O Clube do Tênis de Mesa nasce como um projeto independente e em construção. A Temporada 1 inicia com o ranking masculino adulto (18+) como <span style={s.dest}>modalidade piloto</span>, permitindo validar o modelo operacional antes de expandir.</p>
+        <p style={s.p}>Novas categorias serão incluídas gradualmente nas temporadas seguintes, com o objetivo de tornar o Clube um espaço plural para todos os perfis e níveis de jogadores.</p>
         <Tbl headers={["Perfil","Temporada 1","Observação"]} rows={[
-          ["Homem, 18+, qualquer nível","✅ ELEGÍVEL","Federado ou não-federado — todos bem-vindos"],
-          ["Homem, menos de 18 anos","⛔ AGUARDAR","Modalidade futura"],
-          ["Mulher, qualquer idade","⛔ AGUARDAR","Modalidade futura"],
-          ["Atleta federado CBTM","✅ ELEGÍVEL","Entra com rating CBTM-Web verificado"],
-          ["Atleta não-federado","✅ ELEGÍVEL","Entra com 250 pts"],
+          ["Masculino adulto, 18+, qualquer nível","✅ ELEGÍVEL","Federado ou não-federado — todos bem-vindos"],
+          ["Atleta federado CBTM","✅ ELEGÍVEL","Entra com rating CBTM-Web verificado por comprovante"],
+          ["Atleta não-federado","✅ ELEGÍVEL","Entra com 250 pts e compete desde a 1ª rodada"],
+          ["Outras categorias","📅 Em breve","Inclusão gradual nas temporadas seguintes"],
         ]}/>
         <Box cor="#f87171" titulo="⚠️ Atletas com TRA ativa na CBTM">
           <p style={s.p}>Verifique junto à sua federação se a participação em eventos não-oficiais é permitida. O administrador e @clubedotenisdemesa não se responsabilizam por eventuais sanções desportivas aplicadas por entidades federativas.</p>
@@ -709,17 +709,28 @@ function RegulamentoView({ onBack }) {
             "Ranking — saldo de pontos conquistados na temporada. Zera a cada nova temporada.",
           ]}/>
         </Box>
-        <Tbl headers={["Diferença","✅ Esp. vencedor","✅ Esp. perdedor","⚡ Inesp. vencedor","⚡ Inesp. perdedor"]} rows={[
-          ["0–49 pts","+14 pts","−7 pts","+28 pts","−14 pts"],
-          ["50–99 pts","+12 pts","−6 pts","+24 pts","−12 pts"],
-          ["100–149 pts","+10 pts","−5 pts","+20 pts","−10 pts"],
-          ["150–199 pts","+8 pts","−4 pts","+16 pts","−8 pts"],
-          ["200–299 pts","+6 pts","−3 pts","+12 pts","−6 pts"],
-          ["300–399 pts","+4 pts","−2 pts","+46 pts","−23 pts"],
-          ["400+ pts","+2 pts","−1 pt","+50+ pts","−25+ pts"],
+        <div style={{fontSize:11,fontWeight:700,color:"#4ade80",marginTop:10,marginBottom:4}}>✅ Resultado esperado (favorito vence)</div>
+        <Tbl headers={["Diferença","Vencedor","Perdedor"]} rows={[
+          ["0–49 pts","+14 pts","−7 pts"],
+          ["50–99 pts","+12 pts","−6 pts"],
+          ["100–149 pts","+10 pts","−5 pts"],
+          ["150–199 pts","+8 pts","−4 pts"],
+          ["200–299 pts","+6 pts","−3 pts"],
+          ["300–399 pts","+4 pts","−2 pts"],
+          ["400+ pts","+2 pts","−1 pt"],
+        ]}/>
+        <div style={{fontSize:11,fontWeight:700,color:"#facc15",marginTop:12,marginBottom:4}}>⚡ Resultado inesperado (azarão vence)</div>
+        <Tbl headers={["Diferença","Vencedor","Perdedor"]} rows={[
+          ["0–49 pts","+28 pts","−14 pts"],
+          ["50–99 pts","+24 pts","−12 pts"],
+          ["100–149 pts","+20 pts","−10 pts"],
+          ["150–199 pts","+16 pts","−8 pts"],
+          ["200–299 pts","+12 pts","−6 pts"],
+          ["300–399 pts","+46 pts","−23 pts"],
+          ["400+ pts","+50+ pts","−25+ pts"],
         ]}/>
         <Box cor="#f87171" titulo="🚫 Autodeclaração Proibida para Federados">
-          <p style={s.p}>O admin solicita comprovante do cadastro CBTM-Web antes de confirmar a inscrição. A tentativa de fraude no rating de entrada resulta em suspensão imediata.</p>
+          <p style={s.p}>O admin pode solicitar comprovante do cadastro CBTM-Web antes de confirmar a inscrição. A tentativa de fraude no rating de entrada resulta em suspensão imediata.</p>
         </Box>
         <Box cor="#4da3ff" titulo="🏅 Tabela de Níveis — Referência TTR/CBTM">
           <Tbl headers={["Faixa","Nível","Perfil"]} rows={[
@@ -736,7 +747,7 @@ function RegulamentoView({ onBack }) {
     );
     if (id===6) return (
       <div>
-        <p style={s.p}>Formato obrigatório: <span style={s.dest}>Melhor de 5 sets (MD5)</span>, regras oficiais ITTF 2026. Jogos em formato diferente (MD3, partida única, etc.) não são aceitos.</p>
+        <p style={s.p}>Formato obrigatório: <span style={s.dest}>Melhor de 5 sets (MD5)</span>, regras oficiais ITTF 2026. Jogos em formato diferente (MD3, melhor de 1 set, etc.) não são aceitos.</p>
         <Box cor="#4ade80" titulo="🏆 Jogos em Torneios Externos — Válidos para o Ranking">
           <Ul items={[
             "Partidas entre atletas do Circuito disputadas em torneios externos podem ser aproveitadas como o confronto oficial",
@@ -783,10 +794,8 @@ function RegulamentoView({ onBack }) {
         </Box>
         <Box cor="#4da3ff" titulo="📲 Canais de Registro">
           <Ul items={[
-            "Formulário Google Forms — link fixado no grupo WhatsApp e no Instagram (canal oficial)",
-            "Foto dos dois jogadores juntos (opcional — ativa o Nível 2 de Reputação)",
-            "Direct Instagram @clubedotenisdemesa — confirmação em até 2h",
-            "Mensagem no grupo — apenas como backup",
+            "Formulário Google Forms — link fixado no grupo WhatsApp (canal oficial)",
+            "Mensagem no grupo WhatsApp — backup em caso de indisponibilidade do formulário",
           ]}/>
         </Box>
         <Box cor="#f87171" titulo="⚠️ Atenção aos Prazos">
@@ -800,23 +809,26 @@ function RegulamentoView({ onBack }) {
     );
     if (id===9) return (
       <div>
-        <Box cor="#4da3ff" titulo="📅 A Cada Rodada">
-          <p style={s.p}>Ranking completo atualizado e publicado no @clubedotenisdemesa (stories + feed). Top 10 geral + destaque por nível.</p>
+        <Box cor="#4da3ff" titulo="📱 Instagram @clubedotenisdemesa">
+          <p style={s.p}>A cada rodada, o <span style={s.dest}>Top 10</span> é publicado em stories e feed.</p>
+        </Box>
+        <Box cor="#25d366" titulo="💬 Grupo WhatsApp">
+          <p style={s.p}>O <span style={s.dest}>ranking completo</span> é enviado no grupo oficial após o fechamento de cada rodada — todos os atletas veem sua posição exata.</p>
+        </Box>
+        <Box cor="#4da3ff" titulo="📲 App do Circuito">
+          <p style={s.p}>O ranking também está disponível em tempo real no app — o atleta consegue ver sua posição, saldo de pontos e ELO a qualquer momento.</p>
         </Box>
         <Box cor="#facc15" titulo="📈 Maior Salto">
-          <p style={s.p}>Jogador que mais subiu de rating na rodada ganha destaque especial — "Escalada da Rodada".</p>
+          <p style={s.p}>Jogador que mais subiu de rating na rodada ganha destaque especial — "Escalada da Rodada" — publicado no Instagram e no grupo.</p>
         </Box>
         <Box cor="#4ade80" titulo="🏆 Fim de Temporada">
           <p style={s.p}>Top 3 recebe certificado digital. Os 8 melhores do ranking geral são convocados para o torneio presencial de encerramento.</p>
-        </Box>
-        <Box cor="#f87171" titulo="⚡ Partida da Rodada">
-          <p style={s.p}>O jogo mais disputado (menor diferença de pontos no placar) é destacado como "Partida da Rodada".</p>
         </Box>
       </div>
     );
     if (id===10) return (
       <div>
-        <p style={s.p}>Ao final de cada temporada, os melhores do ranking se encontram presencialmente para o torneio decisivo. O ranking da temporada define o seeding — quem tem mais pontos recebe melhor posição nos grupos.</p>
+        <p style={s.p}>Ao final de cada temporada, os <span style={s.dest}>8 melhores do ranking</span> serão convidados para o torneio presencial de encerramento. O ranking define a ordem de entrada nos grupos — quem tem mais pontos começa na posição mais favorável.</p>
         <Box cor="#4da3ff" titulo="🗂️ Estrutura — 8 Atletas Classificados">
           <p style={s.p}>Os 8 melhores se dividem em 2 grupos de 4. Todos jogam contra todos no grupo. Os 2 melhores de cada grupo avançam às semifinais.</p>
         </Box>
@@ -828,7 +840,7 @@ function RegulamentoView({ onBack }) {
         ]}/>
         <Box cor="#facc15" titulo="🏆 Premiação">
           <Ul items={[
-            "🥇 Campeão: Troféu + Kit Material + Destaque no Instagram",
+            "🥇 Campeão: Troféu + Destaque no Instagram",
             "🥈 Vice-Campeão: Medalha Prata + Certificado",
             "🥉 3º lugar: Medalha Bronze + Certificado",
           ]}/>
@@ -855,11 +867,11 @@ function RegulamentoView({ onBack }) {
     );
     if (id===11) return (
       <div>
-        <Box cor="#f87171" titulo="👨 Temporada Inaugural — Masculino Adulto (18+)">
-          <p style={s.p}>A primeira temporada é exclusiva para homens com 18 anos ou mais.</p>
+        <Box cor="#4da3ff" titulo="👨 Temporada Inaugural — Masculino Adulto (18+)">
+          <p style={s.p}>O Clube inicia com a categoria <span style={s.dest}>Masculino Adulto (18+)</span> como modalidade piloto. Qualquer nível de jogo é bem-vindo — federado ou não-federado. A participação é <span style={s.dest}>gratuita na Temporada 1</span>.</p>
         </Box>
         <Box cor="#4ade80" titulo="💰 Custo — Temporada 1">
-          <p style={s.p}>Inscrição 100% gratuita na Temporada 1 (fase de lançamento). A estrutura de mensalidades entra em vigor a partir da Temporada 2 (ver Capítulo 12).</p>
+          <p style={s.p}>A Temporada 1 é <span style={s.dest}>gratuita</span>. O único custo previsto é a taxa individual do torneio presencial de encerramento — mas a participação no torneio <span style={s.dest}>não é obrigatória</span>. A estrutura de mensalidades entra em vigor a partir da Temporada 2.</p>
         </Box>
         <Box cor="#facc15" titulo="🚪 Entrada no Meio da Temporada">
           <p style={s.p}>A inscrição padrão é feita antes do início de cada temporada. Entradas fora desse período seguem a regra abaixo.</p>
@@ -873,9 +885,9 @@ function RegulamentoView({ onBack }) {
           <Ul items={[
             "Gatilho: suspensão por inadimplência, abandono ou queda do mínimo operacional por +2 rodadas",
             "Fila de espera: manifestar interesse a qualquer momento ao @clubedotenisdemesa",
-            "Primeiro da fila é convidado — 48h para confirmar, senão passa ao próximo",
+            "Prioridade de entrada para o primeiro da fila — mediante avaliação e aprovação do administrador",
             "Rating de entrada: 250 pts (não-federados) ou rating CBTM-Web (federados)",
-            "Mensalidade cobrada proporcionalmente a partir da rodada de estreia",
+            "Mensalidade cobrada proporcionalmente a partir da Temporada 2",
             "Elegível ao torneio presencial normalmente se atingir top 8",
           ]}/>
         </Box>
@@ -883,10 +895,9 @@ function RegulamentoView({ onBack }) {
     );
     if (id===12) return (
       <div>
-        <p style={s.p}>A Temporada 1 é totalmente gratuita. A partir da Temporada 2, existe um <span style={s.dest}>plano único</span> que custeia a plataforma, premiações e manutenção do sistema.</p>
-        <Box cor="#4da3ff" titulo="🏓 Plano Básico — Único plano disponível">
-          <div style={{fontSize:22,fontWeight:800,color:"#e8edf2",marginTop:4}}>R$ 30<span style={{fontSize:13,opacity:0.6}}>/mês</span></div>
-          <div style={{fontSize:12,color:"#4ade80",fontWeight:700,marginTop:2}}>R$ 81 à vista — 10% de desconto</div>
+        <p style={s.p}>A Temporada 1 é totalmente gratuita. A partir da Temporada 2, será cobrada uma mensalidade para participação no circuito. Os planos e valores serão divulgados antes da abertura das inscrições da Temporada 2.</p>
+        <Box cor="#4da3ff" titulo="💳 A partir da Temporada 2">
+          <p style={s.p}>Os valores e planos de mensalidade serão definidos e comunicados pelo administrador <span style={s.dest}>antes da abertura das inscrições da Temporada 2</span>.</p>
           <Ul items={[
             "✅ Participação em todas as rodadas da temporada",
             "✅ Confronto pareado pelo sistema a cada rodada",
@@ -894,15 +905,6 @@ function RegulamentoView({ onBack }) {
             "✅ Acesso ao grupo WhatsApp oficial",
             "✅ Elegibilidade para o torneio presencial (via ranking)",
             "✅ Certificado digital para os 3 melhores da temporada",
-          ]}/>
-        </Box>
-        <Box cor="#4da3ff" titulo="📅 Pagamento por Temporada">
-          <Ul items={[
-            "Parcelado: R$ 30/mês × 3 = R$ 90 por temporada (dia 5 de cada mês)",
-            "À vista: R$ 81 — pagamento único antes do início da temporada",
-            "Sem mensalidade em janeiro, julho e no mês do torneio (cobra-se só a taxa individual do evento)",
-            "Meios aceitos: PIX, transferência bancária ou link enviado pelo admin",
-            "Comprovante: enviar por DM ou WhatsApp em até 24h após o pagamento",
           ]}/>
         </Box>
         <Box cor="#facc15" titulo="⚠️ Inadimplência — 3 Fases">
@@ -919,7 +921,7 @@ function RegulamentoView({ onBack }) {
         <Box cor="#f87171" titulo="🚪 Desistência">
           <Tbl headers={["Momento","Aviso mínimo","Mensalidade devida","Rating"]} rows={[
             ["Antes da próxima rodada","48h","Parcelas vencidas — sem reembolso restante","✅ Congelado"],
-            ["Durante rodada (com confronto)","Imediato","Parcelas vencidas + multa de 1 parcela (R$30)","⚠️ W.O. no confronto"],
+            ["Durante rodada (com confronto)","Imediato","Parcelas vencidas + multa de 1 parcela","⚠️ W.O. no confronto"],
             ["Abandono sem comunicação","—","Parcelas vencidas + multa + bloqueio 1 temporada","❌ −30 pts no rating"],
           ]}/>
         </Box>
@@ -937,8 +939,8 @@ function RegulamentoView({ onBack }) {
         <p style={s.p}>O ano é dividido em <span style={s.dest}>3 temporadas de 3 meses</span>, com janeiro e julho reservados para férias. Cada temporada tem 6 rodadas quinzenais. Cada rodada dura 15 dias corridos — 10 para jogar + 5 de margem para registro.</p>
         <Box cor="#4da3ff" titulo="📅 Estrutura do Ano">
           <Ul items={[
-            "Janeiro e Julho: meses de férias — sem rodadas em nenhuma temporada",
-            "Torneio presencial: mês imediatamente seguinte ao término da Temporada 3",
+            "Janeiro, julho e dezembro: meses sem rodadas",
+            "Torneio presencial: mês imediatamente seguinte ao término da Temporada 3, excluindo janeiro, julho e dezembro",
             "Exemplos: T3 termina em junho → torneio em agosto (julho=férias). T3 termina em novembro → torneio em fevereiro.",
             "Admin confirma e comunica as datas com mínimo 30 dias de antecedência",
           ]}/>
@@ -2154,13 +2156,14 @@ function AdminPendencias({ state, dispatch }) {
 }
 
 // ── RANKING VIEW ──────────────────────────────────────────────────────────────
-function RankingView({ state }) {
+function RankingView({ state, currentAthleteId }) {
   const sorted = useMemo(() => [...state.athletes]
     .filter(a=>a.status==="ativo")
     .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
     [state.athletes]);
   if (sorted.length === 0) return <Card><div style={{fontSize:13,color:"#6b7a8d",textAlign:"center",padding:20}}>Nenhum atleta ativo ainda.</div></Card>;
   const temPartidas = sorted.some(a => (a.wins||0) + (a.losses||0) > 0);
+  const minhaPos = currentAthleteId ? sorted.findIndex(a => a.id === currentAthleteId) : -1;
   return (
     <div>
       <SecTitle>🏆 Ranking da Temporada</SecTitle>
@@ -2169,15 +2172,36 @@ function RankingView({ state }) {
           ⏳ Nenhuma partida validada ainda — saldo zerado para todos. O ranking se atualiza após cada resultado confirmado.
         </div>
       )}
+      {/* Destaque da posição do atleta logado */}
+      {minhaPos >= 0 && (
+        <div style={{background:"rgba(26,115,200,0.12)",border:"1px solid rgba(26,115,200,0.3)",borderRadius:10,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:32,height:32,borderRadius:"50%",background:"rgba(26,115,200,0.3)",color:"#4da3ff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,flexShrink:0}}>{minhaPos+1}º</div>
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:"#4da3ff"}}>Sua posição no ranking</div>
+            <div style={{fontSize:11,color:"#8b9ab5"}}>
+              Saldo: <b style={{color:(sorted[minhaPos]?.saldoTemp||0)>=0?"#4ade80":"#f87171"}}>{(sorted[minhaPos]?.saldoTemp||0)>0?"+":""}{sorted[minhaPos]?.saldoTemp||0} pts</b>
+              {" · "}ELO: <b style={{color:"#e8edf2"}}>{sorted[minhaPos]?.rating}</b>
+            </div>
+          </div>
+        </div>
+      )}
       {sorted.map((a,i) => {
         const saldo = a.saldoTemp || 0;
         const saldoColor = saldo > 0 ? "#4ade80" : saldo < 0 ? "#f87171" : "#6b7a8d";
         const saldoStr = saldo > 0 ? `+${saldo}` : `${saldo}`;
+        const isMe = currentAthleteId && a.id === currentAthleteId;
         return (
-          <div key={a.id} style={{background:"#111d2b",borderRadius:12,padding:"12px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:10,border:"1px solid rgba(255,255,255,0.05)"}}>
+          <div key={a.id} style={{
+            background: isMe ? "rgba(26,115,200,0.12)" : "#111d2b",
+            borderRadius:12, padding:"12px 14px", marginBottom:8,
+            display:"flex", alignItems:"center", gap:10,
+            border: isMe ? "1px solid rgba(26,115,200,0.4)" : "1px solid rgba(255,255,255,0.05)",
+          }}>
             <div style={{width:28,height:28,borderRadius:"50%",background:`${medalColor(i)}22`,color:medalColor(i),display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0}}>{i+1}</div>
             <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{a.name}</div>
+              <div style={{fontSize:14,fontWeight:700,color: isMe ? "#4da3ff" : "#e8edf2"}}>
+                {a.name}{isMe ? " 👤" : ""}
+              </div>
               <div style={{fontSize:11,color:"#6b7a8d"}}>
                 {a.wins||0}V · {a.losses||0}D
                 <span style={{marginLeft:6,color:"#374151"}}>ELO: {a.rating}</span>
@@ -2235,7 +2259,7 @@ function MatchCard({ m, state, admin=false, currentAthleteId }) {
 // ── ATHLETE VIEW ──────────────────────────────────────────────────────────────
 function AthleteView({ state, dispatch, athlete, tab, setTab }) {
   if (tab === "meus_jogos") return <AthleteGames state={state} dispatch={dispatch} athlete={athlete} />;
-  if (tab === "ranking") return <RankingView state={state} />;
+  if (tab === "ranking") return <RankingView state={state} currentAthleteId={athlete.id} />;
   if (tab === "tabela") return <TabelaView state={state} athlete={athlete} />;
   return null;
 }

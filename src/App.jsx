@@ -955,6 +955,9 @@ function RegulamentoView({ onBack }) {
             "Dia 15: ranking atualizado, nova rodada gerada",
           ]}/>
         </Box>
+        <Box cor="#f87171" titulo="⚠️ Mínimo para Abertura da Temporada">
+          <p style={s.p}>A temporada só será iniciada com no mínimo <span style={s.dest}>8 atletas ativos</span>. Caso esse número não seja atingido até o prazo de inscrições, o administrador pode prorrogar o período de inscrições ou adiar o início da temporada.</p>
+        </Box>
         <Box cor="#4ade80" titulo="📝 Inscrições & Renovação">
           <Ul items={[
             "Abertura: 30 dias antes do início de cada temporada",

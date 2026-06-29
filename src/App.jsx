@@ -1124,6 +1124,341 @@ function AdminHistorico({ state }) {
   );
 }
 
+
+// ── ADMIN MENSAGENS ───────────────────────────────────────────────────────────
+function AdminMensagens({ state }) {
+  const [categoria, setCategoria] = useState("confrontos"); // confrontos | resultados | lembretes | torneio | ranking | coletivas
+  const [disparoIdx, setDisparoIdx] = useState(null); // índice do atleta atual no fluxo sequencial
+  const [disparados, setDisparados] = useState([]); // ids já disparados nesta sessão
+
+  const ativos = state.athletes.filter(a => a.status === "ativo");
+  const rodadaAtual = state.keys[0]?.currentRound || 1;
+
+  // ── HELPERS ────────────────────────────────────────────────────────────────
+  function nomeAdv(athleteId) {
+    return state.athletes.find(a => a.id === athleteId)?.name || "?";
+  }
+  function wppLink(phone, msg) {
+    return `https://wa.me/55${phone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`;
+  }
+  function rankingAtual() {
+    return [...ativos]
+      .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
+      .map((a,i) => `${i+1}. ${a.name} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts (ELO: ${a.rating})`)
+      .join("\n");
+  }
+
+  // ── GERADOR DE MENSAGENS ───────────────────────────────────────────────────
+  function getMensagens(cat) {
+    switch(cat) {
+
+      case "confrontos": {
+        // Partidas da rodada atual não validadas
+        const partidas = state.matches.filter(m => m.round === rodadaAtual && !m.validated && !m.rejeitado);
+        return partidas.map(m => {
+          const p1 = state.athletes.find(a => a.id === m.p1Id);
+          const p2 = state.athletes.find(a => a.id === m.p2Id);
+          if (!p1 || !p2) return null;
+          return [
+            {
+              atleta: p1,
+              msg: `🏓 *Clube do Tênis de Mesa — Rodada ${m.round}*\n\nOlá ${p1.name.split(" ")[0]}! Seu confronto desta rodada é:\n\n⚔️ *${p1.name}* vs *${p2.name}*\n\nVocê tem até *${m.deadline ? new Date(m.deadline).toLocaleDateString("pt-BR") : "10 dias"}* para realizar a partida. Combine o horário e local diretamente com seu adversário.\n\nApós jogar, registre o placar no app.\n\nBom jogo! 🏆`,
+            },
+            {
+              atleta: p2,
+              msg: `🏓 *Clube do Tênis de Mesa — Rodada ${m.round}*\n\nOlá ${p2.name.split(" ")[0]}! Seu confronto desta rodada é:\n\n⚔️ *${p1.name}* vs *${p2.name}*\n\nVocê tem até *${m.deadline ? new Date(m.deadline).toLocaleDateString("pt-BR") : "10 dias"}* para realizar a partida. Combine o horário e local diretamente com seu adversário.\n\nApós jogar, registre o placar no app.\n\nBom jogo! 🏆`,
+            }
+          ];
+        }).filter(Boolean).flat();
+      }
+
+      case "resultados": {
+        // Partidas validadas da rodada atual
+        const validadas = state.matches.filter(m => m.round === rodadaAtual && m.validated);
+        return validadas.map(m => {
+          const p1 = state.athletes.find(a => a.id === m.p1Id);
+          const p2 = state.athletes.find(a => a.id === m.p2Id);
+          if (!p1 || !p2) return null;
+          const p1venceu = m.score1 > m.score2;
+          return [
+            {
+              atleta: p1,
+              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${p1.name.split(" ")[0]}!\n\n${p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${p1.name}* ${m.score1} × ${m.score2} *${p2.name}*\n\n📊 Seu novo rating ELO: *${p1.rating}*\nSaldo na temporada: *${(p1.saldoTemp||0) > 0 ? "+" : ""}${p1.saldoTemp||0} pts*\n\nConfira o ranking atualizado no app! 🏅`,
+            },
+            {
+              atleta: p2,
+              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${p2.name.split(" ")[0]}!\n\n${!p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${p1.name}* ${m.score1} × ${m.score2} *${p2.name}*\n\n📊 Seu novo rating ELO: *${p2.rating}*\nSaldo na temporada: *${(p2.saldoTemp||0) > 0 ? "+" : ""}${p2.saldoTemp||0} pts*\n\nConfira o ranking atualizado no app! 🏅`,
+            }
+          ];
+        }).filter(Boolean).flat();
+      }
+
+      case "lembretes": {
+        // Partidas próximas do prazo (menos de 3 dias) e ainda não realizadas
+        const hoje = new Date();
+        const pendentes = state.matches.filter(m => {
+          if (m.validated || m.rejeitado) return false;
+          if (!m.deadline) return false;
+          const prazo = new Date(m.deadline);
+          const diff = (prazo - hoje) / (1000*60*60*24);
+          return diff <= 3 && diff >= 0;
+        });
+        return pendentes.map(m => {
+          const p1 = state.athletes.find(a => a.id === m.p1Id);
+          const p2 = state.athletes.find(a => a.id === m.p2Id);
+          if (!p1 || !p2) return null;
+          const diasRestantes = Math.ceil((new Date(m.deadline) - hoje) / (1000*60*60*24));
+          return [
+            {
+              atleta: p1,
+              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${p1.name.split(" ")[0]}! Sua partida contra *${p2.name}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${new Date(m.deadline).toLocaleDateString("pt-BR")}*`,
+            },
+            {
+              atleta: p2,
+              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${p2.name.split(" ")[0]}! Sua partida contra *${p1.name}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${new Date(m.deadline).toLocaleDateString("pt-BR")}*`,
+            }
+          ];
+        }).filter(Boolean).flat();
+      }
+
+      case "torneio": {
+        // Top 8 atletas convocados para o torneio
+        const top8 = [...ativos]
+          .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
+          .slice(0, 8);
+        return top8.map((a, i) => ({
+          atleta: a,
+          msg: `🏆 *Clube do Tênis de Mesa — Você está no Torneio Presencial!*\n\nParabéns ${a.name.split(" ")[0]}! 🎉\n\nVocê terminou a temporada em *${i+1}º lugar* e está classificado para o *Torneio Presencial de Encerramento*!\n\n📅 Data e local serão divulgados em breve pelo @clubedotenisdemesa.\n\nAguarde mais informações! 🏓`,
+        }));
+      }
+
+      case "ranking": {
+        // Enviar ranking atual para todos os atletas
+        const top = [...ativos]
+          .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
+          .slice(0, 10)
+          .map((a,i) => `${i+1}. ${a.name} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
+        return ativos.map(a => ({
+          atleta: a,
+          msg: `🏆 *Clube do Tênis de Mesa — Ranking Atualizado*\n\nOlá ${a.name.split(" ")[0]}! Confira o ranking após a Rodada ${rodadaAtual}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | ELO: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
+        }));
+      }
+
+      default: return [];
+    }
+  }
+
+  // ── COLETIVAS ──────────────────────────────────────────────────────────────
+  const LINK_GRUPO = "https://chat.whatsapp.com/DqgZGorS9QYKYNVP1PZ0Fw";
+
+  function getMsgColetiva(tipo) {
+    const top = [...ativos]
+      .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
+      .slice(0, 10)
+      .map((a,i) => `${i+1}. ${a.name} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
+
+    const confrontos = state.matches
+      .filter(m => m.round === rodadaAtual && !m.validated && !m.rejeitado)
+      .map(m => {
+        const p1 = state.athletes.find(a => a.id === m.p1Id);
+        const p2 = state.athletes.find(a => a.id === m.p2Id);
+        return p1 && p2 ? `⚔️ ${p1.name} vs ${p2.name}` : null;
+      }).filter(Boolean);
+
+    switch(tipo) {
+      case "abertura":
+        return `🏓 *Clube do Tênis de Mesa — Rodada ${rodadaAtual} Aberta!*\n\nOlá galera! A Rodada ${rodadaAtual} começa agora! Confira seus confrontos:\n\n${confrontos.join("\n")}\n\n⏰ Prazo para jogar: *10 dias*\nApós a partida, registre o placar no app em até 24h.\n\nBons jogos! 🏆`;
+      case "ranking":
+        return `🏆 *Clube do Tênis de Mesa — Ranking Rodada ${rodadaAtual}*\n\n${top.join("\n")}\n\nAcompanhe todos os detalhes no app e no @clubedotenisdemesa! 🏓`;
+      case "encerramento":
+        return `⚠️ *Clube do Tênis de Mesa — Prazo se Encerrando!*\n\nAtenção! O prazo da Rodada ${rodadaAtual} se encerra em breve.\n\nQuem ainda não jogou ou não registrou o placar, corram! Partidas não registradas serão anuladas.\n\n📲 Registre no app agora!`;
+      default: return "";
+    }
+  }
+
+  // ── FLUXO SEQUENCIAL ──────────────────────────────────────────────────────
+  const mensagens = getMensagens(categoria);
+
+  function iniciarDisparo() {
+    setDisparoIdx(0);
+    setDisparados([]);
+  }
+  function proxMensagem(atlId) {
+    setDisparados(d => [...d, atlId]);
+    setDisparoIdx(i => i + 1);
+  }
+  function encerrarDisparo() {
+    setDisparoIdx(null);
+    setDisparados([]);
+  }
+
+  // ── TELA DE DISPARO SEQUENCIAL ────────────────────────────────────────────
+  if (disparoIdx !== null && mensagens.length > 0) {
+    if (disparoIdx >= mensagens.length) {
+      return (
+        <div>
+          <SecTitle>💬 Disparos Concluídos</SecTitle>
+          <Card style={{textAlign:"center",padding:24}}>
+            <div style={{fontSize:40,marginBottom:12}}>✅</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#e8edf2",marginBottom:8}}>
+              Todas as mensagens enviadas!
+            </div>
+            <div style={{fontSize:13,color:"#8b9ab5",marginBottom:20}}>
+              {mensagens.length} mensagem(s) disparada(s) com sucesso.
+            </div>
+            <Btn onClick={encerrarDisparo} color="#4da3ff" full>← Voltar</Btn>
+          </Card>
+        </div>
+      );
+    }
+
+    const atual = mensagens[disparoIdx];
+    const progresso = Math.round((disparoIdx / mensagens.length) * 100);
+
+    return (
+      <div>
+        <SecTitle>💬 Disparando Mensagens</SecTitle>
+        {/* Progresso */}
+        <Card style={{marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+            <span style={{fontSize:12,color:"#8b9ab5"}}>{disparoIdx + 1} de {mensagens.length}</span>
+            <span style={{fontSize:12,fontWeight:700,color:"#4da3ff"}}>{progresso}%</span>
+          </div>
+          <div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:2}}>
+            <div style={{height:"100%",background:"#4da3ff",borderRadius:2,width:`${progresso}%`,transition:"width 0.3s"}}/>
+          </div>
+        </Card>
+
+        {/* Card do atleta atual */}
+        <Card style={{border:"1px solid rgba(26,115,200,0.3)"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#4da3ff",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
+            Próxima mensagem
+          </div>
+          <div style={{fontSize:16,fontWeight:800,color:"#e8edf2",marginBottom:4}}>
+            {atual.atleta.name}
+          </div>
+          <div style={{fontSize:12,color:"#6b7a8d",marginBottom:12}}>
+            📱 {atual.atleta.phone}
+          </div>
+          {/* Preview da mensagem */}
+          <div style={{background:"#0a1628",borderRadius:10,padding:"12px",marginBottom:14,fontSize:11,color:"#8b9ab5",lineHeight:1.6,whiteSpace:"pre-line",maxHeight:160,overflowY:"auto"}}>
+            {atual.msg}
+          </div>
+          <a href={wppLink(atual.atleta.phone, atual.msg)} target="_blank" rel="noreferrer" style={{textDecoration:"none",display:"block",marginBottom:10}}>
+            <Btn onClick={()=>proxMensagem(atual.atleta.id)} color="#25d366" full>
+              📲 Abrir WhatsApp e Enviar →
+            </Btn>
+          </a>
+          <Btn onClick={()=>proxMensagem(atual.atleta.id)} color="#374151" full small>
+            ⏭ Pular este atleta
+          </Btn>
+        </Card>
+
+        {/* Já disparados */}
+        {disparados.length > 0 && (
+          <Card style={{marginTop:10}}>
+            <div style={{fontSize:11,color:"#4ade80",fontWeight:700,marginBottom:6}}>✅ Já enviados ({disparados.length})</div>
+            {disparados.map(id => {
+              const a = state.athletes.find(x => x.id === id);
+              return <div key={id} style={{fontSize:12,color:"#6b7a8d",marginBottom:2}}>✓ {a?.name}</div>;
+            })}
+          </Card>
+        )}
+
+        <button onClick={encerrarDisparo} style={{background:"none",border:"none",color:"#6b7a8d",cursor:"pointer",fontSize:12,marginTop:12,width:"100%"}}>
+          ✕ Cancelar disparo
+        </button>
+      </div>
+    );
+  }
+
+  // ── TELA PRINCIPAL ─────────────────────────────────────────────────────────
+  const categorias = [
+    {id:"confrontos", icon:"⚔️", label:"Confrontos da Rodada",  desc:"Avisa cada atleta sobre seu adversário"},
+    {id:"resultados", icon:"📊", label:"Resultados Confirmados", desc:"Envia resultado e novo rating para cada atleta"},
+    {id:"lembretes",  icon:"⏰", label:"Lembretes de Prazo",    desc:"Alerta atletas com prazo próximo (≤3 dias)"},
+    {id:"ranking",    icon:"🏆", label:"Ranking para Todos",    desc:"Envia ranking atualizado para cada atleta"},
+    {id:"torneio",    icon:"🎯", label:"Convocação Torneio",    desc:"Notifica os Top 8 classificados"},
+  ];
+
+  return (
+    <div>
+      {/* INDIVIDUAIS */}
+      <SecTitle>📲 Disparos Individuais</SecTitle>
+      <div style={{fontSize:12,color:"#6b7a8d",marginBottom:12}}>
+        Selecione o tipo e o app vai guiando atleta por atleta.
+      </div>
+
+      {categorias.map(cat => {
+        const msgs = getMensagens(cat.id);
+        const isSelected = categoria === cat.id;
+        return (
+          <div key={cat.id} onClick={()=>setCategoria(cat.id)} style={{
+            background: isSelected ? "#162035" : "#111d2b",
+            border: isSelected ? "1px solid rgba(26,115,200,0.4)" : "1px solid rgba(255,255,255,0.05)",
+            borderRadius:12, padding:"13px 14px", marginBottom:8, cursor:"pointer",
+          }}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:"#e8edf2"}}>
+                  {cat.icon} {cat.label}
+                </div>
+                <div style={{fontSize:11,color:"#6b7a8d",marginTop:2}}>{cat.desc}</div>
+              </div>
+              <div style={{
+                background:"rgba(26,115,200,0.15)",color:"#4da3ff",
+                borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,flexShrink:0
+              }}>
+                {msgs.length} msg
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {mensagens.length > 0 ? (
+        <Btn onClick={iniciarDisparo} color="#25d366" full>
+          📲 Iniciar disparo — {mensagens.length} mensagem(s)
+        </Btn>
+      ) : (
+        <Card>
+          <div style={{fontSize:13,color:"#6b7a8d",textAlign:"center",padding:12}}>
+            Nenhuma mensagem disponível para esta categoria no momento.
+          </div>
+        </Card>
+      )}
+
+      {/* COLETIVAS */}
+      <SecTitle>👥 Disparos Coletivos (Grupo)</SecTitle>
+      <div style={{fontSize:12,color:"#6b7a8d",marginBottom:12}}>
+        Abre o WhatsApp já com a mensagem para o grupo oficial.
+      </div>
+
+      {[
+        {tipo:"abertura",    icon:"🚀", label:"Abertura de Rodada",   desc:"Divulga todos os confrontos no grupo"},
+        {tipo:"ranking",     icon:"🏆", label:"Ranking Atualizado",   desc:"Publica o Top 10 no grupo"},
+        {tipo:"encerramento",icon:"⏰", label:"Alerta de Encerramento",desc:"Lembra todos do prazo se encerrando"},
+      ].map(c => (
+        <Card key={c.tipo} style={{marginBottom:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:"#e8edf2"}}>{c.icon} {c.label}</div>
+              <div style={{fontSize:11,color:"#6b7a8d",marginTop:2}}>{c.desc}</div>
+            </div>
+          </div>
+          <div style={{background:"#0a1628",borderRadius:8,padding:"10px",marginBottom:10,fontSize:11,color:"#6b7a8d",lineHeight:1.6,whiteSpace:"pre-line",maxHeight:100,overflowY:"auto"}}>
+            {getMsgColetiva(c.tipo).slice(0,200)}...
+          </div>
+          <a href={`https://wa.me/?text=${encodeURIComponent(getMsgColetiva(c.tipo))}`}
+            target="_blank" rel="noreferrer" style={{textDecoration:"none"}}>
+            <Btn color="#25d366" full>📲 Enviar para o Grupo</Btn>
+          </a>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const [state, dispatch] = useReducer(reducer, INIT);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -1345,6 +1680,7 @@ function BottomNav({ isAdmin, tab, setTab }) {
     {id:"ranking",label:"Ranking",icon:"🏆"},
     {id:"pendencias",label:"Pendências",icon:"⚠️"},
     {id:"historico",label:"Histórico",icon:"📋"},
+    {id:"mensagens",label:"Mensagens",icon:"💬"},
   ];
   const athleteTabs = [
     {id:"meus_jogos",label:"Meus Jogos",icon:"🏓"},
@@ -1395,6 +1731,7 @@ function AdminView({ state, dispatch, tab, setTab }) {
   if (tab === "ranking") return <RankingView state={state} />;
   if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} />;
   if (tab === "historico") return <AdminHistorico state={state} />;
+  if (tab === "mensagens") return <AdminMensagens state={state} />;
   return null;
 }
 

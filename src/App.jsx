@@ -1162,11 +1162,11 @@ function AdminMensagens({ state }) {
           return [
             {
               atleta: p1,
-              msg: `🏓 *Clube do Tênis de Mesa — Rodada ${m.round}*\n\nOlá ${p1.name.split(" ")[0]}! Seu confronto desta rodada é:\n\n⚔️ *${p1.name}* vs *${p2.name}*\n\nVocê tem até *${m.deadline ? new Date(m.deadline).toLocaleDateString("pt-BR") : "10 dias"}* para realizar a partida. Combine o horário e local diretamente com seu adversário.\n\nApós jogar, registre o placar no app.\n\nBom jogo! 🏆`,
+              msg: `🏓 *Clube do Tênis de Mesa — Rodada ${m.round}*\n\nOlá ${p1.name.split(" ")[0]}! Seu confronto desta rodada é:\n\n⚔️ *${p1.name}* vs *${p2.name}*\n📱 Contato do adversário: *${p2.phone}*\n\nVocê tem até *${m.deadline ? new Date(m.deadline).toLocaleDateString("pt-BR") : "10 dias"}* para realizar a partida. Entre em contato para combinar horário e local.\n\nApós jogar, registre o placar no app.\n\nBom jogo! 🏆`,
             },
             {
               atleta: p2,
-              msg: `🏓 *Clube do Tênis de Mesa — Rodada ${m.round}*\n\nOlá ${p2.name.split(" ")[0]}! Seu confronto desta rodada é:\n\n⚔️ *${p1.name}* vs *${p2.name}*\n\nVocê tem até *${m.deadline ? new Date(m.deadline).toLocaleDateString("pt-BR") : "10 dias"}* para realizar a partida. Combine o horário e local diretamente com seu adversário.\n\nApós jogar, registre o placar no app.\n\nBom jogo! 🏆`,
+              msg: `🏓 *Clube do Tênis de Mesa — Rodada ${m.round}*\n\nOlá ${p2.name.split(" ")[0]}! Seu confronto desta rodada é:\n\n⚔️ *${p1.name}* vs *${p2.name}*\n📱 Contato do adversário: *${p1.phone}*\n\nVocê tem até *${m.deadline ? new Date(m.deadline).toLocaleDateString("pt-BR") : "10 dias"}* para realizar a partida. Entre em contato para combinar horário e local.\n\nApós jogar, registre o placar no app.\n\nBom jogo! 🏆`,
             }
           ];
         }).filter(Boolean).flat();
@@ -1674,28 +1674,45 @@ function Header({ isAdmin, athlete, onLogout }) {
 // ── BOTTOM NAV ───────────────────────────────────────────────────────────────
 function BottomNav({ isAdmin, tab, setTab }) {
   const adminTabs = [
-    {id:"dashboard",label:"Dashboard",icon:"🏠"},
-    {id:"inscricoes",label:"Inscrições",icon:"📝"},
-    {id:"etapa",label:"Etapa",icon:"🏓"},
-    {id:"ranking",label:"Ranking",icon:"🏆"},
-    {id:"pendencias",label:"Pendências",icon:"⚠️"},
-    {id:"historico",label:"Histórico",icon:"📋"},
-    {id:"mensagens",label:"Mensagens",icon:"💬"},
+    {id:"dashboard",  label:"Início",  icon:"🏠"},
+    {id:"inscricoes", label:"Inscr.",  icon:"📝"},
+    {id:"etapa",      label:"Etapa",   icon:"🏓"},
+    {id:"ranking",    label:"Ranking", icon:"🏆"},
+    {id:"pendencias", label:"Pend.",   icon:"⚠️"},
+    {id:"historico",  label:"Hist.",   icon:"📋"},
+    {id:"mensagens",  label:"Msgs",    icon:"💬"},
   ];
   const athleteTabs = [
-    {id:"meus_jogos",label:"Meus Jogos",icon:"🏓"},
-    {id:"ranking",label:"Ranking",icon:"🏆"},
-    {id:"tabela",label:"Tabela",icon:"📊"},
+    {id:"meus_jogos", label:"Jogos",   icon:"🏓"},
+    {id:"ranking",    label:"Ranking", icon:"🏆"},
+    {id:"tabela",     label:"Tabela",  icon:"📊"},
   ];
   const tabs = isAdmin ? adminTabs : athleteTabs;
   return (
-    <nav style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:"#080f1a",borderTop:"1px solid rgba(255,255,255,0.07)",display:"flex",zIndex:100}}>
-      {tabs.map(t => (
-        <div key={t.id} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 4px 6px",cursor:"pointer",opacity:tab===t.id?1:0.4}} onClick={() => setTab(t.id)}>
-          <span style={{fontSize:18}}>{t.icon}</span>
-          <span style={{fontSize:9,fontWeight:700,color:tab===t.id?"#4da3ff":"#6b7a8d",marginTop:2,letterSpacing:0.2}}>{t.label}</span>
-        </div>
-      ))}
+    <nav style={{
+      position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)",
+      width:"100%", maxWidth:480, background:"#080f1a",
+      borderTop:"1px solid rgba(255,255,255,0.07)",
+      display:"flex", zIndex:100,
+    }}>
+      {tabs.map(t => {
+        const ativo = tab === t.id;
+        return (
+          <div key={t.id} onClick={()=>setTab(t.id)} style={{
+            flex:1, display:"flex", flexDirection:"column", alignItems:"center",
+            padding:"6px 1px 5px", cursor:"pointer",
+            borderTop: ativo ? "2px solid #4da3ff" : "2px solid transparent",
+            background: ativo ? "rgba(26,115,200,0.08)" : "transparent",
+          }}>
+            <span style={{fontSize:17, lineHeight:1}}>{t.icon}</span>
+            <span style={{
+              fontSize:10, fontWeight:700, marginTop:2,
+              color: ativo ? "#fff" : "rgba(255,255,255,0.4)",
+              letterSpacing:0, whiteSpace:"nowrap",
+            }}>{t.label}</span>
+          </div>
+        );
+      })}
     </nav>
   );
 }

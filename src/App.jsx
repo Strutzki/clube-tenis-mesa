@@ -28,6 +28,17 @@ async function supaFetch(path, options = {}) {
 }
 
 // CRUD helpers
+// Nome de exibição: apelido se existir, senão nome completo
+function nomeExibicao(atleta) {
+  if (!atleta) return "?";
+  return atleta.apelido ? atleta.apelido : atleta.name;
+}
+// Nome com apelido entre parênteses (para telas administrativas)
+function nomeComApelido(atleta) {
+  if (!atleta) return "?";
+  return atleta.apelido ? `${atleta.name} (${atleta.apelido})` : atleta.name;
+}
+
 const db = {
   // Atletas
   getAtletas: () => supaFetch("atletas?order=rating.desc"),
@@ -87,14 +98,14 @@ function reducer(state, action) {
   switch (action.type) {
 
     case "INSCRICAO_ADD": {
-      const { name, phone, federated, rating, aceiteRegulamento, aceiteLGPD, dataAceite, ipAceite } = action.payload;
+      const { name, phone, apelido, federated, rating, aceiteRegulamento, aceiteLGPD, dataAceite, ipAceite } = action.payload;
       // Verificar duplicata por telefone no estado local
       const telFormatado = phone.replace(/\D/g, "");
       const jaExiste = state.athletes.some(a => a.phone.replace(/\D/g, "") === telFormatado);
       if (jaExiste) return state; // Bloqueia sem alterar estado
       const id = Date.now();
       const ath = {
-        id, name, phone: telFormatado, federated,
+        id, name, phone: telFormatado, apelido: apelido || null, federated,
         rating: federated ? (rating || null) : 250,
         status: "pendente", key: null,
         aceiteRegulamento: aceiteRegulamento || false,
@@ -243,9 +254,9 @@ function reducer(state, action) {
     }
 
     case "EDITAR_ATLETA": {
-      const { id, nome, telefone, rating, status } = action.payload;
+      const { id, nome, telefone, apelido, rating, status } = action.payload;
       const athletes = state.athletes.map(a =>
-        a.id === id ? { ...a, name: nome, phone: telefone, rating, status } : a
+        a.id === id ? { ...a, name: nome, phone: telefone, apelido: apelido||null, rating, status } : a
       );
       return { ...state, athletes };
     }
@@ -353,6 +364,7 @@ function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
 function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
   const [step, setStep] = useState(1); // 1=dados, 2=lgpd, 3=regulamento, 4=sucesso
   const [name, setName] = useState(""), [phone, setPhone] = useState("");
+  const [apelido, setApelido] = useState("");
   const [fed, setFed] = useState("nao"), [rating, setRating] = useState("");
   const [aceiteLGPD, setAceiteLGPD] = useState(false);
   const [aceiteReg, setAceiteReg] = useState(false);
@@ -401,6 +413,8 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
             ⚠️ Este número já possui uma inscrição cadastrada.
           </div>
         )}
+        <label style={s.label}>Apelido (opcional)</label>
+        <input style={s.input} value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="Como você gostaria de ser chamado?"/>
 
         <label style={s.label}>É federado pela CBTM?</label>
         <select style={s.select} value={fed} onChange={e=>setFed(e.target.value)}>
@@ -554,6 +568,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
           if (onSubmit) onSubmit({
             name: name.trim(),
             phone: phone.trim(),
+            apelido: apelido.trim() || null,
             federated: fed==="sim",
             rating: fed==="sim" && rating ? parseInt(rating) : (fed==="sim" ? null : 250),
             aceiteRegulamento: true,
@@ -1164,7 +1179,7 @@ function AdminMensagens({ state }) {
   function rankingAtual() {
     return [...ativos]
       .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
-      .map((a,i) => `${i+1}. ${a.name} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts (ELO: ${a.rating})`)
+      .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts (ELO: ${a.rating})`)
       .join("\n");
   }
 
@@ -1182,11 +1197,11 @@ function AdminMensagens({ state }) {
           return [
             {
               atleta: p1,
-              msg: `🏓 *Clube do Tênis de Mesa — Rodada ${m.round}*\n\nOlá ${p1.name.split(" ")[0]}! Seu confronto desta rodada é:\n\n⚔️ *${p1.name}* vs *${p2.name}*\n📱 Contato do adversário: *${p2.phone}*\n\nVocê tem até *${m.deadline ? new Date(m.deadline).toLocaleDateString("pt-BR") : "10 dias"}* para realizar a partida. Entre em contato para combinar horário e local.\n\nApós jogar, registre o placar no app.\n\nBom jogo! 🏆`,
+              msg: `🏓 *Clube do Tênis de Mesa — Rodada ${m.round}*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}! Seu confronto desta rodada é:\n\n⚔️ *${nomeExibicao(p1)}* vs *${nomeExibicao(p2)}*\n📱 Contato do adversário: *${p2.phone}*\n\nVocê tem até *${m.deadline ? new Date(m.deadline).toLocaleDateString("pt-BR") : "10 dias"}* para realizar a partida. Entre em contato para combinar horário e local.\n\nApós jogar, registre o placar no app.\n\nBom jogo! 🏆`,
             },
             {
               atleta: p2,
-              msg: `🏓 *Clube do Tênis de Mesa — Rodada ${m.round}*\n\nOlá ${p2.name.split(" ")[0]}! Seu confronto desta rodada é:\n\n⚔️ *${p1.name}* vs *${p2.name}*\n📱 Contato do adversário: *${p1.phone}*\n\nVocê tem até *${m.deadline ? new Date(m.deadline).toLocaleDateString("pt-BR") : "10 dias"}* para realizar a partida. Entre em contato para combinar horário e local.\n\nApós jogar, registre o placar no app.\n\nBom jogo! 🏆`,
+              msg: `🏓 *Clube do Tênis de Mesa — Rodada ${m.round}*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}! Seu confronto desta rodada é:\n\n⚔️ *${nomeExibicao(p1)}* vs *${nomeExibicao(p2)}*\n📱 Contato do adversário: *${p1.phone}*\n\nVocê tem até *${m.deadline ? new Date(m.deadline).toLocaleDateString("pt-BR") : "10 dias"}* para realizar a partida. Entre em contato para combinar horário e local.\n\nApós jogar, registre o placar no app.\n\nBom jogo! 🏆`,
             }
           ];
         }).filter(Boolean).flat();
@@ -1203,11 +1218,11 @@ function AdminMensagens({ state }) {
           return [
             {
               atleta: p1,
-              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${p1.name.split(" ")[0]}!\n\n${p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${p1.name}* ${m.score1} × ${m.score2} *${p2.name}*\n\n📊 Seu novo rating ELO: *${p1.rating}*\nSaldo na temporada: *${(p1.saldoTemp||0) > 0 ? "+" : ""}${p1.saldoTemp||0} pts*\n\nConfira o ranking atualizado no app! 🏅`,
+              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}!\n\n${p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n📊 Seu novo rating ELO: *${p1.rating}*\nSaldo na temporada: *${(p1.saldoTemp||0) > 0 ? "+" : ""}${p1.saldoTemp||0} pts*\n\nConfira o ranking atualizado no app! 🏅`,
             },
             {
               atleta: p2,
-              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${p2.name.split(" ")[0]}!\n\n${!p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${p1.name}* ${m.score1} × ${m.score2} *${p2.name}*\n\n📊 Seu novo rating ELO: *${p2.rating}*\nSaldo na temporada: *${(p2.saldoTemp||0) > 0 ? "+" : ""}${p2.saldoTemp||0} pts*\n\nConfira o ranking atualizado no app! 🏅`,
+              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}!\n\n${!p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n📊 Seu novo rating ELO: *${p2.rating}*\nSaldo na temporada: *${(p2.saldoTemp||0) > 0 ? "+" : ""}${p2.saldoTemp||0} pts*\n\nConfira o ranking atualizado no app! 🏅`,
             }
           ];
         }).filter(Boolean).flat();
@@ -1231,11 +1246,11 @@ function AdminMensagens({ state }) {
           return [
             {
               atleta: p1,
-              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${p1.name.split(" ")[0]}! Sua partida contra *${p2.name}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${new Date(m.deadline).toLocaleDateString("pt-BR")}*`,
+              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}! Sua partida contra *${nomeExibicao(p2)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${new Date(m.deadline).toLocaleDateString("pt-BR")}*`,
             },
             {
               atleta: p2,
-              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${p2.name.split(" ")[0]}! Sua partida contra *${p1.name}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${new Date(m.deadline).toLocaleDateString("pt-BR")}*`,
+              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}! Sua partida contra *${nomeExibicao(p1)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${new Date(m.deadline).toLocaleDateString("pt-BR")}*`,
             }
           ];
         }).filter(Boolean).flat();
@@ -1248,7 +1263,7 @@ function AdminMensagens({ state }) {
           .slice(0, 8);
         return top8.map((a, i) => ({
           atleta: a,
-          msg: `🏆 *Clube do Tênis de Mesa — Você está no Torneio Presencial!*\n\nParabéns ${a.name.split(" ")[0]}! 🎉\n\nVocê terminou a temporada em *${i+1}º lugar* e está classificado para o *Torneio Presencial de Encerramento*!\n\n📅 Data e local serão divulgados em breve pelo @clubedotenisdemesa.\n\nAguarde mais informações! 🏓`,
+          msg: `🏆 *Clube do Tênis de Mesa — Você está no Torneio Presencial!*\n\nParabéns ${nomeExibicao(a).split(" ")[0]}! 🎉\n\nVocê terminou a temporada em *${i+1}º lugar* e está classificado para o *Torneio Presencial de Encerramento*!\n\n📅 Data e local serão divulgados em breve pelo @clubedotenisdemesa.\n\nAguarde mais informações! 🏓`,
         }));
       }
 
@@ -1257,10 +1272,10 @@ function AdminMensagens({ state }) {
         const top = [...ativos]
           .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
           .slice(0, 10)
-          .map((a,i) => `${i+1}. ${a.name} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
+          .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
         return ativos.map(a => ({
           atleta: a,
-          msg: `🏆 *Clube do Tênis de Mesa — Ranking Atualizado*\n\nOlá ${a.name.split(" ")[0]}! Confira o ranking após a Rodada ${rodadaAtual}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | ELO: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
+          msg: `🏆 *Clube do Tênis de Mesa — Ranking Atualizado*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Confira o ranking após a Rodada ${rodadaAtual}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | ELO: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
         }));
       }
 
@@ -1275,14 +1290,14 @@ function AdminMensagens({ state }) {
     const top = [...ativos]
       .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
       .slice(0, 10)
-      .map((a,i) => `${i+1}. ${a.name} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
+      .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
 
     const confrontos = state.matches
       .filter(m => m.round === rodadaAtual && !m.validated && !m.rejeitado)
       .map(m => {
         const p1 = state.athletes.find(a => a.id === m.p1Id);
         const p2 = state.athletes.find(a => a.id === m.p2Id);
-        return p1 && p2 ? `⚔️ ${p1.name} vs ${p2.name}` : null;
+        return p1 && p2 ? `⚔️ ${nomeExibicao(p1)} vs ${nomeExibicao(p2)}` : null;
       }).filter(Boolean);
 
     switch(tipo) {
@@ -1355,7 +1370,7 @@ function AdminMensagens({ state }) {
             Próxima mensagem
           </div>
           <div style={{fontSize:16,fontWeight:800,color:"#e8edf2",marginBottom:4}}>
-            {atual.atleta.name}
+            {nomeComApelido(atual.atleta)}
           </div>
           <div style={{fontSize:12,color:"#6b7a8d",marginBottom:12}}>
             📱 {atual.atleta.phone}
@@ -1691,7 +1706,7 @@ export default function App() {
         db.getAtletas(), db.getPartidas(), db.getChaves(), db.getConfig(),
       ]);
       const athletesMapped = (atletas||[]).map(a => ({
-        id: a.id, name: a.nome, phone: a.telefone,
+        id: a.id, name: a.nome, phone: a.telefone, apelido: a.apelido || null,
         federated: a.federado, rating: a.rating,
         ratingInicial: a.rating_inicial, saldoTemp: a.saldo_temp||0,
         status: a.status, motivo: a.motivo_reprovacao,
@@ -1753,7 +1768,7 @@ export default function App() {
         return;
       }
       await db.insertAtleta({
-        nome:p.name, telefone:telefoneFormatado, federado:p.federated,
+        nome:p.name, telefone:telefoneFormatado, apelido:p.apelido||null, federado:p.federated,
         rating: p.federated?(p.rating||null):250,
         rating_inicial: p.federated?(p.rating||null):250,
         saldo_temp:0, status:"pendente",
@@ -1832,8 +1847,8 @@ export default function App() {
       await loadFromSupabase();
     }
     else if (action.type === "EDITAR_ATLETA") {
-      const { id, nome, telefone, rating, status } = action.payload;
-      await db.updateAtleta(id, { nome, telefone, rating, status });
+      const { id, nome, telefone, apelido, rating, status } = action.payload;
+      await db.updateAtleta(id, { nome, telefone, apelido: apelido||null, rating, status });
     }
     else if (action.type === "EXCLUIR_ATLETA") {
       await supaFetch(`atletas?id=eq.${action.payload.id}`, { method: "DELETE", prefer: "return=minimal" });
@@ -2072,6 +2087,7 @@ function AdminInscricoes({ state, dispatch }) {
   // Campos de edição
   const [editNome, setEditNome] = useState("");
   const [editTelefone, setEditTelefone] = useState("");
+  const [editApelido, setEditApelido] = useState("");
   const [editRating, setEditRating] = useState("");
   const [editStatus, setEditStatus] = useState("");
 
@@ -2103,13 +2119,14 @@ function AdminInscricoes({ state, dispatch }) {
     setSelected(a);
     setEditNome(a.name);
     setEditTelefone(a.phone);
+    setEditApelido(a.apelido || "");
     setEditRating(a.rating || "");
     setEditStatus(a.status);
     setModo("editar");
   }
   function salvarEdicao() {
     dispatch({type:"EDITAR_ATLETA",payload:{
-      id:selected.id, nome:editNome, telefone:editTelefone,
+      id:selected.id, nome:editNome, telefone:editTelefone, apelido:editApelido.trim()||null,
       rating:parseInt(editRating)||selected.rating, status:editStatus
     }});
     setSelected(null); setModo("lista");
@@ -2150,6 +2167,8 @@ function AdminInscricoes({ state, dispatch }) {
         <input style={inp} value={editNome} onChange={e=>setEditNome(e.target.value)}/>
         <label style={lbl}>WhatsApp</label>
         <input style={inp} value={editTelefone} onChange={e=>setEditTelefone(e.target.value)} type="tel"/>
+        <label style={lbl}>Apelido (opcional)</label>
+        <input style={inp} value={editApelido} onChange={e=>setEditApelido(e.target.value)} placeholder="Como o atleta gostaria de ser chamado?"/>
         <label style={lbl}>Rating</label>
         <input style={inp} value={editRating} onChange={e=>setEditRating(e.target.value)} type="number"/>
         <label style={lbl}>Status</label>
@@ -2175,7 +2194,7 @@ function AdminInscricoes({ state, dispatch }) {
       <ModalExcluir/>
       <SecTitle>Validar Inscrição</SecTitle>
       <Card>
-        <div style={{fontSize:15,fontWeight:700,color:"#e8edf2",marginBottom:4}}>{selected.name}</div>
+        <div style={{fontSize:15,fontWeight:700,color:"#e8edf2",marginBottom:4}}>{nomeComApelido(selected)}</div>
         <div style={{fontSize:12,color:"#8b9ab5",marginBottom:8}}>📱 {selected.phone} · {selected.federated?"Federado CBTM":"Não federado"}</div>
         <div style={{fontSize:12,color:"#6b7a8d",marginBottom:6}}>
           Rating informado: <b style={{color: selected.rating ? "#4da3ff" : "#f87171"}}>{selected.rating || "não informado"}</b>
@@ -2222,7 +2241,7 @@ function AdminInscricoes({ state, dispatch }) {
           <Card key={a.id}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
-                <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{a.name}</div>
+                <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{nomeComApelido(a)}</div>
                 <div style={{fontSize:11,color:"#8b9ab5"}}>{a.phone} · {a.federated?"Federado":"Não fed."} · Rating: {a.rating}</div>
               </div>
               <div style={{display:"flex",gap:6}}>
@@ -2240,7 +2259,7 @@ function AdminInscricoes({ state, dispatch }) {
           <Card key={a.id}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1}}>
-                <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{a.name}</div>
+                <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{nomeComApelido(a)}</div>
                 <div style={{fontSize:11,color:"#8b9ab5"}}>{a.phone} · ELO: {a.rating}</div>
                 <div style={{display:"flex",gap:4,marginTop:3}}>
                   {a.aceiteRegulamento && <span style={{fontSize:9,background:"rgba(74,222,128,0.15)",color:"#4ade80",padding:"1px 6px",borderRadius:8,fontWeight:700}}>📋 Reg. aceito</span>}
@@ -2262,7 +2281,7 @@ function AdminInscricoes({ state, dispatch }) {
           <Card key={a.id}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1}}>
-                <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{a.name}</div>
+                <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{nomeComApelido(a)}</div>
                 <div style={{fontSize:11,color:"#f87171"}}>{a.motivo || "Sem motivo registrado"}</div>
               </div>
               <div style={{display:"flex",gap:6}}>
@@ -2425,7 +2444,7 @@ function RankingView({ state, currentAthleteId }) {
             <div style={{width:28,height:28,borderRadius:"50%",background:`${medalColor(i)}22`,color:medalColor(i),display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0}}>{i+1}</div>
             <div style={{flex:1}}>
               <div style={{fontSize:14,fontWeight:700,color: isMe ? "#4da3ff" : "#e8edf2"}}>
-                {a.name}{isMe ? " 👤" : ""}
+                {nomeExibicao(a)}{isMe ? " 👤" : ""}
               </div>
               <div style={{fontSize:11,color:"#6b7a8d"}}>
                 {a.wins||0}V · {a.losses||0}D

@@ -1851,7 +1851,11 @@ export default function App() {
       await db.updateAtleta(id, { nome, telefone, apelido: apelido||null, rating, status });
     }
     else if (action.type === "EXCLUIR_ATLETA") {
-      await supaFetch(`atletas?id=eq.${action.payload.id}`, { method: "DELETE", prefer: "return=minimal" });
+      const idLocal = action.payload.id;
+      const atletas = await supaFetch(`atletas?id=eq.${idLocal}`);
+      const uuid = atletas?.[0]?.id || idLocal;
+      await supaFetch(`atletas?id=eq.${uuid}`, { method: "DELETE", prefer: "return=minimal" });
+      await loadFromSupabase();
     }
   }
 

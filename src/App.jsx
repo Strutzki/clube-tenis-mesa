@@ -337,8 +337,8 @@ function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
 
   if (mode === "inscricao") return <InscricaoForm onBack={() => setMode("select")} onSubmit={onInscricao} athletes={athletes} />;
   if (mode === "regulamento") return <RegulamentoView onBack={() => setMode("select")} />;
-  function doAdmin() {
-    if (user===ADMIN_USER && pass===ADMIN_PASS) { onLogin(); }
+  function doAdmin(bypass=false) {
+    if (bypass || (user===ADMIN_USER && pass===ADMIN_PASS)) { onLogin(); }
     else { setErr("Usuário ou senha incorretos."); setTimeout(()=>setErr(""),3000); }
   }
   function doAthlete() {
@@ -1530,6 +1530,8 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
       setBiometriaAtiva(true);
       setBiometriaStatus("ok");
       setErr("");
+      // Fazer login automaticamente após cadastrar com sucesso
+      setTimeout(() => doAdmin(true), 800);
     } catch(e) {
       setBiometriaStatus("erro");
       setErr("Não foi possível cadastrar a biometria. Tente novamente.");

@@ -1660,11 +1660,26 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, INIT);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [currentAthlete, setCurrentAthlete] = useState(null);
-  const [tab, setTab] = useState("dashboard");
+  // ── Restaurar sessão do localStorage ─────────────────────────
+  const sessaoSalva = (() => {
+    try { return JSON.parse(localStorage.getItem("ctm_sessao") || "{}"); } catch { return {}; }
+  })();
+
+  const [isAdmin, setIsAdmin] = useState(sessaoSalva.isAdmin || false);
+  const [currentAthlete, setCurrentAthlete] = useState(sessaoSalva.athleteId ? {id: sessaoSalva.athleteId} : null);
+  const [tab, setTab] = useState(sessaoSalva.tab || "dashboard");
   const [dbStatus, setDbStatus] = useState("loading");
   const [dbMsg, setDbMsg] = useState("");
+
+  // ── Salvar sessão quando muda ──────────────────────────────
+  useEffect(() => {
+    const sessao = {
+      isAdmin,
+      athleteId: currentAthlete?.id || null,
+      tab,
+    };
+    localStorage.setItem("ctm_sessao", JSON.stringify(sessao));
+  }, [isAdmin, currentAthlete, tab]);
 
   // ── Carregar dados do Supabase ao iniciar ──────────────────
   useEffect(() => { loadFromSupabase(); }, []);
@@ -1707,6 +1722,12 @@ export default function App() {
         athletes: athletesMapped, matches: matchesMapped,
         keys: keysMapped, phase: config?.[0]?.fase||"inscricoes",
       }});
+      // Restaurar atleta completo da sessão após carregar do banco
+      if (sessaoSalva.athleteId) {
+        const atletaCompleto = athletesMapped.find(a => a.id === sessaoSalva.athleteId);
+        if (atletaCompleto) setCurrentAthlete(atletaCompleto);
+        else { setCurrentAthlete(null); localStorage.removeItem("ctm_sessao"); }
+      }
       setDbStatus("ok");
     } catch(e) {
       console.error(e);
@@ -1841,7 +1862,7 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#0a1628", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#e8edf2", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} athlete={currentAthlete} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); }} />
+      <Header isAdmin={isAdmin} athlete={currentAthlete} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); }} />
       <DbBar/>
 
       <div style={{padding:"12px 16px 0"}}>

@@ -88,19 +88,20 @@ function reducer(state, action) {
 
     case "INSCRICAO_ADD": {
       const { name, phone, federated, rating, aceiteRegulamento, aceiteLGPD, dataAceite, ipAceite } = action.payload;
+      // Verificar duplicata por telefone no estado local
+      const telFormatado = phone.replace(/\D/g, "");
+      const jaExiste = state.athletes.some(a => a.phone.replace(/\D/g, "") === telFormatado);
+      if (jaExiste) return state; // Bloqueia sem alterar estado
       const id = Date.now();
       const ath = {
-        id, name, phone, federated,
+        id, name, phone: telFormatado, federated,
         rating: federated ? (rating || null) : 250,
         status: "pendente", key: null,
-        // Aceite do regulamento
         aceiteRegulamento: aceiteRegulamento || false,
         dataAceiteRegulamento: dataAceite || null,
         versaoRegulamento: "v03-3",
-        // Consentimento LGPD
         aceiteLGPD: aceiteLGPD || false,
         dataAceiteLGPD: dataAceite || null,
-        // Auditoria
         inscritoEm: dataAceite || new Date().toISOString(),
       };
       return { ...state, athletes: [...state.athletes, ath] };
@@ -309,20 +310,14 @@ function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
   );
 
   if (mode === "admin") return (
-    <div style={s.wrap}>
-      <div style={s.logo}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
-      <div style={s.card}>
-        <button style={s.back} onClick={() => setMode("select")}>← Voltar</button>
-        <div style={s.title}>Acesso Admin</div>
-        <br/>
-        <label style={s.label}>Usuário</label>
-        <input style={s.input} value={user} onChange={e=>setUser(e.target.value)} placeholder="admin" onKeyDown={e=>e.key==="Enter"&&doAdmin()}/>
-        <label style={s.label}>PIN (4 dígitos)</label>
-        <input style={{...s.input,marginBottom:10,letterSpacing:8,fontSize:22,textAlign:"center",fontWeight:800}} type="tel" inputMode="numeric" maxLength={4} value={pass} onChange={e=>setPass(e.target.value.replace(/\D/g,"").slice(0,4))} placeholder="····" onKeyDown={e=>e.key==="Enter"&&doAdmin()}/>
-        <button style={s.btn()} onClick={doAdmin}>Entrar</button>
-        {err && <div style={s.err}>🔒 {err}</div>}
-      </div>
-    </div>
+    <AdminLoginBiometria
+      s={s} LOGO={LOGO}
+      user={user} setUser={setUser}
+      pass={pass} setPass={setPass}
+      err={err} setErr={setErr}
+      doAdmin={doAdmin}
+      onBack={()=>setMode("select")}
+    />
   );
 
   if (mode === "athlete") return (
@@ -340,7 +335,7 @@ function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
     </div>
   );
 
-  if (mode === "inscricao") return <InscricaoForm onBack={() => setMode("select")} onSubmit={onInscricao} />;
+  if (mode === "inscricao") return <InscricaoForm onBack={() => setMode("select")} onSubmit={onInscricao} athletes={athletes} />;
   if (mode === "regulamento") return <RegulamentoView onBack={() => setMode("select")} />;
   function doAdmin() {
     if (user===ADMIN_USER && pass===ADMIN_PASS) { onLogin(); }
@@ -355,7 +350,7 @@ function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
 }
 
 // ── FORMULÁRIO DE INSCRIÇÃO (público) ────────────────────────────────────────
-function InscricaoForm({ onBack, onSubmit }) {
+function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
   const [step, setStep] = useState(1); // 1=dados, 2=lgpd, 3=regulamento, 4=sucesso
   const [name, setName] = useState(""), [phone, setPhone] = useState("");
   const [fed, setFed] = useState("nao"), [rating, setRating] = useState("");
@@ -401,6 +396,11 @@ function InscricaoForm({ onBack, onSubmit }) {
 
         <label style={s.label}>WhatsApp (com DDD) *</label>
         <input style={s.input} value={phone} onChange={e=>setPhone(e.target.value)} placeholder="31999999999" type="tel"/>
+        {phone.replace(/\D/g,"").length >= 10 && athletes.some(a => a.phone.replace(/\D/g,"") === phone.replace(/\D/g,"")) && (
+          <div style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#f87171",marginTop:4}}>
+            ⚠️ Este número já possui uma inscrição cadastrada.
+          </div>
+        )}
 
         <label style={s.label}>É federado pela CBTM?</label>
         <select style={s.select} value={fed} onChange={e=>setFed(e.target.value)}>
@@ -409,8 +409,16 @@ function InscricaoForm({ onBack, onSubmit }) {
         </select>
 
         {fed === "sim" && <>
-          <label style={s.label}>Seu rating CBTM (TTR)</label>
+          <label style={s.label}>Seu rating CBTM</label>
           <input style={s.input} value={rating} onChange={e=>setRating(e.target.value)} placeholder="Ex: 1850" type="number"/>
+          <div style={{background:"rgba(26,115,200,0.08)",border:"1px solid rgba(26,115,200,0.2)",borderRadius:8,padding:"8px 12px",fontSize:11,color:"#6b7a8d",marginTop:4,lineHeight:1.6}}>
+            Não sabe seu rating? Acesse o CBTM-Web:<br/>
+            <a href="https://cbtm.org.br/cbtm-web/atletas" target="_blank" rel="noreferrer"
+              style={{color:"#4da3ff",fontWeight:700,textDecoration:"none"}}>
+              🔗 cbtm.org.br/cbtm-web/atletas
+            </a>
+            <br/>Pesquise seu nome e confira o rating na sua ficha.
+          </div>
         </>}
 
         <div style={{...s.box("#facc15"), marginTop:14}}>
@@ -418,9 +426,16 @@ function InscricaoForm({ onBack, onSubmit }) {
           Verifique com sua federação se a participação em eventos não-oficiais é permitida conforme a Nota CBTM 183/2025.
         </div>
 
-        <button style={s.btn(!name.trim()||!phone.trim())} onClick={()=>{ if(name.trim()&&phone.trim()) setStep(2); }} disabled={!name.trim()||!phone.trim()}>
-          Continuar →
-        </button>
+        {(() => {
+          const telDupl = phone.replace(/\D/g,"").length >= 10 && athletes.some(a => a.phone.replace(/\D/g,"") === phone.replace(/\D/g,""));
+          return (
+            <button style={s.btn(!name.trim()||!phone.trim()||telDupl)}
+              onClick={()=>{ if(name.trim()&&phone.trim()&&!telDupl) setStep(2); }}
+              disabled={!name.trim()||!phone.trim()||telDupl}>
+              Continuar →
+            </button>
+          );
+        })()}
       </div>
     </div>
   );
@@ -502,7 +517,7 @@ function InscricaoForm({ onBack, onSubmit }) {
         ) : (
           <div style={{maxHeight:340, overflowY:"auto", marginTop:10, paddingRight:4}}>
             {[
-              ["🏓 O Circuito","Circuito recreativo independente, não filiado à CBTM ou FMTMOP. Rating baseado na metodologia TTR/CBTM apenas como referência técnica."],
+              ["🏓 O Circuito","Circuito recreativo independente, não filiado à CBTM ou FMTMOP. Rating baseado na metodologia rating/CBTM apenas como referência técnica."],
               ["👤 Elegibilidade","Temporada 1 exclusiva para homens com 18 anos ou mais. Federados e não-federados são bem-vindos."],
               ["⚙️ Formato","Rodadas quinzenais com pareamento por rating. Partidas em MD5 (melhor de 5 sets), 11 pontos por set."],
               ["📊 Rating vs. Ranking","Rating = nível técnico acumulado (nunca zera). Ranking = saldo de pontos da temporada (zera a cada temporada)."],
@@ -553,7 +568,7 @@ function InscricaoForm({ onBack, onSubmit }) {
     </div>
   );
 
-  // ── STEP 4: Sucesso ────────────────────────────────────────────────────────
+  // ── STEP 4: Sucesso / Duplicata ─────────────────────────────────────────────
   return (
     <div style={s.wrap}>
       <div style={{...s.card, textAlign:"center", marginTop:40}}>
@@ -702,7 +717,7 @@ function RegulamentoView({ onBack }) {
     );
     if (id===5) return (
       <div>
-        <p style={s.p}>O Clube do Tênis de Mesa adota, como referência técnica, a metodologia de cálculo de rating do sistema TTR/CBTM — o mesmo padrão usado nas competições nacionais brasileiras. Vencer quem tem mais pontos vale pouco; vencer quem tem menos pontos vale mais ainda para o azarão.</p>
+        <p style={s.p}>O Clube do Tênis de Mesa adota, como referência técnica, a metodologia de cálculo de rating do sistema rating/CBTM — o mesmo padrão usado nas competições nacionais brasileiras. Vencer quem tem mais pontos vale pouco; vencer quem tem menos pontos vale mais ainda para o azarão.</p>
         <Box cor="#facc15" titulo="📖 Rating vs. Ranking">
           <Ul items={[
             "Rating — número absoluto do nível técnico. Começa em 250 pts (não-federados) ou no valor CBTM (federados). Nunca zera.",
@@ -732,7 +747,7 @@ function RegulamentoView({ onBack }) {
         <Box cor="#f87171" titulo="🚫 Autodeclaração Proibida para Federados">
           <p style={s.p}>O admin pode solicitar comprovante do cadastro CBTM-Web antes de confirmar a inscrição. A tentativa de fraude no rating de entrada resulta em suspensão imediata.</p>
         </Box>
-        <Box cor="#4da3ff" titulo="🏅 Tabela de Níveis — Referência TTR/CBTM">
+        <Box cor="#4da3ff" titulo="🏅 Tabela de Níveis — Referência rating/CBTM">
           <Tbl headers={["Faixa","Nível","Perfil"]} rows={[
             ["0–249","🔰 Entrada","Abaixo de 250 / sem ranking ativo"],
             ["250–499","🥉 Bronze","Iniciante"],
@@ -1464,6 +1479,183 @@ function AdminMensagens({ state }) {
   );
 }
 
+// ── ADMIN LOGIN COM BIOMETRIA ─────────────────────────────────────────────────
+function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setErr, doAdmin, onBack }) {
+  const [biometriaDisp, setBiometriaDisp] = useState(false);
+  const [biometriaAtiva, setBiometriaAtiva] = useState(false);
+  const [biometriaStatus, setBiometriaStatus] = useState(""); // "", "cadastrando", "ok", "erro"
+
+  // Verificar se biometria está disponível e cadastrada
+  useState(() => {
+    async function verificar() {
+      try {
+        const suporte = window.PublicKeyCredential &&
+          await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+        setBiometriaDisp(!!suporte);
+        const cadastrada = localStorage.getItem("ctm_bio_credId");
+        setBiometriaAtiva(!!cadastrada);
+      } catch(e) {
+        setBiometriaDisp(false);
+      }
+    }
+    verificar();
+  }, []);
+
+  // Cadastrar biometria
+  async function cadastrarBiometria() {
+    setBiometriaStatus("cadastrando");
+    try {
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
+      const cred = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: "Clube do Tênis de Mesa", id: window.location.hostname },
+          user: {
+            id: new TextEncoder().encode("admin-ctm"),
+            name: "Admin",
+            displayName: "Administrador CTM",
+          },
+          pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+          authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            userVerification: "required",
+          },
+          timeout: 60000,
+        }
+      });
+      // Salvar o ID da credencial
+      const credId = btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+      localStorage.setItem("ctm_bio_credId", credId);
+      setBiometriaAtiva(true);
+      setBiometriaStatus("ok");
+      setErr("");
+    } catch(e) {
+      setBiometriaStatus("erro");
+      setErr("Não foi possível cadastrar a biometria. Tente novamente.");
+    }
+  }
+
+  // Autenticar com biometria
+  async function autenticarBiometria() {
+    setBiometriaStatus("cadastrando");
+    try {
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
+      const credIdStr = localStorage.getItem("ctm_bio_credId");
+      const credIdBytes = Uint8Array.from(atob(credIdStr), c => c.charCodeAt(0));
+      await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          rpId: window.location.hostname,
+          allowCredentials: [{ id: credIdBytes, type: "public-key" }],
+          userVerification: "required",
+          timeout: 60000,
+        }
+      });
+      setBiometriaStatus("ok");
+      doAdmin(true); // bypass de PIN
+    } catch(e) {
+      setBiometriaStatus("erro");
+      setErr("Biometria não reconhecida. Use usuário e PIN.");
+    }
+  }
+
+  // Remover biometria cadastrada
+  function removerBiometria() {
+    localStorage.removeItem("ctm_bio_credId");
+    setBiometriaAtiva(false);
+    setBiometriaStatus("");
+    setErr("");
+  }
+
+  return (
+    <div style={s.wrap}>
+      <div style={s.logo}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
+      <div style={s.card}>
+        <button style={s.back} onClick={onBack}>← Voltar</button>
+        <div style={s.title}>Acesso Admin</div>
+        <br/>
+
+        {/* Botão de biometria — se disponível e cadastrada */}
+        {biometriaDisp && biometriaAtiva && (
+          <div style={{marginBottom:16}}>
+            <button
+              onClick={autenticarBiometria}
+              style={{
+                width:"100%", padding:"16px", borderRadius:12, border:"none",
+                background:"linear-gradient(135deg,#1a73c8,#0d5aa7)",
+                color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer",
+                display:"flex", alignItems:"center", justifyContent:"center", gap:10,
+                boxShadow:"0 4px 20px rgba(26,115,200,0.3)",
+                marginBottom:8,
+              }}
+            >
+              <span style={{fontSize:24}}>👆</span>
+              Entrar com biometria
+            </button>
+            <div style={{textAlign:"center",fontSize:11,color:"#374151"}}>
+              Digital ou Face ID cadastrados
+            </div>
+          </div>
+        )}
+
+        {/* Separador */}
+        {biometriaDisp && biometriaAtiva && (
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+            <div style={{flex:1,height:1,background:"rgba(255,255,255,0.06)"}}/>
+            <span style={{fontSize:11,color:"#374151"}}>ou use usuário e PIN</span>
+            <div style={{flex:1,height:1,background:"rgba(255,255,255,0.06)"}}/>
+          </div>
+        )}
+
+        {/* Login tradicional */}
+        <label style={s.label}>Usuário</label>
+        <input style={s.input} value={user} onChange={e=>setUser(e.target.value)} placeholder="admin" onKeyDown={e=>e.key==="Enter"&&doAdmin()}/>
+        <label style={s.label}>PIN (4 dígitos)</label>
+        <input style={{...s.input,marginBottom:10,letterSpacing:8,fontSize:22,textAlign:"center",fontWeight:800}}
+          type="tel" inputMode="numeric" maxLength={4}
+          value={pass} onChange={e=>setPass(e.target.value.replace(/\D/g,"").slice(0,4))}
+          placeholder="····" onKeyDown={e=>e.key==="Enter"&&doAdmin()}/>
+        <button style={s.btn()} onClick={doAdmin}>Entrar</button>
+
+        {err && <div style={s.err}>🔒 {err}</div>}
+
+        {/* Seção de configuração de biometria */}
+        {biometriaDisp && (
+          <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+            {!biometriaAtiva ? (
+              <button
+                onClick={cadastrarBiometria}
+                disabled={biometriaStatus==="cadastrando"}
+                style={{width:"100%",padding:"10px",borderRadius:10,border:"1px solid rgba(26,115,200,0.3)",background:"transparent",color:"#4da3ff",fontSize:12,fontWeight:600,cursor:"pointer"}}
+              >
+                {biometriaStatus==="cadastrando" ? "⏳ Aguarde..." : "👆 Cadastrar biometria (digital/Face ID)"}
+              </button>
+            ) : (
+              <button
+                onClick={removerBiometria}
+                style={{width:"100%",padding:"10px",borderRadius:10,border:"1px solid rgba(248,113,113,0.2)",background:"transparent",color:"#f87171",fontSize:11,fontWeight:600,cursor:"pointer"}}
+              >
+                🗑️ Remover biometria cadastrada
+              </button>
+            )}
+            {biometriaStatus==="ok" && !err && (
+              <div style={{textAlign:"center",fontSize:11,color:"#4ade80",marginTop:6}}>✅ Biometria cadastrada com sucesso!</div>
+            )}
+          </div>
+        )}
+
+        {!biometriaDisp && (
+          <div style={{textAlign:"center",fontSize:10,color:"#374151",marginTop:12}}>
+            Biometria não disponível neste dispositivo
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [state, dispatch] = useReducer(reducer, INIT);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -1530,8 +1722,15 @@ export default function App() {
   async function syncToSupabase(action, st) {
     if (action.type === "INSCRICAO_ADD") {
       const p = action.payload;
+      // Verificar se já existe atleta com o mesmo telefone
+      const telefoneFormatado = p.phone.replace(/\D/g, "");
+      const existentes = await supaFetch(`atletas?telefone=eq.${telefoneFormatado}`);
+      if (existentes && existentes.length > 0) {
+        setDbMsg("telefone_duplicado");
+        return;
+      }
       await db.insertAtleta({
-        nome:p.name, telefone:p.phone, federado:p.federated,
+        nome:p.name, telefone:telefoneFormatado, federado:p.federated,
         rating: p.federated?(p.rating||null):250,
         rating_inicial: p.federated?(p.rating||null):250,
         saldo_temp:0, status:"pendente",

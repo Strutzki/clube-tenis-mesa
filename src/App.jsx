@@ -423,7 +423,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
 
         <div style={{...s.box("#facc15"), marginTop:14}}>
           <strong style={{color:"#facc15"}}>⚠️ Atletas federados CBTM</strong><br/>
-          Verifique com sua federação se a participação em eventos não-oficiais é permitida conforme a Nota CBTM 183/2025.
+          Verifique com sua federação e com o clube ao qual é filiado se a participação em eventos não-oficiais é permitida conforme a Nota CBTM 183/2025.
         </div>
 
         {(() => {
@@ -526,7 +526,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
               ["🚫 Fraude","Registro de resultado falso = banimento permanente do Circuito."],
               ["🏆 Torneio Final","Top 8 do ranking ao final da temporada disputam torneio presencial. Prêmios: troféu, medalhas e certificados."],
               ["💰 Mensalidade","Temporada 1 gratuita. A partir da T2: R$ 30/mês (R$ 90/temporada) ou R$ 81 à vista com desconto."],
-              ["⚖️ Atletas Federados CBTM","Verifique com sua federação a conformidade com a Nota CBTM 183/2025 antes de participar."],
+              ["⚖️ Atletas Federados CBTM","Verifique com sua federação e com o clube ao qual é filiado a conformidade com a Nota CBTM 183/2025 antes de participar."],
               ["📋 Disposições Gerais","Casos omissos decididos pelo administrador. O regulamento pode ser atualizado com aviso prévio."],
             ].map(([t,d]) => (
               <div key={t} style={{background:"#0d1825",borderRadius:8,padding:"10px 12px",marginBottom:6,borderLeft:"2px solid rgba(26,115,200,0.3)"}}>
@@ -684,7 +684,7 @@ function RegulamentoView({ onBack }) {
           ["Outras categorias","📅 Em breve","Inclusão gradual nas temporadas seguintes"],
         ]}/>
         <Box cor="#f87171" titulo="⚠️ Atletas com TRA ativa na CBTM">
-          <p style={s.p}>Verifique junto à sua federação se a participação em eventos não-oficiais é permitida. O administrador e @clubedotenisdemesa não se responsabilizam por eventuais sanções desportivas aplicadas por entidades federativas.</p>
+          <p style={s.p}>Verifique junto à sua federação e ao clube ao qual é filiado se a participação em eventos não-oficiais é permitida. O administrador e @clubedotenisdemesa não se responsabilizam por eventuais sanções desportivas aplicadas por entidades federativas.</p>
         </Box>
       </div>
     );
@@ -1006,7 +1006,7 @@ function RegulamentoView({ onBack }) {
     <div style={s.wrap}>
       <div style={s.aviso}>
         <strong style={{color:"#f9a825"}}>⚠️ AVISO — ATLETAS FEDERADOS PELA CBTM</strong><br/>
-        Este circuito é independente e não filiado à CBTM ou FMTMOP. Atletas com TRA ativa devem verificar junto à sua federação se a participação contraria seus deveres estatutários.
+        Este circuito é independente e não filiado à CBTM ou FMTMOP. Atletas com TRA ativa devem verificar junto à sua federação e ao clube ao qual são filiados se a participação contraria seus deveres estatutários.
       </div>
       <div style={s.header}>
         <div style={s.logoWrap}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>

@@ -68,6 +68,7 @@ function calcElo(ra, rb, result) {
 
 // ── ROUND ROBIN ──────────────────────────────────────────────────────────────
 function generateRoundRobin(players) {
+  // Algoritmo circular (Berger system) para round-robin completo
   const n = players.length;
   const list = n % 2 === 0 ? [...players] : [...players, null];
   const rounds = [];
@@ -81,6 +82,49 @@ function generateRoundRobin(players) {
     list.splice(1, 0, list.pop());
   }
   return rounds;
+}
+
+function gerarPareamentoPorRating(athletes) {
+  // Gera 2 rodadas pareando jogadores por proximidade de rating
+  // Rodada 1: 1º vs 2º, 3º vs 4º, etc. (rating próximo)
+  // Rodada 2: 1º vs 3º, 2º vs 4º, etc. (variação para evitar repetição)
+  const sorted = [...athletes].sort((a, b) => (b.rating || 250) - (a.rating || 250));
+  const rodada1 = [];
+  const rodada2 = [];
+
+  // Rodada 1: pares adjacentes no ranking (mais equilibrado)
+  for (let i = 0; i < sorted.length - 1; i += 2) {
+    rodada1.push({ p1: sorted[i].id, p2: sorted[i + 1].id });
+  }
+  // Se número ímpar, o último fica sem par na rodada 1
+  // Rodada 2: pares cruzados (1º vs 3º, 2º vs 4º, etc.)
+  const rodada2Sorted = [];
+  const meio = Math.ceil(sorted.length / 2);
+  for (let i = 0; i < meio; i++) {
+    if (sorted[i] && sorted[i + meio]) {
+      rodada2Sorted.push({ p1: sorted[i].id, p2: sorted[i + meio].id });
+    }
+  }
+  // Garantir que não repita o mesmo confronto da rodada 1
+  rodada2Sorted.forEach(par => {
+    const jaExiste = rodada1.some(r =>
+      (r.p1 === par.p1 && r.p2 === par.p2) ||
+      (r.p1 === par.p2 && r.p2 === par.p1)
+    );
+    if (!jaExiste) {
+      rodada2.push(par);
+    } else {
+      // Trocar adversário para evitar repetição
+      const adversario = sorted.find(a =>
+        a.id !== par.p1 && a.id !== par.p2 &&
+        !rodada2.some(r => r.p1 === a.id || r.p2 === a.id)
+      );
+      if (adversario) rodada2.push({ p1: par.p1, p2: adversario.id });
+      else rodada2.push(par); // fallback se não houver alternativa
+    }
+  });
+
+  return [rodada1, rodada2];
 }
 
 // ── REDUCER ──────────────────────────────────────────────────────────────────
@@ -1229,7 +1273,7 @@ function AdminMensagens({ state }) {
             .join("\n\n");
           return {
             atleta,
-            msg: `🏓 *Clube do Tênis de Mesa — Confrontos do Mês*\n\nOlá ${nomeExibicao(atleta).split(" ")[0]}! Seus dois confrontos deste mês:\n\n${linhasJogos}\n\n📅 1ª rodada: jogar e registrar entre os dias 1 e 15\n📅 2ª rodada: jogar e registrar entre os dias 1 e 25\n\nBom jogo! 🏆`,
+            msg: `🏓 *Clube do Tênis de Mesa — Confrontos do Mês*\n\nOlá ${nomeExibicao(atleta).split(" ")[0]}! Seus dois confrontos deste mês:\n\n${linhasJogos}\n\n📅 1ª rodada: jogar e registrar entre os dias 1 e 15\n📅 2ª rodada: jogar e registrar entre os dias 1 e 25\n\nBons jogos! 🏆`,
           };
         });
       }
@@ -1413,8 +1457,14 @@ function AdminMensagens({ state }) {
           <div style={{background:"#0a1628",borderRadius:10,padding:"12px",marginBottom:14,fontSize:11,color:"#8b9ab5",lineHeight:1.6,whiteSpace:"pre-line",maxHeight:160,overflowY:"auto"}}>
             {atual.msg}
           </div>
-          <a href={wppLink(atual.atleta.phone, atual.msg)} target="_blank" rel="noreferrer" style={{textDecoration:"none",display:"block",marginBottom:10}}>
-            <Btn onClick={()=>proxMensagem(atual.atleta.id)} color="#25d366" full>
+          {/* Número destinatário bem visível antes do botão */}
+          <div style={{background:"rgba(37,211,102,0.1)",border:"1px solid rgba(37,211,102,0.3)",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#4ade80",textAlign:"center"}}>
+            📱 Destinatário: <strong>{atual.atleta.phone}</strong>
+          </div>
+          <a href={wppLink(atual.atleta.phone, atual.msg)} target="_blank" rel="noreferrer"
+            style={{textDecoration:"none",display:"block",marginBottom:10}}
+            onClick={()=>{ setTimeout(()=>proxMensagem(atual.atleta.id), 300); }}>
+            <Btn color="#25d366" full>
               📲 Abrir WhatsApp e Enviar →
             </Btn>
           </a>
@@ -1881,10 +1931,8 @@ export default function App() {
         try { await db.insertChave({id:keyId,nome:keyName,rodada_atual:1}); } catch(e){}
         for (const a of slice) await db.updateAtleta(a.id,{chave:keyId});
 
-        // Gerar AS DUAS rodadas do mês de uma vez (round-robin com rating fixo do início do mês)
-        const rounds = generateRoundRobin(slice.map(a=>a.id));
-        const rodadaA = rounds[0] || [];
-        const rodadaB = rounds[1] || [];
+        // Gerar AS DUAS rodadas do mês por proximidade de rating
+        const [rodadaA, rodadaB] = gerarPareamentoPorRating(slice);
 
         for (const pair of rodadaA) {
           const mid=`m_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
@@ -2366,14 +2414,29 @@ function AdminEtapa({ state, dispatch }) {
 
   return (
     <div>
-      {state.keys.map(k => (
-        <div key={k.id}>
-          <SecTitle>{k.name} · Rodada {k.currentRound + 1} de {k.rounds.length}</SecTitle>
-          {state.matches
-            .filter(m => m.keyId === k.id && m.round === k.currentRound + 1)
-            .map(m => <MatchCard key={m.id} m={m} state={state} admin />)}
-        </div>
-      ))}
+      {state.keys.map(k => {
+        // No modelo de par mensal, mostramos TODAS as rodadas abertas do mês
+        const rodabertas = [1, 2]; // Rodada 1 e Rodada 2 do mês, ambas abertas simultaneamente
+        return (
+          <div key={k.id}>
+            {rodabertas.map(rodNum => {
+              const partidas = state.matches.filter(m =>
+                m.keyId === k.id && m.round === rodNum && !m.validated && !m.rejeitado
+              );
+              if (partidas.length === 0) return null;
+              const prazo = partidas[0]?.deadline
+                ? new Date(partidas[0].deadline).toLocaleDateString("pt-BR")
+                : rodNum === 1 ? "dia 15" : "dia 25";
+              return (
+                <div key={rodNum}>
+                  <SecTitle>{k.name} · Rodada {rodNum} — Partida: até {prazo}</SecTitle>
+                  {partidas.map(m => <MatchCard key={m.id} m={m} state={state} admin />)}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }

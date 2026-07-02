@@ -166,7 +166,7 @@ function reducer(state, action) {
       const { id, rating, approved, motivo } = action.payload;
       if (approved) {
         const updated = state.athletes.map(a =>
-          a.id === id ? { ...a, status: "ativo", rating: rating || a.rating, ratingInicial: rating || a.rating, saldoTemp: 0 } : a
+          a.id === id ? { ...a, status: "ativo", rating: rating || a.rating, ratingInicial: rating || a.rating, saldoTemp: 0, pendenteCircuito: true } : a
         );
         return { ...state, athletes: updated };
       } else {
@@ -177,9 +177,33 @@ function reducer(state, action) {
       }
     }
 
+    case "INCLUIR_NO_CIRCUITO": {
+      const { id } = action.payload;
+      const athletes = state.athletes.map(a =>
+        a.id === id ? { ...a, pendenteCircuito: false } : a
+      );
+      return { ...state, athletes };
+    }
+
+    case "RECUSAR_CIRCUITO": {
+      const { id } = action.payload;
+      const athletes = state.athletes.map(a =>
+        a.id === id ? { ...a, ultimaRecusaCircuitoEm: new Date().toISOString() } : a
+      );
+      return { ...state, athletes };
+    }
+
+    case "ARQUIVAR_ATLETA": {
+      const { id } = action.payload;
+      const athletes = state.athletes.map(a =>
+        a.id === id ? { ...a, status: "arquivado", pendenteCircuito: false } : a
+      );
+      return { ...state, athletes };
+    }
+
     case "INICIAR_ETAPA": {
       const { numKeys } = action.payload;
-      const ativos = state.athletes.filter(a => a.status === "ativo");
+      const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
       const sorted = [...ativos].sort((a, b) => b.rating - a.rating);
       const perKey = Math.ceil(sorted.length / numKeys);
       const keys = [];
@@ -317,6 +341,20 @@ function reducer(state, action) {
 // ── UTILS ────────────────────────────────────────────────────────────────────
 const fmtDate = d => d ? d.split("-").reverse().join("/") : "-";
 const medalColor = i => i===0?"#FFD700":i===1?"#C0C0C0":i===2?"#CD7F32":"#6B7280";
+function getH2H(matches, idA, idB) {
+  const jogos = matches
+    .filter(m => m.validated && ((m.p1Id === idA && m.p2Id === idB) || (m.p1Id === idB && m.p2Id === idA)))
+    .map(m => {
+      const aEhP1 = m.p1Id === idA;
+      const scoreA = aEhP1 ? m.score1 : m.score2;
+      const scoreB = aEhP1 ? m.score2 : m.score1;
+      return { matchId: m.id, round: m.round, scoreA, scoreB, venceuA: scoreA > scoreB };
+    });
+  const winsA = jogos.filter(j => j.venceuA).length;
+  const winsB = jogos.length - winsA;
+  return { jogos, winsA, winsB, total: jogos.length };
+}
+
 function deadlineStatus(dateStr) {
   if (!dateStr) return { color:"#6b7a8d", label:"", urgent:false };
   const today = new Date(); today.setHours(0,0,0,0);
@@ -1799,6 +1837,8 @@ export default function App() {
         dataAceiteRegulamento: a.data_aceite_regulamento,
         versaoRegulamento: a.versao_regulamento,
         aceiteLGPD: a.aceite_lgpd, inscritoEm: a.inscrito_em,
+        pendenteCircuito: a.pendente_circuito || false,
+        ultimaRecusaCircuitoEm: a.ultima_recusa_circuito_em || null,
       }));
       const matchesMapped = (partidas||[]).map(m => ({
         id: m.id, keyId: m.chave_id, round: m.rodada,
@@ -1871,7 +1911,7 @@ export default function App() {
       const atletas = await supaFetch(`atletas?id=eq.${id}`);
       const uuid = atletas?.[0]?.id || id;
       await db.updateAtleta(uuid, approved
-        ? {status:"ativo",rating,rating_inicial:rating,saldo_temp:0}
+        ? {status:"ativo",rating,rating_inicial:rating,saldo_temp:0,pendente_circuito:true}
         : {status:"reprovado",motivo_reprovacao:motivo});
       await loadFromSupabase();
     }
@@ -1908,7 +1948,7 @@ export default function App() {
     else if (action.type === "INICIAR_ETAPA") {
       await db.updateConfig({fase:"etapa"});
       const {numKeys} = action.payload;
-      const ativos = st.athletes.filter(a=>a.status==="ativo");
+      const ativos = st.athletes.filter(a=>a.status==="ativo" && !a.pendenteCircuito);
       const sorted = [...ativos].sort((a,b)=>b.rating-a.rating);
       const perKey = Math.ceil(sorted.length/numKeys);
 
@@ -1951,6 +1991,18 @@ export default function App() {
     else if (action.type === "EDITAR_ATLETA") {
       const { id, nome, telefone, apelido, rating, status } = action.payload;
       await db.updateAtleta(id, { nome, telefone, apelido: apelido||null, rating, status });
+    }
+    else if (action.type === "INCLUIR_NO_CIRCUITO") {
+      const { id } = action.payload;
+      await db.updateAtleta(id, { pendente_circuito: false });
+    }
+    else if (action.type === "RECUSAR_CIRCUITO") {
+      const { id } = action.payload;
+      await db.updateAtleta(id, { ultima_recusa_circuito_em: new Date().toISOString() });
+    }
+    else if (action.type === "ARQUIVAR_ATLETA") {
+      const { id } = action.payload;
+      await db.updateAtleta(id, { status: "arquivado", pendente_circuito: false });
     }
     else if (action.type === "EXCLUIR_ATLETA") {
       const idLocal = action.payload.id;
@@ -2102,7 +2154,8 @@ function AdminView({ state, dispatch, tab, setTab }) {
 
 // ── ADMIN DASHBOARD ───────────────────────────────────────────────────────────
 function AdminDashboard({ state, setTab, dispatch }) {
-  const ativos = state.athletes.filter(a => a.status === "ativo");
+  const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
+  const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
   const pendentes = state.athletes.filter(a => a.status === "pendente");
   const roundMatches = state.matches.filter(m => !m.validated && !m.rejeitado);
   const waitingVal = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado);
@@ -2113,12 +2166,31 @@ function AdminDashboard({ state, setTab, dispatch }) {
     .every(m => m.validated || m.rejeitado);
   const hasNextRound = currentRound < totalRounds;
 
+  // ── Saúde da etapa ──
+  const partidasRodadaAtual = state.matches.filter(m => m.round === currentRound);
+  const pctValidado = partidasRodadaAtual.length > 0
+    ? Math.round((partidasRodadaAtual.filter(m => m.validated).length / partidasRodadaAtual.length) * 100)
+    : 0;
+  const partidasEmRisco = roundMatches.filter(m => {
+    const hasScore = m.p1Submitted || m.p2Submitted;
+    return deadlineStatus(hasScore ? m.scoreDeadline : m.deadline).urgent;
+  });
+  const atletasSemSubmeter = useMemo(() => {
+    const ids = new Set();
+    roundMatches.forEach(m => {
+      if (!m.p1Submitted) ids.add(m.p1Id);
+      if (!m.p2Submitted) ids.add(m.p2Id);
+    });
+    return [...ids].map(id => state.athletes.find(a => a.id === id)).filter(Boolean);
+  }, [state.matches, state.athletes]);
+
   return (
     <div>
       <SecTitle>Visão Geral</SecTitle>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
         {[
-          {label:"Atletas ativos",val:ativos.length,color:"#4da3ff"},
+          {label:"Atletas no circuito",val:ativos.length,color:"#4da3ff"},
+          {label:"Backlog do circuito",val:backlogCount,color:"#a78bfa"},
           {label:"Inscrições pendentes",val:pendentes.length,color:"#facc15"},
           {label:"Partidas em aberto",val:roundMatches.length,color:"#f87171"},
           {label:"Aguardando validação",val:waitingVal.length,color:"#a78bfa"},
@@ -2129,6 +2201,34 @@ function AdminDashboard({ state, setTab, dispatch }) {
           </Card>
         ))}
       </div>
+
+      {state.phase === "etapa" && currentRound > 0 && (
+        <Card style={{marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#e8edf2",marginBottom:10}}>💊 Saúde da Rodada {currentRound}</div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <div style={{flex:1,height:8,borderRadius:4,background:"#0a1628",overflow:"hidden"}}>
+              <div style={{width:`${pctValidado}%`,height:"100%",background: pctValidado===100?"#4ade80":"#4da3ff",borderRadius:4}} />
+            </div>
+            <div style={{fontSize:12,fontWeight:700,color: pctValidado===100?"#4ade80":"#4da3ff",minWidth:40,textAlign:"right"}}>{pctValidado}%</div>
+          </div>
+          <div style={{fontSize:11,color:"#8b9ab5",marginBottom:8}}>
+            {partidasRodadaAtual.filter(m=>m.validated).length} de {partidasRodadaAtual.length} partidas validadas
+          </div>
+          {partidasEmRisco.length > 0 && (
+            <div style={{fontSize:12,color:"#f87171",marginTop:6}}>
+              🔥 {partidasEmRisco.length} partida(s) em risco de vencer o prazo
+            </div>
+          )}
+          {atletasSemSubmeter.length > 0 && (
+            <div style={{fontSize:12,color:"#facc15",marginTop:6}}>
+              ⏳ {atletasSemSubmeter.length} atleta(s) ainda não submeteram placar: {atletasSemSubmeter.map(a=>nomeExibicao(a).split(" ")[0]).join(", ")}
+            </div>
+          )}
+          {partidasEmRisco.length === 0 && atletasSemSubmeter.length === 0 && (
+            <div style={{fontSize:12,color:"#4ade80",marginTop:6}}>✅ Nenhum ponto de atenção no momento</div>
+          )}
+        </Card>
+      )}
 
       {state.phase === "inscricoes" && (
         <Card>
@@ -2160,10 +2260,16 @@ function AdminDashboard({ state, setTab, dispatch }) {
 
 function IniciarEtapaPanel({ state, dispatch }) {
   const [numKeys, setNumKeys] = useState(1);
-  const ativos = state.athletes.filter(a => a.status === "ativo");
+  const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
+  const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
   const perKey = Math.ceil(ativos.length / numKeys);
   return (
     <div style={{marginTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
+      {backlogCount > 0 && (
+        <div style={{background:"rgba(167,139,250,0.1)",border:"1px solid rgba(167,139,250,0.3)",borderRadius:10,padding:"8px 12px",marginBottom:10,fontSize:11,color:"#a78bfa"}}>
+          🗂️ {backlogCount} atleta(s) aguardando decisão no backlog do circuito — eles NÃO entrarão nesta etapa a menos que você os inclua primeiro em Inscrições.
+        </div>
+      )}
       <div style={{fontSize:12,color:"#8b9ab5",marginBottom:8}}>Número de chaves para iniciar:</div>
       <div style={{display:"flex",gap:8,marginBottom:8}}>
         {[1,2,3].map(n => (
@@ -2198,8 +2304,10 @@ function AdminInscricoes({ state, dispatch }) {
   const [editStatus, setEditStatus] = useState("");
 
   const pendentes = state.athletes.filter(a => a.status === "pendente");
-  const aprovados = state.athletes.filter(a => a.status === "ativo");
+  const backlog = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito);
+  const aprovados = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const reprovados = state.athletes.filter(a => a.status === "reprovado");
+  const arquivados = state.athletes.filter(a => a.status === "arquivado");
 
   const ratingFinal = ratingEdit ? parseInt(ratingEdit) : selected?.rating;
   const needsRating = selected?.federated && !ratingFinal;
@@ -2220,6 +2328,15 @@ function AdminInscricoes({ state, dispatch }) {
   function excluir(id) {
     dispatch({type:"EXCLUIR_ATLETA",payload:{id}});
     setConfirmExcluir(null); setSelected(null); setModo("lista");
+  }
+  function incluirCircuito(id) {
+    dispatch({type:"INCLUIR_NO_CIRCUITO",payload:{id}});
+  }
+  function recusarCircuito(id) {
+    dispatch({type:"RECUSAR_CIRCUITO",payload:{id}});
+  }
+  function arquivarAtleta(id) {
+    dispatch({type:"ARQUIVAR_ATLETA",payload:{id}});
   }
   function abrirEditar(a) {
     setSelected(a);
@@ -2284,6 +2401,7 @@ function AdminInscricoes({ state, dispatch }) {
           <option value="ativo">✅ Ativo</option>
           <option value="reprovado">❌ Reprovado</option>
           <option value="suspenso">🚫 Suspenso</option>
+          <option value="arquivado">🗄️ Arquivado (fora do backlog)</option>
         </select>
         <Btn onClick={salvarEdicao} color="#4da3ff" full>💾 Salvar alterações</Btn>
         <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
@@ -2359,6 +2477,34 @@ function AdminInscricoes({ state, dispatch }) {
         ))}
       </>}
 
+      {backlog.length > 0 && <>
+        <SecTitle>🗂️ Backlog do Circuito ({backlog.length})</SecTitle>
+        <div style={{fontSize:11,color:"#6b7a8d",marginBottom:8,marginTop:-4}}>
+          Aprovados mas ainda sem decisão: incluir na próxima etapa, recusar (revisa de novo depois) ou arquivar (some do backlog).
+        </div>
+        {backlog.map(a => (
+          <Card key={a.id} style={{border:"1px solid rgba(167,139,250,0.25)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{nomeComApelido(a)}</div>
+                <div style={{fontSize:11,color:"#8b9ab5"}}>{a.phone} · Rating: {a.rating}</div>
+                {a.ultimaRecusaCircuitoEm && (
+                  <div style={{fontSize:10,color:"#facc15",marginTop:2}}>
+                    ↩️ Recusado em {new Date(a.ultimaRecusaCircuitoEm).toLocaleDateString("pt-BR")} · segue no backlog
+                  </div>
+                )}
+              </div>
+              <Btn small color="#6b7280" onClick={()=>abrirEditar(a)}>✏️</Btn>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <Btn small color="#4ade80" onClick={()=>incluirCircuito(a.id)}>✅ Incluir no circuito</Btn>
+              <Btn small color="#facc15" onClick={()=>recusarCircuito(a.id)}>↩️ Recusar por ora</Btn>
+              <Btn small color="#6b7280" onClick={()=>arquivarAtleta(a.id)}>🗄️ Arquivar</Btn>
+            </div>
+          </Card>
+        ))}
+      </>}
+
       {aprovados.length > 0 && <>
         <SecTitle>✅ Aprovados ({aprovados.length})</SecTitle>
         {aprovados.map(a => (
@@ -2394,6 +2540,21 @@ function AdminInscricoes({ state, dispatch }) {
                 <MsgBtn ath={a}/>
                 <Btn small color="#4da3ff" onClick={()=>abrirEditar(a)}>✏️</Btn>
               </div>
+            </div>
+          </Card>
+        ))}
+      </>}
+
+      {arquivados.length > 0 && <>
+        <SecTitle>🗄️ Arquivados ({arquivados.length})</SecTitle>
+        {arquivados.map(a => (
+          <Card key={a.id}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:14,fontWeight:700,color:"#e8edf2"}}>{nomeComApelido(a)}</div>
+                <div style={{fontSize:11,color:"#6b7a8d"}}>{a.phone} · fora do backlog do circuito</div>
+              </div>
+              <Btn small color="#4da3ff" onClick={()=>abrirEditar(a)}>✏️ Reativar</Btn>
             </div>
           </Card>
         ))}
@@ -2586,6 +2747,27 @@ function RankingView({ state, currentAthleteId }) {
   );
 }
 
+// ── H2H (CONFRONTO DIRETO) ──────────────────────────────────────────────────
+function H2HBadge({ state, idA, idB, excludeMatchId }) {
+  const h2h = useMemo(() => {
+    const matchesFiltradas = excludeMatchId ? state.matches.filter(m => m.id !== excludeMatchId) : state.matches;
+    return getH2H(matchesFiltradas, idA, idB);
+  }, [state.matches, idA, idB, excludeMatchId]);
+  if (h2h.total === 0) return (
+    <div style={{fontSize:10,color:"#374151",textAlign:"center",marginTop:6}}>Primeiro confronto entre os dois</div>
+  );
+  const nomeA = nomeExibicao(state.athletes.find(a=>a.id===idA)).split(" ")[0];
+  const nomeB = nomeExibicao(state.athletes.find(a=>a.id===idB)).split(" ")[0];
+  return (
+    <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"6px 10px",marginTop:6,fontSize:11,color:"#8b9ab5",textAlign:"center"}}>
+      🤝 H2H: <b style={{color:h2h.winsA>=h2h.winsB?"#4ade80":"#e8edf2"}}>{nomeA} {h2h.winsA}</b>
+      {" × "}
+      <b style={{color:h2h.winsB>h2h.winsA?"#4ade80":"#e8edf2"}}>{h2h.winsB} {nomeB}</b>
+      {" "}({h2h.total} jogo{h2h.total>1?"s":""})
+    </div>
+  );
+}
+
 // ── MATCH CARD ────────────────────────────────────────────────────────────────
 function MatchCard({ m, state, admin=false, currentAthleteId }) {
   const p1 = state.athletes.find(a=>a.id===m.p1Id);
@@ -2613,6 +2795,7 @@ function MatchCard({ m, state, admin=false, currentAthleteId }) {
         <span style={{fontSize:13,fontWeight:600,color: m.validated&&m.score2>m.score1?"#4ade80":"#e8edf2",flex:1,textAlign:"right"}}>{p2?.name}</span>
       </div>
       {m.validated && <div style={{fontSize:11,color:"#4ade80",marginTop:6}}>🏆 {winner?.name}</div>}
+      {p1 && p2 && <H2HBadge state={state} idA={m.p1Id} idB={m.p2Id} excludeMatchId={m.id} />}
       {m.p1Submitted && !m.validated && <div style={{fontSize:11,color:"#facc15",marginTop:4}}>
         {p1?.name?.split(" ")[0]}: {m.p1Submitted.score1}×{m.p1Submitted.score2}
         {m.p2Submitted && ` · ${p2?.name?.split(" ")[0]}: ${m.p2Submitted.score1}×${m.p2Submitted.score2}`}
@@ -2671,9 +2854,11 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
           return <div style={{fontSize:10,color:ds.color,fontWeight:ds.urgent?700:400}}>{`Placar: ${ds.label}`}</div>;
         })()}
       </div>
-      <div style={{fontSize:13,fontWeight:600,color:"#e8edf2",textAlign:"center",marginBottom:10}}>
+      <div style={{fontSize:13,fontWeight:600,color:"#e8edf2",textAlign:"center",marginBottom:2}}>
         {nomeExibicao(p1)} <span style={{color:"#6b7a8d"}}> vs </span> {nomeExibicao(p2)}
       </div>
+      <H2HBadge state={state} idA={m.p1Id} idB={m.p2Id} />
+      <div style={{marginBottom:8}} />
       {mySubmit || sent ? (
         <div style={{background:"rgba(74,222,128,0.1)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#4ade80",textAlign:"center"}}>
           ✅ Resultado enviado — aguardando validação do admin

@@ -1269,8 +1269,8 @@ function AdminMensagens({ state }) {
         return Object.values(porAtleta).map(({ atleta, jogos }) => {
           const linhasJogos = jogos
             .sort((a,b) => a.rodada - b.rodada)
-            .map(j => `⚔️ *Rodada ${j.rodada}:* ${nomeExibicao(j.adversario)} — 📱 ${j.adversario.phone}\n   Prazo de apuração: ${j.deadline ? new Date(j.deadline).toLocaleDateString("pt-BR") : "a definir"}`)
-            .join("\n\n");
+            .map(j => `⚔️ *Rodada ${j.rodada}:* ${nomeExibicao(j.adversario)} — 📱 ${j.adversario.phone}`)
+            .join("\n");
           return {
             atleta,
             msg: `🏓 *Clube do Tênis de Mesa — Confrontos do Mês*\n\nOlá ${nomeExibicao(atleta).split(" ")[0]}! Seus dois confrontos deste mês:\n\n${linhasJogos}\n\n📅 1ª rodada: jogar e registrar entre os dias 1 e 15\n📅 2ª rodada: jogar e registrar entre os dias 1 e 25\n\nBons jogos! 🏆`,

@@ -3043,15 +3043,15 @@ function H2HBadge({ state, idA, idB, excludeMatchId }) {
     return getH2H(matchesFiltradas, idA, idB);
   }, [state.matches, idA, idB, excludeMatchId]);
   if (h2h.total === 0) return (
-    <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",marginTop:6}}>Primeiro confronto entre os dois</div>
+    <div style={{fontFamily:T.mono,fontSize:9,color:T.borda,textAlign:"center",marginTop:6,letterSpacing:0.3,textTransform:"uppercase"}}>Primeiro confronto entre os dois</div>
   );
   const nomeA = nomeExibicao(state.athletes.find(a=>a.id===idA)).split(" ")[0];
   const nomeB = nomeExibicao(state.athletes.find(a=>a.id===idB)).split(" ")[0];
   return (
-    <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"6px 10px",marginTop:6,fontSize:11,color:"#9db3a8",textAlign:"center"}}>
-      🤝 H2H: <b style={{color:h2h.winsA>=h2h.winsB?"#6a9d7a":"#F0EAE0"}}>{nomeA} {h2h.winsA}</b>
+    <div style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${T.bordaSuave}`,borderRadius:9,padding:"7px 10px",marginTop:8,fontFamily:T.mono,fontSize:10,color:T.cinzaSuave,textAlign:"center",letterSpacing:0.2}}>
+      🤝 H2H: <b style={{color:h2h.winsA>=h2h.winsB?T.verde2:T.offwhite}}>{nomeA} {h2h.winsA}</b>
       {" × "}
-      <b style={{color:h2h.winsB>h2h.winsA?"#6a9d7a":"#F0EAE0"}}>{h2h.winsB} {nomeB}</b>
+      <b style={{color:h2h.winsB>h2h.winsA?T.verde2:T.offwhite}}>{h2h.winsB} {nomeB}</b>
       {" "}({h2h.total} jogo{h2h.total>1?"s":""})
     </div>
   );
@@ -3062,33 +3062,58 @@ function MatchCard({ m, state, admin=false, currentAthleteId }) {
   const p1 = state.athletes.find(a=>a.id===m.p1Id);
   const p2 = state.athletes.find(a=>a.id===m.p2Id);
   const winner = m.validated ? (m.score1 > m.score2 ? p1 : p2) : null;
+  const p1Ganhou = m.validated && m.score1 > m.score2;
+  const p2Ganhou = m.validated && m.score2 > m.score1;
   return (
-    <Card style={{border: m.validated ? "1px solid rgba(74,222,128,0.15)" : "1px solid rgba(255,255,255,0.05)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-        <Badge label={`Rodada ${m.round}`} color="#D85A30"/>
-        {m.validated && <Badge label={m.validadoPorAdmin ? "✓ Admin aprovou" : "✓ Validado"} color="#6a9d7a"/>}
-        {m.rejeitado && <Badge label="✗ Rejeitado" color="#c25a45"/>}
+    <Card style={{border: m.validated ? `1px solid ${T.verde2}33` : m.rejeitado ? `1px solid ${T.vermelho}33` : `1px solid ${T.bordaSuave}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <span style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:1.5,textTransform:"uppercase"}}>Rodada {m.round}</span>
+        {m.validated && (
+          <span style={{fontFamily:T.mono,fontSize:9,fontWeight:700,color:T.verde2,letterSpacing:0.8,textTransform:"uppercase"}}>
+            ✓ {m.validadoPorAdmin ? "Admin aprovou" : "Validado"}
+          </span>
+        )}
+        {m.rejeitado && (
+          <span style={{fontFamily:T.mono,fontSize:9,fontWeight:700,color:T.vermelho,letterSpacing:0.8,textTransform:"uppercase"}}>✗ Rejeitado</span>
+        )}
         {!m.validated && !m.rejeitado && (() => {
-        const hasScore = m.p1Submitted || m.p2Submitted;
-        const ds = hasScore ? deadlineStatus(m.scoreDeadline) : deadlineStatus(m.deadline);
-        const label = hasScore ? `Placar: ${ds.label}` : `Partida: ${ds.label}`;
-        return <div style={{fontSize:10,color:ds.color,fontWeight:ds.urgent?700:400}}>{label}</div>;
-      })()}
+          const hasScore = m.p1Submitted || m.p2Submitted;
+          const ds = hasScore ? deadlineStatus(m.scoreDeadline) : deadlineStatus(m.deadline);
+          const label = hasScore ? `Placar: ${ds.label}` : `Partida: ${ds.label}`;
+          return <span style={{fontFamily:T.mono,fontSize:9,color:ds.color,letterSpacing:0.8,fontWeight:ds.urgent?700:400,textTransform:"uppercase"}}>{label}</span>;
+        })()}
       </div>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-        <span style={{fontSize:13,fontWeight:600,color: m.validated&&m.score1>m.score2?"#6a9d7a":"#F0EAE0",flex:1}}>{p1?.name}</span>
+
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <span style={{fontFamily:T.serif,fontSize:17,lineHeight:1.15,color: p1Ganhou ? T.verde2 : T.offwhite,flex:1}}>
+          {nomeExibicao(p1)}
+        </span>
         {m.validated
-          ? <div style={{background:"#1C2B27",borderRadius:8,padding:"6px 12px",fontSize:16,fontWeight:800,color:"#fff"}}>{m.score1}–{m.score2}</div>
-          : <div style={{background:"#1C2B27",borderRadius:8,padding:"6px 12px",fontSize:13,fontWeight:700,color:"#7d9188"}}>vs</div>
+          ? <div style={{background:T.verde,borderRadius:9,padding:"7px 14px",fontFamily:T.serif,fontSize:19,color:T.offwhite,minWidth:58,textAlign:"center"}}>
+              {m.score1}<span style={{color:T.cinza,fontSize:14}}> – </span>{m.score2}
+            </div>
+          : <div style={{background:T.verde,borderRadius:9,padding:"7px 14px",fontFamily:T.mono,fontSize:11,fontWeight:700,color:T.cinza}}>vs</div>
         }
-        <span style={{fontSize:13,fontWeight:600,color: m.validated&&m.score2>m.score1?"#6a9d7a":"#F0EAE0",flex:1,textAlign:"right"}}>{p2?.name}</span>
+        <span style={{fontFamily:T.serif,fontSize:17,lineHeight:1.15,color: p2Ganhou ? T.verde2 : T.offwhite,flex:1,textAlign:"right"}}>
+          {nomeExibicao(p2)}
+        </span>
       </div>
-      {m.validated && <div style={{fontSize:11,color:"#6a9d7a",marginTop:6}}>🏆 {winner?.name}</div>}
+
+      {m.validated && (
+        <div style={{display:"flex",alignItems:"baseline",gap:6,marginTop:10}}>
+          <span style={{fontFamily:T.mono,fontSize:9,color:T.cinza,letterSpacing:1,textTransform:"uppercase"}}>🏆 Vencedor</span>
+          <span style={{fontFamily:T.serif,fontSize:14,color:T.verde2}}>{nomeExibicao(winner)}</span>
+        </div>
+      )}
+
       {p1 && p2 && <H2HBadge state={state} idA={m.p1Id} idB={m.p2Id} excludeMatchId={m.id} />}
-      {m.p1Submitted && !m.validated && <div style={{fontSize:11,color:"#9C6F3E",marginTop:4}}>
-        {p1?.name?.split(" ")[0]}: {m.p1Submitted.score1}×{m.p1Submitted.score2}
-        {m.p2Submitted && ` · ${p2?.name?.split(" ")[0]}: ${m.p2Submitted.score1}×${m.p2Submitted.score2}`}
-      </div>}
+
+      {m.p1Submitted && !m.validated && (
+        <div style={{fontFamily:T.mono,fontSize:10,color:T.madeira,marginTop:8,letterSpacing:0.3}}>
+          {nomeExibicao(p1).split(" ")[0]}: {m.p1Submitted.score1}×{m.p1Submitted.score2}
+          {m.p2Submitted && ` · ${nomeExibicao(p2).split(" ")[0]}: ${m.p2Submitted.score1}×${m.p2Submitted.score2}`}
+        </div>
+      )}
     </Card>
   );
 }
@@ -3174,48 +3199,48 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
   }
 
   return (
-    <Card style={{border:"1px solid rgba(216,90,48,0.2)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-        <Badge label={`Rodada ${m.round}`} color="#D85A30"/>
+    <Card style={{border:`1px solid ${T.terracota}33`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <span style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:1.5,textTransform:"uppercase"}}>Rodada {m.round}</span>
         {(() => {
           const ds = deadlineStatus(m.scoreDeadline || m.deadline);
-          return <div style={{fontSize:10,color:ds.color,fontWeight:ds.urgent?700:400}}>{`Placar: ${ds.label}`}</div>;
+          return <span style={{fontFamily:T.mono,fontSize:9,color:ds.color,letterSpacing:0.8,fontWeight:ds.urgent?700:400,textTransform:"uppercase"}}>{`Placar: ${ds.label}`}</span>;
         })()}
       </div>
-      <div style={{fontSize:13,fontWeight:600,color:"#F0EAE0",textAlign:"center",marginBottom:2}}>
-        {nomeExibicao(p1)} <span style={{color:"#7d9188"}}> vs </span> {nomeExibicao(p2)}
+      <div style={{fontFamily:T.serif,fontSize:18,color:T.offwhite,textAlign:"center",marginBottom:4,lineHeight:1.2}}>
+        {nomeExibicao(p1)} <span style={{fontFamily:T.mono,fontSize:11,color:T.cinza,fontWeight:700}}> vs </span> {nomeExibicao(p2)}
       </div>
       <H2HBadge state={state} idA={m.p1Id} idB={m.p2Id} />
-      <div style={{marginBottom:8}} />
+      <div style={{marginBottom:10}} />
       {mySubmit || sent ? (
-        <div style={{background:"rgba(74,222,128,0.1)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#6a9d7a",textAlign:"center"}}>
-          ✅ Resultado enviado — aguardando validação do admin
+        <div style={{background:`${T.verde2}1a`,borderRadius:9,padding:"10px 12px",fontFamily:T.mono,fontSize:11,fontWeight:700,color:T.verde2,textAlign:"center",letterSpacing:0.3,textTransform:"uppercase"}}>
+          ✓ Resultado enviado — aguardando validação do admin
         </div>
       ) : (
         <>
-          <div style={{fontSize:12,color:"#9db3a8",marginBottom:4}}>Informe apenas o placar em sets:</div>
-          <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>Ex: vitória por 3×1 → digite 3 e 1</div>
-          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10}}>
+          <div style={{fontFamily:T.mono,fontSize:10,color:T.cinzaSuave,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Informe apenas o placar em sets</div>
+          <div style={{fontSize:11,color:T.cinza,marginBottom:12}}>Ex: vitória por 3×1 → digite 3 e 1</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
             <div style={{flex:1,textAlign:"center"}}>
-              <div style={{fontSize:11,color:"#F0EAE0",fontWeight:700,marginBottom:6}}>{p1?.name?.split(" ")[0]}</div>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.offwhite,fontWeight:700,letterSpacing:0.5,marginBottom:8,textTransform:"uppercase"}}>{nomeExibicao(p1).split(" ")[0]}</div>
               <input value={s1} onChange={e=>setS1(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
-                style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,color:"#D85A30",padding:"14px",fontSize:28,fontWeight:800,textAlign:"center",width:"100%",outline:"none"}}/>
+                style={{background:T.verde,border:`1px solid ${T.borda}`,borderRadius:9,color:T.terracota,padding:"14px",fontFamily:T.serif,fontSize:28,textAlign:"center",width:"100%",outline:"none"}}/>
             </div>
             <div style={{textAlign:"center"}}>
-              <span style={{color:"#7d9188",fontSize:20,fontWeight:800}}>×</span>
-              <div style={{fontSize:9,color:"#4a5d56",marginTop:4}}>sets</div>
+              <span style={{color:T.cinza,fontSize:20,fontWeight:800}}>×</span>
+              <div style={{fontFamily:T.mono,fontSize:9,color:T.borda,marginTop:4,textTransform:"uppercase",letterSpacing:0.5}}>sets</div>
             </div>
             <div style={{flex:1,textAlign:"center"}}>
-              <div style={{fontSize:11,color:"#F0EAE0",fontWeight:700,marginBottom:6}}>{p2?.name?.split(" ")[0]}</div>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.offwhite,fontWeight:700,letterSpacing:0.5,marginBottom:8,textTransform:"uppercase"}}>{nomeExibicao(p2).split(" ")[0]}</div>
               <input value={s2} onChange={e=>setS2(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
-                style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,color:"#D85A30",padding:"14px",fontSize:28,fontWeight:800,textAlign:"center",width:"100%",outline:"none"}}/>
+                style={{background:T.verde,border:`1px solid ${T.borda}`,borderRadius:9,color:T.terracota,padding:"14px",fontFamily:T.serif,fontSize:28,textAlign:"center",width:"100%",outline:"none"}}/>
             </div>
           </div>
-          <Btn onClick={submit} color="#D85A30" full disabled={!s1||!s2}>Enviar resultado</Btn>
+          <Btn onClick={submit} color={T.terracota} full disabled={!s1||!s2}>Enviar resultado</Btn>
         </>
       )}
       {(m.p1Submitted||m.p2Submitted) && !mySubmit && !sent && (
-        <div style={{fontSize:11,color:"#9C6F3E",marginTop:6,textAlign:"center"}}>⚡ Adversário já enviou — aguardando seu resultado</div>
+        <div style={{fontFamily:T.mono,fontSize:10,color:T.madeira,marginTop:8,textAlign:"center",letterSpacing:0.3,textTransform:"uppercase"}}>⚡ Adversário já enviou — aguardando seu resultado</div>
       )}
     </Card>
   );

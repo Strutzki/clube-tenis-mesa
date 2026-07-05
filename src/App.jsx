@@ -3226,14 +3226,18 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
             <div style={{flex:1,textAlign:"center",fontFamily:T.mono,fontSize:10,color:T.offwhite,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>{nomeExibicao(p2).split(" ")[0]}</div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
-            <input value={s1} onChange={e=>setS1(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
-              style={{flex:1,boxSizing:"border-box",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:9,color:T.terracota,padding:"14px",fontFamily:T.serif,fontSize:28,textAlign:"center",outline:"none"}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <input value={s1} onChange={e=>setS1(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
+                style={{width:"100%",boxSizing:"border-box",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:9,color:T.terracota,padding:"14px",fontFamily:T.serif,fontSize:28,textAlign:"center",outline:"none"}}/>
+            </div>
             <div style={{width:40,flexShrink:0,textAlign:"center"}}>
               <div style={{color:T.cinza,fontSize:20,fontWeight:800,lineHeight:1}}>×</div>
               <div style={{fontFamily:T.mono,fontSize:9,color:T.borda,marginTop:4,textTransform:"uppercase",letterSpacing:0.5}}>sets</div>
             </div>
-            <input value={s2} onChange={e=>setS2(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
-              style={{flex:1,boxSizing:"border-box",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:9,color:T.terracota,padding:"14px",fontFamily:T.serif,fontSize:28,textAlign:"center",outline:"none"}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <input value={s2} onChange={e=>setS2(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
+                style={{width:"100%",boxSizing:"border-box",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:9,color:T.terracota,padding:"14px",fontFamily:T.serif,fontSize:28,textAlign:"center",outline:"none"}}/>
+            </div>
           </div>
           <Btn onClick={submit} color={T.terracota} full disabled={!s1||!s2}>Enviar resultado</Btn>
         </>

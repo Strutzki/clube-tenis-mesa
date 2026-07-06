@@ -4166,8 +4166,12 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
   const mySubmit = isP1 ? m.p1Submitted : m.p2Submitted;
   const [s1, setS1] = useState(""), [s2, setS2] = useState("");
   const [sent, setSent] = useState(false);
+  const [cartaAberta, setCartaAberta] = useState(false);
   const p1 = state.athletes.find(a=>a.id===m.p1Id);
   const p2 = state.athletes.find(a=>a.id===m.p2Id);
+  const adversario = isP1 ? p2 : p1;
+  const ranking = [...state.athletes].filter(a=>a.status==="ativo" && !a.pendenteCircuito).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const posicaoAdversario = ranking.findIndex(a => a.id === adversario?.id) + 1 || ranking.length + 1;
 
   function submit() {
     if (!s1||!s2) return;
@@ -4177,6 +4181,7 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
 
   return (
     <Card style={{border:`1px solid ${T.terracota}33`}}>
+      {cartaAberta && <CartaModal athlete={adversario} posicao={posicaoAdversario} onClose={()=>setCartaAberta(false)}/>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
         <span style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:1.5,textTransform:"uppercase"}}>Rodada {m.round}</span>
         {(() => {
@@ -4185,12 +4190,19 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
         })()}
       </div>
       <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:20,marginBottom:14}}>
-        <Avatar athlete={p1} size={54} fontSize={20} ring={isP1?"rgba(216,90,48,0.55)":"rgba(240,234,224,0.16)"}/>
+        <div onClick={isP1?undefined:()=>setCartaAberta(true)} style={{cursor:isP1?"default":"pointer"}}>
+          <Avatar athlete={p1} size={54} fontSize={20} ring={isP1?"rgba(216,90,48,0.55)":"rgba(240,234,224,0.16)"}/>
+        </div>
         <div style={{textAlign:"center"}}>
           <div style={{width:18,height:18,borderRadius:"50%",background:T.terracota,margin:"0 auto",boxShadow:"inset -3px -3px 5px rgba(0,0,0,0.25)",animation:"ctm-ballBounce 1.3s ease-in-out infinite"}}/>
           <div style={{width:18,height:5,borderRadius:"50%",background:"rgba(0,0,0,0.4)",margin:"4px auto 0",animation:"ctm-ballShadow 1.3s ease-in-out infinite"}}/>
         </div>
-        <Avatar athlete={p2} size={54} fontSize={20} ring={!isP1?"rgba(216,90,48,0.55)":"rgba(240,234,224,0.16)"}/>
+        <div onClick={isP1?()=>setCartaAberta(true):undefined} style={{cursor:isP1?"pointer":"default"}}>
+          <Avatar athlete={p2} size={54} fontSize={20} ring={!isP1?"rgba(216,90,48,0.55)":"rgba(240,234,224,0.16)"}/>
+        </div>
+      </div>
+      <div style={{fontFamily:T.mono,fontSize:8.5,color:T.cinza,letterSpacing:0.5,textTransform:"uppercase",textAlign:"center",marginTop:-8,marginBottom:12}}>
+        Toque na foto de {nomeExibicao(adversario).split(" ")[0]} pra ver a carta dele(a)
       </div>
       <div style={{fontFamily:T.serif,fontSize:18,color:T.offwhite,textAlign:"center",marginBottom:4,lineHeight:1.2}}>
         {nomeExibicao(p1)} <span style={{fontFamily:T.mono,fontSize:11,color:T.cinza,fontWeight:700}}> vs </span> {nomeExibicao(p2)}

@@ -436,6 +436,40 @@ function reducer(state, action) {
       return { ...state, matches };
     }
 
+    case "DESFAZER_VALIDACAO": {
+      // Desfaz uma validação feita por engano. Só é permitido enquanto o
+      // rating ainda não foi calculado (m.calculado === false) — depois
+      // disso, desfazer exigiria reverter o rating também, o que é bem
+      // mais arriscado (pode cascatear em outras partidas já calculadas
+      // em cima desse rating). O placar volta a ficar "aguardando validação",
+      // mantendo o que os dois atletas enviaram.
+      const { matchId } = action.payload;
+      const alvo = state.matches.find(m => m.id === matchId);
+      if (!alvo || alvo.calculado) return state;
+      const matches = state.matches.map(m =>
+        m.id === matchId
+          ? { ...m, validated: false, validadoPorAdmin: false, adminAprovadoEm: null, score1: null, score2: null, imputadoPeloAdmin: false }
+          : m
+      );
+      return { ...state, matches };
+    }
+
+    case "ADMIN_IMPUTAR_RESULTADO": {
+      // Casos extremos: atleta sumiu, disputa sem acordo, W.O. que precisa
+      // virar resultado oficial. O admin registra o placar diretamente,
+      // ignorando o que os atletas enviaram (se enviaram algo). Fica
+      // marcado como "imputadoPeloAdmin" pra transparência — o atleta e
+      // o histórico sempre mostram que essa não foi uma confirmação mútua.
+      const { matchId, score1, score2 } = action.payload;
+      const now = new Date().toISOString();
+      const matches = state.matches.map(m =>
+        m.id === matchId
+          ? { ...m, validated: true, validadoPorAdmin: true, adminAprovadoEm: now, score1, score2, calculado: false, imputadoPeloAdmin: true }
+          : m
+      );
+      return { ...state, matches };
+    }
+
     case "PROCESSAR_RODADA": {
       // Aplica o cálculo de rating (Tabela CBTM) para todas as partidas já
       // validadas de uma rodada específica, ainda não calculadas. Processa em
@@ -1540,18 +1574,24 @@ function AdminMensagens({ state }) {
           const p2 = state.athletes.find(a => a.id === m.p2Id);
           if (!p1 || !p2) return null;
           const p1venceu = m.score1 > m.score2;
+          // Se o cálculo ainda não rodou, o rating/saldo mostrados são os
+          // ANTIGOS (o resultado ainda não foi contabilizado) — não faz
+          // sentido anunciar "seu novo rating" com um número que não mudou.
+          const statusPontuacao = (p1b) => m.calculado
+            ? `📊 Seu novo Rating: *${p1b.rating}*\nSaldo na temporada: *${(p1b.saldoTemp||0) > 0 ? "+" : ""}${p1b.saldoTemp||0} pts*`
+            : `📊 Rating e saldo: *ainda em processamento* — aguardando o fechamento da rodada`;
           return [
             {
               atleta: p1,
               matchId: m.id,
               comunicado: m.resultadoComunicado || false,
-              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}!\n\n${p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n📊 Seu novo Rating: *${p1.rating}*\nSaldo na temporada: *${(p1.saldoTemp||0) > 0 ? "+" : ""}${p1.saldoTemp||0} pts*\n\nConfira o ranking atualizado no app! 🏅`,
+              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}!\n\n${p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p1)}\n\nConfira o ranking atualizado no app! 🏅`,
             },
             {
               atleta: p2,
               matchId: m.id,
               comunicado: m.resultadoComunicado || false,
-              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}!\n\n${!p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n📊 Seu novo Rating: *${p2.rating}*\nSaldo na temporada: *${(p2.saldoTemp||0) > 0 ? "+" : ""}${p2.saldoTemp||0} pts*\n\nConfira o ranking atualizado no app! 🏅`,
+              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}!\n\n${!p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p2)}\n\nConfira o ranking atualizado no app! 🏅`,
             }
           ];
         }).filter(Boolean).flat();
@@ -2256,6 +2296,7 @@ export default function App() {
         validated: m.validado, validadoPorAdmin: m.validado_por_admin,
         adminAprovadoEm: m.admin_aprovado_em,
         calculado: m.calculado ?? true,
+        imputadoPeloAdmin: m.imputado_pelo_admin || false,
         rejeitado: m.rejeitado, motivoRejeicao: m.motivo_rejeicao,
         deadline: m.prazo,
         resultadoComunicado: m.resultado_comunicado || false,
@@ -2344,6 +2385,24 @@ export default function App() {
       } else {
         await db.updatePartida(matchId,{rejeitado:true,motivo_rejeicao:motivo});
       }
+    }
+    else if (action.type === "DESFAZER_VALIDACAO") {
+      const { matchId } = action.payload;
+      const match = st.matches.find(m => m.id === matchId);
+      if (match?.calculado) return; // proteção: nunca desfaz o que já foi calculado
+      await db.updatePartida(matchId, {
+        validado: false, validado_por_admin: false, admin_aprovado_em: null,
+        placar1: null, placar2: null, imputado_pelo_admin: false,
+      });
+    }
+    else if (action.type === "ADMIN_IMPUTAR_RESULTADO") {
+      const { matchId, score1, score2 } = action.payload;
+      const now = new Date().toISOString();
+      await db.updatePartida(matchId, {
+        placar1: score1, placar2: score2,
+        validado: true, validado_por_admin: true, admin_aprovado_em: now,
+        calculado: false, imputado_pelo_admin: true,
+      });
     }
     else if (action.type === "PROCESSAR_RODADA") {
       // Espelha a mesma lógica sequencial do reducer local, pra persistir os
@@ -3124,8 +3183,13 @@ function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, d
   const [confirmando, setConfirmando] = useState(false);
   if (pendentes.length === 0) return null;
 
+  // Na 1ª rodada do par mensal (ímpar), esperamos o prazo PRÓPRIO dela (ex: dia 15).
+  // Na 2ª rodada (par), a regra do Juliano é "só depois de fechar a 1ª" — isso já é
+  // garantido pela trava de ordem acima, então aqui não esperamos também o prazo
+  // próprio da 2ª rodada (ex: dia 25): assim que a 1ª terminar, a 2ª já libera.
+  const ehSegundaDoPar = round % 2 === 0;
   const prazo = pendentes[0]?.deadline;
-  const liberado = prazo ? new Date() >= new Date(prazo) : true;
+  const liberado = ehSegundaDoPar ? true : (prazo ? new Date() >= new Date(prazo) : true);
 
   function processar() {
     dispatch({ type: "PROCESSAR_RODADA", payload: { round } });
@@ -3173,8 +3237,51 @@ function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, d
 }
 
 // ── ADMIN PENDÊNCIAS ──────────────────────────────────────────────────────────
+// ── IMPUTAR RESULTADO MANUALMENTE (casos extremos) ────────────────────────────
+function ImputarResultadoForm({ m, p1, p2, dispatch }) {
+  const [aberto, setAberto] = useState(false);
+  const [s1, setS1] = useState("");
+  const [s2, setS2] = useState("");
+
+  function confirmar() {
+    if (!s1 || !s2) return;
+    dispatch({type:"ADMIN_IMPUTAR_RESULTADO", payload:{matchId:m.id, score1:parseInt(s1), score2:parseInt(s2)}});
+    setAberto(false); setS1(""); setS2("");
+  }
+
+  if (!aberto) return (
+    <Btn small onClick={()=>setAberto(true)} color={T.borda}>⚠️ Imputar resultado manualmente</Btn>
+  );
+
+  return (
+    <div style={{marginTop:8,paddingTop:10,borderTop:`1px solid ${T.bordaSuave}`}}>
+      <div style={{fontSize:11,color:T.cinza,marginBottom:10}}>
+        Só pra casos extremos (atleta sumiu, disputa sem acordo, W.O.). Isso registra o placar como decisão do admin — fica marcado como "imputado", diferente de uma validação normal.
+      </div>
+      <div style={{display:"flex",gap:10,alignItems:"flex-end",marginBottom:10}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontFamily:T.mono,fontSize:9,color:T.cinza,marginBottom:4,textTransform:"uppercase"}}>{p1?.name?.split(" ")[0]}</div>
+          <input value={s1} onChange={e=>setS1(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
+            style={{width:44,textAlign:"center",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:8,color:T.terracota,padding:"8px 4px",fontFamily:T.serif,fontSize:18,outline:"none"}}/>
+        </div>
+        <span style={{color:T.cinza,marginBottom:10}}>×</span>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontFamily:T.mono,fontSize:9,color:T.cinza,marginBottom:4,textTransform:"uppercase"}}>{p2?.name?.split(" ")[0]}</div>
+          <input value={s2} onChange={e=>setS2(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
+            style={{width:44,textAlign:"center",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:8,color:T.terracota,padding:"8px 4px",fontFamily:T.serif,fontSize:18,outline:"none"}}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <Btn small onClick={confirmar} color="#c25a45" disabled={!s1||!s2}>Confirmar resultado imputado</Btn>
+        <Btn small onClick={()=>setAberto(false)} color="#6a9d7a">Cancelar</Btn>
+      </div>
+    </div>
+  );
+}
+
 function AdminPendencias({ state, dispatch }) {
   const [motivo, setMotivo] = useState({});
+  const [desfazerConfirm, setDesfazerConfirm] = useState({});
   const waiting = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado);
   const incomplete = state.matches.filter(m => !m.validated && !m.rejeitado && !(m.p1Submitted && m.p2Submitted));
   const calculoPendente = state.matches.filter(m => m.validated && !m.calculado && !m.rejeitado);
@@ -3191,6 +3298,10 @@ function AdminPendencias({ state, dispatch }) {
   }
   function reject(m) {
     dispatch({type:"VALIDATE_RESULT",payload:{matchId:m.id,approved:false,motivo:motivo[m.id]||"Resultado inconsistente"}});
+  }
+  function desfazer(m) {
+    dispatch({type:"DESFAZER_VALIDACAO",payload:{matchId:m.id}});
+    setDesfazerConfirm({...desfazerConfirm,[m.id]:false});
   }
 
   return (
@@ -3221,6 +3332,7 @@ function AdminPendencias({ state, dispatch }) {
                 <Btn small onClick={()=>validate(m)} color="#6a9d7a" disabled={!match}>✅ Validar</Btn>
                 <Btn small onClick={()=>reject(m)} color="#c25a45">❌ Rejeitar</Btn>
               </div>
+              <ImputarResultadoForm m={m} p1={p1} p2={p2} dispatch={dispatch} />
             </Card>
           );
         })}
@@ -3231,6 +3343,35 @@ function AdminPendencias({ state, dispatch }) {
         <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
           O placar já está confirmado — o rating/saldo só é aplicado depois que o prazo da rodada correspondente fecha.
         </div>
+
+        {calculoPendente.map(m => {
+          const p1 = state.athletes.find(a=>a.id===m.p1Id);
+          const p2 = state.athletes.find(a=>a.id===m.p2Id);
+          return (
+            <Card key={m.id} style={{border:"1px solid rgba(255,255,255,0.05)"}}>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Rodada {m.round}</div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}}>
+                <span style={{fontSize:13,color:"#F0EAE0",flex:1}}>{p1?.name}</span>
+                <span style={{fontSize:14,fontWeight:700,color:"#9db3a8"}}>{m.score1} × {m.score2}</span>
+                <span style={{fontSize:13,color:"#F0EAE0",flex:1,textAlign:"right"}}>{p2?.name}</span>
+              </div>
+              {!desfazerConfirm[m.id] ? (
+                <Btn small onClick={()=>setDesfazerConfirm({...desfazerConfirm,[m.id]:true})} color={T.borda}>↩️ Desfazer validação</Btn>
+              ) : (
+                <>
+                  <div style={{fontSize:12,color:T.offwhite,marginBottom:8}}>
+                    Tem certeza? O placar volta pra "Aguardando Validação" — os dois atletas continuam com o resultado que enviaram, mas o admin precisa validar de novo.
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    <Btn small onClick={()=>desfazer(m)} color="#c25a45">Confirmar</Btn>
+                    <Btn small onClick={()=>setDesfazerConfirm({...desfazerConfirm,[m.id]:false})} color="#6a9d7a">Cancelar</Btn>
+                  </div>
+                </>
+              )}
+            </Card>
+          );
+        })}
+
         {roundsPendentes.map(round => {
           const ehSegundaDoPar = round % 2 === 0;
           const bloqueado = ehSegundaDoPar && state.matches.some(
@@ -3266,6 +3407,7 @@ function AdminPendencias({ state, dispatch }) {
                 const label = hasScore ? `Placar: ${ds.label}` : `Partida: ${ds.label}`;
                 return <div style={{fontSize:11,color:ds.color,fontWeight:ds.urgent?700:400,marginTop:4}}>{label}</div>;
               })()}
+              <ImputarResultadoForm m={m} p1={p1} p2={p2} dispatch={dispatch} />
             </Card>
           );
         })}
@@ -3383,8 +3525,8 @@ function MatchCard({ m, state, admin=false, currentAthleteId }) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
         <span style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:1.5,textTransform:"uppercase"}}>Rodada {m.round}</span>
         {m.validated && (
-          <span style={{fontFamily:T.mono,fontSize:9,fontWeight:700,color:T.verde2,letterSpacing:0.8,textTransform:"uppercase"}}>
-            ✓ {m.validadoPorAdmin ? "Admin aprovou" : "Validado"}
+          <span style={{fontFamily:T.mono,fontSize:9,fontWeight:700,color: m.imputadoPeloAdmin ? T.vermelho : T.verde2,letterSpacing:0.8,textTransform:"uppercase"}}>
+            {m.imputadoPeloAdmin ? "⚠️ Imputado pelo admin" : `✓ ${m.validadoPorAdmin ? "Admin aprovou" : "Validado"}`}
           </span>
         )}
         {m.rejeitado && (

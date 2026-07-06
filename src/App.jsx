@@ -720,37 +720,59 @@ function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
     back: { background:"none", border:"none", color:T.cinza, cursor:"pointer", fontSize:13, marginBottom:16, display:"flex", alignItems:"center", gap:4 },
   };
 
-  const menuItem = (num, titulo, onClick, cor=T.offwhite, seta=T.cinza, italico=false) => (
-    <div onClick={onClick} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"15px 2px",cursor:"pointer",borderBottom:`1px solid ${T.bordaSuave}`}}>
-      <div style={{display:"flex",alignItems:"baseline",gap:12}}>
-        <span style={{fontFamily:T.mono,fontSize:10,color:"#5E7569"}}>{num}</span>
-        <span style={{fontFamily:T.serif,fontSize:19,color:cor,fontStyle:italico?"italic":"normal"}}>{titulo}</span>
-      </div>
-      <span style={{color:seta,fontSize:18}}>→</span>
-    </div>
-  );
-
   if (mode === "select") return (
-    <div style={{minHeight:"100vh",background:T.verde,fontFamily:T.sans,display:"flex",justifyContent:"center"}}>
-      <div style={{width:"100%",maxWidth:390,padding:"34px 26px",position:"relative",display:"flex",flexDirection:"column"}}>
-        <div style={{width:132,height:132,borderRadius:"50%",overflow:"hidden",border:`1px solid ${T.borda}`}}>
-          <img src={LOGO} alt="Clube do Tênis de Mesa" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+    <div style={{minHeight:"100vh",background:T.telaFundo,fontFamily:T.sans,display:"flex",justifyContent:"center"}}>
+      <div style={{width:"100%",maxWidth:390,minHeight:"100vh",padding:"14px 26px 26px",position:"relative",display:"flex",flexDirection:"column",alignItems:"center",boxSizing:"border-box",color:T.offwhite}}>
+
+        {/* brilho superior */}
+        <div style={{position:"absolute",top:0,left:0,right:0,height:340,background:"radial-gradient(120% 100% at 50% 0%, rgba(216,90,48,0.14), transparent 62%)",pointerEvents:"none"}}/>
+
+        {/* bolinha quicando sobre a linha da mesa */}
+        <div style={{position:"absolute",top:120,left:36,zIndex:2,pointerEvents:"none",width:84,display:"flex",flexDirection:"column",alignItems:"center"}}>
+          <div style={{width:24,height:24,borderRadius:"50%",background:"radial-gradient(circle at 34% 30%, #ffffff, #e7e1d6 80%)",boxShadow:"0 4px 10px rgba(0,0,0,0.4)",animation:"ctm-ballBounce 1.5s ease-in-out infinite"}}/>
+          <div style={{width:24,height:6,borderRadius:"50%",background:"rgba(0,0,0,0.4)",marginTop:6,animation:"ctm-ballShadow 1.5s ease-in-out infinite"}}/>
+          <div style={{width:84,height:2,borderRadius:2,marginTop:5,background:"linear-gradient(90deg, transparent, rgba(240,234,224,0.5) 22%, rgba(240,234,224,0.5) 78%, transparent)"}}/>
         </div>
-        <div style={{marginTop:34}}>
-          <div style={{fontFamily:T.serif,fontSize:40,lineHeight:0.98,color:T.offwhite,letterSpacing:-0.5}}>
-            Clube do<br/>Tênis <span style={{fontStyle:"italic",color:T.terracota}}>de Mesa</span>
-          </div>
-          <div style={{fontFamily:T.serif,fontStyle:"italic",fontSize:16,color:T.cinza,marginTop:16}}>Ranking, rodadas e resultados</div>
+
+        {/* logo */}
+        <span style={{position:"relative",display:"inline-flex",borderRadius:"50%",marginTop:34,animation:"ctm-logoRing 3.6s ease-in-out infinite"}}>
+          <img src={LOGO} alt="Clube do Tênis de Mesa" width={92} height={92} style={{borderRadius:"50%",display:"block",border:"1px solid rgba(240,234,224,0.18)",animation:"ctm-logoIn 0.9s cubic-bezier(.2,.7,.2,1) both"}}/>
+        </span>
+
+        <div style={{fontFamily:T.serif,fontSize:34,lineHeight:1.02,textAlign:"center",marginTop:22}}>Clube do Tênis<br/><span style={{fontStyle:"italic",color:T.terracota}}>de Mesa</span></div>
+        <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:"rgba(240,234,224,0.5)",marginTop:12}}>Ranking · Rodadas · Resultados</div>
+
+        {/* acessos principais */}
+        <div style={{width:"100%",marginTop:34}}>
+          <button onClick={()=>setMode("athlete")} style={{display:"flex",alignItems:"center",gap:14,width:"100%",textAlign:"left",border:"none",background:T.terracota,color:T.offwhite,borderRadius:16,padding:"17px 18px",marginBottom:12,cursor:"pointer",fontFamily:T.sans}}>
+            <span style={{width:36,height:36,borderRadius:11,background:"rgba(240,234,224,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{width:15,height:15,borderRadius:"50%",background:T.offwhite}}/></span>
+            <span style={{flex:1}}><span style={{display:"block",fontFamily:T.serif,fontSize:20,lineHeight:1}}>Sou atleta</span><span style={{display:"block",fontFamily:T.mono,fontSize:8.5,letterSpacing:0.5,textTransform:"uppercase",color:"rgba(240,234,224,0.85)",marginTop:5}}>Perfil, jogos e ranking</span></span>
+            <span style={{fontSize:19}}>→</span>
+          </button>
+
+          <button onClick={()=>setMode("inscricao")} style={{display:"flex",alignItems:"center",gap:14,width:"100%",textAlign:"left",background:"rgba(156,111,62,0.16)",color:T.offwhite,border:"1px solid rgba(156,111,62,0.55)",borderRadius:16,padding:"17px 18px",cursor:"pointer",fontFamily:T.sans}}>
+            <span style={{width:36,height:36,borderRadius:11,background:"rgba(156,111,62,0.28)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:T.offwhite,fontSize:22,lineHeight:1}}>+</span>
+            <span style={{flex:1}}><span style={{display:"block",fontFamily:T.serif,fontStyle:"italic",fontSize:20,lineHeight:1}}>Inscreva-se</span><span style={{display:"block",fontFamily:T.mono,fontSize:8.5,letterSpacing:0.5,textTransform:"uppercase",color:"rgba(240,234,224,0.7)",marginTop:5}}>Entre para o clube</span></span>
+            <span style={{fontSize:19,color:T.offwhite}}>→</span>
+          </button>
         </div>
-        <div style={{marginTop:44}}>
-          <div style={{height:1,background:T.bordaSuave,marginBottom:4}}/>
-          {menuItem("01","Administrador",()=>setMode("admin"),T.offwhite,T.terracota)}
-          {menuItem("02","Sou atleta",()=>setMode("athlete"))}
-          {menuItem("03","Inscreva-se",()=>setMode("inscricao"),T.cinza,T.cinza,true)}
-          <div onClick={()=>setMode("regulamento")} style={{textAlign:"center",marginTop:18,fontFamily:T.mono,fontSize:9,color:"#5E7569",letterSpacing:2,cursor:"pointer"}}>
-            REGULAMENTO OFICIAL · @CLUBEDOTENISDEMESA
-          </div>
-        </div>
+
+        {/* administrador — acesso discreto */}
+        <button onClick={()=>setMode("admin")} style={{display:"inline-flex",alignItems:"center",gap:7,marginTop:18,background:"none",border:"none",cursor:"pointer",fontFamily:T.mono,fontSize:10,letterSpacing:1.2,textTransform:"uppercase",color:"rgba(240,234,224,0.4)"}}>
+          <span style={{width:11,height:9,border:"1.4px solid rgba(240,234,224,0.45)",borderRadius:2,position:"relative",display:"inline-block",flexShrink:0}}><span style={{position:"absolute",left:"50%",top:-4,transform:"translateX(-50%)",width:6,height:6,border:"1.4px solid rgba(240,234,224,0.45)",borderBottom:"none",borderRadius:"3px 3px 0 0"}}/></span>
+          Administrador
+        </button>
+
+        <div style={{flex:1}}/>
+
+        {/* instagram + regulamento */}
+        <a href="https://instagram.com/clubedotenisdemesa" target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:9,marginTop:16,padding:"9px 16px",borderRadius:22,border:"1px solid rgba(240,234,224,0.14)",fontFamily:T.mono,fontSize:11,letterSpacing:0.5,color:"rgba(240,234,224,0.78)",textDecoration:"none"}}>
+          <span style={{width:14,height:14,border:"1.4px solid rgba(240,234,224,0.7)",borderRadius:4,position:"relative",display:"inline-block",flexShrink:0}}>
+            <span style={{position:"absolute",top:2.4,left:2.4,width:5.2,height:5.2,border:"1.4px solid rgba(240,234,224,0.7)",borderRadius:"50%"}}/>
+            <span style={{position:"absolute",top:1.4,right:1.4,width:1.8,height:1.8,borderRadius:"50%",background:"rgba(240,234,224,0.7)"}}/>
+          </span>@clubedotenisdemesa
+        </a>
+        <div onClick={()=>setMode("regulamento")} style={{marginTop:12,fontFamily:T.mono,fontSize:9,letterSpacing:2,textTransform:"uppercase",color:"rgba(240,234,224,0.4)",cursor:"pointer"}}>Regulamento oficial</div>
       </div>
     </div>
   );

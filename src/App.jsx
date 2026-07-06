@@ -540,7 +540,7 @@ function deadlineStatus(dateStr) {
 function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
   const [mode, setMode] = useState("select"); // select | admin | athlete | inscricao | regulamento
   const [user, setUser] = useState(""), [pass, setPass] = useState("");
-  const [phone, setPhone] = useState(""), [err, setErr] = useState("");
+  const [err, setErr] = useState("");
 
   const s = {
     wrap: { minHeight:"100vh", background:T.verde, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, fontFamily:T.sans },
@@ -603,18 +603,12 @@ function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
   );
 
   if (mode === "athlete") return (
-    <div style={s.wrap}>
-      <div style={s.logo}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
-      <div style={s.card}>
-        <button style={s.back} onClick={() => setMode("select")}>← Voltar</button>
-        <div style={s.title}>Acesso Atleta</div>
-        <br/>
-        <label style={s.label}>Seu WhatsApp (com DDD)</label>
-        <input style={s.input} value={phone} onChange={e=>setPhone(e.target.value)} placeholder="31999999999" type="tel" onKeyDown={e=>e.key==="Enter"&&doAthlete()}/>
-        <button style={s.btn("#2f7d4f")} onClick={doAthlete}>Entrar</button>
-        {err && <div style={s.err}>⚠️ {err}</div>}
-      </div>
-    </div>
+    <AthleteLoginBiometria
+      s={s} LOGO={LOGO}
+      athletes={athletes}
+      onAthleteLogin={onAthleteLogin}
+      onBack={()=>setMode("select")}
+    />
   );
 
   if (mode === "inscricao") return <InscricaoForm onBack={() => setMode("select")} onSubmit={onInscricao} athletes={athletes} />;
@@ -622,12 +616,6 @@ function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
   function doAdmin(bypass=false) {
     if (bypass || (user===ADMIN_USER && pass===ADMIN_PASS)) { onLogin(); }
     else { setErr("Usuário ou senha incorretos."); setTimeout(()=>setErr(""),3000); }
-  }
-  function doAthlete() {
-    const clean = phone.replace(/\D/g,"");
-    const found = athletes.find(a => a.phone.replace(/\D/g,"") === clean && a.status === "ativo");
-    if (found) onAthleteLogin(found);
-    else { setErr("Telefone não encontrado ou cadastro não aprovado."); setTimeout(()=>setErr(""),3000); }
   }
 }
 
@@ -2004,6 +1992,171 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
             Biometria não disponível neste dispositivo
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── LOGIN ATLETA COM BIOMETRIA (Face ID / digital) ────────────────────────────
+// Credencial WebAuthn é local ao aparelho, guardada junto com o id do atleta
+// dono dela — por isso só funciona bem quando cada atleta usa seu próprio
+// celular (o padrão real de uso do Circuito).
+function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
+  const [phone, setPhone] = useState("");
+  const [err, setErr] = useState("");
+  const [bioDisponivel, setBioDisponivel] = useState(false);
+  const [bioCredId, setBioCredId] = useState(null);
+  const [bioAtletaId, setBioAtletaId] = useState(null);
+  const [bioAtletaNome, setBioAtletaNome] = useState("");
+  const [bioStatus, setBioStatus] = useState(""); // "", "verificando", "erro"
+  const [mostrarFallback, setMostrarFallback] = useState(false);
+  const [oferecerBio, setOferecerBio] = useState(null); // atleta recém-logado, pendente de oferta
+
+  useEffect(() => {
+    async function verificar() {
+      try {
+        const suporte = window.PublicKeyCredential &&
+          await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+        setBioDisponivel(!!suporte);
+      } catch(e) { setBioDisponivel(false); }
+      setBioCredId(localStorage.getItem("ctm_bio_atleta_credId"));
+      setBioAtletaId(localStorage.getItem("ctm_bio_atleta_id"));
+      setBioAtletaNome(localStorage.getItem("ctm_bio_atleta_nome") || "");
+    }
+    verificar();
+  }, []);
+
+  async function cadastrarBiometria(atleta) {
+    setBioStatus("verificando");
+    try {
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
+      const cred = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: "Clube do Tênis de Mesa", id: window.location.hostname },
+          user: {
+            id: new TextEncoder().encode(`atleta-${atleta.id}`),
+            name: atleta.phone,
+            displayName: nomeExibicao(atleta),
+          },
+          pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+          authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+          timeout: 60000,
+        }
+      });
+      const credId = btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+      localStorage.setItem("ctm_bio_atleta_credId", credId);
+      localStorage.setItem("ctm_bio_atleta_id", atleta.id);
+      localStorage.setItem("ctm_bio_atleta_nome", nomeExibicao(atleta));
+      setBioStatus("");
+      onAthleteLogin(atleta);
+    } catch(e) {
+      setBioStatus("erro");
+      onAthleteLogin(atleta); // não bloqueia o login por causa da ativação ter falhado
+    }
+  }
+
+  async function autenticarBiometria() {
+    setBioStatus("verificando");
+    try {
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
+      const credIdBytes = Uint8Array.from(atob(bioCredId), c => c.charCodeAt(0));
+      await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          rpId: window.location.hostname,
+          allowCredentials: [{ id: credIdBytes, type: "public-key" }],
+          userVerification: "required",
+          timeout: 60000,
+        }
+      });
+      const atleta = athletes.find(a => String(a.id) === String(bioAtletaId) && a.status === "ativo");
+      if (atleta) { setBioStatus(""); onAthleteLogin(atleta); }
+      else { setBioStatus("erro"); setErr("Cadastro não encontrado. Entre com seu número."); setMostrarFallback(true); }
+    } catch(e) {
+      setBioStatus("erro");
+      setErr("Biometria não reconhecida. Use seu número.");
+      setMostrarFallback(true);
+    }
+  }
+
+  function removerBiometria() {
+    localStorage.removeItem("ctm_bio_atleta_credId");
+    localStorage.removeItem("ctm_bio_atleta_id");
+    localStorage.removeItem("ctm_bio_atleta_nome");
+    setBioCredId(null); setBioAtletaId(null); setBioAtletaNome("");
+    setMostrarFallback(true);
+  }
+
+  function doAthlete() {
+    const clean = phone.replace(/\D/g,"");
+    const found = athletes.find(a => a.phone.replace(/\D/g,"") === clean && a.status === "ativo");
+    if (!found) { setErr("Telefone não encontrado ou cadastro não aprovado."); setTimeout(()=>setErr(""),3000); return; }
+    const jaTemBioNesteAparelho = bioCredId && String(bioAtletaId) === String(found.id);
+    if (bioDisponivel && !jaTemBioNesteAparelho) setOferecerBio(found);
+    else onAthleteLogin(found);
+  }
+
+  // Tela: oferta de ativação de biometria, logo após login por telefone
+  if (oferecerBio) return (
+    <div style={s.wrap}>
+      <div style={s.logo}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
+      <div style={s.card}>
+        <div style={s.title}>🔓 Ativar Face ID / digital?</div>
+        <div style={{...s.sub,marginBottom:20}}>Assim você entra na próxima vez sem digitar o telefone, {nomeExibicao(oferecerBio).split(" ")[0]}.</div>
+        <button
+          onClick={()=>cadastrarBiometria(oferecerBio)}
+          disabled={bioStatus==="verificando"}
+          style={{width:"100%",padding:"16px",borderRadius:12,border:"none",background:T.terracota,color:"#fff",fontSize:15,fontWeight:700,cursor:bioStatus==="verificando"?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:10}}
+        >
+          <span style={{fontSize:20}}>👆</span>
+          {bioStatus==="verificando" ? "Verificando…" : "Ativar agora"}
+        </button>
+        <button style={s.outline} onClick={()=>onAthleteLogin(oferecerBio)}>Agora não</button>
+        {err && <div style={s.err}>⚠️ {err}</div>}
+      </div>
+    </div>
+  );
+
+  // Tela: login rápido por biometria (já cadastrada neste aparelho)
+  if (bioCredId && bioAtletaId && !mostrarFallback) return (
+    <div style={s.wrap}>
+      <div style={s.logo}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
+      <div style={s.card}>
+        <button style={s.back} onClick={onBack}>← Voltar</button>
+        <div style={s.title}>Acesso Atleta</div>
+        <div style={{...s.sub,marginBottom:20}}>{bioAtletaNome}</div>
+        <button
+          onClick={autenticarBiometria}
+          disabled={bioStatus==="verificando"}
+          style={{width:"100%",padding:"16px",borderRadius:12,border:"none",background:T.terracota,color:"#fff",fontSize:15,fontWeight:700,cursor:bioStatus==="verificando"?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:8}}
+        >
+          <span style={{fontSize:20}}>👆</span>
+          {bioStatus==="verificando" ? "Verificando…" : "Entrar com Face ID / digital"}
+        </button>
+        {err && <div style={s.err}>⚠️ {err}</div>}
+        <button style={{...s.outline,marginTop:6}} onClick={()=>setMostrarFallback(true)}>Entrar com outro número</button>
+        <div onClick={removerBiometria} style={{textAlign:"center",marginTop:14,fontFamily:T.mono,fontSize:9,color:T.borda,letterSpacing:0.5,cursor:"pointer"}}>
+          Não é você? Remover biometria deste aparelho
+        </div>
+      </div>
+    </div>
+  );
+
+  // Tela: formulário normal por telefone (primeiro acesso ou fallback)
+  return (
+    <div style={s.wrap}>
+      <div style={s.logo}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
+      <div style={s.card}>
+        <button style={s.back} onClick={onBack}>← Voltar</button>
+        <div style={s.title}>Acesso Atleta</div>
+        <br/>
+        <label style={s.label}>Seu WhatsApp (com DDD)</label>
+        <input style={s.input} value={phone} onChange={e=>setPhone(e.target.value)} placeholder="31999999999" type="tel" autoComplete="tel" onKeyDown={e=>e.key==="Enter"&&doAthlete()}/>
+        <button style={s.btn()} onClick={doAthlete}>Entrar</button>
+        {err && <div style={s.err}>⚠️ {err}</div>}
       </div>
     </div>
   );

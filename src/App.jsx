@@ -442,6 +442,17 @@ function reducer(state, action) {
       // ordem de validação para manter a matemática do rating consistente
       // (cada partida usa o rating já atualizado pelas anteriores do lote).
       const { round } = action.payload;
+
+      // Trava de sequência: a numeração de rodada cresce o par todo mês
+      // (mês 1 = rodadas 1/2, mês 2 = rodadas 3/4, ...). A rodada PAR
+      // (2ª do par mensal) só pode ser calculada depois que a rodada
+      // ÍMPAR anterior (1ª do par) já estiver 100% calculada — senão o
+      // rating usado no cálculo ficaria desatualizado (Cap. 05/08).
+      const rodadaAnteriorPendente = round % 2 === 0 && state.matches.some(
+        m => m.round === round - 1 && m.validated && !m.calculado && !m.rejeitado
+      );
+      if (rodadaAnteriorPendente) return state;
+
       const pendentes = state.matches
         .filter(m => m.round === round && m.validated && !m.calculado && !m.rejeitado)
         .sort((a, b) => new Date(a.adminAprovadoEm || 0) - new Date(b.adminAprovadoEm || 0));
@@ -2338,6 +2349,12 @@ export default function App() {
       // Espelha a mesma lógica sequencial do reducer local, pra persistir os
       // mesmos valores finais de rating/saldo no Supabase.
       const { round } = action.payload;
+
+      const rodadaAnteriorPendente = round % 2 === 0 && st.matches.some(
+        m => m.round === round - 1 && m.validated && !m.calculado && !m.rejeitado
+      );
+      if (rodadaAnteriorPendente) return;
+
       const pendentes = st.matches
         .filter(m => m.round === round && m.validated && !m.calculado && !m.rejeitado)
         .sort((a,b) => new Date(a.adminAprovadoEm||0) - new Date(b.adminAprovadoEm||0));
@@ -3103,9 +3120,12 @@ function AdminEtapa({ state, dispatch }) {
 }
 
 // ── PROCESSAR RATING DA RODADA (dupla confirmação) ────────────────────────────
-function ProcessarRodadaButton({ round, pendentes, liberado, dispatch }) {
+function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, dispatch }) {
   const [confirmando, setConfirmando] = useState(false);
   if (pendentes.length === 0) return null;
+
+  const prazo = pendentes[0]?.deadline;
+  const liberado = prazo ? new Date() >= new Date(prazo) : true;
 
   function processar() {
     dispatch({ type: "PROCESSAR_RODADA", payload: { round } });
@@ -3113,30 +3133,39 @@ function ProcessarRodadaButton({ round, pendentes, liberado, dispatch }) {
   }
 
   return (
-    <Card style={{border:`1px solid ${T.madeira}44`}}>
+    <Card style={{border:`1px solid ${bloqueadoPorRodadaAnterior ? T.vermelho+"44" : T.madeira+"44"}`}}>
       <div style={{fontFamily:T.mono,fontSize:10,color:T.madeira,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>
         Rodada {round} · {pendentes.length} validado{pendentes.length>1?"s":""}, aguardando cálculo
       </div>
-      {!liberado && !confirmando && (
-        <div style={{fontSize:11,color:T.cinza,marginBottom:10}}>
-          O prazo desta rodada ainda não fechou — normalmente o cálculo só é feito depois disso.
+
+      {bloqueadoPorRodadaAnterior ? (
+        <div style={{fontSize:11,color:T.vermelho}}>
+          🔒 Bloqueado: a Rodada {round-1} ainda tem resultado(s) sem cálculo. Processe-a primeiro (a ordem importa pro rating ficar correto).
         </div>
-      )}
-      {!confirmando ? (
-        <Btn small onClick={()=>setConfirmando(true)} color={liberado?T.terracota:T.borda}>
-          🧮 Processar rating da Rodada {round}
-        </Btn>
       ) : (
         <>
-          <div style={{fontSize:12,color:T.offwhite,marginBottom:10}}>
-            {liberado
-              ? `Confirma o cálculo de rating para ${pendentes.length} partida(s) da Rodada ${round}? Essa ação não pode ser desfeita.`
-              : `O prazo desta rodada ainda não fechou. Tem certeza que quer calcular agora mesmo assim?`}
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <Btn small onClick={processar} color="#6a9d7a">Confirmar</Btn>
-            <Btn small onClick={()=>setConfirmando(false)} color="#c25a45">Cancelar</Btn>
-          </div>
+          {!liberado && !confirmando && (
+            <div style={{fontSize:11,color:T.cinza,marginBottom:10}}>
+              O prazo desta rodada (até {prazo ? new Date(prazo).toLocaleDateString("pt-BR") : "—"}) ainda não fechou.
+            </div>
+          )}
+          {!confirmando ? (
+            <Btn small onClick={()=>setConfirmando(true)} color={liberado?T.terracota:T.borda}>
+              🧮 Processar rating da Rodada {round}
+            </Btn>
+          ) : (
+            <>
+              <div style={{fontSize:12,color:T.offwhite,marginBottom:10}}>
+                {liberado
+                  ? `Confirma o cálculo de rating para ${pendentes.length} partida(s) da Rodada ${round}? Essa ação não pode ser desfeita.`
+                  : `O prazo desta rodada ainda não fechou. Tem certeza que quer calcular agora mesmo assim?`}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <Btn small onClick={processar} color="#6a9d7a">Confirmar</Btn>
+                <Btn small onClick={()=>setConfirmando(false)} color="#c25a45">Cancelar</Btn>
+              </div>
+            </>
+          )}
         </>
       )}
     </Card>
@@ -3149,9 +3178,10 @@ function AdminPendencias({ state, dispatch }) {
   const waiting = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado);
   const incomplete = state.matches.filter(m => !m.validated && !m.rejeitado && !(m.p1Submitted && m.p2Submitted));
   const calculoPendente = state.matches.filter(m => m.validated && !m.calculado && !m.rejeitado);
-  const diaHoje = new Date().getDate();
-  const liberadoRodada1 = diaHoje >= 16; // prazo da rodada 1 é dia 15
-  const liberadoRodada2 = diaHoje >= 26; // prazo da rodada 2 é dia 25
+  // A numeração de rodada cresce a cada mês (mês 1 = 1/2, mês 2 = 3/4...),
+  // então descobrimos dinamicamente quais rodadas têm cálculo pendente
+  // em vez de fixar "1" e "2".
+  const roundsPendentes = [...new Set(calculoPendente.map(m => m.round))].sort((a,b) => a-b);
 
   function validate(m) {
     const s1 = m.p1Submitted, s2 = m.p2Submitted;
@@ -3201,8 +3231,21 @@ function AdminPendencias({ state, dispatch }) {
         <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
           O placar já está confirmado — o rating/saldo só é aplicado depois que o prazo da rodada correspondente fecha.
         </div>
-        <ProcessarRodadaButton round={1} pendentes={calculoPendente.filter(m=>m.round===1)} liberado={liberadoRodada1} dispatch={dispatch} />
-        <ProcessarRodadaButton round={2} pendentes={calculoPendente.filter(m=>m.round===2)} liberado={liberadoRodada2} dispatch={dispatch} />
+        {roundsPendentes.map(round => {
+          const ehSegundaDoPar = round % 2 === 0;
+          const bloqueado = ehSegundaDoPar && state.matches.some(
+            m => m.round === round - 1 && m.validated && !m.calculado && !m.rejeitado
+          );
+          return (
+            <ProcessarRodadaButton
+              key={round}
+              round={round}
+              pendentes={calculoPendente.filter(m=>m.round===round)}
+              bloqueadoPorRodadaAnterior={bloqueado}
+              dispatch={dispatch}
+            />
+          );
+        })}
       </>}
 
       {incomplete.length > 0 && <>

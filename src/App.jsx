@@ -163,7 +163,6 @@ async function uploadFotoAtleta(athleteId, blob) {
       "apikey": SUPA_KEY,
       "Authorization": `Bearer ${SUPA_KEY}`,
       "Content-Type": "image/jpeg",
-      "x-upsert": "true",
     },
     body: blob,
   });

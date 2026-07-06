@@ -3531,32 +3531,40 @@ function RankingView({ state, currentAthleteId }) {
     const foraDoCorte = temCorte && !classificado;
     return (
       <div key={a.id} style={{
-        display:"flex", alignItems:"center", padding:"13px 4px",
-        borderBottom:`1px solid ${T.bordaSuave}`,
+        display:"flex", alignItems:"center", gap:12, padding:"11px 12px",
+        borderRadius:12, marginBottom:6,
+        background: isMe ? "rgba(216,90,48,0.12)" : "transparent",
+        border: `1px solid ${isMe ? "rgba(216,90,48,0.35)" : T.bordaSuave}`,
         opacity: foraDoCorte ? 0.7 : 1,
-        ...(isMe ? {background:"rgba(216,90,48,0.08)",borderLeft:`3px solid ${T.terracota}`,marginLeft:-4,marginRight:-4,paddingLeft:8,paddingRight:8} : {}),
       }}>
-        <div style={{width:60,display:"flex",alignItems:"baseline",gap:7}}>
-          <span style={{fontFamily:T.serif,fontSize:24,color: isMe ? T.terracota : (foraDoCorte ? "#5E7569" : T.offwhite),lineHeight:1}}>{i+1}</span>
-          {classificado && <span style={{fontFamily:T.mono,fontSize:12,fontWeight:700,color:T.terracota}}>C</span>}
+        <div style={{width:24,display:"flex",alignItems:"baseline",gap:4,flexShrink:0,justifyContent:"flex-end"}}>
+          <span style={{fontFamily:T.serif,fontSize:22,color: isMe ? T.terracota : (foraDoCorte ? "#5E7569" : T.offwhite),lineHeight:1}}>{i+1}</span>
         </div>
-        <div style={{flex:1}}>
-          <div style={{fontFamily:T.serif,fontSize:18,color: isMe ? T.terracota : (foraDoCorte ? "#c3ccc6" : T.offwhite),lineHeight:1.1}}>
-            {nomeExibicao(a)}{isMe ? <span style={{fontFamily:T.mono,fontSize:8,color:T.cinza,letterSpacing:1}}> · VOCÊ</span> : ""}
+        <span style={{width:38,height:38,borderRadius:"50%",background:T.verdeCard,border:`1px solid ${isMe?"rgba(216,90,48,0.4)":T.bordaSuave}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:15,color:T.offwhite}}>
+          {nomeExibicao(a)?.[0]?.toUpperCase()}
+        </span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,color: isMe ? T.terracota : (foraDoCorte ? "#c3ccc6" : T.offwhite),whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {nomeExibicao(a)}
           </div>
-          <div style={{fontFamily:T.mono,fontSize:9,color:T.cinza,marginTop:3}}>
-            {a.wins||0}V {a.losses||0}D · RATING {a.rating}
+          <div style={{fontFamily:T.mono,fontSize:8.5,letterSpacing:1,textTransform:"uppercase",color:"rgba(240,234,224,0.42)",marginTop:2}}>
+            {isMe ? `Você · Rating ${a.rating}` : `Rating ${a.rating}`}{classificado ? " · C" : ""}
           </div>
         </div>
-        <div style={{fontFamily:T.mono,fontSize:16,fontWeight:700,color:saldoColor}}>{saldoStr}</div>
+        <div style={{textAlign:"right",flexShrink:0}}>
+          <div style={{fontFamily:T.serif,fontSize:20,color:saldoColor,lineHeight:1}}>{saldoStr}</div>
+          <div style={{fontFamily:T.mono,fontSize:7.5,letterSpacing:1.5,color:"rgba(240,234,224,0.4)",marginTop:2}}>PTS</div>
+        </div>
       </div>
     );
   };
 
   return (
     <div>
-      <div style={{fontFamily:T.serif,fontSize:32,color:T.offwhite,lineHeight:1,marginBottom:6}}>Ranking</div>
-      <div style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:2,marginBottom:16}}>SALDO DE PONTOS NA TEMPORADA</div>
+      <div style={{textAlign:"center",marginBottom:20}}>
+        <div style={{fontFamily:T.serif,fontSize:32,color:T.offwhite,lineHeight:1}}>Ranking</div>
+        <div style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:2,textTransform:"uppercase",marginTop:6}}>Saldo de pontos na temporada · {sorted.length} atletas</div>
+      </div>
 
       {!temPartidas && (
         <div style={{background:"rgba(156,111,62,0.1)",border:`1px solid ${T.madeira}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontFamily:T.mono,fontSize:10,color:T.madeira,lineHeight:1.5}}>
@@ -3567,17 +3575,17 @@ function RankingView({ state, currentAthleteId }) {
       {sorted.slice(0, CORTE).map((a,i) => linha(a,i))}
 
       {temCorte && (
-        <div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0"}}>
-          <div style={{flex:1,height:1,background:T.terracota,opacity:0.45}}/>
-          <span style={{fontFamily:T.mono,fontSize:8,color:"#e0785a",letterSpacing:2}}>CORTE · TOP 8</span>
-          <div style={{flex:1,height:1,background:T.terracota,opacity:0.45}}/>
+        <div style={{display:"flex",alignItems:"center",gap:10,margin:"10px 4px 12px"}}>
+          <span style={{flex:1,height:1,background:"repeating-linear-gradient(90deg, rgba(127,174,143,.55) 0 5px, transparent 5px 11px)"}}/>
+          <span style={{fontFamily:T.mono,fontSize:8,letterSpacing:2,textTransform:"uppercase",color:T.verde2,whiteSpace:"nowrap"}}>Zona de classificação</span>
+          <span style={{flex:1,height:1,background:"repeating-linear-gradient(90deg, rgba(127,174,143,.55) 0 5px, transparent 5px 11px)"}}/>
         </div>
       )}
 
       {sorted.slice(CORTE).map((a,i) => linha(a,i+CORTE))}
 
       <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${T.bordaSuave}`,fontFamily:T.mono,fontSize:9,color:T.cinza,lineHeight:1.5}}>
-        <span style={{color:"#e0785a",fontWeight:700}}>C</span> = classificado para o torneio final até o momento
+        <span style={{color:T.terracota,fontWeight:700}}>C</span> = classificado para o torneio final até o momento
       </div>
     </div>
   );
@@ -3844,11 +3852,92 @@ function TabelaView({ state, athlete }) {
   if (state.keys.length === 0) return <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:16}}>Etapa ainda não iniciada.</div></Card>;
   const myKey = state.keys.find(k => k.athleteIds.includes(athlete.id));
   const allMatches = myKey ? state.matches.filter(m => m.keyId === myKey.id) : [];
+
+  const rounds = useMemo(() => {
+    const porRodada = {};
+    allMatches.forEach(m => { (porRodada[m.round] = porRodada[m.round] || []).push(m); });
+    return Object.keys(porRodada).map(Number).sort((a,b) => b-a).map(r => ({ round: r, matches: porRodada[r] }));
+  }, [allMatches]);
+
+  if (allMatches.length === 0) return <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:16}}>Nenhuma partida ainda.</div></Card>;
+
+  const rodadasNums = rounds.map(r => r.round);
+  const rangeRodadas = rodadasNums.length
+    ? (Math.min(...rodadasNums) === Math.max(...rodadasNums) ? `rodada ${rodadasNums[0]}` : `rodadas ${Math.min(...rodadasNums)} a ${Math.max(...rodadasNums)}`)
+    : "";
+
   return (
     <div>
-      <SecTitle>{myKey?.name || "Tabela"}</SecTitle>
-      {allMatches.length === 0 && <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:16}}>Nenhuma partida ainda.</div></Card>}
-      {allMatches.map(m => <MatchCard key={m.id} m={m} state={state} currentAthleteId={athlete.id}/>)}
+      <div style={{textAlign:"center",marginBottom:20}}>
+        <div style={{fontFamily:T.serif,fontSize:30,color:T.offwhite,lineHeight:1}}>Tabela</div>
+        <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginTop:6}}>Confrontos · {rangeRodadas}</div>
+      </div>
+
+      {rounds.map(({round, matches}) => {
+        const todasResolvidas = matches.every(m => m.validated || m.rejeitado);
+        const status = todasResolvidas ? (() => {
+          const datas = matches.map(m=>m.adminAprovadoEm).filter(Boolean).map(d=>new Date(d).getTime());
+          const maisRecente = datas.length ? new Date(Math.max(...datas)) : null;
+          return `Realizada${maisRecente ? " · " + maisRecente.toLocaleDateString("pt-BR") : ""}`;
+        })() : (() => {
+          const prazo = matches.find(m=>m.deadline)?.deadline;
+          return `Atual${prazo ? " · até " + fmtDate(prazo) : ""}`;
+        })();
+
+        return (
+          <div key={round}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",margin:"14px 2px 10px"}}>
+              <span style={{fontFamily:T.serif,fontSize:20,color:T.offwhite}}>Rodada {round}</span>
+              <span style={{fontFamily:T.mono,fontSize:8.5,letterSpacing:1,textTransform:"uppercase",color:T.cinza}}>{status}</span>
+            </div>
+
+            {matches.map(m => {
+              const p1 = state.athletes.find(a=>a.id===m.p1Id);
+              const p2 = state.athletes.find(a=>a.id===m.p2Id);
+              if (!p1 || !p2) return null;
+              const done = m.validated;
+              const you = m.p1Id === athlete.id || m.p2Id === athlete.id;
+              const aWin = done && m.score1 > m.score2;
+              const linhaJogador = (p, ganhou, score) => (
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <span style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1}}>
+                    <span style={{width:26,height:26,borderRadius:"50%",background:T.verde,border:`1px solid ${T.bordaSuave}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:11,color:T.offwhite}}>
+                      {nomeExibicao(p)?.[0]?.toUpperCase()}
+                    </span>
+                    <span style={{fontSize:13,color: done ? (ganhou?T.offwhite:"rgba(240,234,224,0.5)") : T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(p)}</span>
+                  </span>
+                  {done && <span style={{fontFamily:T.serif,fontSize:18,lineHeight:1,color:ganhou?T.terracota:"rgba(240,234,224,0.5)",flexShrink:0}}>{score}</span>}
+                </div>
+              );
+              return (
+                <div key={m.id} style={{
+                  display:"flex", alignItems:"center", gap:12, padding:"11px 13px", borderRadius:12, marginBottom:7,
+                  border:`1px solid ${you ? "rgba(216,90,48,0.3)" : T.bordaSuave}`,
+                  background: you ? "rgba(216,90,48,0.09)" : "rgba(240,234,224,0.03)",
+                }}>
+                  <div style={{flex:1,minWidth:0}}>
+                    {linhaJogador(p1, aWin, m.score1)}
+                    <div style={{height:1,background:"rgba(240,234,224,0.08)",margin:"7px 0"}}/>
+                    {linhaJogador(p2, !aWin, m.score2)}
+                  </div>
+                  {!done && (
+                    <span style={{
+                      fontFamily:T.mono,fontSize:8,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap",flexShrink:0,
+                      padding:"6px 9px",borderRadius:16,
+                      color: m.rejeitado ? T.vermelho : T.offwhite,
+                      background: m.rejeitado ? "transparent" : T.terracota,
+                      border: m.rejeitado ? `1px solid ${T.vermelho}55` : "none",
+                    }}>
+                      {m.rejeitado ? "W.O." : "Em aberto"}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+      <div style={{height:20}}/>
     </div>
   );
 }

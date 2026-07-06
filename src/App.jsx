@@ -2,7 +2,9 @@ import { useState, useReducer, useMemo, useEffect, useCallback } from "react";
 
 // ── TEMA OFICIAL DA MARCA (Manual de Aplicação) ──────────────────────────────
 const T = {
-  verde: "#1C2B27",      // verde-mesa — fundo principal
+  verde: "#1C2B27",      // verde-mesa — fundo de headers/blocos escuros
+  telaFundo: "#182420",  // verde-tela — fundo principal das telas (redesign)
+  bezel: "#111C19",      // verde-bezel — barra de abas / moldura
   verdeCard: "#223330",  // verde-médio — cards
   terracota: "#D85A30",  // destaque (usar com moderação)
   offwhite: "#F0EAE0",   // texto (substitui branco puro)
@@ -11,12 +13,12 @@ const T = {
   cinzaSuave: "#9db3a8", // rótulos
   borda: "#4a5d56",      // bordas sutis
   bordaSuave: "#35473f",
-  verde2: "#6a9d7a",     // positivo
+  verde2: "#7FAE8F",     // positivo (verde-positivo do manual)
   vermelho: "#c25a45",   // negativo
   // Fontes oficiais
   serif: "'DM Serif Display', Georgia, serif",   // títulos
   mono: "'Space Mono', 'Courier New', monospace", // rótulos/dados
-  sans: "'Inter', -apple-system, sans-serif",     // corpo/UI
+  sans: "'Hanken Grotesk', -apple-system, sans-serif", // corpo/UI
 };
 
 // Injeta as fontes oficiais uma única vez
@@ -24,8 +26,41 @@ if (typeof document !== "undefined" && !document.getElementById("ctm-fonts")) {
   const link = document.createElement("link");
   link.id = "ctm-fonts";
   link.rel = "stylesheet";
-  link.href = "https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap";
+  link.href = "https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Space+Mono:wght@400;700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap";
   document.head.appendChild(link);
+}
+
+// Injeta as animações oficiais (redesign) uma única vez
+if (typeof document !== "undefined" && !document.getElementById("ctm-keyframes")) {
+  const style = document.createElement("style");
+  style.id = "ctm-keyframes";
+  style.textContent = `
+    @keyframes ctm-fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes ctm-ballBounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-13px); } }
+    @keyframes ctm-ballShadow { 0%,100% { transform: scaleX(1); opacity:.35; } 50% { transform: scaleX(.6); opacity:.15; } }
+    @keyframes ctm-logoIn { 0% { transform: rotateY(-180deg) scale(.5); opacity: 0; } 55% { opacity: 1; } 100% { transform: rotateY(0) scale(1); opacity: 1; } }
+    @keyframes ctm-logoRing { 0%,100% { box-shadow: 0 0 0 0 rgba(216,90,48,0); } 50% { box-shadow: 0 0 0 5px rgba(216,90,48,.18); } }
+  `;
+  document.head.appendChild(style);
+}
+
+// Contagem crescente (0 → valor) usada nos números de destaque do redesign.
+// easeOutCubic, ~1400ms, conforme o handoff de design.
+function useCountUp(target, duration = 1400) {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    let raf, start = null;
+    const ease = (x) => 1 - Math.pow(1 - x, 3);
+    function step(now) {
+      if (start === null) start = now;
+      const p = Math.min(1, (now - start) / duration);
+      setVal(Math.round((target || 0) * ease(p)));
+      if (p < 1) raf = requestAnimationFrame(step);
+    }
+    raf = requestAnimationFrame(step);
+    return () => raf && cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return val;
 }
 
 
@@ -2592,24 +2627,61 @@ export default function App() {
 // ── HEADER ───────────────────────────────────────────────────────────────────
 function Header({ isAdmin, athlete, onLogout }) {
   return (
-    <div style={{background:T.terracota, padding:"16px 16px 14px", display:"flex", alignItems:"center", gap:12, boxShadow:"none"}}>
-      <div style={{width:46,height:46,borderRadius:"50%",overflow:"hidden",border:"2px solid rgba(255,255,255,0.3)",flexShrink:0}}>
-        <img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-      </div>
-      <div style={{flex:1}}>
-        <div style={{fontSize:15,fontWeight:800,color:"#fff"}}>Clube Do Tênis de Mesa</div>
-        <div style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>
-          {isAdmin ? "🔐 Administrador" : `🏓 ${athlete?.name?.split(" ")[0]}`}
+    <div style={{background:T.telaFundo, padding:"12px 22px 16px", display:"flex", alignItems:"center", gap:12, borderBottom:`1px solid rgba(240,234,224,0.08)`}}>
+      <span style={{position:"relative",display:"inline-flex",flexShrink:0,borderRadius:"50%",animation:"ctm-logoRing 3.6s ease-in-out infinite"}}>
+        <img src={LOGO} alt="Logo" style={{width:40,height:40,borderRadius:"50%",display:"block",animation:"ctm-logoIn .9s cubic-bezier(.2,.7,.2,1) both"}}/>
+      </span>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontFamily:T.serif,fontSize:18,lineHeight:1.05,color:T.offwhite}}>Clube do Tênis de Mesa</div>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginTop:3}}>
+          <span style={{width:7,height:7,borderRadius:"50%",background:T.terracota,flexShrink:0}}/>
+          <span style={{fontFamily:T.mono,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",color:"rgba(240,234,224,0.6)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {isAdmin ? "Administrador" : athlete?.name?.split(" ")[0]}
+          </span>
         </div>
       </div>
-      <button onClick={onLogout} style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,color:"rgba(255,255,255,0.8)",fontSize:11,fontWeight:700,padding:"5px 10px",cursor:"pointer"}}>
-        Sair
+      <button onClick={onLogout} style={{fontFamily:T.mono,fontSize:11,letterSpacing:1,color:T.terracota,background:"transparent",border:`1px solid rgba(216,90,48,0.5)`,padding:"6px 12px",borderRadius:20,cursor:"pointer",flexShrink:0}}>
+        SAIR
       </button>
     </div>
   );
 }
 
 // ── BOTTOM NAV ───────────────────────────────────────────────────────────────
+// ── ÍCONES GEOMÉTRICOS DA BARRA DE ABAS (sem emoji, conforme handoff) ─────────
+const IconJogos = ({ ativo }) => (
+  <span style={{width:16,height:16,borderRadius:"50%",background:ativo?T.terracota:"rgba(240,234,224,0.5)",display:"inline-block"}}/>
+);
+const IconRanking = ({ ativo }) => {
+  const c = ativo ? T.terracota : "rgba(240,234,224,0.5)";
+  return (
+    <span style={{display:"flex",alignItems:"flex-end",gap:2,height:16}}>
+      <span style={{width:4,height:8,background:c,borderRadius:1}}/>
+      <span style={{width:4,height:14,background:c,borderRadius:1}}/>
+      <span style={{width:4,height:11,background:c,borderRadius:1}}/>
+    </span>
+  );
+};
+const IconTabela = ({ ativo }) => {
+  const c = ativo ? T.terracota : "rgba(240,234,224,0.5)";
+  return (
+    <span style={{display:"flex",flexDirection:"column",gap:3,width:16}}>
+      <span style={{height:2.5,background:c,borderRadius:2}}/>
+      <span style={{height:2.5,background:c,borderRadius:2}}/>
+      <span style={{height:2.5,background:c,borderRadius:2}}/>
+    </span>
+  );
+};
+const IconComunidade = ({ ativo }) => {
+  const c = ativo ? T.terracota : "rgba(240,234,224,0.5)";
+  return (
+    <span style={{display:"inline-flex",alignItems:"center",height:16}}>
+      <span style={{width:9,height:9,borderRadius:"50%",background:c}}/>
+      <span style={{width:9,height:9,borderRadius:"50%",background:c,marginLeft:-3,boxShadow:`-2px 0 0 0 ${T.bezel}`}}/>
+    </span>
+  );
+};
+
 function BottomNav({ isAdmin, tab, setTab }) {
   const adminTabs = [
     {id:"dashboard",  label:"Início",  icon:"🏠"},
@@ -2621,33 +2693,41 @@ function BottomNav({ isAdmin, tab, setTab }) {
     {id:"mensagens",  label:"Msgs",    icon:"💬"},
   ];
   const athleteTabs = [
-    {id:"meus_jogos", label:"Jogos",   icon:"🏓"},
-    {id:"ranking",    label:"Ranking", icon:"🏆"},
-    {id:"tabela",     label:"Tabela",  icon:"📊"},
+    {id:"meus_jogos", label:"Jogos",      Icon:IconJogos},
+    {id:"ranking",    label:"Ranking",    Icon:IconRanking},
+    {id:"tabela",     label:"Tabela",     Icon:IconTabela},
+    {id:"comunidade", label:"Comunidade", Icon:IconComunidade},
   ];
-  const tabs = isAdmin ? adminTabs : athleteTabs;
   return (
     <nav style={{
       position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)",
-      width:"100%", maxWidth:480, background:"#080f1a",
-      borderTop:"1px solid rgba(255,255,255,0.07)",
-      display:"flex", zIndex:100,
+      width:"100%", maxWidth:480, background:T.bezel,
+      borderTop:"1px solid rgba(240,234,224,0.1)",
+      display:"flex", zIndex:100, padding:"10px 0 16px",
     }}>
-      {tabs.map(t => {
+      {isAdmin ? adminTabs.map(t => {
         const ativo = tab === t.id;
         return (
           <div key={t.id} onClick={()=>setTab(t.id)} style={{
-            flex:1, display:"flex", flexDirection:"column", alignItems:"center",
-            padding:"6px 1px 5px", cursor:"pointer",
-            borderTop: ativo ? "2px solid #D85A30" : "2px solid transparent",
-            background: ativo ? "rgba(216,90,48,0.08)" : "transparent",
+            flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6,
+            cursor:"pointer", position:"relative",
           }}>
+            {ativo && <div style={{position:"absolute",top:-10,width:34,height:3,borderRadius:2,background:T.terracota}}/>}
             <span style={{fontSize:17, lineHeight:1}}>{t.icon}</span>
-            <span style={{
-              fontSize:10, fontWeight:700, marginTop:2,
-              color: ativo ? "#fff" : "rgba(255,255,255,0.4)",
-              letterSpacing:0, whiteSpace:"nowrap",
-            }}>{t.label}</span>
+            <span style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:0.6,textTransform:"uppercase",color: ativo ? T.terracota : "rgba(240,234,224,0.5)",whiteSpace:"nowrap"}}>{t.label}</span>
+          </div>
+        );
+      }) : athleteTabs.map(t => {
+        const ativo = tab === t.id;
+        const Icon = t.Icon;
+        return (
+          <div key={t.id} onClick={()=>setTab(t.id)} style={{
+            flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6,
+            cursor:"pointer", position:"relative",
+          }}>
+            {ativo && <div style={{position:"absolute",top:-10,width:34,height:3,borderRadius:2,background:T.terracota}}/>}
+            <Icon ativo={ativo}/>
+            <span style={{fontFamily:T.mono,fontSize:t.id==="comunidade"?9:9.5,letterSpacing:t.id==="comunidade"?0.4:0.6,textTransform:"uppercase",color: ativo ? T.terracota : "rgba(240,234,224,0.5)",whiteSpace:"nowrap"}}>{t.label}</span>
           </div>
         );
       })}
@@ -3596,6 +3676,7 @@ function AthleteView({ state, dispatch, athlete, tab, setTab }) {
   if (tab === "meus_jogos") return <AthleteGames state={state} dispatch={dispatch} athlete={athlete} />;
   if (tab === "ranking") return <RankingView state={state} currentAthleteId={athlete.id} />;
   if (tab === "tabela") return <TabelaView state={state} athlete={athlete} />;
+  if (tab === "comunidade") return <ComunidadeView state={state} currentAthleteId={athlete.id} />;
   return null;
 }
 
@@ -3608,12 +3689,17 @@ function AthleteGames({ state, dispatch, athlete }) {
   const eu = state.athletes.find(a => a.id === athlete.id) || {};
   const ranking = [...state.athletes].filter(a=>a.status==="ativo" && !a.pendenteCircuito).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
   const minhaPos = ranking.findIndex(a => a.id === athlete.id);
-  const posStr = minhaPos >= 0 ? `${minhaPos+1}º` : "—";
   const saldo = eu.saldoTemp || 0;
-  const saldoStr = saldo > 0 ? `+${saldo}` : `${saldo}`;
   const saldoColor = saldo > 0 ? T.verde2 : saldo < 0 ? T.vermelho : T.cinza;
   const classificado = minhaPos >= 0 && minhaPos < 8;
   const nivelRating = (r) => r>=2200?"ELITE":r>=1700?"DIAMANTE":r>=1300?"PLATINA":r>=1000?"OURO":r>=700?"PRATA":r>=250?"BRONZE":"ENTRADA";
+
+  // Contagem crescente (0 → valor) no cabeçalho, conforme o handoff de design
+  const posAnimado = useCountUp(minhaPos >= 0 ? minhaPos + 1 : 0);
+  const saldoAnimado = useCountUp(Math.abs(saldo));
+  const ratingAnimado = useCountUp(eu.rating || 250);
+  const posStr = minhaPos >= 0 ? `${posAnimado}º` : "—";
+  const saldoStr = saldo > 0 ? `+${saldoAnimado}` : saldo < 0 ? `-${saldoAnimado}` : `${saldoAnimado}`;
 
   return (
     <div>
@@ -3635,7 +3721,7 @@ function AthleteGames({ state, dispatch, athlete }) {
         <div style={{flex:1,background:T.verdeCard,borderRadius:10,padding:"14px 16px"}}>
           <div style={{textAlign:"center"}}>
             <div style={{fontFamily:T.mono,fontSize:8,color:T.cinza,letterSpacing:1.5,marginBottom:6}}>RATING</div>
-            <div style={{fontFamily:T.serif,fontSize:30,color:T.offwhite,lineHeight:1}}>{eu.rating||250}</div>
+            <div style={{fontFamily:T.serif,fontSize:30,color:T.offwhite,lineHeight:1}}>{ratingAnimado}</div>
             <div style={{fontFamily:T.mono,fontSize:8,color:T.madeira,marginTop:8,letterSpacing:0.5}}>{nivelRating(eu.rating||250)}</div>
           </div>
         </div>
@@ -3651,7 +3737,27 @@ function AthleteGames({ state, dispatch, athlete }) {
 
       {done.length > 0 && <>
         <div style={{fontFamily:T.serif,fontSize:18,color:T.offwhite,marginTop:22,marginBottom:12}}>Já disputados</div>
-        {done.map(m => <MatchCard key={m.id} m={m} state={state} currentAthleteId={athlete.id}/>)}
+        {done.map(m => {
+          const souP1 = m.p1Id === athlete.id;
+          const adversario = state.athletes.find(a => a.id === (souP1 ? m.p2Id : m.p1Id));
+          const meuScore = souP1 ? m.score1 : m.score2;
+          const scoreAdv = souP1 ? m.score2 : m.score1;
+          const venci = meuScore > scoreAdv;
+          return (
+            <div key={m.id} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 0",borderTop:`1px solid ${T.bordaSuave}`}}>
+              <span style={{fontFamily:T.mono,fontSize:9,color:T.cinza,width:20,flexShrink:0}}>R{m.round}</span>
+              <span style={{width:32,height:32,borderRadius:"50%",background:T.verdeCard,border:`1px solid ${T.bordaSuave}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:13,color:T.offwhite}}>
+                {nomeExibicao(adversario)?.[0]?.toUpperCase()}
+              </span>
+              <span style={{flex:1,fontSize:14,color:T.offwhite,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(adversario)}</span>
+              <span style={{fontFamily:T.mono,fontSize:13,color:"rgba(240,234,224,0.85)"}}>{meuScore}–{scoreAdv}</span>
+              <span style={{width:24,height:24,borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:T.mono,fontWeight:700,fontSize:12,flexShrink:0,
+                background: venci ? T.terracota : "rgba(240,234,224,0.12)", color: venci ? T.offwhite : "rgba(240,234,224,0.7)"}}>
+                {venci ? "V" : "D"}
+              </span>
+            </div>
+          );
+        })}
       </>}
     </div>
   );
@@ -3679,6 +3785,18 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
           const ds = deadlineStatus(m.scoreDeadline || m.deadline);
           return <span style={{fontFamily:T.mono,fontSize:9,color:ds.color,letterSpacing:0.8,fontWeight:ds.urgent?700:400,textTransform:"uppercase"}}>{`Placar: ${ds.label}`}</span>;
         })()}
+      </div>
+      <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:20,marginBottom:14}}>
+        <span style={{width:54,height:54,borderRadius:"50%",background:T.verdeCard,border:`2px solid ${isP1?"rgba(216,90,48,0.55)":"rgba(240,234,224,0.16)"}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:20,color:T.offwhite}}>
+          {nomeExibicao(p1)?.[0]?.toUpperCase()}
+        </span>
+        <div style={{textAlign:"center"}}>
+          <div style={{width:18,height:18,borderRadius:"50%",background:T.terracota,margin:"0 auto",boxShadow:"inset -3px -3px 5px rgba(0,0,0,0.25)",animation:"ctm-ballBounce 1.3s ease-in-out infinite"}}/>
+          <div style={{width:18,height:5,borderRadius:"50%",background:"rgba(0,0,0,0.4)",margin:"4px auto 0",animation:"ctm-ballShadow 1.3s ease-in-out infinite"}}/>
+        </div>
+        <span style={{width:54,height:54,borderRadius:"50%",background:T.verdeCard,border:`2px solid ${!isP1?"rgba(216,90,48,0.55)":"rgba(240,234,224,0.16)"}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:20,color:T.offwhite}}>
+          {nomeExibicao(p2)?.[0]?.toUpperCase()}
+        </span>
       </div>
       <div style={{fontFamily:T.serif,fontSize:18,color:T.offwhite,textAlign:"center",marginBottom:4,lineHeight:1.2}}>
         {nomeExibicao(p1)} <span style={{fontFamily:T.mono,fontSize:11,color:T.cinza,fontWeight:700}}> vs </span> {nomeExibicao(p2)}
@@ -3731,6 +3849,120 @@ function TabelaView({ state, athlete }) {
       <SecTitle>{myKey?.name || "Tabela"}</SecTitle>
       {allMatches.length === 0 && <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:16}}>Nenhuma partida ainda.</div></Card>}
       {allMatches.map(m => <MatchCard key={m.id} m={m} state={state} currentAthleteId={athlete.id}/>)}
+    </div>
+  );
+}
+
+// ── COMUNIDADE (aba nova do redesign) ─────────────────────────────────────────
+// Feed calculado automaticamente a partir dos dados existentes — partidas
+// validadas e atletas recém-aprovados — sem precisar de tabela nova no Supabase.
+function tempoRelativo(ts) {
+  const dias = Math.floor((Date.now() - ts) / 86400000);
+  if (dias <= 0) return "Hoje";
+  if (dias === 1) return "Há 1 dia";
+  return `Há ${dias} dias`;
+}
+
+function ComunidadeView({ state, currentAthleteId }) {
+  const ativos = useMemo(() => [...state.athletes]
+    .filter(a => a.status === "ativo" && !a.pendenteCircuito)
+    .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
+    [state.athletes]);
+
+  const feed = useMemo(() => {
+    const eventos = [];
+    state.matches.filter(m => m.validated && !m.rejeitado && m.adminAprovadoEm).forEach(m => {
+      const p1 = state.athletes.find(a=>a.id===m.p1Id);
+      const p2 = state.athletes.find(a=>a.id===m.p2Id);
+      if (!p1 || !p2) return;
+      const p1venceu = m.score1 > m.score2;
+      const vencedor = p1venceu ? p1 : p2;
+      const perdedor = p1venceu ? p2 : p1;
+      const golsV = p1venceu ? m.score1 : m.score2;
+      const golsP = p1venceu ? m.score2 : m.score1;
+      eventos.push({
+        ts: new Date(m.adminAprovadoEm).getTime(),
+        atleta: vencedor,
+        texto: `venceu ${nomeExibicao(perdedor)} por ${golsV}–${golsP}.`,
+        tag: `Rodada ${m.round}`,
+        tipo: "match",
+      });
+    });
+    state.athletes.filter(a => a.status === "ativo" && a.inscritoEm).forEach(a => {
+      eventos.push({
+        ts: new Date(a.inscritoEm).getTime(),
+        atleta: a,
+        texto: "entrou para o clube.",
+        tag: "Novo atleta",
+        tipo: "new",
+      });
+    });
+    return eventos.sort((a,b) => b.ts - a.ts).slice(0, 12);
+  }, [state.matches, state.athletes]);
+
+  const tagCores = {
+    match: { color:"rgba(240,234,224,0.75)", bg:"rgba(240,234,224,0.1)" },
+    new: { color:T.offwhite, bg:T.madeira },
+    rank: { color:T.offwhite, bg:T.terracota },
+  };
+
+  return (
+    <div>
+      <div style={{textAlign:"center",marginBottom:20}}>
+        <div style={{fontFamily:T.serif,fontSize:30,color:T.offwhite,lineHeight:1}}>Comunidade</div>
+        <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginTop:6}}>
+          Clube do Tênis de Mesa · {ativos.length} atletas
+        </div>
+      </div>
+
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
+        <span style={{fontFamily:T.mono,fontSize:10,letterSpacing:2,textTransform:"uppercase",color:T.cinza,whiteSpace:"nowrap"}}>No clube</span>
+        <div style={{flex:1,height:1,background:T.bordaSuave}}/>
+      </div>
+
+      {feed.length === 0 && (
+        <div style={{fontSize:13,color:T.cinza,textAlign:"center",padding:"16px 0"}}>Ainda não há novidades por aqui.</div>
+      )}
+
+      {feed.map((f, i) => {
+        const c = tagCores[f.tipo] || tagCores.match;
+        return (
+          <div key={i} style={{display:"flex",gap:12,padding:"10px 0"}}>
+            <div style={{width:38,height:38,borderRadius:"50%",background:T.verdeCard,border:`1px solid ${T.bordaSuave}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:15,color:T.offwhite}}>
+              {nomeExibicao(f.atleta)?.[0]?.toUpperCase()}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontFamily:T.mono,fontSize:8,letterSpacing:0.6,textTransform:"uppercase",color:c.color,background:c.bg,padding:"3px 7px",borderRadius:12}}>{f.tag}</span>
+                <span style={{fontFamily:T.mono,fontSize:9,letterSpacing:0.5,textTransform:"uppercase",color:T.cinza}}>{tempoRelativo(f.ts)}</span>
+              </div>
+              <div style={{fontSize:13.5,lineHeight:1.4,marginTop:6,color:"rgba(240,234,224,0.8)"}}>
+                <span style={{color:T.offwhite,fontWeight:600}}>{nomeExibicao(f.atleta)}</span> {f.texto}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      <div style={{marginTop:24}}>
+        <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginBottom:14}}>Atletas do clube</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"16px 8px"}}>
+          {ativos.map(a => {
+            const isMe = a.id === currentAthleteId;
+            return (
+              <div key={a.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:7}}>
+                <div style={{width:56,height:56,borderRadius:"50%",background:T.verdeCard,border:`2px solid ${isMe?"rgba(216,90,48,0.6)":"rgba(240,234,224,0.16)"}`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:T.serif,fontSize:20,color:T.offwhite}}>
+                  {nomeExibicao(a)?.[0]?.toUpperCase()}
+                </div>
+                <span style={{fontSize:11,color:"rgba(240,234,224,0.8)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>
+                  {nomeExibicao(a).split(" ")[0]}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div style={{height:20}}/>
     </div>
   );
 }

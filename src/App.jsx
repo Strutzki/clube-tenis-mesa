@@ -173,7 +173,7 @@ async function uploadFotoAtleta(athleteId, blob) {
   return `${SUPA_URL}/storage/v1/object/public/${FOTOS_BUCKET}/${path}`;
 }
 
-// ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-3, Cap. 05) ──────
+// ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-5, Cap. 05) ──────
 // Tabela Básica de Cálculo do Rating do Manual Tênis de Mesa Brasil (item 1.7.2.4.5)
 // Valores por faixa de diferença de rating. Peso: rodada regular = 1, torneio = 2.
 
@@ -372,7 +372,7 @@ function reducer(state, action) {
         status: "pendente", key: null,
         aceiteRegulamento: aceiteRegulamento || false,
         dataAceiteRegulamento: dataAceite || null,
-        versaoRegulamento: "v03-3",
+        versaoRegulamento: "v03-5",
         aceiteLGPD: aceiteLGPD || false,
         dataAceiteLGPD: dataAceite || null,
         inscritoEm: dataAceite || new Date().toISOString(),
@@ -1003,7 +1003,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
                 <div style={{fontSize:11,color:"#9db3a8",lineHeight:1.6}}>{d}</div>
               </div>
             ))}
-            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>Regulamento completo disponível na tela inicial · v03-3</div>
+            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>Regulamento completo disponível na tela inicial · v03-5</div>
           </div>
         )}
 
@@ -1013,7 +1013,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
               {aceiteReg && <span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}
             </div>
             <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>
-              Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-3). Estou ciente do aviso sobre atletas federados pela CBTM.
+              Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-5). Estou ciente do aviso sobre atletas federados pela CBTM.
             </div>
           </div>
         )}
@@ -1050,7 +1050,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
         <div style={{background:"rgba(74,222,128,0.08)", border:"1px solid rgba(74,222,128,0.2)", borderRadius:10, padding:"12px 14px", marginBottom:16, textAlign:"left"}}>
           <div style={{fontSize:11, fontWeight:700, color:"#6a9d7a", marginBottom:8}}>✓ Registrado com sucesso</div>
           <div style={{fontSize:11, color:"#7d9188", lineHeight:1.8}}>
-            📋 Aceite do regulamento v03-3<br/>
+            📋 Aceite do regulamento v03-5<br/>
             🔒 Consentimento LGPD (Lei 13.709/2018)<br/>
             📅 Data/hora: {new Date().toLocaleString("pt-BR")}
           </div>
@@ -1065,7 +1065,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
 
 
 
-// ── REGULAMENTO VIEW (regulamento v03-3) ─────────────────────────────────────
+// ── REGULAMENTO VIEW (regulamento v03-5) ─────────────────────────────────────
 function RegulamentoView({ onBack }) {
   const [capAberto, setCapAberto] = useState(null);
 
@@ -1212,23 +1212,28 @@ function RegulamentoView({ onBack }) {
         </Box>
         <div style={{fontSize:11,fontWeight:700,color:"#6a9d7a",marginTop:10,marginBottom:4}}>✅ Resultado esperado (favorito vence)</div>
         <Tbl headers={["Diferença","Vencedor","Perdedor"]} rows={[
-          ["0–49 pts","+14 pts","−7 pts"],
-          ["50–99 pts","+12 pts","−6 pts"],
-          ["100–149 pts","+10 pts","−5 pts"],
-          ["150–199 pts","+8 pts","−4 pts"],
-          ["200–299 pts","+6 pts","−3 pts"],
+          ["0–24 pts","+10 pts","−8 pts"],
+          ["25–49 pts","+9 pts","−7 pts"],
+          ["50–99 pts","+8 pts","−6 pts"],
+          ["100–149 pts","+7 pts","−5 pts"],
+          ["150–199 pts","+6 pts","−4 pts"],
+          ["200–299 pts","+5 pts","−3 pts"],
           ["300–399 pts","+4 pts","−2 pts"],
-          ["400+ pts","+2 pts","−1 pt"],
+          ["400–499 pts","+3 pts","−1 pt"],
+          ["500–749 pts","+2 pts","0 pts"],
+          ["750+ pts","+1 pt","0 pts"],
         ]}/>
         <div style={{fontSize:11,fontWeight:700,color:"#9C6F3E",marginTop:12,marginBottom:4}}>⚡ Resultado inesperado (azarão vence)</div>
         <Tbl headers={["Diferença","Vencedor","Perdedor"]} rows={[
-          ["0–49 pts","+28 pts","−14 pts"],
-          ["50–99 pts","+24 pts","−12 pts"],
-          ["100–149 pts","+20 pts","−10 pts"],
-          ["150–199 pts","+16 pts","−8 pts"],
-          ["200–299 pts","+12 pts","−6 pts"],
-          ["300–399 pts","+46 pts","−23 pts"],
-          ["400+ pts","+50+ pts","−25+ pts"],
+          ["0–24 pts","+11 pts","−9 pts"],
+          ["25–49 pts","+12 pts","−10 pts"],
+          ["50–99 pts","+14 pts","−11 pts"],
+          ["100–149 pts","+16 pts","−12 pts"],
+          ["150–199 pts","+18 pts","−14 pts"],
+          ["200–299 pts","+20 pts","−16 pts"],
+          ["300–399 pts","+23 pts","−18 pts"],
+          ["400–499 pts","+26 pts","−20 pts"],
+          ["500+ pts","+30 pts","−22 pts"],
         ]}/>
         <Box cor="#c25a45" titulo="🚫 Autodeclaração Proibida para Federados">
           <p style={s.p}>O admin pode solicitar comprovante do cadastro CBTM-Web antes de confirmar a inscrição. A tentativa de fraude no rating de entrada resulta em suspensão imediata.</p>
@@ -1306,10 +1311,13 @@ function RegulamentoView({ onBack }) {
           <p style={s.p}>Dentro do prazo de cada rodada, os dois atletas podem registrar o placar em momentos diferentes — não é necessário confirmar ao mesmo tempo. O que importa é que ambos confirmem o mesmo resultado antes do prazo daquela rodada.</p>
         </Box>
         <Box cor="#D85A30" titulo="🔍 Janela de Conferência do Admin">
-          <p style={s.p}>Após o prazo de registro de cada rodada, o administrador tem uma janela para conferir resultados, resolver divergências e aplicar W.O.s antes de divulgar o ranking atualizado: dias 16 a 19 para a 1ª rodada, e dias 26 a 29 para a 2ª rodada.</p>
+          <p style={s.p}>Após o prazo de registro de cada rodada, o administrador tem uma janela para conferir resultados, resolver divergências e aplicar W.O.s antes de processar o rating e divulgar o ranking atualizado: dias 16 a 19 para a 1ª rodada, e dias 26 a 29 para a 2ª rodada.</p>
+        </Box>
+        <Box cor="#D85A30" titulo="🧮 Validação e Cálculo — Duas Etapas Diferentes">
+          <p style={s.p}>Confirmar o placar (validação) e aplicar o efeito no rating/ranking (cálculo) são etapas separadas. O placar fica oficial assim que os dois atletas confirmam (ou o administrador resolve uma pendência) — mas o Rating e o saldo de pontos só mudam quando o administrador processa a rodada, o que só acontece depois que <span style={s.dest}>todas</span> as partidas daquela rodada estiverem resolvidas (validadas ou W.O.), e sempre na ordem: 1ª rodada primeiro, 2ª rodada depois. Isso evita que um resultado registrado cedo demais altere o ranking antes da hora certa.</p>
         </Box>
         <Box cor="#5E7569" titulo="⚠️ Confirmação Incompleta">
-          <p style={s.p}>Caso apenas um dos atletas registre o resultado até o prazo da rodada correspondente, o administrador é notificado e decide com base em comprovantes, seguindo a mesma regra de divergência prevista para casos de W.O.</p>
+          <p style={s.p}>Caso apenas um dos atletas registre o resultado até o prazo da rodada correspondente, ou nenhum dos dois consiga confirmar (ex: desaparecimento, disputa sem acordo), o administrador pode registrar o resultado diretamente com base em comprovantes — seguindo a mesma regra de divergência prevista para casos de W.O. Esse tipo de resultado fica identificado como decisão administrativa, não como confirmação mútua dos atletas.</p>
         </Box>
       </div>
     );
@@ -1319,10 +1327,10 @@ function RegulamentoView({ onBack }) {
           <p style={s.p}>A cada rodada, o <span style={s.dest}>Top 10</span> é publicado em stories e feed.</p>
         </Box>
         <Box cor="#25d366" titulo="💬 Grupo WhatsApp">
-          <p style={s.p}>O <span style={s.dest}>ranking completo</span> é enviado no grupo oficial após o fechamento de cada rodada — todos os atletas veem sua posição exata.</p>
+          <p style={s.p}>O <span style={s.dest}>ranking completo</span> é enviado no grupo oficial depois que o administrador processa o rating da rodada (não apenas quando o prazo de registro fecha) — todos os atletas veem sua posição exata.</p>
         </Box>
         <Box cor="#D85A30" titulo="📲 App do Circuito">
-          <p style={s.p}>O ranking também está disponível em tempo real no app — o atleta consegue ver sua posição, saldo de pontos e Rating a qualquer momento.</p>
+          <p style={s.p}>O ranking também está disponível em tempo real no app. O placar de uma partida aparece confirmado assim que os dois atletas validam, mas o Rating e o saldo de pontos só refletem a partida depois que o administrador processa a rodada correspondente — o app mostra esse status ("aguardando cálculo") em cada partida ainda não processada.</p>
         </Box>
         <Box cor="#9C6F3E" titulo="📈 Maior Salto">
           <p style={s.p}>Jogador que mais subiu de rating na rodada ganha destaque especial — "Escalada da Rodada" — publicado no Instagram e no grupo.</p>
@@ -1488,7 +1496,7 @@ function RegulamentoView({ onBack }) {
           ]}/>
           <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A decisão do administrador em casos omissos é final. Situações recorrentes podem motivar a inclusão de uma nova regra em versão futura deste regulamento.</p>
         </Box>
-        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Circuito BH · Regulamento v03-3</div>
+        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Circuito BH · Regulamento v03-5</div>
       </div>
     );
     return null;
@@ -1504,7 +1512,7 @@ function RegulamentoView({ onBack }) {
         <div style={s.logoWrap}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
         <div style={{flex:1,marginLeft:10}}>
           <div style={{fontSize:14,fontWeight:800,color:"#fff"}}>Regulamento Oficial</div>
-          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · v03-3</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · v03-5</div>
         </div>
         <button style={s.backBtn} onClick={onBack}>← Voltar</button>
       </div>
@@ -2493,7 +2501,7 @@ export default function App() {
         saldo_temp:0, status:"pendente",
         aceite_regulamento:p.aceiteRegulamento||false,
         data_aceite_regulamento:p.dataAceite||null,
-        versao_regulamento:"v03-3",
+        versao_regulamento:"v03-5",
         aceite_lgpd:p.aceiteLGPD||false,
         data_aceite_lgpd:p.dataAceite||null,
         inscrito_em:p.dataAceite||new Date().toISOString(),

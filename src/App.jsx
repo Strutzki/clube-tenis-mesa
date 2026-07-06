@@ -423,25 +423,51 @@ function reducer(state, action) {
         );
         return { ...state, matches: updated };
       }
-      const match = state.matches.find(m => m.id === matchId);
-      const p1wins = match.p1Submitted.score1 > match.p1Submitted.score2;
-      const p1 = state.athletes.find(x => x.id === match.p1Id);
-      const p2 = state.athletes.find(x => x.id === match.p2Id);
-      const newR1 = calcElo(p1.rating, p2.rating, p1wins ? 1 : 0);
-      const newR2 = calcElo(p2.rating, p1.rating, p1wins ? 0 : 1);
-      const delta1 = newR1 - p1.rating;
-      const delta2 = newR2 - p2.rating;
-      const athletes = state.athletes.map(a => {
-        if (a.id === match.p1Id) {
-          return { ...a, rating: newR1, saldoTemp: (a.saldoTemp||0) + delta1, wins: (a.wins||0) + (p1wins?1:0), losses: (a.losses||0) + (p1wins?0:1) };
-        }
-        if (a.id === match.p2Id) {
-          return { ...a, rating: newR2, saldoTemp: (a.saldoTemp||0) + delta2, wins: (a.wins||0) + (p1wins?0:1), losses: (a.losses||0) + (p1wins?1:0) };
-        }
-        return a;
-      });
+      // Aqui só confirmamos o placar — o rating/saldo NÃO é aplicado ainda.
+      // Isso evita que um jogo da Rodada 2 realizado cedo (dentro da janela da
+      // Rodada 1) altere o rating antes do prazo da Rodada 1 fechar (Cap. 08).
+      // O cálculo em si acontece depois, via PROCESSAR_RODADA.
+      const now = new Date().toISOString();
       const matches = state.matches.map(m =>
-        m.id === matchId ? { ...m, validated: true, score1: m.p1Submitted.score1, score2: m.p1Submitted.score2 } : m
+        m.id === matchId
+          ? { ...m, validated: true, validadoPorAdmin: true, adminAprovadoEm: now, score1: m.p1Submitted.score1, score2: m.p1Submitted.score2, calculado: false }
+          : m
+      );
+      return { ...state, matches };
+    }
+
+    case "PROCESSAR_RODADA": {
+      // Aplica o cálculo de rating (Tabela CBTM) para todas as partidas já
+      // validadas de uma rodada específica, ainda não calculadas. Processa em
+      // ordem de validação para manter a matemática do rating consistente
+      // (cada partida usa o rating já atualizado pelas anteriores do lote).
+      const { round } = action.payload;
+      const pendentes = state.matches
+        .filter(m => m.round === round && m.validated && !m.calculado && !m.rejeitado)
+        .sort((a, b) => new Date(a.adminAprovadoEm || 0) - new Date(b.adminAprovadoEm || 0));
+
+      let athletes = state.athletes;
+      const idsProcessados = [];
+
+      pendentes.forEach(match => {
+        const p1 = athletes.find(a => a.id === match.p1Id);
+        const p2 = athletes.find(a => a.id === match.p2Id);
+        if (!p1 || !p2) return;
+        const p1wins = match.score1 > match.score2;
+        const newR1 = calcElo(p1.rating, p2.rating, p1wins ? 1 : 0);
+        const newR2 = calcElo(p2.rating, p1.rating, p1wins ? 0 : 1);
+        const delta1 = newR1 - p1.rating;
+        const delta2 = newR2 - p2.rating;
+        athletes = athletes.map(a => {
+          if (a.id === match.p1Id) return { ...a, rating: newR1, saldoTemp: (a.saldoTemp||0) + delta1, wins: (a.wins||0) + (p1wins?1:0), losses: (a.losses||0) + (p1wins?0:1) };
+          if (a.id === match.p2Id) return { ...a, rating: newR2, saldoTemp: (a.saldoTemp||0) + delta2, wins: (a.wins||0) + (p1wins?0:1), losses: (a.losses||0) + (p1wins?1:0) };
+          return a;
+        });
+        idsProcessados.push(match.id);
+      });
+
+      const matches = state.matches.map(m =>
+        idsProcessados.includes(m.id) ? { ...m, calculado: true } : m
       );
       return { ...state, athletes, matches };
     }
@@ -2218,6 +2244,7 @@ export default function App() {
         p2SubAt: m.p2_enviado_em,
         validated: m.validado, validadoPorAdmin: m.validado_por_admin,
         adminAprovadoEm: m.admin_aprovado_em,
+        calculado: m.calculado ?? true,
         rejeitado: m.rejeitado, motivoRejeicao: m.motivo_rejeicao,
         deadline: m.prazo,
         resultadoComunicado: m.resultado_comunicado || false,
@@ -2297,22 +2324,48 @@ export default function App() {
       const match = st.matches.find(m=>m.id===matchId);
       if (approved) {
         const now = new Date().toISOString();
+        // Só confirma o placar — o cálculo de rating acontece depois, via PROCESSAR_RODADA.
         await db.updatePartida(matchId, {
           placar1:match.p1Submitted.score1, placar2:match.p1Submitted.score2,
           validado:true, validado_por_admin:true, admin_aprovado_em:now,
+          calculado:false,
         });
-        const p1wins = match.p1Submitted.score1 > match.p1Submitted.score2;
-        const p1 = st.athletes.find(a=>a.id===match.p1Id);
-        const p2 = st.athletes.find(a=>a.id===match.p2Id);
-        const newR1 = calcElo(p1.rating,p2.rating,p1wins?1:0);
-        const newR2 = calcElo(p2.rating,p1.rating,p1wins?0:1);
-        await Promise.all([
-          db.updateAtleta(match.p1Id,{rating:newR1,saldo_temp:(p1.saldoTemp||0)+(newR1-p1.rating),vitorias:(p1.wins||0)+(p1wins?1:0),derrotas:(p1.losses||0)+(p1wins?0:1)}),
-          db.updateAtleta(match.p2Id,{rating:newR2,saldo_temp:(p2.saldoTemp||0)+(newR2-p2.rating),vitorias:(p2.wins||0)+(p1wins?0:1),derrotas:(p2.losses||0)+(p1wins?1:0)}),
-        ]);
       } else {
         await db.updatePartida(matchId,{rejeitado:true,motivo_rejeicao:motivo});
       }
+    }
+    else if (action.type === "PROCESSAR_RODADA") {
+      // Espelha a mesma lógica sequencial do reducer local, pra persistir os
+      // mesmos valores finais de rating/saldo no Supabase.
+      const { round } = action.payload;
+      const pendentes = st.matches
+        .filter(m => m.round === round && m.validated && !m.calculado && !m.rejeitado)
+        .sort((a,b) => new Date(a.adminAprovadoEm||0) - new Date(b.adminAprovadoEm||0));
+
+      const athletesMap = {};
+      st.athletes.forEach(a => { athletesMap[a.id] = { ...a }; });
+
+      pendentes.forEach(match => {
+        const p1 = athletesMap[match.p1Id];
+        const p2 = athletesMap[match.p2Id];
+        if (!p1 || !p2) return;
+        const p1wins = match.score1 > match.score2;
+        const newR1 = calcElo(p1.rating, p2.rating, p1wins?1:0);
+        const newR2 = calcElo(p2.rating, p1.rating, p1wins?0:1);
+        const delta1 = newR1 - p1.rating, delta2 = newR2 - p2.rating;
+        athletesMap[match.p1Id] = { ...p1, rating:newR1, saldoTemp:(p1.saldoTemp||0)+delta1, wins:(p1.wins||0)+(p1wins?1:0), losses:(p1.losses||0)+(p1wins?0:1) };
+        athletesMap[match.p2Id] = { ...p2, rating:newR2, saldoTemp:(p2.saldoTemp||0)+delta2, wins:(p2.wins||0)+(p1wins?0:1), losses:(p2.losses||0)+(p1wins?1:0) };
+      });
+
+      const idsAlterados = new Set();
+      pendentes.forEach(m => { idsAlterados.add(m.p1Id); idsAlterados.add(m.p2Id); });
+
+      await Promise.all([...idsAlterados].map(id => {
+        const a = athletesMap[id];
+        return db.updateAtleta(id, { rating:a.rating, saldo_temp:a.saldoTemp, vitorias:a.wins, derrotas:a.losses });
+      }));
+      await Promise.all(pendentes.map(m => db.updatePartida(m.id, { calculado:true })));
+      await loadFromSupabase();
     }
     else if (action.type === "INICIAR_ETAPA") {
       await db.updateConfig({fase:"etapa"});
@@ -2568,13 +2621,16 @@ function AdminDashboard({ state, setTab, dispatch }) {
   const pendentes = state.athletes.filter(a => a.status === "pendente");
   const roundMatches = state.matches.filter(m => !m.validated && !m.rejeitado);
   const waitingVal = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado);
+  const calculoPendente = state.matches.filter(m => m.validated && !m.calculado && !m.rejeitado);
   const currentRound = state.keys[0]?.currentRound ?? 0;
   // Modelo por rating: as partidas são geradas sob demanda a cada par mensal.
   // Uma nova rodada pode ser gerada quando TODAS as partidas atuais foram resolvidas.
   const allCurrentValidated = currentRound > 0 && state.matches
     .filter(m => m.round === currentRound)
     .every(m => m.validated || m.rejeitado);
-  const todasResolvidas = state.matches.length > 0 && state.matches.every(m => m.validated || m.rejeitado);
+  // Exige validated E calculado — evita avançar de par mensal com rating desatualizado
+  // (ex: jogo da Rodada 2 validado cedo, mas ainda sem o cálculo processado).
+  const todasResolvidas = state.matches.length > 0 && state.matches.every(m => (m.validated && m.calculado) || m.rejeitado);
   const hasNextRound = todasResolvidas; // sempre pode gerar o próximo par mensal se tudo foi resolvido
 
   // ── Saúde da etapa ──
@@ -2663,6 +2719,14 @@ function AdminDashboard({ state, setTab, dispatch }) {
         <Card style={{border:"1px solid rgba(167,139,250,0.3)"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#9C6F3E",marginBottom:6}}>🔔 {waitingVal.length} resultado(s) para validar</div>
           <Btn onClick={()=>setTab("pendencias")} color="#9C6F3E">Validar agora</Btn>
+        </Card>
+      )}
+
+      {state.phase === "etapa" && calculoPendente.length > 0 && (
+        <Card style={{border:`1px solid ${T.madeira}55`}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.madeira,marginBottom:6}}>🧮 {calculoPendente.length} resultado(s) validado(s) aguardando cálculo de rating</div>
+          <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>O rating só é aplicado depois que o prazo da respectiva rodada fecha.</div>
+          <Btn onClick={()=>setTab("pendencias")} color={T.madeira}>Ver agora</Btn>
         </Card>
       )}
 
@@ -3038,11 +3102,56 @@ function AdminEtapa({ state, dispatch }) {
   );
 }
 
+// ── PROCESSAR RATING DA RODADA (dupla confirmação) ────────────────────────────
+function ProcessarRodadaButton({ round, pendentes, liberado, dispatch }) {
+  const [confirmando, setConfirmando] = useState(false);
+  if (pendentes.length === 0) return null;
+
+  function processar() {
+    dispatch({ type: "PROCESSAR_RODADA", payload: { round } });
+    setConfirmando(false);
+  }
+
+  return (
+    <Card style={{border:`1px solid ${T.madeira}44`}}>
+      <div style={{fontFamily:T.mono,fontSize:10,color:T.madeira,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>
+        Rodada {round} · {pendentes.length} validado{pendentes.length>1?"s":""}, aguardando cálculo
+      </div>
+      {!liberado && !confirmando && (
+        <div style={{fontSize:11,color:T.cinza,marginBottom:10}}>
+          O prazo desta rodada ainda não fechou — normalmente o cálculo só é feito depois disso.
+        </div>
+      )}
+      {!confirmando ? (
+        <Btn small onClick={()=>setConfirmando(true)} color={liberado?T.terracota:T.borda}>
+          🧮 Processar rating da Rodada {round}
+        </Btn>
+      ) : (
+        <>
+          <div style={{fontSize:12,color:T.offwhite,marginBottom:10}}>
+            {liberado
+              ? `Confirma o cálculo de rating para ${pendentes.length} partida(s) da Rodada ${round}? Essa ação não pode ser desfeita.`
+              : `O prazo desta rodada ainda não fechou. Tem certeza que quer calcular agora mesmo assim?`}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn small onClick={processar} color="#6a9d7a">Confirmar</Btn>
+            <Btn small onClick={()=>setConfirmando(false)} color="#c25a45">Cancelar</Btn>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 // ── ADMIN PENDÊNCIAS ──────────────────────────────────────────────────────────
 function AdminPendencias({ state, dispatch }) {
   const [motivo, setMotivo] = useState({});
   const waiting = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado);
   const incomplete = state.matches.filter(m => !m.validated && !m.rejeitado && !(m.p1Submitted && m.p2Submitted));
+  const calculoPendente = state.matches.filter(m => m.validated && !m.calculado && !m.rejeitado);
+  const diaHoje = new Date().getDate();
+  const liberadoRodada1 = diaHoje >= 16; // prazo da rodada 1 é dia 15
+  const liberadoRodada2 = diaHoje >= 26; // prazo da rodada 2 é dia 25
 
   function validate(m) {
     const s1 = m.p1Submitted, s2 = m.p2Submitted;
@@ -3085,6 +3194,15 @@ function AdminPendencias({ state, dispatch }) {
             </Card>
           );
         })}
+      </>}
+
+      {calculoPendente.length > 0 && <>
+        <SecTitle>🧮 Aguardando Cálculo de Rating ({calculoPendente.length})</SecTitle>
+        <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
+          O placar já está confirmado — o rating/saldo só é aplicado depois que o prazo da rodada correspondente fecha.
+        </div>
+        <ProcessarRodadaButton round={1} pendentes={calculoPendente.filter(m=>m.round===1)} liberado={liberadoRodada1} dispatch={dispatch} />
+        <ProcessarRodadaButton round={2} pendentes={calculoPendente.filter(m=>m.round===2)} liberado={liberadoRodada2} dispatch={dispatch} />
       </>}
 
       {incomplete.length > 0 && <>
@@ -3256,6 +3374,12 @@ function MatchCard({ m, state, admin=false, currentAthleteId }) {
         <div style={{display:"flex",alignItems:"baseline",gap:6,marginTop:10}}>
           <span style={{fontFamily:T.mono,fontSize:9,color:T.cinza,letterSpacing:1,textTransform:"uppercase"}}>🏆 Vencedor</span>
           <span style={{fontFamily:T.serif,fontSize:14,color:T.verde2}}>{nomeExibicao(winner)}</span>
+        </div>
+      )}
+
+      {m.validated && !m.calculado && (
+        <div style={{fontFamily:T.mono,fontSize:9,color:T.madeira,marginTop:8,letterSpacing:0.5,textTransform:"uppercase"}}>
+          🧮 Rating ainda não aplicado — conta após o fechamento da rodada
         </div>
       )}
 

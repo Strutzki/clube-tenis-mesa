@@ -2882,10 +2882,10 @@ const ESTILO_CORES = {
 
 // Raridade a partir da posição no ranking
 function rarityOf(pos) {
-  if (pos === 1) return { label: "Lendária", frame: "rgba(156,111,62,.65)", gems: 3 };
-  if (pos <= 3)  return { label: "Ouro",     frame: "rgba(216,90,48,.6)",   gems: 2 };
-  if (pos <= 6)  return { label: "Prata",    frame: "rgba(127,174,143,.58)",gems: 1 };
-  return         { label: "Bronze",   frame: "rgba(125,145,136,.55)",gems: 0 };
+  if (pos === 1) return { label: "Lendária", frame: "rgba(156,111,62,.65)", glow: "rgba(156,111,62,.24)", gems: 3 };
+  if (pos <= 3)  return { label: "Ouro",     frame: "rgba(216,90,48,.6)",   glow: "rgba(216,90,48,.2)",   gems: 2 };
+  if (pos <= 6)  return { label: "Prata",    frame: "rgba(127,174,143,.58)",glow: "rgba(127,174,143,.2)", gems: 1 };
+  return         { label: "Bronze",   frame: "rgba(125,145,136,.55)",glow: "rgba(125,145,136,.18)",gems: 0 };
 }
 
 function AtletaCard({ apelido, nome, foto, estilo = "Clássico", posicao, rating, vitorias, derrotas, serie, width = 320 }) {
@@ -2894,22 +2894,24 @@ function AtletaCard({ apelido, nome, foto, estilo = "Clássico", posicao, rating
   const estColor = ESTILO_CORES[estilo] || T.terracota;
   const off = "rgba(240,234,224,.3)";
   const gem = (n) => (r.gems >= n ? T.terracota : off);
-  const height = Math.round((width * 450) / 320);
+  const s = width / 320; // escala proporcional
+  const px = (n) => Math.round(n * s);
+  const height = px(450);
 
   const onMove = (e) => {
     const wrap = wrapRef.current; if (!wrap) return;
     const card = wrap.firstElementChild;
     const b = wrap.getBoundingClientRect();
-    const px = (e.clientX - b.left) / b.width;
-    const py = (e.clientY - b.top) / b.height;
-    card.style.transform = `rotateX(${(0.5 - py) * 15}deg) rotateY(${(px - 0.5) * 15}deg) scale(1.03)`;
+    const mx = (e.clientX - b.left) / b.width;
+    const my = (e.clientY - b.top) / b.height;
+    card.style.transform = `rotateX(${(0.5 - my) * 15}deg) rotateY(${(mx - 0.5) * 15}deg) scale(1.03)`;
     card.querySelectorAll("[data-holo],[data-holo2]").forEach((h) => {
-      h.style.backgroundPosition = `${px * 100}% ${py * 100}%`;
+      h.style.backgroundPosition = `${mx * 100}% ${my * 100}%`;
       h.style.opacity = h.hasAttribute("data-holo2") ? "0.55" : "0.9";
     });
     const g = card.querySelector("[data-glare]");
     if (g) {
-      g.style.background = `radial-gradient(circle at ${px * 100}% ${py * 100}%, rgba(255,255,255,.5), rgba(255,255,255,0) 45%)`;
+      g.style.background = `radial-gradient(circle at ${mx * 100}% ${my * 100}%, rgba(255,255,255,.5), rgba(255,255,255,0) 45%)`;
       g.style.opacity = "1";
     }
   };
@@ -2928,69 +2930,71 @@ function AtletaCard({ apelido, nome, foto, estilo = "Clássico", posicao, rating
 
   return (
     <div ref={wrapRef} onMouseMove={onMove} onMouseLeave={onLeave} style={{ perspective: 1100, width }}>
-      <div style={{ position:"relative", width, height, borderRadius:20, transformStyle:"preserve-3d", transition:"transform .18s ease", willChange:"transform", boxShadow:"0 40px 70px -25px rgba(28,43,39,.7)", background: T.verde, overflow:"hidden" }}>
+      <div style={{ position:"relative", width, height, borderRadius:px(20), transformStyle:"preserve-3d", transition:"transform .18s ease", willChange:"transform", boxShadow:"0 40px 70px -25px rgba(28,43,39,.7)", background: T.verde, overflow:"hidden" }}>
 
-        {/* arte full-bleed (ou retrato de reserva, se o atleta ainda não subiu foto) */}
-        {foto
-          ? <img src={foto} alt={nome} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
-          : <div style={{ position:"absolute", inset:0, background:T.verdeCard, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <span style={{ fontFamily:T.serif, fontSize:width*0.4, color:T.offwhite, opacity:0.3 }}>{apelido?.[0]?.toUpperCase()}</span>
-            </div>
-        }
-        <div style={{ position:"absolute", inset:0, borderRadius:20, pointerEvents:"none", background:"linear-gradient(to bottom, rgba(28,43,39,.72) 0%, transparent 22%, transparent 40%, rgba(28,43,39,.5) 64%, rgba(28,43,39,.94) 92%)" }} />
+        {/* brilho de raridade no topo */}
+        <div style={{ position:"absolute", inset:0, pointerEvents:"none", background:`radial-gradient(120% 80% at 50% 0%, ${r.glow}, transparent 55%)` }} />
 
-        {/* conteúdo sobre a arte */}
-        <div style={{ position:"absolute", inset:0, padding:16, display:"flex", flexDirection:"column", color: T.offwhite }}>
+        {/* conteúdo */}
+        <div style={{ position:"absolute", inset:0, padding:px(16), display:"flex", flexDirection:"column", color: T.offwhite }}>
+          {/* cabeçalho: nome + tipo */}
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-            <div style={{ display:"flex", flexDirection:"column", gap:7, alignItems:"flex-start" }}>
-              <span style={{ fontFamily:T.mono, fontSize:7.5, letterSpacing:1.4, textTransform:"uppercase", color:T.offwhite, background: r.frame, padding:"4px 9px", borderRadius:12 }}>{r.label}</span>
-              <div style={{ display:"flex", gap:4, marginLeft:3 }}>
-                {[1,2,3].map((n) => (
-                  <span key={n} style={{ width:8, height:8, background: gem(n), transform:"rotate(45deg)", boxShadow:"0 1px 3px rgba(0,0,0,.45)" }} />
-                ))}
-              </div>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontFamily:T.serif, fontSize:px(30), lineHeight:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{apelido}</div>
+              <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.4, textTransform:"uppercase", color:"rgba(240,234,224,.5)", marginTop:px(4), whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{nome}</div>
             </div>
-            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:5, background:"rgba(28,43,39,.62)", border:`1px solid ${estColor}`, borderRadius:12, padding:"7px 9px", flexShrink:0 }}>
-              <span style={{ position:"relative", width:15, height:15, display:"inline-block", color: estColor }}>
-                <span style={{ position:"absolute", top:0, left:2, width:12, height:12, borderRadius:"50%", background:"currentColor" }} />
-                <span style={{ position:"absolute", bottom:-2, left:6, width:3, height:6, borderRadius:1, background:"currentColor" }} />
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:px(5), background:"rgba(28,43,39,.5)", border:`1px solid ${estColor}`, borderRadius:px(12), padding:`${px(7)}px ${px(9)}px`, flexShrink:0, marginLeft:px(10) }}>
+              <span style={{ position:"relative", width:px(15), height:px(15), display:"inline-block", color: estColor }}>
+                <span style={{ position:"absolute", top:0, left:px(2), width:px(12), height:px(12), borderRadius:"50%", background:"currentColor" }} />
+                <span style={{ position:"absolute", bottom:px(-2), left:px(6), width:px(3), height:px(6), borderRadius:1, background:"currentColor" }} />
               </span>
-              <span style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:.5, textTransform:"uppercase", color:"rgba(240,234,224,.78)", whiteSpace:"nowrap" }}>{estilo}</span>
+              <span style={{ fontFamily:T.mono, fontSize:px(6.5), letterSpacing:.5, textTransform:"uppercase", color:"rgba(240,234,224,.7)", whiteSpace:"nowrap" }}>{estilo}</span>
             </div>
           </div>
 
-          <div style={{ flex:1 }} />
-
-          <div>
-            <div style={{ fontFamily:T.serif, fontSize:42, lineHeight:1, textShadow:"0 2px 12px rgba(0,0,0,.65)" }}>{apelido}</div>
-            <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:1.4, textTransform:"uppercase", color:"rgba(240,234,224,.62)", marginTop:4 }}>{nome}{serie ? ` · ${serie}` : ""}</div>
-
-            <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginTop:12, paddingTop:12, borderTop:"1px solid rgba(240,234,224,.25)" }}>
-              <div>
-                <div style={{ fontFamily:T.mono, fontSize:7.5, letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.62)" }}>Ranking</div>
-                <div style={{ fontFamily:T.serif, fontSize:26, lineHeight:.9, marginTop:2, textShadow:"0 2px 8px rgba(0,0,0,.5)" }}>{posicao}º</div>
-              </div>
-              <div style={{ textAlign:"center" }}>
-                <div style={{ fontFamily:T.serif, fontSize:40, lineHeight:.85, color:T.terracota, textShadow:"0 2px 10px rgba(0,0,0,.55)" }}>{rating}</div>
-                <div style={{ fontFamily:T.mono, fontSize:7.5, letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.68)", marginTop:2 }}>Rating</div>
-              </div>
-              <div style={{ textAlign:"right" }}>
-                <div style={{ fontFamily:T.serif, fontSize:22, lineHeight:.9, textShadow:"0 2px 8px rgba(0,0,0,.5)" }}>
-                  <span style={{ color:T.verde2 }}>{vitorias}</span>
-                  <span style={{ fontSize:13, color:"rgba(240,234,224,.5)" }}> · </span>
-                  <span style={{ color:"rgba(240,234,224,.72)" }}>{derrotas}</span>
+          {/* janela da foto (ou retrato de reserva, se o atleta ainda não subiu foto) */}
+          <div style={{ position:"relative", margin:`${px(12)}px 0 0`, borderRadius:px(14), overflow:"hidden", height:px(230), border:`2px solid ${r.frame}`, boxShadow:"inset 0 0 0 3px rgba(28,43,39,.5)" }}>
+            {foto
+              ? <img src={foto} alt={nome} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+              : <div style={{ position:"absolute", inset:0, background:T.verdeCard, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  <span style={{ fontFamily:T.serif, fontSize:px(90), color:T.offwhite, opacity:0.3 }}>{apelido?.[0]?.toUpperCase()}</span>
                 </div>
-                <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:1.2, color:"rgba(240,234,224,.58)", marginTop:3 }}>V · D</div>
+            }
+            <div style={{ position:"absolute", top:px(8), left:px(8), fontFamily:T.mono, fontSize:px(7), letterSpacing:1.4, textTransform:"uppercase", color:T.offwhite, background: r.frame, padding:`${px(3)}px ${px(7)}px`, borderRadius:px(10) }}>{r.label}</div>
+            <div style={{ position:"absolute", top:px(8), right:px(8), display:"flex", gap:px(4) }}>
+              {[1,2,3].map((n) => (
+                <span key={n} style={{ width:px(8), height:px(8), background: gem(n), transform:"rotate(45deg)" }} />
+              ))}
+            </div>
+          </div>
+
+          {/* rodapé: ranking · rating · V/D */}
+          <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginTop:px(14) }}>
+            <div>
+              <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.5)" }}>Ranking</div>
+              <div style={{ fontFamily:T.serif, fontSize:px(30), lineHeight:.9, marginTop:px(2) }}>{posicao}º</div>
+            </div>
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontFamily:T.serif, fontSize:px(44), lineHeight:.85, color:T.terracota, textShadow:"0 2px 10px rgba(216,90,48,.35)" }}>{rating}</div>
+              <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.55)", marginTop:px(2) }}>Rating</div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.2, textTransform:"uppercase", color:"rgba(240,234,224,.5)" }}>{serie}</div>
+              <div style={{ fontFamily:T.serif, fontSize:px(22), lineHeight:.9, marginTop:px(4) }}>
+                <span style={{ color:T.verde2 }}>{vitorias}</span>
+                <span style={{ fontSize:px(13), color:"rgba(240,234,224,.5)" }}> · </span>
+                <span style={{ color:"rgba(240,234,224,.6)" }}>{derrotas}</span>
               </div>
+              <div style={{ fontFamily:T.mono, fontSize:px(7), letterSpacing:1, color:"rgba(240,234,224,.4)", marginTop:px(2) }}>V · D</div>
             </div>
           </div>
         </div>
 
         {/* holo + brilho + moldura de raridade (por cima de tudo) */}
-        <div data-holo style={{ position:"absolute", inset:0, borderRadius:20, pointerEvents:"none", opacity:.4, transition:"opacity .25s", mixBlendMode:"color-dodge", background:"linear-gradient(120deg, transparent 12%, rgba(216,90,48,.6) 28%, rgba(127,174,143,.55) 40%, rgba(156,111,62,.65) 50%, rgba(127,174,143,.55) 60%, rgba(216,90,48,.55) 72%, transparent 88%)", backgroundSize:"240% 240%", backgroundPosition:"50% 50%" }} />
-        <div data-holo2 style={{ position:"absolute", inset:0, borderRadius:20, pointerEvents:"none", opacity:.24, transition:"opacity .25s", mixBlendMode:"overlay", background:"repeating-linear-gradient(72deg, rgba(255,255,255,.16) 0 2px, transparent 2px 6px)", backgroundSize:"200% 200%", backgroundPosition:"50% 50%" }} />
-        <div data-glare style={{ position:"absolute", inset:0, borderRadius:20, pointerEvents:"none", opacity:0, transition:"opacity .2s", mixBlendMode:"soft-light" }} />
-        <div style={{ position:"absolute", inset:0, borderRadius:20, border:`2px solid ${r.frame}`, boxShadow:"inset 0 0 0 4px rgba(28,43,39,.35)", pointerEvents:"none" }} />
+        <div data-holo style={{ position:"absolute", inset:0, borderRadius:px(20), pointerEvents:"none", opacity:.4, transition:"opacity .25s", mixBlendMode:"color-dodge", background:"linear-gradient(120deg, transparent 12%, rgba(216,90,48,.6) 28%, rgba(127,174,143,.55) 40%, rgba(156,111,62,.65) 50%, rgba(127,174,143,.55) 60%, rgba(216,90,48,.55) 72%, transparent 88%)", backgroundSize:"240% 240%", backgroundPosition:"50% 50%" }} />
+        <div data-holo2 style={{ position:"absolute", inset:0, borderRadius:px(20), pointerEvents:"none", opacity:.24, transition:"opacity .25s", mixBlendMode:"overlay", background:"repeating-linear-gradient(72deg, rgba(255,255,255,.16) 0 2px, transparent 2px 6px)", backgroundSize:"200% 200%", backgroundPosition:"50% 50%" }} />
+        <div data-glare style={{ position:"absolute", inset:0, borderRadius:px(20), pointerEvents:"none", opacity:0, transition:"opacity .2s", mixBlendMode:"soft-light" }} />
+        <div style={{ position:"absolute", inset:0, borderRadius:px(20), border:`2px solid ${r.frame}`, boxShadow:"inset 0 0 0 4px rgba(28,43,39,.35)", pointerEvents:"none" }} />
       </div>
     </div>
   );

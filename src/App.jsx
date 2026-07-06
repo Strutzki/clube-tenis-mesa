@@ -1,4 +1,4 @@
-import { useState, useReducer, useMemo, useEffect, useCallback } from "react";
+import { useState, useReducer, useMemo, useEffect, useCallback, useRef } from "react";
 
 // ── TEMA OFICIAL DA MARCA (Manual de Aplicação) ──────────────────────────────
 const T = {
@@ -125,6 +125,54 @@ const db = {
   getConfig: () => supaFetch("configuracao?id=eq.1"),
   updateConfig: (data) => supaFetch("configuracao?id=eq.1", { method:"PATCH", body: JSON.stringify(data) }),
 };
+
+// ── FOTO DE PERFIL DO ATLETA (Supabase Storage) ───────────────────────────────
+const FOTOS_BUCKET = "fotos-atletas";
+
+// Redimensiona/comprime a imagem no navegador antes de enviar — fotos de
+// celular podem ter vários MB, e isso deixaria o upload lento e o app pesado.
+function resizeImageFile(file, maxSize = 480, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Não foi possível ler o arquivo."));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Arquivo não parece ser uma imagem válida."));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxSize) { height = Math.round(height * (maxSize / width)); width = maxSize; }
+        else if (height >= width && height > maxSize) { width = Math.round(width * (maxSize / height)); height = maxSize; }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Falha ao processar a imagem.")), "image/jpeg", quality);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Envia o blob já redimensionado pro bucket público e devolve a URL pública.
+async function uploadFotoAtleta(athleteId, blob) {
+  const path = `${athleteId}-${Date.now()}.jpg`;
+  const res = await fetch(`${SUPA_URL}/storage/v1/object/${FOTOS_BUCKET}/${path}`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPA_KEY,
+      "Authorization": `Bearer ${SUPA_KEY}`,
+      "Content-Type": "image/jpeg",
+      "x-upsert": "true",
+    },
+    body: blob,
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Erro ao enviar a foto (${res.status}): ${err}`);
+  }
+  return `${SUPA_URL}/storage/v1/object/public/${FOTOS_BUCKET}/${path}`;
+}
 
 // ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-3, Cap. 05) ──────
 // Tabela Básica de Cálculo do Rating do Manual Tênis de Mesa Brasil (item 1.7.2.4.5)
@@ -503,6 +551,17 @@ function reducer(state, action) {
           : m
       );
       return { ...state, matches };
+    }
+
+    case "ATUALIZAR_FOTO_ATLETA": {
+      // Atleta subiu (ou removeu) sua própria foto de perfil. A imagem em si
+      // já foi enviada pro Supabase Storage antes desse dispatch — aqui só
+      // guardamos a URL pública resultante.
+      const { athleteId, url } = action.payload;
+      const athletes = state.athletes.map(a =>
+        a.id === athleteId ? { ...a, foto: url } : a
+      );
+      return { ...state, athletes };
     }
 
     case "PROCESSAR_RODADA": {
@@ -2319,6 +2378,7 @@ export default function App() {
         aceiteLGPD: a.aceite_lgpd, inscritoEm: a.inscrito_em,
         pendenteCircuito: a.pendente_circuito || false,
         ultimaRecusaCircuitoEm: a.ultima_recusa_circuito_em || null,
+        foto: a.foto_url || null,
       }));
       const matchesMapped = (partidas||[]).map(m => ({
         id: m.id, keyId: m.chave_id, round: m.rodada,
@@ -2438,6 +2498,10 @@ export default function App() {
         validado: true, validado_por_admin: true, admin_aprovado_em: now,
         calculado: false, imputado_pelo_admin: true,
       });
+    }
+    else if (action.type === "ATUALIZAR_FOTO_ATLETA") {
+      const { athleteId, url } = action.payload;
+      await db.updateAtleta(athleteId, { foto_url: url });
     }
     else if (action.type === "PROCESSAR_RODADA") {
       // Espelha a mesma lógica sequencial do reducer local, pra persistir os
@@ -2736,6 +2800,22 @@ function BottomNav({ isAdmin, tab, setTab }) {
 }
 
 // ── CARDS / UI UTILS ─────────────────────────────────────────────────────────
+// Avatar do atleta: mostra a foto de perfil se existir, senão as iniciais
+// num círculo colorido. `ring` permite destacar (ex: "é você" ou vencedor).
+const Avatar = ({ athlete, size = 38, ring = null, fontSize = null }) => (
+  <span style={{
+    width:size, height:size, borderRadius:"50%", background:T.verdeCard,
+    border:`${ring ? 2 : 1}px solid ${ring || T.bordaSuave}`,
+    display:"flex", alignItems:"center", justifyContent:"center",
+    flexShrink:0, overflow:"hidden",
+    fontFamily:T.serif, fontSize: fontSize || Math.round(size*0.4), color:T.offwhite,
+  }}>
+    {athlete?.foto
+      ? <img src={athlete.foto} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+      : (nomeExibicao(athlete)?.[0]?.toUpperCase() || "?")}
+  </span>
+);
+
 const Card = ({children, style={}}) => (
   <div style={{background:"#223330",borderRadius:14,padding:"14px 16px",marginBottom:10,border:"1px solid rgba(255,255,255,0.05)",...style}}>
     {children}
@@ -3540,9 +3620,7 @@ function RankingView({ state, currentAthleteId }) {
         <div style={{width:24,display:"flex",alignItems:"baseline",gap:4,flexShrink:0,justifyContent:"flex-end"}}>
           <span style={{fontFamily:T.serif,fontSize:22,color: isMe ? T.terracota : (foraDoCorte ? "#5E7569" : T.offwhite),lineHeight:1}}>{i+1}</span>
         </div>
-        <span style={{width:38,height:38,borderRadius:"50%",background:T.verdeCard,border:`1px solid ${isMe?"rgba(216,90,48,0.4)":T.bordaSuave}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:15,color:T.offwhite}}>
-          {nomeExibicao(a)?.[0]?.toUpperCase()}
-        </span>
+        <Avatar athlete={a} size={38} ring={isMe ? "rgba(216,90,48,0.4)" : null}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,color: isMe ? T.terracota : (foraDoCorte ? "#c3ccc6" : T.offwhite),whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
             {nomeExibicao(a)}
@@ -3688,6 +3766,49 @@ function AthleteView({ state, dispatch, athlete, tab, setTab }) {
   return null;
 }
 
+// ── AVATAR EDITÁVEL (upload de foto de perfil do atleta) ──────────────────────
+function EditableAvatar({ athlete, dispatch, size = 72 }) {
+  const [status, setStatus] = useState(""); // "" | "enviando" | "erro"
+  const inputRef = useRef(null);
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite escolher o mesmo arquivo de novo depois, se der erro
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setStatus("erro"); return; }
+    setStatus("enviando");
+    try {
+      const blob = await resizeImageFile(file);
+      const url = await uploadFotoAtleta(athlete.id, blob);
+      dispatch({ type: "ATUALIZAR_FOTO_ATLETA", payload: { athleteId: athlete.id, url } });
+      setStatus("");
+    } catch (err) {
+      console.error(err);
+      setStatus("erro");
+    }
+  }
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:18}}>
+      <div onClick={()=>inputRef.current?.click()} style={{position:"relative",cursor:"pointer"}}>
+        <Avatar athlete={athlete} size={size} fontSize={Math.round(size*0.4)} ring="rgba(216,90,48,0.5)"/>
+        <div style={{position:"absolute",bottom:-2,right:-2,width:26,height:26,borderRadius:"50%",background:T.terracota,display:"flex",alignItems:"center",justifyContent:"center",border:`2px solid ${T.telaFundo}`,fontSize:12}}>
+          📷
+        </div>
+        {status === "enviando" && (
+          <div style={{position:"absolute",inset:0,borderRadius:"50%",background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontFamily:T.mono,fontSize:8,color:T.offwhite,letterSpacing:0.5}}>...</span>
+          </div>
+        )}
+      </div>
+      <input ref={inputRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{display:"none"}}/>
+      <div style={{fontFamily:T.mono,fontSize:9,color: status==="erro" ? T.vermelho : T.cinza,letterSpacing:0.5,textTransform:"uppercase",marginTop:8,textAlign:"center"}}>
+        {status === "enviando" ? "Enviando..." : status === "erro" ? "Erro ao enviar — toque para tentar de novo" : "Toque para alterar sua foto"}
+      </div>
+    </div>
+  );
+}
+
 function AthleteGames({ state, dispatch, athlete }) {
   const myMatches = state.matches.filter(m => m.p1Id === athlete.id || m.p2Id === athlete.id);
   const open = myMatches.filter(m => !m.validated && !m.rejeitado);
@@ -3711,6 +3832,8 @@ function AthleteGames({ state, dispatch, athlete }) {
 
   return (
     <div>
+      <EditableAvatar athlete={eu} dispatch={dispatch}/>
+
       {/* Cabeçalho editorial: Posição/Pontos + Rating */}
       <div style={{display:"flex",gap:10,marginBottom:20}}>
         <div style={{flex:1.4,background:T.verdeCard,borderRadius:10,padding:"14px 16px",borderLeft:`3px solid ${T.terracota}`}}>
@@ -3754,9 +3877,7 @@ function AthleteGames({ state, dispatch, athlete }) {
           return (
             <div key={m.id} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 0",borderTop:`1px solid ${T.bordaSuave}`}}>
               <span style={{fontFamily:T.mono,fontSize:9,color:T.cinza,width:20,flexShrink:0}}>R{m.round}</span>
-              <span style={{width:32,height:32,borderRadius:"50%",background:T.verdeCard,border:`1px solid ${T.bordaSuave}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:13,color:T.offwhite}}>
-                {nomeExibicao(adversario)?.[0]?.toUpperCase()}
-              </span>
+              <Avatar athlete={adversario} size={32} fontSize={13}/>
               <span style={{flex:1,fontSize:14,color:T.offwhite,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(adversario)}</span>
               <span style={{fontFamily:T.mono,fontSize:13,color:"rgba(240,234,224,0.85)"}}>{meuScore}–{scoreAdv}</span>
               <span style={{width:24,height:24,borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:T.mono,fontWeight:700,fontSize:12,flexShrink:0,
@@ -3795,16 +3916,12 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
         })()}
       </div>
       <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:20,marginBottom:14}}>
-        <span style={{width:54,height:54,borderRadius:"50%",background:T.verdeCard,border:`2px solid ${isP1?"rgba(216,90,48,0.55)":"rgba(240,234,224,0.16)"}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:20,color:T.offwhite}}>
-          {nomeExibicao(p1)?.[0]?.toUpperCase()}
-        </span>
+        <Avatar athlete={p1} size={54} fontSize={20} ring={isP1?"rgba(216,90,48,0.55)":"rgba(240,234,224,0.16)"}/>
         <div style={{textAlign:"center"}}>
           <div style={{width:18,height:18,borderRadius:"50%",background:T.terracota,margin:"0 auto",boxShadow:"inset -3px -3px 5px rgba(0,0,0,0.25)",animation:"ctm-ballBounce 1.3s ease-in-out infinite"}}/>
           <div style={{width:18,height:5,borderRadius:"50%",background:"rgba(0,0,0,0.4)",margin:"4px auto 0",animation:"ctm-ballShadow 1.3s ease-in-out infinite"}}/>
         </div>
-        <span style={{width:54,height:54,borderRadius:"50%",background:T.verdeCard,border:`2px solid ${!isP1?"rgba(216,90,48,0.55)":"rgba(240,234,224,0.16)"}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:20,color:T.offwhite}}>
-          {nomeExibicao(p2)?.[0]?.toUpperCase()}
-        </span>
+        <Avatar athlete={p2} size={54} fontSize={20} ring={!isP1?"rgba(216,90,48,0.55)":"rgba(240,234,224,0.16)"}/>
       </div>
       <div style={{fontFamily:T.serif,fontSize:18,color:T.offwhite,textAlign:"center",marginBottom:4,lineHeight:1.2}}>
         {nomeExibicao(p1)} <span style={{fontFamily:T.mono,fontSize:11,color:T.cinza,fontWeight:700}}> vs </span> {nomeExibicao(p2)}
@@ -3901,9 +4018,7 @@ function TabelaView({ state, athlete }) {
               const linhaJogador = (p, ganhou, score) => (
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
                   <span style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1}}>
-                    <span style={{width:26,height:26,borderRadius:"50%",background:T.verde,border:`1px solid ${T.bordaSuave}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:11,color:T.offwhite}}>
-                      {nomeExibicao(p)?.[0]?.toUpperCase()}
-                    </span>
+                    <Avatar athlete={p} size={26} fontSize={11}/>
                     <span style={{fontSize:13,color: done ? (ganhou?T.offwhite:"rgba(240,234,224,0.5)") : T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(p)}</span>
                   </span>
                   {done && <span style={{fontFamily:T.serif,fontSize:18,lineHeight:1,color:ganhou?T.terracota:"rgba(240,234,224,0.5)",flexShrink:0}}>{score}</span>}
@@ -4017,9 +4132,7 @@ function ComunidadeView({ state, currentAthleteId }) {
         const c = tagCores[f.tipo] || tagCores.match;
         return (
           <div key={i} style={{display:"flex",gap:12,padding:"10px 0"}}>
-            <div style={{width:38,height:38,borderRadius:"50%",background:T.verdeCard,border:`1px solid ${T.bordaSuave}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:T.serif,fontSize:15,color:T.offwhite}}>
-              {nomeExibicao(f.atleta)?.[0]?.toUpperCase()}
-            </div>
+            <Avatar athlete={f.atleta} size={38}/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <span style={{fontFamily:T.mono,fontSize:8,letterSpacing:0.6,textTransform:"uppercase",color:c.color,background:c.bg,padding:"3px 7px",borderRadius:12}}>{f.tag}</span>
@@ -4040,9 +4153,7 @@ function ComunidadeView({ state, currentAthleteId }) {
             const isMe = a.id === currentAthleteId;
             return (
               <div key={a.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:7}}>
-                <div style={{width:56,height:56,borderRadius:"50%",background:T.verdeCard,border:`2px solid ${isMe?"rgba(216,90,48,0.6)":"rgba(240,234,224,0.16)"}`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:T.serif,fontSize:20,color:T.offwhite}}>
-                  {nomeExibicao(a)?.[0]?.toUpperCase()}
-                </div>
+                <Avatar athlete={a} size={56} fontSize={20} ring={isMe?"rgba(216,90,48,0.6)":"rgba(240,234,224,0.16)"}/>
                 <span style={{fontSize:11,color:"rgba(240,234,224,0.8)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>
                   {nomeExibicao(a).split(" ")[0]}
                 </span>

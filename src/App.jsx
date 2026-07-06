@@ -1613,6 +1613,13 @@ function AdminMensagens({ state }) {
 
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const rodadaAtual = state.keys[0]?.currentRound || 1;
+  // Rodadas do PAR mensal corrente. Não dá pra assumir "1 e 2" fixos — a
+  // numeração cresce a cada mês (mês 2 = rodadas 3/4, mês 3 = 5/6...). Como as
+  // duas rodadas de cada mês são sempre criadas juntas, as duas maiores
+  // rodadas existentes são sempre o par do mês atual, não importa o valor de
+  // currentRound (que tem semântica diferente logo após iniciar a etapa).
+  const maxRodada = Math.max(0, ...state.matches.map(m => m.round || 0));
+  const rodadasDoMes = maxRodada > 0 ? [maxRodada - 1, maxRodada] : [];
 
   // ── HELPERS ────────────────────────────────────────────────────────────────
   function nomeAdv(athleteId) {
@@ -1633,8 +1640,8 @@ function AdminMensagens({ state }) {
     switch(cat) {
 
       case "confrontos": {
-        // Os 2 confrontos do mês (rodadas 1 e 2), não validados — agrupados por atleta
-        const partidasMes = state.matches.filter(m => (m.round === 1 || m.round === 2) && !m.validated && !m.rejeitado);
+        // Os 2 confrontos do mês corrente, não validados — agrupados por atleta
+        const partidasMes = state.matches.filter(m => rodadasDoMes.includes(m.round) && !m.validated && !m.rejeitado);
         const porAtleta = {};
         partidasMes.forEach(m => {
           const p1 = state.athletes.find(a => a.id === m.p1Id);
@@ -1718,6 +1725,17 @@ function AdminMensagens({ state }) {
         }).filter(Boolean).flat();
       }
 
+      case "backlog": {
+        // Atletas aprovados mas ainda no backlog do circuito — entraram no
+        // meio do mês, então só começam a jogar quando o admin os incluir
+        // na próxima rodada (INCLUIR_NO_CIRCUITO).
+        const emBacklog = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito);
+        return emBacklog.map(a => ({
+          atleta: a,
+          msg: `🏓 *Clube do Tênis de Mesa — Inscrição Aprovada!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Sua inscrição no Clube foi *aprovada*! 🎉\n\nComo você entrou no meio do mês, seus confrontos começam a partir da *próxima rodada* — assim que a nova etapa abrir, seus jogos já vão aparecer pra você no app.\n\nQualquer dúvida, é só chamar. Bem-vindo(a) ao Clube! 🏆`,
+        }));
+      }
+
       case "torneio": {
         // Top 8 atletas convocados para o torneio
         const top8 = [...ativos]
@@ -1754,15 +1772,16 @@ function AdminMensagens({ state }) {
       .slice(0, 10)
       .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
 
+    const [rodadaA, rodadaB] = rodadasDoMes.length ? rodadasDoMes : [1, 2];
     const confrontosA = state.matches
-      .filter(m => m.round === 1 && !m.validated && !m.rejeitado)
+      .filter(m => m.round === rodadaA && !m.validated && !m.rejeitado)
       .map(m => {
         const p1 = state.athletes.find(a => a.id === m.p1Id);
         const p2 = state.athletes.find(a => a.id === m.p2Id);
         return p1 && p2 ? `⚔️ ${nomeExibicao(p1)} vs ${nomeExibicao(p2)}` : null;
       }).filter(Boolean);
     const confrontosB = state.matches
-      .filter(m => m.round === 2 && !m.validated && !m.rejeitado)
+      .filter(m => m.round === rodadaB && !m.validated && !m.rejeitado)
       .map(m => {
         const p1 = state.athletes.find(a => a.id === m.p1Id);
         const p2 = state.athletes.find(a => a.id === m.p2Id);
@@ -1771,7 +1790,7 @@ function AdminMensagens({ state }) {
 
     switch(tipo) {
       case "abertura":
-        return `🏓 *Clube do Tênis de Mesa — Confrontos do Mês!*\n\nOlá galera! Os dois confrontos deste mês já estão definidos:\n\n*🗓️ Rodada 1 — jogar e registrar até dia 15:*\n${confrontosA.join("\n")}\n\n*🗓️ Rodada 2 — jogar e registrar até dia 25:*\n${confrontosB.join("\n")}\n\nBons jogos! 🏆`;
+        return `🏓 *Clube do Tênis de Mesa — Confrontos do Mês!*\n\nOlá galera! Os dois confrontos deste mês já estão definidos:\n\n*🗓️ Rodada ${rodadaA} — jogar e registrar até dia 15:*\n${confrontosA.join("\n")}\n\n*🗓️ Rodada ${rodadaB} — jogar e registrar até dia 25:*\n${confrontosB.join("\n")}\n\nBons jogos! 🏆`;
       case "ranking":
         return `🏆 *Clube do Tênis de Mesa — Ranking Rodada ${rodadaAtual}*\n\n${top.join("\n")}\n\nAcompanhe todos os detalhes no app e no @clubedotenisdemesa! 🏓`;
       case "encerramento":
@@ -1900,6 +1919,7 @@ function AdminMensagens({ state }) {
     {id:"confrontos", icon:"⚔️", label:"Confrontos da Rodada",  desc:"Avisa cada atleta sobre seu adversário"},
     {id:"resultados", icon:"📊", label:"Resultados Confirmados", desc:"Envia resultado e novo rating para cada atleta"},
     {id:"lembretes",  icon:"⏰", label:"Lembretes de Prazo",    desc:"Alerta atletas com prazo próximo (≤3 dias)"},
+    {id:"backlog",    icon:"🆕", label:"Inscrição Aprovada",    desc:"Avisa quem foi aceito e entra na próxima rodada"},
     {id:"ranking",    icon:"🏆", label:"Ranking para Todos",    desc:"Envia ranking atualizado para cada atleta"},
     {id:"torneio",    icon:"🎯", label:"Convocação Torneio",    desc:"Notifica os Top 8 classificados"},
   ];

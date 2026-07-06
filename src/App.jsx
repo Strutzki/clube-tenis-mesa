@@ -3769,14 +3769,16 @@ function AthleteView({ state, dispatch, athlete, tab, setTab }) {
 // ── AVATAR EDITÁVEL (upload de foto de perfil do atleta) ──────────────────────
 function EditableAvatar({ athlete, dispatch, size = 72 }) {
   const [status, setStatus] = useState(""); // "" | "enviando" | "erro"
+  const [errMsg, setErrMsg] = useState("");
   const inputRef = useRef(null);
 
   async function handleFile(e) {
     const file = e.target.files?.[0];
     e.target.value = ""; // permite escolher o mesmo arquivo de novo depois, se der erro
     if (!file) return;
-    if (!file.type.startsWith("image/")) { setStatus("erro"); return; }
+    if (!file.type.startsWith("image/")) { setStatus("erro"); setErrMsg("Arquivo não é uma imagem."); return; }
     setStatus("enviando");
+    setErrMsg("");
     try {
       const blob = await resizeImageFile(file);
       const url = await uploadFotoAtleta(athlete.id, blob);
@@ -3785,6 +3787,7 @@ function EditableAvatar({ athlete, dispatch, size = 72 }) {
     } catch (err) {
       console.error(err);
       setStatus("erro");
+      setErrMsg(err?.message || "Erro desconhecido.");
     }
   }
 
@@ -3802,8 +3805,8 @@ function EditableAvatar({ athlete, dispatch, size = 72 }) {
         )}
       </div>
       <input ref={inputRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{display:"none"}}/>
-      <div style={{fontFamily:T.mono,fontSize:9,color: status==="erro" ? T.vermelho : T.cinza,letterSpacing:0.5,textTransform:"uppercase",marginTop:8,textAlign:"center"}}>
-        {status === "enviando" ? "Enviando..." : status === "erro" ? "Erro ao enviar — toque para tentar de novo" : "Toque para alterar sua foto"}
+      <div style={{fontFamily:T.mono,fontSize:9,color: status==="erro" ? T.vermelho : T.cinza,letterSpacing:0.5,textTransform:"uppercase",marginTop:8,textAlign:"center",maxWidth:260,wordBreak:"break-word"}}>
+        {status === "enviando" ? "Enviando..." : status === "erro" ? `Erro: ${errMsg} (toque pra tentar de novo)` : "Toque para alterar sua foto"}
       </div>
     </div>
   );

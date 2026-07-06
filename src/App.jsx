@@ -563,6 +563,16 @@ function reducer(state, action) {
       return { ...state, athletes };
     }
 
+    case "ATUALIZAR_ESTILO_ATLETA": {
+      // Estilo de jogo do atleta (Clássico / Caneta Chinesa / Caneta Japonesa) —
+      // usado na carta colecionável full-art como o "tipo".
+      const { athleteId, estilo } = action.payload;
+      const athletes = state.athletes.map(a =>
+        a.id === athleteId ? { ...a, estilo } : a
+      );
+      return { ...state, athletes };
+    }
+
     case "PROCESSAR_RODADA": {
       // Aplica o cálculo de rating (Tabela CBTM) para todas as partidas já
       // validadas de uma rodada específica, ainda não calculadas. Processa em
@@ -2420,6 +2430,7 @@ export default function App() {
         pendenteCircuito: a.pendente_circuito || false,
         ultimaRecusaCircuitoEm: a.ultima_recusa_circuito_em || null,
         foto: a.foto_url || null,
+        estilo: a.estilo_jogo || "Clássico",
       }));
       const matchesMapped = (partidas||[]).map(m => ({
         id: m.id, keyId: m.chave_id, round: m.rodada,
@@ -2543,6 +2554,10 @@ export default function App() {
     else if (action.type === "ATUALIZAR_FOTO_ATLETA") {
       const { athleteId, url } = action.payload;
       await db.updateAtleta(athleteId, { foto_url: url });
+    }
+    else if (action.type === "ATUALIZAR_ESTILO_ATLETA") {
+      const { athleteId, estilo } = action.payload;
+      await db.updateAtleta(athleteId, { estilo_jogo: estilo });
     }
     else if (action.type === "PROCESSAR_RODADA") {
       // Espelha a mesma lógica sequencial do reducer local, pra persistir os
@@ -2857,6 +2872,156 @@ const Avatar = ({ athlete, size = 38, ring = null, fontSize = null }) => (
   </span>
 );
 
+// ── CARTA COLECIONÁVEL FULL-ART DO ATLETA ─────────────────────────────────────
+// Estilo de jogo → cor do "tipo" na carta
+const ESTILO_CORES = {
+  "Clássico": T.terracota,
+  "Caneta Chinesa": T.verde2,
+  "Caneta Japonesa": T.madeira,
+};
+
+// Raridade a partir da posição no ranking
+function rarityOf(pos) {
+  if (pos === 1) return { label: "Lendária", frame: "rgba(156,111,62,.65)", gems: 3 };
+  if (pos <= 3)  return { label: "Ouro",     frame: "rgba(216,90,48,.6)",   gems: 2 };
+  if (pos <= 6)  return { label: "Prata",    frame: "rgba(127,174,143,.58)",gems: 1 };
+  return         { label: "Bronze",   frame: "rgba(125,145,136,.55)",gems: 0 };
+}
+
+function AtletaCard({ apelido, nome, foto, estilo = "Clássico", posicao, rating, vitorias, derrotas, serie, width = 320 }) {
+  const wrapRef = useRef(null);
+  const r = rarityOf(posicao);
+  const estColor = ESTILO_CORES[estilo] || T.terracota;
+  const off = "rgba(240,234,224,.3)";
+  const gem = (n) => (r.gems >= n ? T.terracota : off);
+  const height = Math.round((width * 450) / 320);
+
+  const onMove = (e) => {
+    const wrap = wrapRef.current; if (!wrap) return;
+    const card = wrap.firstElementChild;
+    const b = wrap.getBoundingClientRect();
+    const px = (e.clientX - b.left) / b.width;
+    const py = (e.clientY - b.top) / b.height;
+    card.style.transform = `rotateX(${(0.5 - py) * 15}deg) rotateY(${(px - 0.5) * 15}deg) scale(1.03)`;
+    card.querySelectorAll("[data-holo],[data-holo2]").forEach((h) => {
+      h.style.backgroundPosition = `${px * 100}% ${py * 100}%`;
+      h.style.opacity = h.hasAttribute("data-holo2") ? "0.55" : "0.9";
+    });
+    const g = card.querySelector("[data-glare]");
+    if (g) {
+      g.style.background = `radial-gradient(circle at ${px * 100}% ${py * 100}%, rgba(255,255,255,.5), rgba(255,255,255,0) 45%)`;
+      g.style.opacity = "1";
+    }
+  };
+
+  const onLeave = () => {
+    const wrap = wrapRef.current; if (!wrap) return;
+    const card = wrap.firstElementChild;
+    card.style.transform = "rotateX(0deg) rotateY(0deg) scale(1)";
+    card.querySelectorAll("[data-holo],[data-holo2]").forEach((h) => {
+      h.style.opacity = h.hasAttribute("data-holo2") ? "0.22" : "0.4";
+      h.style.backgroundPosition = "50% 50%";
+    });
+    const g = card.querySelector("[data-glare]");
+    if (g) g.style.opacity = "0";
+  };
+
+  return (
+    <div ref={wrapRef} onMouseMove={onMove} onMouseLeave={onLeave} style={{ perspective: 1100, width }}>
+      <div style={{ position:"relative", width, height, borderRadius:20, transformStyle:"preserve-3d", transition:"transform .18s ease", willChange:"transform", boxShadow:"0 40px 70px -25px rgba(28,43,39,.7)", background: T.verde, overflow:"hidden" }}>
+
+        {/* arte full-bleed (ou retrato de reserva, se o atleta ainda não subiu foto) */}
+        {foto
+          ? <img src={foto} alt={nome} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+          : <div style={{ position:"absolute", inset:0, background:T.verdeCard, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <span style={{ fontFamily:T.serif, fontSize:width*0.4, color:T.offwhite, opacity:0.3 }}>{apelido?.[0]?.toUpperCase()}</span>
+            </div>
+        }
+        <div style={{ position:"absolute", inset:0, borderRadius:20, pointerEvents:"none", background:"linear-gradient(to bottom, rgba(28,43,39,.72) 0%, transparent 22%, transparent 40%, rgba(28,43,39,.5) 64%, rgba(28,43,39,.94) 92%)" }} />
+
+        {/* conteúdo sobre a arte */}
+        <div style={{ position:"absolute", inset:0, padding:16, display:"flex", flexDirection:"column", color: T.offwhite }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+            <div style={{ display:"flex", flexDirection:"column", gap:7, alignItems:"flex-start" }}>
+              <span style={{ fontFamily:T.mono, fontSize:7.5, letterSpacing:1.4, textTransform:"uppercase", color:T.offwhite, background: r.frame, padding:"4px 9px", borderRadius:12 }}>{r.label}</span>
+              <div style={{ display:"flex", gap:4, marginLeft:3 }}>
+                {[1,2,3].map((n) => (
+                  <span key={n} style={{ width:8, height:8, background: gem(n), transform:"rotate(45deg)", boxShadow:"0 1px 3px rgba(0,0,0,.45)" }} />
+                ))}
+              </div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:5, background:"rgba(28,43,39,.62)", border:`1px solid ${estColor}`, borderRadius:12, padding:"7px 9px", flexShrink:0 }}>
+              <span style={{ position:"relative", width:15, height:15, display:"inline-block", color: estColor }}>
+                <span style={{ position:"absolute", top:0, left:2, width:12, height:12, borderRadius:"50%", background:"currentColor" }} />
+                <span style={{ position:"absolute", bottom:-2, left:6, width:3, height:6, borderRadius:1, background:"currentColor" }} />
+              </span>
+              <span style={{ fontFamily:T.mono, fontSize:6.5, letterSpacing:.5, textTransform:"uppercase", color:"rgba(240,234,224,.78)", whiteSpace:"nowrap" }}>{estilo}</span>
+            </div>
+          </div>
+
+          <div style={{ flex:1 }} />
+
+          <div>
+            <div style={{ fontFamily:T.serif, fontSize:42, lineHeight:1, textShadow:"0 2px 12px rgba(0,0,0,.65)" }}>{apelido}</div>
+            <div style={{ fontFamily:T.mono, fontSize:8, letterSpacing:1.4, textTransform:"uppercase", color:"rgba(240,234,224,.62)", marginTop:4 }}>{nome}{serie ? ` · ${serie}` : ""}</div>
+
+            <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginTop:12, paddingTop:12, borderTop:"1px solid rgba(240,234,224,.25)" }}>
+              <div>
+                <div style={{ fontFamily:T.mono, fontSize:7.5, letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.62)" }}>Ranking</div>
+                <div style={{ fontFamily:T.serif, fontSize:26, lineHeight:.9, marginTop:2, textShadow:"0 2px 8px rgba(0,0,0,.5)" }}>{posicao}º</div>
+              </div>
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontFamily:T.serif, fontSize:40, lineHeight:.85, color:T.terracota, textShadow:"0 2px 10px rgba(0,0,0,.55)" }}>{rating}</div>
+                <div style={{ fontFamily:T.mono, fontSize:7.5, letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.68)", marginTop:2 }}>Rating</div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontFamily:T.serif, fontSize:22, lineHeight:.9, textShadow:"0 2px 8px rgba(0,0,0,.5)" }}>
+                  <span style={{ color:T.verde2 }}>{vitorias}</span>
+                  <span style={{ fontSize:13, color:"rgba(240,234,224,.5)" }}> · </span>
+                  <span style={{ color:"rgba(240,234,224,.72)" }}>{derrotas}</span>
+                </div>
+                <div style={{ fontFamily:T.mono, fontSize:7, letterSpacing:1.2, color:"rgba(240,234,224,.58)", marginTop:3 }}>V · D</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* holo + brilho + moldura de raridade (por cima de tudo) */}
+        <div data-holo style={{ position:"absolute", inset:0, borderRadius:20, pointerEvents:"none", opacity:.4, transition:"opacity .25s", mixBlendMode:"color-dodge", background:"linear-gradient(120deg, transparent 12%, rgba(216,90,48,.6) 28%, rgba(127,174,143,.55) 40%, rgba(156,111,62,.65) 50%, rgba(127,174,143,.55) 60%, rgba(216,90,48,.55) 72%, transparent 88%)", backgroundSize:"240% 240%", backgroundPosition:"50% 50%" }} />
+        <div data-holo2 style={{ position:"absolute", inset:0, borderRadius:20, pointerEvents:"none", opacity:.24, transition:"opacity .25s", mixBlendMode:"overlay", background:"repeating-linear-gradient(72deg, rgba(255,255,255,.16) 0 2px, transparent 2px 6px)", backgroundSize:"200% 200%", backgroundPosition:"50% 50%" }} />
+        <div data-glare style={{ position:"absolute", inset:0, borderRadius:20, pointerEvents:"none", opacity:0, transition:"opacity .2s", mixBlendMode:"soft-light" }} />
+        <div style={{ position:"absolute", inset:0, borderRadius:20, border:`2px solid ${r.frame}`, boxShadow:"inset 0 0 0 4px rgba(28,43,39,.35)", pointerEvents:"none" }} />
+      </div>
+    </div>
+  );
+}
+
+// Modal simples pra abrir a carta ao tocar num atleta (Ranking, Comunidade, etc.)
+function CartaModal({ athlete, posicao, onClose }) {
+  if (!athlete) return null;
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.88)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
+        <AtletaCard
+          apelido={nomeExibicao(athlete).split(" ")[0]}
+          nome={athlete.name}
+          foto={athlete.foto}
+          estilo={athlete.estilo || "Clássico"}
+          posicao={posicao}
+          rating={athlete.rating}
+          vitorias={athlete.wins || 0}
+          derrotas={athlete.losses || 0}
+          serie={`N.º ${String(posicao).padStart(3,"0")}`}
+          width={Math.min(300, window.innerWidth - 60)}
+        />
+        <button onClick={onClose} style={{fontFamily:T.mono,fontSize:11,letterSpacing:1,textTransform:"uppercase",color:T.offwhite,background:"transparent",border:`1px solid rgba(240,234,224,0.3)`,borderRadius:20,padding:"8px 18px",cursor:"pointer"}}>
+          Fechar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const Card = ({children, style={}}) => (
   <div style={{background:"#223330",borderRadius:14,padding:"14px 16px",marginBottom:10,border:"1px solid rgba(255,255,255,0.05)",...style}}>
     {children}
@@ -2884,7 +3049,7 @@ function AdminView({ state, dispatch, tab, setTab }) {
   if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
-  if (tab === "ranking") return <RankingView state={state} />;
+  if (tab === "ranking") return <RankingView state={state} isAdmin/>;
   if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} />;
   if (tab === "historico") return <AdminHistorico state={state} />;
   if (tab === "mensagens") return <AdminMensagens state={state} />;
@@ -3346,15 +3511,22 @@ function AdminInscricoes({ state, dispatch }) {
 
 // ── ADMIN ETAPA ───────────────────────────────────────────────────────────────
 function AdminEtapa({ state, dispatch }) {
+  const [cartaAberta, setCartaAberta] = useState(null); // { athlete, posicao } | null
   if (state.phase === "inscricoes") return (
     <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:20}}>Inicie a etapa pelo Dashboard após aprovar atletas.</div></Card>
   );
 
+  const ranking = [...state.athletes].filter(a=>a.status==="ativo" && !a.pendenteCircuito).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const posicaoDe = (athleteId) => ranking.findIndex(a => a.id === athleteId) + 1 || ranking.length + 1;
+
   return (
     <div>
+      {cartaAberta && <CartaModal athlete={cartaAberta.athlete} posicao={cartaAberta.posicao} onClose={()=>setCartaAberta(null)}/>}
       {state.keys.map(k => {
-        // No modelo de par mensal, mostramos TODAS as rodadas abertas do mês
-        const rodabertas = [1, 2]; // Rodada 1 e Rodada 2 do mês, ambas abertas simultaneamente
+        // A numeração de rodada cresce a cada mês — descobrimos dinamicamente
+        // quais rodadas desse par mensal ainda têm partida em aberto, em vez
+        // de fixar "1" e "2" (que só funcionaria no primeiro mês).
+        const rodabertas = [...new Set(state.matches.filter(m => m.keyId === k.id).map(m => m.round))].sort((a,b) => a-b);
         return (
           <div key={k.id}>
             {rodabertas.map(rodNum => {
@@ -3364,11 +3536,32 @@ function AdminEtapa({ state, dispatch }) {
               if (partidas.length === 0) return null;
               const prazo = partidas[0]?.deadline
                 ? new Date(partidas[0].deadline).toLocaleDateString("pt-BR")
-                : rodNum === 1 ? "dia 15" : "dia 25";
+                : "a definir";
               return (
                 <div key={rodNum}>
                   <SecTitle>{k.name} · Rodada {rodNum} — Partida: até {prazo}</SecTitle>
-                  {partidas.map(m => <MatchCard key={m.id} m={m} state={state} admin />)}
+                  {partidas.map(m => {
+                    const p1 = state.athletes.find(a => a.id === m.p1Id);
+                    const p2 = state.athletes.find(a => a.id === m.p2Id);
+                    return (
+                      <div key={m.id}>
+                        {p1 && p2 && (
+                          <div style={{display:"flex",gap:14,alignItems:"center",padding:"0 2px",marginBottom:6}}>
+                            <span style={{fontFamily:T.mono,fontSize:8,color:T.cinza,letterSpacing:1,textTransform:"uppercase"}}>Ver carta:</span>
+                            <div onClick={()=>setCartaAberta({athlete:p1, posicao:posicaoDe(p1.id)})} style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
+                              <Avatar athlete={p1} size={22}/>
+                              <span style={{fontSize:11,color:T.offwhite}}>{nomeExibicao(p1)}</span>
+                            </div>
+                            <div onClick={()=>setCartaAberta({athlete:p2, posicao:posicaoDe(p2.id)})} style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
+                              <Avatar athlete={p2} size={22}/>
+                              <span style={{fontSize:11,color:T.offwhite}}>{nomeExibicao(p2)}</span>
+                            </div>
+                          </div>
+                        )}
+                        <MatchCard m={m} state={state} admin />
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -3633,7 +3826,8 @@ function AdminPendencias({ state, dispatch }) {
 }
 
 // ── RANKING VIEW ──────────────────────────────────────────────────────────────
-function RankingView({ state, currentAthleteId }) {
+function RankingView({ state, currentAthleteId, isAdmin=false }) {
+  const [cartaAberta, setCartaAberta] = useState(null); // { athlete, posicao } | null
   const sorted = useMemo(() => [...state.athletes]
     .filter(a=>a.status==="ativo" && !a.pendenteCircuito)
     .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
@@ -3651,9 +3845,9 @@ function RankingView({ state, currentAthleteId }) {
     const classificado = i < CORTE;
     const foraDoCorte = temCorte && !classificado;
     return (
-      <div key={a.id} style={{
+      <div key={a.id} onClick={isAdmin ? ()=>setCartaAberta({athlete:a, posicao:i+1}) : undefined} style={{
         display:"flex", alignItems:"center", gap:12, padding:"11px 12px",
-        borderRadius:12, marginBottom:6,
+        borderRadius:12, marginBottom:6, cursor: isAdmin ? "pointer" : "default",
         background: isMe ? "rgba(216,90,48,0.12)" : "transparent",
         border: `1px solid ${isMe ? "rgba(216,90,48,0.35)" : T.bordaSuave}`,
         opacity: foraDoCorte ? 0.7 : 1,
@@ -3680,6 +3874,7 @@ function RankingView({ state, currentAthleteId }) {
 
   return (
     <div>
+      {cartaAberta && <CartaModal athlete={cartaAberta.athlete} posicao={cartaAberta.posicao} onClose={()=>setCartaAberta(null)}/>}
       <div style={{textAlign:"center",marginBottom:20}}>
         <div style={{fontFamily:T.serif,fontSize:32,color:T.offwhite,lineHeight:1}}>Ranking</div>
         <div style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:2,textTransform:"uppercase",marginTop:6}}>Saldo de pontos na temporada · {sorted.length} atletas</div>
@@ -3853,6 +4048,35 @@ function EditableAvatar({ athlete, dispatch, size = 72 }) {
   );
 }
 
+// ── SELETOR DE ESTILO DE JOGO (usado na carta colecionável) ───────────────────
+function SeletorEstilo({ athlete, dispatch }) {
+  const opcoes = ["Clássico", "Caneta Chinesa", "Caneta Japonesa"];
+  const atual = athlete.estilo || "Clássico";
+  return (
+    <div style={{textAlign:"center",marginBottom:18}}>
+      <div style={{fontFamily:T.mono,fontSize:8.5,letterSpacing:1,textTransform:"uppercase",color:T.cinza,marginBottom:8}}>Seu estilo de jogo</div>
+      <div style={{display:"flex",justifyContent:"center",gap:6,flexWrap:"wrap"}}>
+        {opcoes.map(op => {
+          const ativo = atual === op;
+          const cor = ESTILO_CORES[op];
+          return (
+            <button key={op} onClick={()=>dispatch({type:"ATUALIZAR_ESTILO_ATLETA",payload:{athleteId:athlete.id,estilo:op}})} style={{
+              fontFamily:T.mono, fontSize:9, letterSpacing:0.5, textTransform:"uppercase",
+              padding:"7px 11px", borderRadius:14, cursor:"pointer",
+              background: ativo ? cor : "transparent",
+              color: ativo ? T.verde : T.cinza,
+              border:`1px solid ${ativo ? cor : T.bordaSuave}`,
+              fontWeight: ativo ? 700 : 400,
+            }}>
+              {op}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AthleteGames({ state, dispatch, athlete }) {
   const myMatches = state.matches.filter(m => m.p1Id === athlete.id || m.p2Id === athlete.id);
   const open = myMatches.filter(m => !m.validated && !m.rejeitado);
@@ -3877,6 +4101,7 @@ function AthleteGames({ state, dispatch, athlete }) {
   return (
     <div>
       <EditableAvatar athlete={eu} dispatch={dispatch}/>
+      <SeletorEstilo athlete={eu} dispatch={dispatch}/>
 
       {/* Cabeçalho editorial: Posição/Pontos + Rating */}
       <div style={{display:"flex",gap:10,marginBottom:20}}>

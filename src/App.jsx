@@ -1473,7 +1473,7 @@ function AdminMensagens({ state }) {
   const [disparoIdx, setDisparoIdx] = useState(null); // índice do atleta atual no fluxo sequencial
   const [disparados, setDisparados] = useState([]); // ids já disparados nesta sessão
 
-  const ativos = state.athletes.filter(a => a.status === "ativo");
+  const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const rodadaAtual = state.keys[0]?.currentRound || 1;
 
   // ── HELPERS ────────────────────────────────────────────────────────────────
@@ -3238,7 +3238,7 @@ function AdminPendencias({ state, dispatch }) {
 // ── RANKING VIEW ──────────────────────────────────────────────────────────────
 function RankingView({ state, currentAthleteId }) {
   const sorted = useMemo(() => [...state.athletes]
-    .filter(a=>a.status==="ativo")
+    .filter(a=>a.status==="ativo" && !a.pendenteCircuito)
     .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
     [state.athletes]);
   if (sorted.length === 0) return <Card><div style={{fontSize:13,color:T.cinza,textAlign:"center",padding:20}}>Nenhum atleta ativo ainda.</div></Card>;
@@ -3410,7 +3410,7 @@ function AthleteGames({ state, dispatch, athlete }) {
 
   // Dados do atleta para o cabeçalho editorial
   const eu = state.athletes.find(a => a.id === athlete.id) || {};
-  const ranking = [...state.athletes].filter(a=>a.status==="ativo").sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const ranking = [...state.athletes].filter(a=>a.status==="ativo" && !a.pendenteCircuito).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
   const minhaPos = ranking.findIndex(a => a.id === athlete.id);
   const posStr = minhaPos >= 0 ? `${minhaPos+1}º` : "—";
   const saldo = eu.saldoTemp || 0;

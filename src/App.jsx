@@ -3179,7 +3179,7 @@ function AdminEtapa({ state, dispatch }) {
 }
 
 // ── PROCESSAR RATING DA RODADA (dupla confirmação) ────────────────────────────
-function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, dispatch }) {
+function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, naoResolvidos, dispatch }) {
   const [confirmando, setConfirmando] = useState(false);
   if (pendentes.length === 0) return null;
 
@@ -3197,12 +3197,16 @@ function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, d
   }
 
   return (
-    <Card style={{border:`1px solid ${bloqueadoPorRodadaAnterior ? T.vermelho+"44" : T.madeira+"44"}`}}>
+    <Card style={{border:`1px solid ${(bloqueadoPorRodadaAnterior || naoResolvidos > 0) ? T.vermelho+"44" : T.madeira+"44"}`}}>
       <div style={{fontFamily:T.mono,fontSize:10,color:T.madeira,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>
         Rodada {round} · {pendentes.length} validado{pendentes.length>1?"s":""}, aguardando cálculo
       </div>
 
-      {bloqueadoPorRodadaAnterior ? (
+      {naoResolvidos > 0 ? (
+        <div style={{fontSize:11,color:T.vermelho}}>
+          🔒 Bloqueado: ainda tem {naoResolvidos} partida{naoResolvidos>1?"s":""} desta rodada sem validar ou rejeitar (veja "Aguardando Validação"/"Resultado Incompleto" acima). Resolva todas antes de processar — pra não divulgar um ranking parcial.
+        </div>
+      ) : bloqueadoPorRodadaAnterior ? (
         <div style={{fontSize:11,color:T.vermelho}}>
           🔒 Bloqueado: a Rodada {round-1} ainda tem resultado(s) sem cálculo. Processe-a primeiro (a ordem importa pro rating ficar correto).
         </div>
@@ -3236,7 +3240,6 @@ function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, d
   );
 }
 
-// ── ADMIN PENDÊNCIAS ──────────────────────────────────────────────────────────
 // ── IMPUTAR RESULTADO MANUALMENTE (casos extremos) ────────────────────────────
 function ImputarResultadoForm({ m, p1, p2, dispatch }) {
   const [aberto, setAberto] = useState(false);
@@ -3279,6 +3282,7 @@ function ImputarResultadoForm({ m, p1, p2, dispatch }) {
   );
 }
 
+// ── ADMIN PENDÊNCIAS ──────────────────────────────────────────────────────────
 function AdminPendencias({ state, dispatch }) {
   const [motivo, setMotivo] = useState({});
   const [desfazerConfirm, setDesfazerConfirm] = useState({});
@@ -3377,12 +3381,19 @@ function AdminPendencias({ state, dispatch }) {
           const bloqueado = ehSegundaDoPar && state.matches.some(
             m => m.round === round - 1 && m.validated && !m.calculado && !m.rejeitado
           );
+          // Não deixa processar a rodada enquanto sobrar partida dela mesma
+          // sem resolver (nem validada, nem rejeitada) — evita divulgar
+          // ranking parcial antes do previsto.
+          const naoResolvidos = state.matches.filter(
+            m => m.round === round && !m.validated && !m.rejeitado
+          ).length;
           return (
             <ProcessarRodadaButton
               key={round}
               round={round}
               pendentes={calculoPendente.filter(m=>m.round===round)}
               bloqueadoPorRodadaAnterior={bloqueado}
+              naoResolvidos={naoResolvidos}
               dispatch={dispatch}
             />
           );

@@ -102,6 +102,15 @@ function nomeComApelido(atleta) {
   if (!atleta) return "?";
   return atleta.apelido ? `${atleta.name} (${atleta.apelido})` : atleta.name;
 }
+// "mês/ano" de ingresso, calculado a partir da data de inscrição já existente —
+// usado na carta colecionável ("Membro desde"), sem precisar de um campo novo.
+const MESES_ABREV = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+function membroDesde(inscritoEm) {
+  if (!inscritoEm) return "";
+  const d = new Date(inscritoEm);
+  if (isNaN(d.getTime())) return "";
+  return `${MESES_ABREV[d.getMonth()]}/${d.getFullYear()}`;
+}
 
 const db = {
   // Atletas
@@ -354,6 +363,8 @@ const INIT = {
   pendingResults: [],    // {matchId, p1Score, p2Score, p1Id, p2Id, submittedBy, status}
   matches: [],           // {id, keyId, round, p1Id, p2Id, score1, score2, validated, deadline}
   results: [],           // validated match results
+  temporadaNumero: 1,    // 1, 2 ou 3 dentro do ano (Cap. 13: 3 temporadas de 3 meses)
+  temporadaAno: new Date().getFullYear(),
 };
 
 function reducer(state, action) {
@@ -461,10 +472,23 @@ function reducer(state, action) {
     }
 
     case "NOVA_TEMPORADA": {
+      // Antes de zerar, tira uma "foto" da posição final de cada atleta ativo
+      // (mesmo critério do RankingView: ativo, fora do backlog, ordenado por saldo)
+      // e guarda no histórico — é o que alimenta a carta colecionável.
+      const rankingFinal = [...state.athletes]
+        .filter(a => a.status === "ativo" && !a.pendenteCircuito)
+        .sort((a, b) => (b.saldoTemp || 0) - (a.saldoTemp || 0));
+      const rotuloTemporada = `${state.temporadaNumero}/${state.temporadaAno}`;
+      const posicaoFinal = {};
+      rankingFinal.forEach((a, i) => { posicaoFinal[a.id] = i + 1; });
+
       // Zera saldo de pontos, vitórias e derrotas da temporada.
       // Preserva o rating (nunca zera) e acumula o histórico de vitórias/derrotas.
       const athletes = state.athletes.map(a => {
         if (a.status !== "ativo") return a;
+        const historicoAtualizado = posicaoFinal[a.id]
+          ? [{ temporada: rotuloTemporada, pos: posicaoFinal[a.id] }, ...(a.historico || [])]
+          : (a.historico || []);
         return {
           ...a,
           winsTotal: (a.winsTotal || 0) + (a.wins || 0),
@@ -472,10 +496,19 @@ function reducer(state, action) {
           saldoTemp: 0,
           wins: 0,
           losses: 0,
+          historico: historicoAtualizado,
         };
       });
+
+      // Avança o contador: 3 temporadas por ano (Cap. 13), depois vira o ano
+      const proximoNumero = state.temporadaNumero >= 3 ? 1 : state.temporadaNumero + 1;
+      const proximoAno = state.temporadaNumero >= 3 ? state.temporadaAno + 1 : state.temporadaAno;
+
       // Limpa partidas e chaves da temporada anterior, volta para fase de inscrições
-      return { ...state, athletes, matches: [], keys: [], phase: "inscricoes" };
+      return {
+        ...state, athletes, matches: [], keys: [], phase: "inscricoes",
+        temporadaNumero: proximoNumero, temporadaAno: proximoAno,
+      };
     }
 
     case "MARCAR_RESULTADO_COMUNICADO": {
@@ -660,8 +693,12 @@ function reducer(state, action) {
     }
 
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase } = action.payload;
-      return { ...state, athletes, matches, keys, phase };
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno } = action.payload;
+      return {
+        ...state, athletes, matches, keys, phase,
+        temporadaNumero: temporadaNumero ?? state.temporadaNumero,
+        temporadaAno: temporadaAno ?? state.temporadaAno,
+      };
     }
 
     case "EDITAR_ATLETA": {
@@ -1249,6 +1286,7 @@ function RegulamentoView({ onBack }) {
             ["2200+","👑 Elite","Nacional / Top BR"],
           ]}/>
         </Box>
+        <div style={{fontSize:10,color:"#5E7569",marginTop:10,lineHeight:1.6}}>Fonte: Manual Tênis de Mesa Brasil (CBTM), item 1.7.2.4.5 — "Tabela Básica de Cálculo do Rating".</div>
       </div>
     );
     if (id===6) return (
@@ -2439,6 +2477,7 @@ export default function App() {
         ultimaRecusaCircuitoEm: a.ultima_recusa_circuito_em || null,
         foto: a.foto_url || null,
         estilo: a.estilo_jogo || "Clássico",
+        historico: a.historico || [],
       }));
       const matchesMapped = (partidas||[]).map(m => ({
         id: m.id, keyId: m.chave_id, round: m.rodada,
@@ -2463,6 +2502,8 @@ export default function App() {
       dispatch({ type:"LOAD_FROM_DB", payload:{
         athletes: athletesMapped, matches: matchesMapped,
         keys: keysMapped, phase: config?.[0]?.fase||"inscricoes",
+        temporadaNumero: config?.[0]?.temporada_numero || 1,
+        temporadaAno: config?.[0]?.temporada_ano || new Date().getFullYear(),
       }});
       // Restaurar atleta completo da sessão após carregar do banco
       if (sessaoSalva.athleteId) {
@@ -2642,9 +2683,21 @@ export default function App() {
       await db.updatePartida(matchId, { resultado_comunicado: comunicado });
     }
     else if (action.type === "NOVA_TEMPORADA") {
+      // Antes de zerar, grava a posição final de cada atleta (mesmo critério do
+      // ranking: ativo, fora do backlog, ordenado por saldo) — alimenta a carta.
+      const rankingFinal = [...st.athletes]
+        .filter(a => a.status === "ativo" && !a.pendenteCircuito)
+        .sort((a, b) => (b.saldoTemp || 0) - (a.saldoTemp || 0));
+      const rotuloTemporada = `${st.temporadaNumero}/${st.temporadaAno}`;
+      const posicaoFinal = {};
+      rankingFinal.forEach((a, i) => { posicaoFinal[a.id] = i + 1; });
+
       // Zera saldo/vitórias/derrotas da temporada, acumula histórico, preserva rating.
       const ativos = st.athletes.filter(a => a.status === "ativo");
       for (const a of ativos) {
+        const historicoAtualizado = posicaoFinal[a.id]
+          ? [{ temporada: rotuloTemporada, pos: posicaoFinal[a.id] }, ...(a.historico || [])]
+          : (a.historico || []);
         await db.updateAtleta(a.id, {
           vitorias_total: (a.winsTotal||0) + (a.wins||0),
           derrotas_total: (a.lossesTotal||0) + (a.losses||0),
@@ -2652,12 +2705,16 @@ export default function App() {
           vitorias: 0,
           derrotas: 0,
           chave: null,
+          historico: historicoAtualizado,
         });
       }
       // Remove partidas e chaves da temporada anterior
       try { await db.deleteAllPartidas(); } catch(e){}
       try { await db.deleteAllChaves(); } catch(e){}
-      await db.updateConfig({ fase: "inscricoes" });
+      // Avança o contador: 3 temporadas por ano (Cap. 13), depois vira o ano
+      const proximoNumero = st.temporadaNumero >= 3 ? 1 : st.temporadaNumero + 1;
+      const proximoAno = st.temporadaNumero >= 3 ? st.temporadaAno + 1 : st.temporadaAno;
+      await db.updateConfig({ fase: "inscricoes", temporada_numero: proximoNumero, temporada_ano: proximoAno });
       await loadFromSupabase();
     }
     else if (action.type === "AVANCAR_RODADA") {
@@ -2890,21 +2947,24 @@ const ESTILO_CORES = {
 
 // Raridade a partir da posição no ranking
 function rarityOf(pos) {
-  if (pos === 1) return { label: "Lendária", frame: "rgba(156,111,62,.65)", glow: "rgba(156,111,62,.24)", gems: 3 };
-  if (pos <= 3)  return { label: "Ouro",     frame: "rgba(216,90,48,.6)",   glow: "rgba(216,90,48,.2)",   gems: 2 };
-  if (pos <= 6)  return { label: "Prata",    frame: "rgba(127,174,143,.58)",glow: "rgba(127,174,143,.2)", gems: 1 };
-  return         { label: "Bronze",   frame: "rgba(125,145,136,.55)",glow: "rgba(125,145,136,.18)",gems: 0 };
+  if (pos === 1) return { frame: "rgba(156,111,62,.65)", glow: "rgba(156,111,62,.24)" };
+  if (pos <= 3)  return { frame: "rgba(216,90,48,.6)",   glow: "rgba(216,90,48,.2)" };
+  if (pos <= 6)  return { frame: "rgba(127,174,143,.58)",glow: "rgba(127,174,143,.2)" };
+  return         { frame: "rgba(125,145,136,.55)",glow: "rgba(125,145,136,.18)" };
 }
 
-function AtletaCard({ apelido, nome, foto, estilo = "Clássico", posicao, rating, vitorias, derrotas, serie, width = 320 }) {
+function AtletaCard({ apelido, foto, estilo = "Clássico", membroDesde: membroDesdeTxt, posicao, rating, vitorias, derrotas, historico = [], width = 320 }) {
   const wrapRef = useRef(null);
   const r = rarityOf(posicao);
   const estColor = ESTILO_CORES[estilo] || T.terracota;
-  const off = "rgba(240,234,224,.3)";
-  const gem = (n) => (r.gems >= n ? T.terracota : off);
   const s = width / 320; // escala proporcional
   const px = (n) => Math.round(n * s);
   const height = px(450);
+
+  const hist = (historico || []).slice(0, 3);
+  const linhasHist = hist.length
+    ? hist.map((h) => ({ label: h.temporada, pos: h.pos + "º" }))
+    : [{ label: "Estreante", pos: "" }];
 
   const onMove = (e) => {
     const wrap = wrapRef.current; if (!wrap) return;
@@ -2945,11 +3005,13 @@ function AtletaCard({ apelido, nome, foto, estilo = "Clássico", posicao, rating
 
         {/* conteúdo */}
         <div style={{ position:"absolute", inset:0, padding:px(16), display:"flex", flexDirection:"column", color: T.offwhite }}>
-          {/* cabeçalho: nome + tipo */}
+          {/* cabeçalho: apelido + membro desde | tipo */}
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
             <div style={{ minWidth:0 }}>
               <div style={{ fontFamily:T.serif, fontSize:px(30), lineHeight:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{apelido}</div>
-              <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.4, textTransform:"uppercase", color:"rgba(240,234,224,.5)", marginTop:px(4), whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{nome}</div>
+              {membroDesdeTxt && (
+                <div style={{ fontFamily:T.mono, fontSize:px(7.5), letterSpacing:1, textTransform:"uppercase", color:"rgba(240,234,224,.5)", marginTop:px(5), whiteSpace:"nowrap" }}>Membro desde {membroDesdeTxt}</div>
+              )}
             </div>
             <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:px(5), background:"rgba(28,43,39,.5)", border:`1px solid ${estColor}`, borderRadius:px(12), padding:`${px(7)}px ${px(9)}px`, flexShrink:0, marginLeft:px(10) }}>
               <span style={{ position:"relative", width:px(15), height:px(15), display:"inline-block", color: estColor }}>
@@ -2963,23 +3025,17 @@ function AtletaCard({ apelido, nome, foto, estilo = "Clássico", posicao, rating
           {/* janela da foto (ou retrato de reserva, se o atleta ainda não subiu foto) */}
           <div style={{ position:"relative", margin:`${px(12)}px 0 0`, borderRadius:px(14), overflow:"hidden", height:px(230), border:`2px solid ${r.frame}`, boxShadow:"inset 0 0 0 3px rgba(28,43,39,.5)" }}>
             {foto
-              ? <img src={foto} alt={nome} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+              ? <img src={foto} alt={apelido} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
               : <div style={{ position:"absolute", inset:0, background:T.verdeCard, display:"flex", alignItems:"center", justifyContent:"center" }}>
                   <span style={{ fontFamily:T.serif, fontSize:px(90), color:T.offwhite, opacity:0.3 }}>{apelido?.[0]?.toUpperCase()}</span>
                 </div>
             }
-            <div style={{ position:"absolute", top:px(8), left:px(8), fontFamily:T.mono, fontSize:px(7), letterSpacing:1.4, textTransform:"uppercase", color:T.offwhite, background: r.frame, padding:`${px(3)}px ${px(7)}px`, borderRadius:px(10) }}>{r.label}</div>
-            <div style={{ position:"absolute", top:px(8), right:px(8), display:"flex", gap:px(4) }}>
-              {[1,2,3].map((n) => (
-                <span key={n} style={{ width:px(8), height:px(8), background: gem(n), transform:"rotate(45deg)" }} />
-              ))}
-            </div>
           </div>
 
-          {/* rodapé: ranking · rating · V/D */}
+          {/* rodapé: ranking atual · rating · V/D */}
           <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginTop:px(14) }}>
-            <div>
-              <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.5)" }}>Ranking</div>
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.5)" }}>Ranking atual</div>
               <div style={{ fontFamily:T.serif, fontSize:px(30), lineHeight:.9, marginTop:px(2) }}>{posicao}º</div>
             </div>
             <div style={{ textAlign:"center" }}>
@@ -2987,13 +3043,25 @@ function AtletaCard({ apelido, nome, foto, estilo = "Clássico", posicao, rating
               <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.55)", marginTop:px(2) }}>Rating</div>
             </div>
             <div style={{ textAlign:"right" }}>
-              <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.2, textTransform:"uppercase", color:"rgba(240,234,224,.5)" }}>{serie}</div>
-              <div style={{ fontFamily:T.serif, fontSize:px(22), lineHeight:.9, marginTop:px(4) }}>
+              <div style={{ fontFamily:T.serif, fontSize:px(22), lineHeight:.9 }}>
                 <span style={{ color:T.verde2 }}>{vitorias}</span>
                 <span style={{ fontSize:px(13), color:"rgba(240,234,224,.5)" }}> · </span>
                 <span style={{ color:"rgba(240,234,224,.6)" }}>{derrotas}</span>
               </div>
               <div style={{ fontFamily:T.mono, fontSize:px(7), letterSpacing:1, color:"rgba(240,234,224,.4)", marginTop:px(2) }}>V · D</div>
+            </div>
+          </div>
+
+          {/* temporadas anteriores (até 3) */}
+          <div style={{ marginTop:px(12), paddingTop:px(10), borderTop:"1px solid rgba(240,234,224,.14)" }}>
+            <div style={{ fontFamily:T.mono, fontSize:px(7.5), letterSpacing:1.4, textTransform:"uppercase", color:"rgba(240,234,224,.45)" }}>Temporadas anteriores</div>
+            <div style={{ marginTop:px(6), display:"flex", flexDirection:"column", gap:px(3) }}>
+              {linhasHist.map((h, i) => (
+                <div key={i} style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", fontFamily:T.mono, fontSize:px(10), letterSpacing:.4, color:"rgba(240,234,224,.7)" }}>
+                  <span>{h.label}</span>
+                  <span style={{ color:T.offwhite }}>{h.pos}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -3016,14 +3084,14 @@ function CartaModal({ athlete, posicao, onClose }) {
       <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
         <AtletaCard
           apelido={nomeExibicao(athlete).split(" ")[0]}
-          nome={athlete.name}
           foto={athlete.foto}
           estilo={athlete.estilo || "Clássico"}
+          membroDesde={membroDesde(athlete.inscritoEm)}
           posicao={posicao}
           rating={athlete.rating}
           vitorias={athlete.wins || 0}
           derrotas={athlete.losses || 0}
-          serie={`N.º ${String(posicao).padStart(3,"0")}`}
+          historico={athlete.historico || []}
           width={Math.min(300, window.innerWidth - 60)}
         />
         <button onClick={onClose} style={{fontFamily:T.mono,fontSize:11,letterSpacing:1,textTransform:"uppercase",color:T.offwhite,background:"transparent",border:`1px solid rgba(240,234,224,0.3)`,borderRadius:20,padding:"8px 18px",cursor:"pointer"}}>

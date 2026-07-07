@@ -639,9 +639,20 @@ function reducer(state, action) {
         const newR2 = calcElo(p2.rating, p1.rating, p1wins ? 0 : 1);
         const delta1 = newR1 - p1.rating;
         const delta2 = newR2 - p2.rating;
+        const dataCalculo = match.adminAprovadoEm || new Date().toISOString();
         athletes = athletes.map(a => {
-          if (a.id === match.p1Id) return { ...a, rating: newR1, saldoTemp: (a.saldoTemp||0) + delta1, wins: (a.wins||0) + (p1wins?1:0), losses: (a.losses||0) + (p1wins?0:1) };
-          if (a.id === match.p2Id) return { ...a, rating: newR2, saldoTemp: (a.saldoTemp||0) + delta2, wins: (a.wins||0) + (p1wins?0:1), losses: (a.losses||0) + (p1wins?1:0) };
+          if (a.id === match.p1Id) return {
+            ...a, rating: newR1, saldoTemp: (a.saldoTemp||0) + delta1,
+            wins: (a.wins||0) + (p1wins?1:0), losses: (a.losses||0) + (p1wins?0:1),
+            ratingPico: Math.max(a.ratingPico || a.rating, newR1),
+            ratingHistorico: [...(a.ratingHistorico||[]), { data: dataCalculo, rating: newR1 }].slice(-30),
+          };
+          if (a.id === match.p2Id) return {
+            ...a, rating: newR2, saldoTemp: (a.saldoTemp||0) + delta2,
+            wins: (a.wins||0) + (p1wins?0:1), losses: (a.losses||0) + (p1wins?1:0),
+            ratingPico: Math.max(a.ratingPico || a.rating, newR2),
+            ratingHistorico: [...(a.ratingHistorico||[]), { data: dataCalculo, rating: newR2 }].slice(-30),
+          };
           return a;
         });
         idsProcessados.push(match.id);
@@ -2478,6 +2489,8 @@ export default function App() {
         foto: a.foto_url || null,
         estilo: a.estilo_jogo || "Clássico",
         historico: a.historico || [],
+        ratingPico: a.rating_pico || null,
+        ratingHistorico: a.rating_historico || [],
       }));
       const matchesMapped = (partidas||[]).map(m => ({
         id: m.id, keyId: m.chave_id, round: m.rodada,
@@ -2633,8 +2646,19 @@ export default function App() {
         const newR1 = calcElo(p1.rating, p2.rating, p1wins?1:0);
         const newR2 = calcElo(p2.rating, p1.rating, p1wins?0:1);
         const delta1 = newR1 - p1.rating, delta2 = newR2 - p2.rating;
-        athletesMap[match.p1Id] = { ...p1, rating:newR1, saldoTemp:(p1.saldoTemp||0)+delta1, wins:(p1.wins||0)+(p1wins?1:0), losses:(p1.losses||0)+(p1wins?0:1) };
-        athletesMap[match.p2Id] = { ...p2, rating:newR2, saldoTemp:(p2.saldoTemp||0)+delta2, wins:(p2.wins||0)+(p1wins?0:1), losses:(p2.losses||0)+(p1wins?1:0) };
+        const dataCalculo = match.adminAprovadoEm || new Date().toISOString();
+        athletesMap[match.p1Id] = {
+          ...p1, rating:newR1, saldoTemp:(p1.saldoTemp||0)+delta1,
+          wins:(p1.wins||0)+(p1wins?1:0), losses:(p1.losses||0)+(p1wins?0:1),
+          ratingPico: Math.max(p1.ratingPico || p1.rating, newR1),
+          ratingHistorico: [...(p1.ratingHistorico||[]), { data: dataCalculo, rating: newR1 }].slice(-30),
+        };
+        athletesMap[match.p2Id] = {
+          ...p2, rating:newR2, saldoTemp:(p2.saldoTemp||0)+delta2,
+          wins:(p2.wins||0)+(p1wins?0:1), losses:(p2.losses||0)+(p1wins?1:0),
+          ratingPico: Math.max(p2.ratingPico || p2.rating, newR2),
+          ratingHistorico: [...(p2.ratingHistorico||[]), { data: dataCalculo, rating: newR2 }].slice(-30),
+        };
       });
 
       const idsAlterados = new Set();
@@ -2642,7 +2666,10 @@ export default function App() {
 
       await Promise.all([...idsAlterados].map(id => {
         const a = athletesMap[id];
-        return db.updateAtleta(id, { rating:a.rating, saldo_temp:a.saldoTemp, vitorias:a.wins, derrotas:a.losses });
+        return db.updateAtleta(id, {
+          rating:a.rating, saldo_temp:a.saldoTemp, vitorias:a.wins, derrotas:a.losses,
+          rating_pico: a.ratingPico, rating_historico: a.ratingHistorico,
+        });
       }));
       await Promise.all(pendentes.map(m => db.updatePartida(m.id, { calculado:true })));
       await loadFromSupabase();
@@ -3098,6 +3125,96 @@ function CartaModal({ athlete, posicao, onClose }) {
         <button onClick={onClose} style={{fontFamily:T.mono,fontSize:11,letterSpacing:1,textTransform:"uppercase",color:T.offwhite,background:"transparent",border:`1px solid rgba(240,234,224,0.3)`,borderRadius:20,padding:"8px 18px",cursor:"pointer"}}>
           Fechar
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── ESTATÍSTICAS DO ATLETA (tela cheia, abre por cima da aba Jogos) ───────────
+function EstatisticasView({ state, athlete, onClose }) {
+  const eu = state.athletes.find(a => a.id === athlete.id) || athlete;
+  const pico = eu.ratingPico || eu.rating || 0;
+  const hist = (eu.ratingHistorico || []).slice(-8);
+
+  // "Contra cada adversário": todo mundo que o atleta já enfrentou (partidas
+  // validadas), com o mesmo H2H já usado no restante do app.
+  const adversarios = useMemo(() => {
+    const ids = new Set();
+    state.matches.forEach(m => {
+      if (!m.validated) return;
+      if (m.p1Id === eu.id) ids.add(m.p2Id);
+      else if (m.p2Id === eu.id) ids.add(m.p1Id);
+    });
+    return [...ids]
+      .map(oid => {
+        const oponente = state.athletes.find(a => a.id === oid);
+        if (!oponente) return null;
+        const h2h = getH2H(state.matches, eu.id, oid);
+        return { oponente, h2h };
+      })
+      .filter(Boolean)
+      .sort((a,b) => b.h2h.total - a.h2h.total)
+      .slice(0, 8);
+  }, [state.matches, state.athletes, eu.id]);
+
+  const barMin = hist.length ? Math.min(...hist.map(h=>h.rating)) : 0;
+  const barMax = hist.length ? Math.max(...hist.map(h=>h.rating)) : 1;
+  const barAltura = (v) => {
+    if (barMax === barMin) return 60;
+    return 18 + ((v - barMin) / (barMax - barMin)) * 82; // 18%–100%
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column"}}>
+      <div style={{height:3,background:T.terracota,flexShrink:0}}/>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 20px",flexShrink:0,borderBottom:`1px solid rgba(240,234,224,0.08)`}}>
+        <span onClick={onClose} style={{cursor:"pointer",fontSize:18,color:T.offwhite}}>←</span>
+        <span style={{fontFamily:T.mono,fontSize:12,letterSpacing:1,color:T.offwhite}}>Estatísticas</span>
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"18px 22px 30px"}}>
+        <div style={{display:"flex",gap:10,marginBottom:22}}>
+          <div style={{flex:1,background:"rgba(216,90,48,0.12)",border:"1px solid rgba(216,90,48,0.3)",borderRadius:16,padding:"14px 16px"}}>
+            <div style={{fontFamily:T.serif,fontSize:32,lineHeight:1,color:T.offwhite}}>{eu.rating}</div>
+            <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:1.4,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:6}}>Rating atual</div>
+          </div>
+          <div style={{flex:1,background:"rgba(240,234,224,0.04)",border:"1px solid rgba(240,234,224,0.1)",borderRadius:16,padding:"14px 16px"}}>
+            <div style={{fontFamily:T.serif,fontSize:32,lineHeight:1,color:T.offwhite}}>{pico}</div>
+            <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:1.4,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:6}}>Pico</div>
+          </div>
+        </div>
+
+        <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginBottom:12}}>Evolução do rating</div>
+        {hist.length ? (
+          <div style={{display:"flex",alignItems:"flex-end",gap:6,height:120,padding:"0 2px",marginBottom:26}}>
+            {hist.map((h,i) => (
+              <div key={i} style={{
+                flex:1, height:`${barAltura(h.rating)}%`,
+                background: i===hist.length-1 ? T.terracota : "rgba(240,234,224,0.3)",
+                borderRadius:"3px 3px 0 0",
+              }}/>
+            ))}
+          </div>
+        ) : (
+          <div style={{fontSize:12,color:T.cinza,marginBottom:26}}>Ainda sem histórico suficiente — aparece aqui conforme as rodadas forem processadas.</div>
+        )}
+
+        <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginBottom:12}}>Contra cada adversário</div>
+        {adversarios.length === 0 && (
+          <div style={{fontSize:12,color:T.cinza}}>Você ainda não tem confrontos validados.</div>
+        )}
+        {adversarios.map(({oponente, h2h}) => {
+          const pct = h2h.total ? Math.round((h2h.winsA / h2h.total) * 100) : 0;
+          return (
+            <div key={oponente.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:9}}>
+              <Avatar athlete={oponente} size={26}/>
+              <div style={{flex:1,height:12,background:"rgba(240,234,224,0.08)",borderRadius:6,overflow:"hidden"}}>
+                <div style={{width:`${pct}%`,height:"100%",background:T.verde2,borderRadius:6}}/>
+              </div>
+              <span style={{fontFamily:T.mono,fontSize:9,color:"rgba(240,234,224,0.6)",whiteSpace:"nowrap"}}>{h2h.winsA}–{h2h.winsB}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -4179,6 +4296,7 @@ function SeletorEstilo({ athlete, dispatch }) {
 }
 
 function AthleteGames({ state, dispatch, athlete }) {
+  const [estatisticasAbertas, setEstatisticasAbertas] = useState(false);
   const myMatches = state.matches.filter(m => m.p1Id === athlete.id || m.p2Id === athlete.id);
   const open = myMatches.filter(m => !m.validated && !m.rejeitado);
   const done = myMatches.filter(m => m.validated);
@@ -4201,8 +4319,14 @@ function AthleteGames({ state, dispatch, athlete }) {
 
   return (
     <div>
+      {estatisticasAbertas && <EstatisticasView state={state} athlete={eu} onClose={()=>setEstatisticasAbertas(false)}/>}
       <EditableAvatar athlete={eu} dispatch={dispatch}/>
       <SeletorEstilo athlete={eu} dispatch={dispatch}/>
+      <div style={{display:"flex",justifyContent:"center",marginBottom:20,marginTop:-6}}>
+        <button onClick={()=>setEstatisticasAbertas(true)} style={{fontFamily:T.mono,fontSize:10,letterSpacing:1,textTransform:"uppercase",color:T.offwhite,background:"transparent",border:`1px solid rgba(240,234,224,0.25)`,borderRadius:18,padding:"8px 16px",cursor:"pointer"}}>
+          📊 Ver minhas estatísticas
+        </button>
+      </div>
 
       {/* Cabeçalho editorial: Posição/Pontos + Rating */}
       <div style={{display:"flex",gap:10,marginBottom:20}}>

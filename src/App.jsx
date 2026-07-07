@@ -4121,7 +4121,7 @@ function EditableAvatar({ athlete, dispatch, size = 72 }) {
           </div>
         )}
       </div>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{display:"none"}}/>
+      <input ref={inputRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
       <div style={{fontFamily:T.mono,fontSize:9,color: status==="erro" ? T.vermelho : T.cinza,letterSpacing:0.5,textTransform:"uppercase",marginTop:8,textAlign:"center",maxWidth:260,wordBreak:"break-word"}}>
         {status === "enviando" ? "Enviando..." : status === "erro" ? `Erro: ${errMsg} (toque pra tentar de novo)` : "Toque para alterar sua foto"}
       </div>

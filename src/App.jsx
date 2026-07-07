@@ -629,12 +629,15 @@ function reducer(state, action) {
 
       let athletes = state.athletes;
       const idsProcessados = [];
+      const infoPorPartida = {}; // matchId -> { favoritoId, diferencaRatingMomento } (base pra estatísticas)
 
       pendentes.forEach(match => {
         const p1 = athletes.find(a => a.id === match.p1Id);
         const p2 = athletes.find(a => a.id === match.p2Id);
         if (!p1 || !p2) return;
         const p1wins = match.score1 > match.score2;
+        const favoritoId = p1.rating >= p2.rating ? p1.id : p2.id;
+        const diferencaRatingMomento = Math.abs(p1.rating - p2.rating);
         const newR1 = calcElo(p1.rating, p2.rating, p1wins ? 1 : 0);
         const newR2 = calcElo(p2.rating, p1.rating, p1wins ? 0 : 1);
         const delta1 = newR1 - p1.rating;
@@ -656,11 +659,27 @@ function reducer(state, action) {
           return a;
         });
         idsProcessados.push(match.id);
+        infoPorPartida[match.id] = { favoritoId, diferencaRatingMomento };
       });
 
       const matches = state.matches.map(m =>
-        idsProcessados.includes(m.id) ? { ...m, calculado: true } : m
+        idsProcessados.includes(m.id)
+          ? { ...m, calculado: true, favoritoId: infoPorPartida[m.id].favoritoId, diferencaRatingMomento: infoPorPartida[m.id].diferencaRatingMomento }
+          : m
       );
+
+      // Depois de aplicar a rodada, tira uma foto da posição de cada atleta
+      // no ranking — alimenta o gráfico de "Evolução da posição" das Estatísticas.
+      const dataSnapshot = new Date().toISOString();
+      const rankingAtual = [...athletes]
+        .filter(a => a.status === "ativo" && !a.pendenteCircuito)
+        .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0));
+      const posicaoPorId = {};
+      rankingAtual.forEach((a,i) => { posicaoPorId[a.id] = i+1; });
+      athletes = athletes.map(a => posicaoPorId[a.id] ? {
+        ...a, posicaoHistorico: [...(a.posicaoHistorico||[]), { data: dataSnapshot, posicao: posicaoPorId[a.id] }].slice(-30),
+      } : a);
+
       return { ...state, athletes, matches };
     }
 
@@ -2491,6 +2510,7 @@ export default function App() {
         historico: a.historico || [],
         ratingPico: a.rating_pico || null,
         ratingHistorico: a.rating_historico || [],
+        posicaoHistorico: a.posicao_historico || [],
       }));
       const matchesMapped = (partidas||[]).map(m => ({
         id: m.id, keyId: m.chave_id, round: m.rodada,
@@ -2507,6 +2527,8 @@ export default function App() {
         rejeitado: m.rejeitado, motivoRejeicao: m.motivo_rejeicao,
         deadline: m.prazo,
         resultadoComunicado: m.resultado_comunicado || false,
+        favoritoId: m.favorito_id || null,
+        diferencaRatingMomento: m.diferenca_rating_momento ?? null,
       }));
       const keysMapped = (chaves||[]).map(k => ({
         id: k.id, name: k.nome, currentRound: k.rodada_atual, rounds:[],
@@ -2637,12 +2659,15 @@ export default function App() {
 
       const athletesMap = {};
       st.athletes.forEach(a => { athletesMap[a.id] = { ...a }; });
+      const infoPorPartida = {}; // matchId -> { favoritoId, diferencaRatingMomento }
 
       pendentes.forEach(match => {
         const p1 = athletesMap[match.p1Id];
         const p2 = athletesMap[match.p2Id];
         if (!p1 || !p2) return;
         const p1wins = match.score1 > match.score2;
+        const favoritoId = p1.rating >= p2.rating ? p1.id : p2.id;
+        const diferencaRatingMomento = Math.abs(p1.rating - p2.rating);
         const newR1 = calcElo(p1.rating, p2.rating, p1wins?1:0);
         const newR2 = calcElo(p2.rating, p1.rating, p1wins?0:1);
         const delta1 = newR1 - p1.rating, delta2 = newR2 - p2.rating;
@@ -2659,19 +2684,39 @@ export default function App() {
           ratingPico: Math.max(p2.ratingPico || p2.rating, newR2),
           ratingHistorico: [...(p2.ratingHistorico||[]), { data: dataCalculo, rating: newR2 }].slice(-30),
         };
+        infoPorPartida[match.id] = { favoritoId, diferencaRatingMomento };
+      });
+
+      // Snapshot da posição de TODOS os atletas ranqueáveis (não só os dois da
+      // partida — a posição de todo mundo pode mudar quando o saldo muda).
+      const dataSnapshot = new Date().toISOString();
+      const rankingAtual = Object.values(athletesMap)
+        .filter(a => a.status === "ativo" && !a.pendenteCircuito)
+        .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0));
+      rankingAtual.forEach((a,i) => {
+        athletesMap[a.id] = {
+          ...athletesMap[a.id],
+          posicaoHistorico: [...(athletesMap[a.id].posicaoHistorico||[]), { data: dataSnapshot, posicao: i+1 }].slice(-30),
+        };
       });
 
       const idsAlterados = new Set();
       pendentes.forEach(m => { idsAlterados.add(m.p1Id); idsAlterados.add(m.p2Id); });
+      rankingAtual.forEach(a => idsAlterados.add(a.id)); // todo mundo ranqueável recebe o novo snapshot de posição
 
       await Promise.all([...idsAlterados].map(id => {
         const a = athletesMap[id];
         return db.updateAtleta(id, {
           rating:a.rating, saldo_temp:a.saldoTemp, vitorias:a.wins, derrotas:a.losses,
           rating_pico: a.ratingPico, rating_historico: a.ratingHistorico,
+          posicao_historico: a.posicaoHistorico,
         });
       }));
-      await Promise.all(pendentes.map(m => db.updatePartida(m.id, { calculado:true })));
+      await Promise.all(pendentes.map(m => db.updatePartida(m.id, {
+        calculado:true,
+        favorito_id: infoPorPartida[m.id]?.favoritoId,
+        diferenca_rating_momento: infoPorPartida[m.id]?.diferencaRatingMomento,
+      })));
       await loadFromSupabase();
     }
     else if (action.type === "INICIAR_ETAPA") {
@@ -3247,6 +3292,77 @@ function EstatisticasView({ state, athlete, onClose }) {
   const hist = (eu.ratingHistorico || []).slice(-8);
   const [nomeRevelado, setNomeRevelado] = useState(null); // id do adversário cujo apelido está mostrando
 
+  // Jogos processados em ordem cronológica (base pra sequência e forma)
+  const jogosOrdenados = useMemo(() => {
+    return state.matches
+      .filter(m => (m.p1Id === eu.id || m.p2Id === eu.id) && m.validated && m.calculado)
+      .sort((a,b) => new Date(a.adminAprovadoEm||0) - new Date(b.adminAprovadoEm||0))
+      .map(m => {
+        const souP1 = m.p1Id === eu.id;
+        const meuScore = souP1 ? m.score1 : m.score2;
+        const advScore = souP1 ? m.score2 : m.score1;
+        return meuScore > advScore ? "V" : "D";
+      });
+  }, [state.matches, eu.id]);
+
+  // Sequência atual (a partir do jogo mais recente) e melhor sequência de vitórias
+  const sequenciaAtual = useMemo(() => {
+    if (!jogosOrdenados.length) return { tipo: null, contagem: 0 };
+    const ultimo = jogosOrdenados[jogosOrdenados.length-1];
+    let contagem = 0;
+    for (let i = jogosOrdenados.length-1; i >= 0; i--) {
+      if (jogosOrdenados[i] === ultimo) contagem++; else break;
+    }
+    return { tipo: ultimo, contagem };
+  }, [jogosOrdenados]);
+
+  const melhorSequencia = useMemo(() => {
+    let melhor = 0, atual = 0;
+    jogosOrdenados.forEach(r => { if (r === "V") { atual++; melhor = Math.max(melhor, atual); } else atual = 0; });
+    return melhor;
+  }, [jogosOrdenados]);
+
+  // Temporada atual vs. carreira (winsTotal/lossesTotal só somam temporadas JÁ fechadas)
+  const temporadaWL = { v: eu.wins||0, d: eu.losses||0 };
+  const carreiraWL = { v: (eu.winsTotal||0)+(eu.wins||0), d: (eu.lossesTotal||0)+(eu.losses||0) };
+
+  // Desempenho como favorito vs. azarão (usa favoritoId gravado no processamento)
+  const favoritoAzarao = useMemo(() => {
+    let favV=0, favD=0, azaV=0, azaD=0;
+    state.matches
+      .filter(m => (m.p1Id===eu.id||m.p2Id===eu.id) && m.validated && m.calculado && m.favoritoId)
+      .forEach(m => {
+        const souP1 = m.p1Id === eu.id;
+        const meuScore = souP1 ? m.score1 : m.score2;
+        const advScore = souP1 ? m.score2 : m.score1;
+        const venci = meuScore > advScore;
+        if (m.favoritoId === eu.id) { if (venci) favV++; else favD++; }
+        else { if (venci) azaV++; else azaD++; }
+      });
+    const favTotal = favV+favD, azaTotal = azaV+azaD;
+    return {
+      favPct: favTotal ? Math.round(favV/favTotal*100) : null, favTotal, favV, favD,
+      azaPct: azaTotal ? Math.round(azaV/azaTotal*100) : null, azaTotal, azaV, azaD,
+    };
+  }, [state.matches, eu.id]);
+
+  // Maior zebra: a vitória como azarão com a maior diferença de rating
+  const maiorZebra = useMemo(() => {
+    let melhor = null;
+    state.matches
+      .filter(m => (m.p1Id===eu.id||m.p2Id===eu.id) && m.validated && m.calculado && m.favoritoId && m.favoritoId !== eu.id)
+      .forEach(m => {
+        const souP1 = m.p1Id === eu.id;
+        const meuScore = souP1 ? m.score1 : m.score2;
+        const advScore = souP1 ? m.score2 : m.score1;
+        if (meuScore > advScore && (!melhor || (m.diferencaRatingMomento||0) > melhor.diferenca)) {
+          melhor = { oponenteId: souP1 ? m.p2Id : m.p1Id, diferenca: m.diferencaRatingMomento||0, placar: `${meuScore}–${advScore}` };
+        }
+      });
+    if (!melhor) return null;
+    return { ...melhor, oponente: state.athletes.find(a=>a.id===melhor.oponenteId) };
+  }, [state.matches, state.athletes, eu.id]);
+
   // "Contra cada adversário": todo mundo que o atleta já enfrentou (partidas
   // validadas), com o mesmo H2H já usado no restante do app.
   const adversarios = useMemo(() => {
@@ -3275,6 +3391,15 @@ function EstatisticasView({ state, athlete, onClose }) {
     return 18 + ((v - barMin) / (barMax - barMin)) * 82; // 18%–100%
   };
 
+  // Evolução da posição — igual à do rating, mas invertida (posição 1 = melhor = barra mais alta)
+  const histPos = (eu.posicaoHistorico || []).slice(-8);
+  const posMin = histPos.length ? Math.min(...histPos.map(h=>h.posicao)) : 0;
+  const posMax = histPos.length ? Math.max(...histPos.map(h=>h.posicao)) : 1;
+  const barAlturaPos = (v) => {
+    if (posMax === posMin) return 60;
+    return 18 + ((posMax - v) / (posMax - posMin)) * 82;
+  };
+
   return (
     <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column"}}>
       <div style={{height:3,background:T.terracota,flexShrink:0}}/>
@@ -3284,7 +3409,7 @@ function EstatisticasView({ state, athlete, onClose }) {
       </div>
 
       <div style={{flex:1,overflowY:"auto",padding:"18px 22px 30px"}}>
-        <div style={{display:"flex",gap:10,marginBottom:22}}>
+        <div style={{display:"flex",gap:10,marginBottom:14}}>
           <div style={{flex:1,background:"rgba(216,90,48,0.12)",border:"1px solid rgba(216,90,48,0.3)",borderRadius:16,padding:"14px 16px"}}>
             <div style={{fontFamily:T.serif,fontSize:32,lineHeight:1,color:T.offwhite}}>{eu.rating}</div>
             <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:1.4,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:6}}>Rating atual</div>
@@ -3292,6 +3417,33 @@ function EstatisticasView({ state, athlete, onClose }) {
           <div style={{flex:1,background:"rgba(240,234,224,0.04)",border:"1px solid rgba(240,234,224,0.1)",borderRadius:16,padding:"14px 16px"}}>
             <div style={{fontFamily:T.serif,fontSize:32,lineHeight:1,color:T.offwhite}}>{pico}</div>
             <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:1.4,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:6}}>Pico</div>
+          </div>
+        </div>
+
+        {/* Sequência atual + melhor sequência */}
+        <div style={{display:"flex",gap:10,marginBottom:22}}>
+          <div style={{flex:1,background:"rgba(240,234,224,0.04)",border:"1px solid rgba(240,234,224,0.1)",borderRadius:16,padding:"13px 16px"}}>
+            <div style={{fontFamily:T.serif,fontSize:22,lineHeight:1,color: sequenciaAtual.tipo==="V" ? T.verde2 : sequenciaAtual.tipo==="D" ? T.vermelho : T.offwhite}}>
+              {sequenciaAtual.contagem > 0 ? `${sequenciaAtual.contagem}${sequenciaAtual.tipo}` : "—"}
+            </div>
+            <div style={{fontFamily:T.mono,fontSize:7.5,letterSpacing:1.2,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:5}}>Sequência atual</div>
+          </div>
+          <div style={{flex:1,background:"rgba(240,234,224,0.04)",border:"1px solid rgba(240,234,224,0.1)",borderRadius:16,padding:"13px 16px"}}>
+            <div style={{fontFamily:T.serif,fontSize:22,lineHeight:1,color:T.verde2}}>{melhorSequencia > 0 ? `${melhorSequencia}V` : "—"}</div>
+            <div style={{fontFamily:T.mono,fontSize:7.5,letterSpacing:1.2,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:5}}>Melhor sequência</div>
+          </div>
+        </div>
+
+        {/* Temporada atual vs. carreira */}
+        <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginBottom:10}}>Temporada · Carreira</div>
+        <div style={{display:"flex",gap:10,marginBottom:22}}>
+          <div style={{flex:1,background:"rgba(240,234,224,0.04)",border:"1px solid rgba(240,234,224,0.1)",borderRadius:16,padding:"13px 16px",textAlign:"center"}}>
+            <div style={{fontFamily:T.serif,fontSize:20,lineHeight:1}}><span style={{color:T.verde2}}>{temporadaWL.v}</span><span style={{color:"rgba(240,234,224,0.4)"}}> · </span><span style={{color:"rgba(240,234,224,0.6)"}}>{temporadaWL.d}</span></div>
+            <div style={{fontFamily:T.mono,fontSize:7.5,letterSpacing:1.2,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:5}}>Nesta temporada</div>
+          </div>
+          <div style={{flex:1,background:"rgba(240,234,224,0.04)",border:"1px solid rgba(240,234,224,0.1)",borderRadius:16,padding:"13px 16px",textAlign:"center"}}>
+            <div style={{fontFamily:T.serif,fontSize:20,lineHeight:1}}><span style={{color:T.verde2}}>{carreiraWL.v}</span><span style={{color:"rgba(240,234,224,0.4)"}}> · </span><span style={{color:"rgba(240,234,224,0.6)"}}>{carreiraWL.d}</span></div>
+            <div style={{fontFamily:T.mono,fontSize:7.5,letterSpacing:1.2,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:5}}>Carreira</div>
           </div>
         </div>
 
@@ -3308,6 +3460,48 @@ function EstatisticasView({ state, athlete, onClose }) {
           </div>
         ) : (
           <div style={{fontSize:12,color:T.cinza,marginBottom:26}}>Ainda sem histórico suficiente — aparece aqui conforme as rodadas forem processadas.</div>
+        )}
+
+        <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginBottom:12}}>Evolução da posição no ranking</div>
+        {histPos.length ? (
+          <div style={{display:"flex",alignItems:"flex-end",gap:6,height:80,padding:"0 2px",marginBottom:26}}>
+            {histPos.map((h,i) => (
+              <div key={i} style={{position:"relative",flex:1,height:`${barAlturaPos(h.posicao)}%`,background: i===histPos.length-1 ? T.terracota : "rgba(240,234,224,0.3)",borderRadius:"3px 3px 0 0"}}>
+                <span style={{position:"absolute",top:-16,left:0,right:0,textAlign:"center",fontFamily:T.mono,fontSize:8,color:"rgba(240,234,224,0.5)"}}>{h.posicao}º</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{fontSize:12,color:T.cinza,marginBottom:26}}>Ainda sem histórico suficiente.</div>
+        )}
+
+        <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginBottom:12}}>Como favorito · Como azarão</div>
+        <div style={{display:"flex",gap:10,marginBottom:22}}>
+          <div style={{flex:1,background:"rgba(240,234,224,0.04)",border:"1px solid rgba(240,234,224,0.1)",borderRadius:16,padding:"13px 16px",textAlign:"center"}}>
+            <div style={{fontFamily:T.serif,fontSize:24,lineHeight:1,color:T.offwhite}}>{favoritoAzarao.favPct != null ? `${favoritoAzarao.favPct}%` : "—"}</div>
+            <div style={{fontFamily:T.mono,fontSize:7.5,letterSpacing:1,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:5}}>
+              {favoritoAzarao.favTotal ? `Favorito (${favoritoAzarao.favV}–${favoritoAzarao.favD})` : "Ainda sem jogos como favorito"}
+            </div>
+          </div>
+          <div style={{flex:1,background:"rgba(240,234,224,0.04)",border:"1px solid rgba(240,234,224,0.1)",borderRadius:16,padding:"13px 16px",textAlign:"center"}}>
+            <div style={{fontFamily:T.serif,fontSize:24,lineHeight:1,color:T.offwhite}}>{favoritoAzarao.azaPct != null ? `${favoritoAzarao.azaPct}%` : "—"}</div>
+            <div style={{fontFamily:T.mono,fontSize:7.5,letterSpacing:1,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:5}}>
+              {favoritoAzarao.azaTotal ? `Azarão (${favoritoAzarao.azaV}–${favoritoAzarao.azaD})` : "Ainda sem jogos como azarão"}
+            </div>
+          </div>
+        </div>
+
+        {maiorZebra && (
+          <>
+            <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginBottom:12}}>Maior zebra</div>
+            <div style={{display:"flex",alignItems:"center",gap:12,background:"rgba(216,90,48,0.1)",border:"1px solid rgba(216,90,48,0.3)",borderRadius:14,padding:"13px 16px",marginBottom:22}}>
+              <Avatar athlete={maiorZebra.oponente} size={36}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,color:T.offwhite}}>vs {nomeExibicao(maiorZebra.oponente)} · {maiorZebra.placar}</div>
+                <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:0.5,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:4}}>{maiorZebra.diferenca} pts de diferença de rating</div>
+              </div>
+            </div>
+          </>
         )}
 
         <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginBottom:12}}>Contra cada adversário</div>
@@ -4487,12 +4681,17 @@ function AthleteGames({ state, dispatch, athlete }) {
       {estatisticasAbertas && <EstatisticasView state={state} athlete={eu} onClose={()=>setEstatisticasAbertas(false)}/>}
       {cartaAberta && <CartaModal athlete={eu} posicao={minhaPos>=0?minhaPos+1:null} onClose={()=>setCartaAberta(false)}/>}
       {editarAberto && <EditarPerfilView athlete={eu} dispatch={dispatch} onClose={()=>setEditarAberto(false)}/>}
-      <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:10,marginBottom:20}}>
-        <div onClick={()=>setPerfilAberto(true)} style={{cursor:"pointer"}}>
-          <Avatar athlete={eu} size={52} ring="rgba(216,90,48,0.5)"/>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,marginBottom:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div onClick={()=>setPerfilAberto(true)} style={{cursor:"pointer"}}>
+            <Avatar athlete={eu} size={52} ring="rgba(216,90,48,0.5)"/>
+          </div>
+          <button onClick={()=>setEditarAberto(true)} style={{width:28,height:28,borderRadius:"50%",border:`1px solid rgba(240,234,224,0.3)`,background:"transparent",color:T.offwhite,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            ✏️
+          </button>
         </div>
-        <button onClick={()=>setEditarAberto(true)} style={{width:28,height:28,borderRadius:"50%",border:`1px solid rgba(240,234,224,0.3)`,background:"transparent",color:T.offwhite,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          ✏️
+        <button onClick={()=>setPerfilAberto(true)} style={{fontFamily:T.mono,fontSize:9,letterSpacing:1.4,textTransform:"uppercase",color:T.terracota,background:"transparent",border:"none",cursor:"pointer",padding:"2px 4px"}}>
+          Ver perfil
         </button>
       </div>
 

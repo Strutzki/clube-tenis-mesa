@@ -3131,6 +3131,116 @@ function CartaModal({ athlete, posicao, onClose }) {
 }
 
 // ── ESTATÍSTICAS DO ATLETA (tela cheia, abre por cima da aba Jogos) ───────────
+// ── PERFIL DO ATLETA (tela cheia, "capa" com foto — abre Estatísticas e Carta) ─
+function PerfilAtletaView({ state, athlete, onClose, onVerCarta, onVerEstatisticas }) {
+  const eu = state.athletes.find(a => a.id === athlete.id) || athlete;
+  const ranking = [...state.athletes].filter(a=>a.status==="ativo" && !a.pendenteCircuito).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const minhaPos = ranking.findIndex(a => a.id === eu.id);
+  const totalJogos = (eu.wins||0) + (eu.losses||0);
+  const aproveitamento = totalJogos > 0 ? Math.round((eu.wins||0)/totalJogos*100) : null;
+
+  // Forma — últimos 5 jogos (só os já processados, em ordem cronológica)
+  const forma = useMemo(() => {
+    return state.matches
+      .filter(m => (m.p1Id === eu.id || m.p2Id === eu.id) && m.validated && m.calculado)
+      .sort((a,b) => new Date(a.adminAprovadoEm||0) - new Date(b.adminAprovadoEm||0))
+      .slice(-5)
+      .map(m => {
+        const souP1 = m.p1Id === eu.id;
+        const meuScore = souP1 ? m.score1 : m.score2;
+        const advScore = souP1 ? m.score2 : m.score1;
+        return meuScore > advScore ? "V" : "D";
+      });
+  }, [state.matches, eu.id]);
+
+  // Evolução do rating — mesmo cálculo da Estatísticas, versão compacta
+  const hist = (eu.ratingHistorico || []).slice(-8);
+  const barMin = hist.length ? Math.min(...hist.map(h=>h.rating)) : 0;
+  const barMax = hist.length ? Math.max(...hist.map(h=>h.rating)) : 1;
+  const barAltura = (v) => barMax === barMin ? 60 : 18 + ((v - barMin) / (barMax - barMin)) * 82;
+
+  return (
+    <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column",overflowY:"auto"}}>
+      <div style={{position:"relative",height:230,flexShrink:0}}>
+        {eu.foto
+          ? <img src={eu.foto} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
+          : <div style={{position:"absolute",inset:0,background:T.verdeCard,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <span style={{fontFamily:T.serif,fontSize:100,color:T.offwhite,opacity:0.25}}>{nomeExibicao(eu)?.[0]?.toUpperCase()}</span>
+            </div>
+        }
+        <div style={{position:"absolute",inset:0,background:`linear-gradient(to top, ${T.telaFundo} 4%, rgba(24,36,32,.25) 48%, rgba(24,36,32,.5))`,pointerEvents:"none"}}/>
+        <div style={{position:"absolute",top:0,left:0,right:0,padding:"14px 20px"}}>
+          <span onClick={onClose} style={{cursor:"pointer",width:32,height:32,borderRadius:"50%",background:"rgba(28,43,39,0.5)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:T.offwhite}}>←</span>
+        </div>
+        <div style={{position:"absolute",left:22,right:22,bottom:16}}>
+          {minhaPos >= 0 && (
+            <span style={{fontFamily:T.mono,fontSize:9,letterSpacing:1.4,textTransform:"uppercase",color:T.offwhite,background:"rgba(216,90,48,0.92)",padding:"4px 9px",borderRadius:14}}>Ranking {minhaPos+1}º</span>
+          )}
+          <div style={{fontFamily:T.serif,fontSize:34,lineHeight:1,color:T.offwhite,marginTop:12}}>{nomeExibicao(eu)}</div>
+          <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:1.6,textTransform:"uppercase",color:"rgba(240,234,224,0.7)",marginTop:6}}>
+            {eu.estilo || "Clássico"} · Membro desde {membroDesde(eu.inscritoEm) || "—"}
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding:"20px 22px 26px"}}>
+        <div style={{display:"flex",gap:10}}>
+          <div style={{flex:1,background:"rgba(216,90,48,0.12)",border:"1px solid rgba(216,90,48,0.3)",borderRadius:16,padding:"13px 6px",textAlign:"center"}}>
+            <div style={{fontFamily:T.serif,fontSize:26,lineHeight:1,color:T.offwhite}}>{eu.rating}</div>
+            <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:1.2,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:5}}>Rating</div>
+          </div>
+          <div style={{flex:1,background:"rgba(240,234,224,0.04)",border:"1px solid rgba(240,234,224,0.1)",borderRadius:16,padding:"13px 6px",textAlign:"center"}}>
+            <div style={{fontFamily:T.serif,fontSize:26,lineHeight:1,color:T.verde2}}>{eu.wins||0}</div>
+            <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:1.2,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:5}}>Vitórias</div>
+          </div>
+          <div style={{flex:1,background:"rgba(240,234,224,0.04)",border:"1px solid rgba(240,234,224,0.1)",borderRadius:16,padding:"13px 6px",textAlign:"center"}}>
+            <div style={{fontFamily:T.serif,fontSize:26,lineHeight:1,color:T.offwhite}}>{aproveitamento != null ? `${aproveitamento}%` : "—"}</div>
+            <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:1.2,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:5}}>Aproveit.</div>
+          </div>
+        </div>
+
+        <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:T.cinza,margin:"22px 0 10px"}}>Forma — últimos 5</div>
+        {forma.length ? (
+          <div style={{display:"flex",gap:8}}>
+            {forma.map((r,i) => (
+              <div key={i} style={{
+                flex:1,height:34,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",
+                fontFamily:T.mono,fontWeight:700,fontSize:12,
+                background: r==="V" ? T.terracota : "transparent",
+                color: r==="V" ? T.offwhite : "rgba(240,234,224,0.5)",
+                border: r==="V" ? "none" : "1px solid rgba(240,234,224,0.25)",
+              }}>{r}</div>
+            ))}
+          </div>
+        ) : (
+          <div style={{fontSize:12,color:T.cinza}}>Ainda sem jogos suficientes.</div>
+        )}
+
+        <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:T.cinza,margin:"22px 0 10px"}}>Evolução do rating</div>
+        {hist.length ? (
+          <div style={{display:"flex",alignItems:"flex-end",gap:5,height:60}}>
+            {hist.map((h,i) => (
+              <div key={i} style={{flex:1,height:`${barAltura(h.rating)}%`,background: i===hist.length-1 ? T.terracota : "rgba(240,234,224,0.35)",borderRadius:"3px 3px 0 0"}}/>
+            ))}
+          </div>
+        ) : (
+          <div style={{fontSize:12,color:T.cinza}}>Ainda sem histórico suficiente.</div>
+        )}
+
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:26}}>
+          <button onClick={onVerEstatisticas} style={{width:"100%",boxSizing:"border-box",border:`1px solid rgba(240,234,224,0.25)`,background:"transparent",color:T.offwhite,fontFamily:T.sans,fontWeight:600,fontSize:14,padding:"13px",borderRadius:13,cursor:"pointer"}}>
+            Ver estatísticas completas
+          </button>
+          <button onClick={onVerCarta} style={{width:"100%",boxSizing:"border-box",border:"none",background:T.terracota,color:T.offwhite,fontFamily:T.sans,fontWeight:600,fontSize:15,padding:"14px",borderRadius:13,cursor:"pointer"}}>
+            Ver carta do atleta
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ESTATÍSTICAS DO ATLETA (tela cheia, abre por cima da aba Jogos) ───────────
 function EstatisticasView({ state, athlete, onClose }) {
   const eu = state.athletes.find(a => a.id === athlete.id) || athlete;
   const pico = eu.ratingPico || eu.rating || 0;
@@ -4305,7 +4415,9 @@ function SeletorEstilo({ athlete, dispatch }) {
 }
 
 function AthleteGames({ state, dispatch, athlete }) {
+  const [perfilAberto, setPerfilAberto] = useState(false);
   const [estatisticasAbertas, setEstatisticasAbertas] = useState(false);
+  const [cartaAberta, setCartaAberta] = useState(false);
   const myMatches = state.matches.filter(m => m.p1Id === athlete.id || m.p2Id === athlete.id);
   const open = myMatches.filter(m => !m.validated && !m.rejeitado);
   const done = myMatches.filter(m => m.validated);
@@ -4328,12 +4440,21 @@ function AthleteGames({ state, dispatch, athlete }) {
 
   return (
     <div>
+      {perfilAberto && (
+        <PerfilAtletaView
+          state={state} athlete={eu}
+          onClose={()=>setPerfilAberto(false)}
+          onVerEstatisticas={()=>setEstatisticasAbertas(true)}
+          onVerCarta={()=>setCartaAberta(true)}
+        />
+      )}
       {estatisticasAbertas && <EstatisticasView state={state} athlete={eu} onClose={()=>setEstatisticasAbertas(false)}/>}
+      {cartaAberta && <CartaModal athlete={eu} posicao={minhaPos>=0?minhaPos+1:null} onClose={()=>setCartaAberta(false)}/>}
       <EditableAvatar athlete={eu} dispatch={dispatch}/>
       <SeletorEstilo athlete={eu} dispatch={dispatch}/>
       <div style={{display:"flex",justifyContent:"center",marginBottom:20,marginTop:-6}}>
-        <button onClick={()=>setEstatisticasAbertas(true)} style={{fontFamily:T.mono,fontSize:10,letterSpacing:1,textTransform:"uppercase",color:T.offwhite,background:"transparent",border:`1px solid rgba(240,234,224,0.25)`,borderRadius:18,padding:"8px 16px",cursor:"pointer"}}>
-          📊 Ver minhas estatísticas
+        <button onClick={()=>setPerfilAberto(true)} style={{fontFamily:T.mono,fontSize:10,letterSpacing:1,textTransform:"uppercase",color:T.offwhite,background:"transparent",border:`1px solid rgba(240,234,224,0.25)`,borderRadius:18,padding:"8px 16px",cursor:"pointer"}}>
+          👤 Ver meu perfil
         </button>
       </div>
 

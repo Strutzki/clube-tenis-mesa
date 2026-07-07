@@ -2947,6 +2947,7 @@ const ESTILO_CORES = {
 
 // Raridade a partir da posição no ranking
 function rarityOf(pos) {
+  if (pos == null) return { frame: "rgba(125,145,136,.35)", glow: "rgba(125,145,136,.1)" };
   if (pos === 1) return { frame: "rgba(156,111,62,.65)", glow: "rgba(156,111,62,.24)" };
   if (pos <= 3)  return { frame: "rgba(216,90,48,.6)",   glow: "rgba(216,90,48,.2)" };
   if (pos <= 6)  return { frame: "rgba(127,174,143,.58)",glow: "rgba(127,174,143,.2)" };
@@ -3036,7 +3037,7 @@ function AtletaCard({ apelido, foto, estilo = "Clássico", membroDesde: membroDe
           <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginTop:px(14) }}>
             <div style={{ textAlign:"center" }}>
               <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.5)" }}>Ranking atual</div>
-              <div style={{ fontFamily:T.serif, fontSize:px(30), lineHeight:.9, marginTop:px(2) }}>{posicao}º</div>
+              <div style={{ fontFamily:T.serif, fontSize:px(30), lineHeight:.9, marginTop:px(2) }}>{posicao != null ? `${posicao}º` : "—"}</div>
             </div>
             <div style={{ textAlign:"center" }}>
               <div style={{ fontFamily:T.serif, fontSize:px(44), lineHeight:.85, color:T.terracota, textShadow:"0 2px 10px rgba(216,90,48,.35)" }}>{rating}</div>
@@ -3597,7 +3598,7 @@ function AdminEtapa({ state, dispatch }) {
   );
 
   const ranking = [...state.athletes].filter(a=>a.status==="ativo" && !a.pendenteCircuito).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
-  const posicaoDe = (athleteId) => ranking.findIndex(a => a.id === athleteId) + 1 || ranking.length + 1;
+  const posicaoDe = (athleteId) => { const idx = ranking.findIndex(a => a.id === athleteId); return idx === -1 ? null : idx + 1; };
 
   return (
     <div>
@@ -4251,7 +4252,7 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
   const p2 = state.athletes.find(a=>a.id===m.p2Id);
   const adversario = isP1 ? p2 : p1;
   const ranking = [...state.athletes].filter(a=>a.status==="ativo" && !a.pendenteCircuito).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
-  const posicaoAdversario = ranking.findIndex(a => a.id === adversario?.id) + 1 || ranking.length + 1;
+  const posicaoAdversario = (() => { const idx = ranking.findIndex(a => a.id === adversario?.id); return idx === -1 ? null : idx + 1; })();
 
   function submit() {
     if (!s1||!s2) return;
@@ -4446,7 +4447,7 @@ function ComunidadeView({ state, currentAthleteId }) {
     .filter(a => a.status === "ativo" && !a.pendenteCircuito)
     .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
     [state.athletes]);
-  const posicaoDe = (athleteId) => ranking.findIndex(a => a.id === athleteId) + 1 || ranking.length + 1;
+  const posicaoDe = (athleteId) => { const idx = ranking.findIndex(a => a.id === athleteId); return idx === -1 ? null : idx + 1; };
 
   const feed = useMemo(() => {
     const eventos = [];

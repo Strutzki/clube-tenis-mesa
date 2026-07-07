@@ -3655,10 +3655,22 @@ function AdminDashboard({ state, setTab, dispatch }) {
           <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>🚦 Fase: Inscrições abertas</div>
           <div style={{fontSize:12,color:"#9db3a8",marginBottom:12}}>Valide os atletas pendentes e depois inicie a etapa.</div>
           {pendentes.length > 0 && <Btn onClick={()=>setTab("inscricoes")} color="#9C6F3E">⚠️ Ver {pendentes.length} pendente(s)</Btn>}
-          {ativos.length >= 2 && <IniciarEtapaPanel state={state} dispatch={dispatch} />}
+          <IniciarEtapaPanel state={state} dispatch={dispatch} />
         </Card>
       )}
 
+
+      {state.phase === "etapa" && allCurrentValidated && !hasNextRound && (
+        <Card style={{border:"1px solid rgba(216,90,48,0.3)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#D85A30",marginBottom:6}}>🧮 Rodada {currentRound} validada, mas ainda não processada</div>
+          <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>
+            {calculoPendente.length > 0
+              ? `Faltam ${calculoPendente.length} partida(s) processar (Processar Rodada) antes de poder avançar pro próximo mês.`
+              : "Alguma partida de uma rodada anterior ainda não foi processada."}
+          </div>
+          <Btn onClick={()=>setTab("pendencias")} color="#D85A30">Ir para Pendências</Btn>
+        </Card>
+      )}
 
       {state.phase === "etapa" && allCurrentValidated && hasNextRound && (
         <Card style={{border:"1px solid rgba(74,222,128,0.3)"}}>
@@ -3722,6 +3734,8 @@ function IniciarEtapaPanel({ state, dispatch }) {
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
   const impar = ativos.length % 2 !== 0;
+  const MINIMO = 8; // Cap. 13 do regulamento: temporada só inicia com no mínimo 8 atletas ativos
+  const faltam = Math.max(0, MINIMO - ativos.length);
   return (
     <div style={{marginTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
       {backlogCount > 0 && (
@@ -3732,10 +3746,11 @@ function IniciarEtapaPanel({ state, dispatch }) {
       <div style={{fontSize:12,color:"#9db3a8",marginBottom:6}}>
         Os confrontos serão gerados por <b>proximidade de rating</b>, evitando repetir duelos da temporada (Cap. 03). As duas rodadas do mês são publicadas de uma vez.
       </div>
-      <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
-        {ativos.length} atleta(s) ativo(s){impar ? " · número ímpar: um atleta terá folga (bye) por rodada" : ""}
+      <div style={{fontSize:11,color: faltam > 0 ? "#D85A30" : "#7d9188",marginBottom:10}}>
+        {ativos.length} atleta(s) ativo(s){impar && faltam===0 ? " · número ímpar: um atleta terá folga (bye) por rodada" : ""}
+        {faltam > 0 && ` · faltam ${faltam} pra atingir o mínimo de ${MINIMO} (Cap. 13 do regulamento)`}
       </div>
-      <Btn onClick={()=>dispatch({type:"INICIAR_ETAPA",payload:{}})} color="#6a9d7a" full>
+      <Btn onClick={()=>dispatch({type:"INICIAR_ETAPA",payload:{}})} color="#6a9d7a" full disabled={faltam > 0}>
         🚀 Iniciar Etapa · Pareamento por Rating
       </Btn>
     </div>

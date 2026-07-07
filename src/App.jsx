@@ -2643,7 +2643,10 @@ export default function App() {
   async function dispatchAndSync(action) {
     dispatch(action);
     try { await syncToSupabase(action, state); }
-    catch(e) { setDbMsg("Erro ao salvar: "+e.message); }
+    catch(e) {
+      console.error(`[sync falhou] ${action.type}:`, e);
+      setDbMsg(`Erro ao salvar (${action.type}): ${e.message}`);
+    }
   }
 
   async function syncToSupabase(action, st) {
@@ -2730,13 +2733,20 @@ export default function App() {
       await db.updateAtleta(athleteId, { estilo_jogo: estilo });
     }
     else if (action.type === "REGISTRAR_MENSAGEM_ENVIADA") {
-      const { athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm } = action.payload;
-      await db.insertMensagemEnviada({
-        atleta_id: athleteId || null,
-        atleta_nome: athleteName || null,
-        categoria, categoria_label: categoriaLabel,
-        texto, enviado_em: enviadoEm,
-      });
+      // Registro no histórico é acessório: se falhar (tabela ausente, tipo de
+      // coluna divergente, etc.), NÃO pode derrubar o "marcar como enviado".
+      const { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm } = action.payload;
+      try {
+        await db.insertMensagemEnviada({
+          id,
+          atleta_id: athleteId || null,
+          atleta_nome: athleteName || null,
+          categoria, categoria_label: categoriaLabel,
+          texto, enviado_em: enviadoEm,
+        });
+      } catch(e) {
+        console.warn("Registro de mensagem no histórico falhou (seguindo mesmo assim):", e.message);
+      }
     }
     else if (action.type === "PROCESSAR_RODADA") {
       // Espelha a mesma lógica sequencial do reducer local, pra persistir os

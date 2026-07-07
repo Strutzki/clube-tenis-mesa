@@ -793,6 +793,7 @@ function deadlineStatus(dateStr) {
   if (days < 0) return { color:"#c25a45", label:`⚠️ Vencido há ${Math.abs(days)}d`, urgent:true };
   if (days === 0) return { color:"#c25a45", label:"⚠️ Vence hoje!", urgent:true };
   if (days <= 2) return { color:"#fb923c", label:`🔥 ${days}d restante${days>1?"s":""}`, urgent:true };
+  if (days <= 3) return { color:"#fb923c", label:`⏰ ${days}d restantes`, urgent:true };
   if (days <= 5) return { color:"#9C6F3E", label:`⏰ ${days}d restantes`, urgent:false };
   return { color:"#7d9188", label:`até ${fmtDate(dateStr)}`, urgent:false };
 }
@@ -4881,11 +4882,34 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
   return (
     <Card style={{border:`1px solid ${T.terracota}33`}}>
       {cartaAberta && <CartaModal athlete={adversario} posicao={posicaoAdversario} onClose={()=>setCartaAberta(false)}/>}
+      {(() => {
+        // Faixa de urgência: só aparece quando o prazo está apertado (urgent),
+        // pra criar senso de urgência sem poluir quando ainda há tempo de sobra.
+        const ds = deadlineStatus(m.scoreDeadline || m.deadline);
+        if (!ds.urgent) return null;
+        return (
+          <div style={{
+            display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+            background:`${ds.color}1f`,border:`1px solid ${ds.color}55`,borderRadius:10,
+            padding:"9px 12px",marginBottom:12,
+          }}>
+            <span style={{fontFamily:T.mono,fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase",color:ds.color}}>
+              {ds.label}
+            </span>
+            <span style={{fontFamily:T.mono,fontSize:9,letterSpacing:0.5,textTransform:"uppercase",color:"rgba(240,234,224,0.55)"}}>
+              pra registrar o placar
+            </span>
+          </div>
+        );
+      })()}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
         <span style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:1.5,textTransform:"uppercase"}}>Rodada {m.round}</span>
         {(() => {
           const ds = deadlineStatus(m.scoreDeadline || m.deadline);
-          return <span style={{fontFamily:T.mono,fontSize:9,color:ds.color,letterSpacing:0.8,fontWeight:ds.urgent?700:400,textTransform:"uppercase"}}>{`Placar: ${ds.label}`}</span>;
+          // Quando a faixa de urgência já está visível, aqui só mostramos a data
+          // "seca" pra não repetir a mesma informação duas vezes.
+          const texto = ds.urgent ? `Placar até ${fmtDate(m.scoreDeadline || m.deadline)}` : `Placar: ${ds.label}`;
+          return <span style={{fontFamily:T.mono,fontSize:9,color:ds.urgent?T.cinza:ds.color,letterSpacing:0.8,fontWeight:400,textTransform:"uppercase"}}>{texto}</span>;
         })()}
       </div>
       <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:20,marginBottom:14}}>

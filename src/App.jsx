@@ -4414,10 +4414,46 @@ function SeletorEstilo({ athlete, dispatch }) {
   );
 }
 
+// ── EDITAR PERFIL (tela cheia — reúne foto + estilo de jogo num só lugar) ─────
+function EditarPerfilView({ athlete, dispatch, onClose }) {
+  return (
+    <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column"}}>
+      <div style={{height:3,background:T.terracota,flexShrink:0}}/>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 20px",flexShrink:0,borderBottom:`1px solid rgba(240,234,224,0.08)`}}>
+        <span onClick={onClose} style={{cursor:"pointer",fontSize:18,color:T.offwhite}}>←</span>
+        <span style={{fontFamily:T.mono,fontSize:12,letterSpacing:1,color:T.offwhite}}>Editar perfil</span>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:"26px 22px 30px"}}>
+        <EditableAvatar athlete={athlete} dispatch={dispatch}/>
+        <SeletorEstilo athlete={athlete} dispatch={dispatch}/>
+      </div>
+    </div>
+  );
+}
+
+
+// ── EDITAR PERFIL (modal) — reaproveita o upload de foto e o seletor de estilo,
+// que antes ficavam soltos na tela principal da aba Jogos ─────────────────────
+function EditarPerfilModal({ athlete, dispatch, onClose }) {
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.88)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.verde,borderRadius:18,padding:"22px 20px",width:"100%",maxWidth:340,boxSizing:"border-box"}}>
+        <div style={{fontFamily:T.serif,fontSize:20,color:T.offwhite,textAlign:"center",marginBottom:12}}>Editar perfil</div>
+        <EditableAvatar athlete={athlete} dispatch={dispatch}/>
+        <SeletorEstilo athlete={athlete} dispatch={dispatch}/>
+        <button onClick={onClose} style={{width:"100%",boxSizing:"border-box",border:`1px solid rgba(240,234,224,0.25)`,background:"transparent",color:T.offwhite,fontFamily:T.sans,fontWeight:600,fontSize:14,padding:"12px",borderRadius:13,cursor:"pointer"}}>
+          Concluído
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AthleteGames({ state, dispatch, athlete }) {
   const [perfilAberto, setPerfilAberto] = useState(false);
   const [estatisticasAbertas, setEstatisticasAbertas] = useState(false);
   const [cartaAberta, setCartaAberta] = useState(false);
+  const [editarAberto, setEditarAberto] = useState(false);
   const myMatches = state.matches.filter(m => m.p1Id === athlete.id || m.p2Id === athlete.id);
   const open = myMatches.filter(m => !m.validated && !m.rejeitado);
   const done = myMatches.filter(m => m.validated);
@@ -4450,11 +4486,13 @@ function AthleteGames({ state, dispatch, athlete }) {
       )}
       {estatisticasAbertas && <EstatisticasView state={state} athlete={eu} onClose={()=>setEstatisticasAbertas(false)}/>}
       {cartaAberta && <CartaModal athlete={eu} posicao={minhaPos>=0?minhaPos+1:null} onClose={()=>setCartaAberta(false)}/>}
-      <EditableAvatar athlete={eu} dispatch={dispatch}/>
-      <SeletorEstilo athlete={eu} dispatch={dispatch}/>
-      <div style={{display:"flex",justifyContent:"center",marginBottom:20,marginTop:-6}}>
-        <button onClick={()=>setPerfilAberto(true)} style={{fontFamily:T.mono,fontSize:10,letterSpacing:1,textTransform:"uppercase",color:T.offwhite,background:"transparent",border:`1px solid rgba(240,234,224,0.25)`,borderRadius:18,padding:"8px 16px",cursor:"pointer"}}>
-          👤 Ver meu perfil
+      {editarAberto && <EditarPerfilView athlete={eu} dispatch={dispatch} onClose={()=>setEditarAberto(false)}/>}
+      <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:10,marginBottom:20}}>
+        <div onClick={()=>setPerfilAberto(true)} style={{cursor:"pointer"}}>
+          <Avatar athlete={eu} size={52} ring="rgba(216,90,48,0.5)"/>
+        </div>
+        <button onClick={()=>setEditarAberto(true)} style={{width:28,height:28,borderRadius:"50%",border:`1px solid rgba(240,234,224,0.3)`,background:"transparent",color:T.offwhite,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          ✏️
         </button>
       </div>
 

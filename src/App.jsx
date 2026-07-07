@@ -2874,7 +2874,7 @@ const IconRanking = ({ ativo }) => {
     </span>
   );
 };
-const IconTabela = ({ ativo }) => {
+const IconAgenda = ({ ativo }) => {
   const c = ativo ? T.terracota : "rgba(240,234,224,0.5)";
   return (
     <span style={{display:"flex",flexDirection:"column",gap:3,width:16}}>
@@ -2907,7 +2907,7 @@ function BottomNav({ isAdmin, tab, setTab }) {
   const athleteTabs = [
     {id:"meus_jogos", label:"Jogos",      Icon:IconJogos},
     {id:"ranking",    label:"Ranking",    Icon:IconRanking},
-    {id:"tabela",     label:"Tabela",     Icon:IconTabela},
+    {id:"agenda",     label:"Agenda",     Icon:IconAgenda},
     {id:"comunidade", label:"Comunidade", Icon:IconComunidade},
   ];
   return (
@@ -4204,7 +4204,7 @@ function MatchCard({ m, state, admin=false, currentAthleteId }) {
 function AthleteView({ state, dispatch, athlete, tab, setTab }) {
   if (tab === "meus_jogos") return <AthleteGames state={state} dispatch={dispatch} athlete={athlete} />;
   if (tab === "ranking") return <RankingView state={state} currentAthleteId={athlete.id} />;
-  if (tab === "tabela") return <TabelaView state={state} athlete={athlete} />;
+  if (tab === "agenda") return <AgendaView state={state} athlete={athlete} />;
   if (tab === "comunidade") return <ComunidadeView state={state} currentAthleteId={athlete.id} />;
   return null;
 }
@@ -4480,7 +4480,7 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
   );
 }
 
-function TabelaView({ state, athlete }) {
+function AgendaView({ state, athlete }) {
   if (state.keys.length === 0) return <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:16}}>Etapa ainda não iniciada.</div></Card>;
   const myKey = state.keys.find(k => k.athleteIds.includes(athlete.id));
   const allMatches = myKey ? state.matches.filter(m => m.keyId === myKey.id) : [];
@@ -4498,10 +4498,17 @@ function TabelaView({ state, athlete }) {
     ? (Math.min(...rodadasNums) === Math.max(...rodadasNums) ? `rodada ${rodadasNums[0]}` : `rodadas ${Math.min(...rodadasNums)} a ${Math.max(...rodadasNums)}`)
     : "";
 
+  // Link do WhatsApp pro adversário, com mensagem pronta pra combinar o jogo —
+  // mesmo padrão já usado nas mensagens do admin, só que iniciado pelo atleta.
+  function wppCombinar(oponente, round) {
+    const msg = `Oi ${nomeExibicao(oponente).split(" ")[0]}! Bora combinar nosso jogo da Rodada ${round}? 🏓`;
+    return `https://wa.me/55${(oponente.phone||"").replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`;
+  }
+
   return (
     <div>
       <div style={{textAlign:"center",marginBottom:20}}>
-        <div style={{fontFamily:T.serif,fontSize:30,color:T.offwhite,lineHeight:1}}>Tabela</div>
+        <div style={{fontFamily:T.serif,fontSize:30,color:T.offwhite,lineHeight:1}}>Agenda</div>
         <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginTop:6}}>Confrontos · {rangeRodadas}</div>
       </div>
 
@@ -4530,35 +4537,44 @@ function TabelaView({ state, athlete }) {
               const done = m.validated;
               const you = m.p1Id === athlete.id || m.p2Id === athlete.id;
               const aWin = done && m.score1 > m.score2;
-              const linhaJogador = (p, ganhou, score) => (
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                  <span style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1}}>
-                    <Avatar athlete={p} size={26} fontSize={11}/>
-                    <span style={{fontSize:13,color: done ? (ganhou?T.offwhite:"rgba(240,234,224,0.5)") : T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(p)}</span>
-                  </span>
-                  {done && <span style={{fontFamily:T.serif,fontSize:18,lineHeight:1,color:ganhou?T.terracota:"rgba(240,234,224,0.5)",flexShrink:0}}>{score}</span>}
-                </div>
-              );
-              return (
-                <div key={m.id} style={{
-                  display:"flex", alignItems:"center", gap:12, padding:"11px 13px", borderRadius:12, marginBottom:7,
-                  border:`1px solid ${you ? "rgba(216,90,48,0.3)" : T.bordaSuave}`,
-                  background: you ? "rgba(216,90,48,0.09)" : "rgba(240,234,224,0.03)",
-                }}>
-                  <div style={{flex:1,minWidth:0}}>
-                    {linhaJogador(p1, aWin, m.score1)}
-                    <div style={{height:1,background:"rgba(240,234,224,0.08)",margin:"7px 0"}}/>
-                    {linhaJogador(p2, !aWin, m.score2)}
+              const oponente = you ? (m.p1Id === athlete.id ? p2 : p1) : null;
+
+              // Seu próprio jogo, ainda em aberto: card destacado com "Combinar horário"
+              if (you && !done && !m.rejeitado) {
+                return (
+                  <div key={m.id} style={{background:"rgba(216,90,48,0.1)",border:"1px solid rgba(216,90,48,0.3)",borderRadius:14,padding:"13px 14px",marginBottom:9}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <Avatar athlete={oponente} size={34} ring="rgba(216,90,48,0.5)"/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:14,color:T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>vs {nomeExibicao(oponente)}</div>
+                        <div style={{fontFamily:T.mono,fontSize:8.5,letterSpacing:0.5,textTransform:"uppercase",color:"rgba(240,234,224,0.5)",marginTop:3}}>Seu jogo · em aberto</div>
+                      </div>
+                    </div>
+                    <a href={wppCombinar(oponente, round)} target="_blank" rel="noreferrer" style={{display:"block",textAlign:"center",marginTop:11,width:"100%",boxSizing:"border-box",background:T.terracota,color:T.offwhite,fontFamily:T.sans,fontWeight:600,fontSize:13,padding:"10px",borderRadius:10,textDecoration:"none"}}>
+                      Combinar horário
+                    </a>
                   </div>
-                  {!done && (
+                );
+              }
+
+              // Qualquer outro jogo (adversário ou já concluído): linha compacta
+              const avatarPessoa = you ? oponente : p1;
+              return (
+                <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 2px",borderBottom:`1px solid rgba(240,234,224,0.08)`}}>
+                  <Avatar athlete={avatarPessoa} size={you?34:30} ring={you?"rgba(216,90,48,0.5)":null}/>
+                  <span style={{flex:1,fontSize:13,color: you ? T.offwhite : "rgba(240,234,224,0.85)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                    {you ? `vs ${nomeExibicao(oponente)}` : `${nomeExibicao(p1)} vs ${nomeExibicao(p2)}`}
+                  </span>
+                  {done ? (
+                    <span style={{fontFamily:T.mono,fontSize:12,color:"rgba(240,234,224,0.85)"}}>{m.score1}–{m.score2}</span>
+                  ) : (
                     <span style={{
                       fontFamily:T.mono,fontSize:8,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap",flexShrink:0,
-                      padding:"6px 9px",borderRadius:16,
-                      color: m.rejeitado ? T.vermelho : T.offwhite,
-                      background: m.rejeitado ? "transparent" : T.terracota,
-                      border: m.rejeitado ? `1px solid ${T.vermelho}55` : "none",
+                      padding:"5px 8px",borderRadius:14,
+                      color: m.rejeitado ? T.vermelho : "rgba(240,234,224,0.55)",
+                      border:`1px solid ${m.rejeitado ? T.vermelho+"55" : "rgba(240,234,224,0.25)"}`,
                     }}>
-                      {m.rejeitado ? "W.O." : "Em aberto"}
+                      {m.rejeitado ? "W.O." : "Agendado"}
                     </span>
                   )}
                 </div>

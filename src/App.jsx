@@ -4429,6 +4429,8 @@ function tempoRelativo(ts) {
 }
 
 function ComunidadeView({ state, currentAthleteId }) {
+  const [cartaAberta, setCartaAberta] = useState(null); // { athlete, posicao } | null
+
   // Diferente do Ranking: aqui é a lista geral de membros do clube, não o
   // ranking competitivo — atletas no backlog (aprovados, aguardando a
   // próxima rodada) devem aparecer normalmente.
@@ -4436,6 +4438,15 @@ function ComunidadeView({ state, currentAthleteId }) {
     .filter(a => a.status === "ativo")
     .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
     [state.athletes]);
+
+  // Posição real no ranking (exclui backlog) — usada só pra abrir a carta.
+  // Quem ainda está no backlog não tem posição de verdade; cai depois do
+  // último colocado (mesma regra já usada no "Ver carta" da tela Etapa).
+  const ranking = useMemo(() => [...state.athletes]
+    .filter(a => a.status === "ativo" && !a.pendenteCircuito)
+    .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
+    [state.athletes]);
+  const posicaoDe = (athleteId) => ranking.findIndex(a => a.id === athleteId) + 1 || ranking.length + 1;
 
   const feed = useMemo(() => {
     const eventos = [];
@@ -4476,6 +4487,7 @@ function ComunidadeView({ state, currentAthleteId }) {
 
   return (
     <div>
+      {cartaAberta && <CartaModal athlete={cartaAberta.athlete} posicao={cartaAberta.posicao} onClose={()=>setCartaAberta(null)}/>}
       <div style={{textAlign:"center",marginBottom:20}}>
         <div style={{fontFamily:T.serif,fontSize:30,color:T.offwhite,lineHeight:1}}>Comunidade</div>
         <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginTop:6}}>
@@ -4516,7 +4528,7 @@ function ComunidadeView({ state, currentAthleteId }) {
           {ativos.map(a => {
             const isMe = a.id === currentAthleteId;
             return (
-              <div key={a.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:7}}>
+              <div key={a.id} onClick={()=>setCartaAberta({athlete:a, posicao:posicaoDe(a.id)})} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:7,cursor:"pointer"}}>
                 <Avatar athlete={a} size={56} fontSize={20} ring={isMe?"rgba(216,90,48,0.6)":"rgba(240,234,224,0.16)"}/>
                 <span style={{fontSize:11,color:"rgba(240,234,224,0.8)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>
                   {nomeExibicao(a).split(" ")[0]}

@@ -4429,8 +4429,11 @@ function tempoRelativo(ts) {
 }
 
 function ComunidadeView({ state, currentAthleteId }) {
+  // Diferente do Ranking: aqui é a lista geral de membros do clube, não o
+  // ranking competitivo — atletas no backlog (aprovados, aguardando a
+  // próxima rodada) devem aparecer normalmente.
   const ativos = useMemo(() => [...state.athletes]
-    .filter(a => a.status === "ativo" && !a.pendenteCircuito)
+    .filter(a => a.status === "ativo")
     .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
     [state.athletes]);
 

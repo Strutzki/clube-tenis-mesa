@@ -4682,11 +4682,11 @@ function AthleteGames({ state, dispatch, athlete }) {
       {cartaAberta && <CartaModal athlete={eu} posicao={minhaPos>=0?minhaPos+1:null} onClose={()=>setCartaAberta(false)}/>}
       {editarAberto && <EditarPerfilView athlete={eu} dispatch={dispatch} onClose={()=>setEditarAberto(false)}/>}
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,marginBottom:20}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{position:"relative"}}>
           <div onClick={()=>setPerfilAberto(true)} style={{cursor:"pointer"}}>
-            <Avatar athlete={eu} size={52} ring="rgba(216,90,48,0.5)"/>
+            <Avatar athlete={eu} size={76} fontSize={30} ring="rgba(216,90,48,0.5)"/>
           </div>
-          <button onClick={()=>setEditarAberto(true)} style={{width:28,height:28,borderRadius:"50%",border:`1px solid rgba(240,234,224,0.3)`,background:"transparent",color:T.offwhite,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <button onClick={()=>setEditarAberto(true)} style={{position:"absolute",bottom:-2,right:-2,width:26,height:26,borderRadius:"50%",border:`1px solid rgba(216,90,48,0.6)`,background:T.telaFundo,color:T.offwhite,fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
             ✏️
           </button>
         </div>

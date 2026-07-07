@@ -987,16 +987,16 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
 
         <div style={{...s.box("#D85A30"), marginTop:8}}>
           <strong style={{color:"#D85A30", fontSize:13}}>Quais dados coletamos</strong><br/><br/>
-          <strong style={{color:"#F0EAE0"}}>Nome completo e WhatsApp</strong> — para identificação, comunicação sobre suas partidas e publicação no ranking oficial do Circuito.<br/><br/>
+          <strong style={{color:"#F0EAE0"}}>Nome completo e WhatsApp</strong> — para identificação, comunicação sobre suas partidas e publicação no ranking oficial do Circuito (no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa).<br/><br/>
           <strong style={{color:"#F0EAE0"}}>Situação federativa e rating CBTM</strong> — para definir seu rating de entrada e garantir a integridade competitiva do Circuito.<br/><br/>
-          <strong style={{color:"#F0EAE0"}}>Histórico de partidas e resultados</strong> — para cálculo do ranking Rating e publicação no @clubedotenisdemesa.
+          <strong style={{color:"#F0EAE0"}}>Histórico de partidas e resultados</strong> — para cálculo do ranking Rating e publicação no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa.
         </div>
 
         <div style={{...s.box("#6a9d7a"), marginTop:8}}>
           <strong style={{color:"#6a9d7a", fontSize:13}}>Como usamos seus dados</strong><br/><br/>
           ✅ Gestão do Circuito (inscrições, partidas, ranking)<br/>
           ✅ Comunicação via WhatsApp e Instagram<br/>
-          ✅ Publicação do ranking com nome e pontuação<br/>
+          ✅ Publicação do ranking, histórico de partidas e pontuação — dados não sensíveis, mostrados no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa<br/>
           ❌ Seus dados <strong style={{color:"#F0EAE0"}}>não são vendidos</strong> nem compartilhados com terceiros<br/>
           ❌ <strong style={{color:"#F0EAE0"}}>Não coletamos</strong> CPF, endereço, e-mail ou dados financeiros
         </div>

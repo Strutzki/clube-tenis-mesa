@@ -3135,6 +3135,7 @@ function EstatisticasView({ state, athlete, onClose }) {
   const eu = state.athletes.find(a => a.id === athlete.id) || athlete;
   const pico = eu.ratingPico || eu.rating || 0;
   const hist = (eu.ratingHistorico || []).slice(-8);
+  const [nomeRevelado, setNomeRevelado] = useState(null); // id do adversário cujo apelido está mostrando
 
   // "Contra cada adversário": todo mundo que o atleta já enfrentou (partidas
   // validadas), com o mesmo H2H já usado no restante do app.
@@ -3205,9 +3206,17 @@ function EstatisticasView({ state, athlete, onClose }) {
         )}
         {adversarios.map(({oponente, h2h}) => {
           const pct = h2h.total ? Math.round((h2h.winsA / h2h.total) * 100) : 0;
+          const mostrarNome = nomeRevelado === oponente.id;
           return (
             <div key={oponente.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:9}}>
-              <Avatar athlete={oponente} size={26}/>
+              <div onClick={()=>setNomeRevelado(mostrarNome ? null : oponente.id)} style={{cursor:"pointer",flexShrink:0}}>
+                <Avatar athlete={oponente} size={26}/>
+              </div>
+              {mostrarNome && (
+                <span style={{fontFamily:T.mono,fontSize:9,color:T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:84,flexShrink:0}}>
+                  {nomeExibicao(oponente)}
+                </span>
+              )}
               <div style={{flex:1,height:12,background:"rgba(240,234,224,0.08)",borderRadius:6,overflow:"hidden"}}>
                 <div style={{width:`${pct}%`,height:"100%",background:T.verde2,borderRadius:6}}/>
               </div>

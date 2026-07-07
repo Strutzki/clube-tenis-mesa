@@ -133,6 +133,10 @@ const db = {
   // Config
   getConfig: () => supaFetch("configuracao?id=eq.1"),
   updateConfig: (data) => supaFetch("configuracao?id=eq.1", { method:"PATCH", body: JSON.stringify(data) }),
+
+  // Histórico de mensagens de WhatsApp enviadas
+  getMensagensEnviadas: () => supaFetch("mensagens_enviadas?order=enviado_em.desc&limit=200"),
+  insertMensagemEnviada: (data) => supaFetch("mensagens_enviadas", { method:"POST", body: JSON.stringify(data) }),
 };
 
 // ── FOTO DE PERFIL DO ATLETA (Supabase Storage) ───────────────────────────────
@@ -365,6 +369,7 @@ const INIT = {
   results: [],           // validated match results
   temporadaNumero: 1,    // 1, 2 ou 3 dentro do ano (Cap. 13: 3 temporadas de 3 meses)
   temporadaAno: new Date().getFullYear(),
+  mensagensEnviadas: [], // histórico de disparos de WhatsApp (log, não afeta ranking/rating)
 };
 
 function reducer(state, action) {
@@ -606,6 +611,20 @@ function reducer(state, action) {
       return { ...state, athletes };
     }
 
+    case "REGISTRAR_MENSAGEM_ENVIADA": {
+      // Log de disparo de WhatsApp — guarda o texto exatamente como foi
+      // enviado, pra "Reenviar" funcionar igual mesmo se o dado de origem
+      // (rating, ranking etc.) já tiver mudado depois.
+      const { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm } = action.payload;
+      return {
+        ...state,
+        mensagensEnviadas: [
+          { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm },
+          ...state.mensagensEnviadas,
+        ].slice(0, 200),
+      };
+    }
+
     case "PROCESSAR_RODADA": {
       // Aplica o cálculo de rating (Tabela CBTM) para todas as partidas já
       // validadas de uma rodada específica, ainda não calculadas. Processa em
@@ -723,11 +742,12 @@ function reducer(state, action) {
     }
 
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno } = action.payload;
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, mensagensEnviadas } = action.payload;
       return {
         ...state, athletes, matches, keys, phase,
         temporadaNumero: temporadaNumero ?? state.temporadaNumero,
         temporadaAno: temporadaAno ?? state.temporadaAno,
+        mensagensEnviadas: mensagensEnviadas ?? state.mensagensEnviadas,
       };
     }
 
@@ -1714,10 +1734,11 @@ function AdminHistorico({ state }) {
 
 
 // ── ADMIN MENSAGENS ───────────────────────────────────────────────────────────
-function AdminMensagens({ state }) {
+function AdminMensagens({ state, dispatch }) {
   const [categoria, setCategoria] = useState("confrontos"); // confrontos | resultados | lembretes | torneio | ranking | coletivas
   const [disparoIdx, setDisparoIdx] = useState(null); // índice do atleta atual no fluxo sequencial
   const [disparados, setDisparados] = useState([]); // ids já disparados nesta sessão
+  const [mostrarHistorico, setMostrarHistorico] = useState(false);
 
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const rodadaAtual = state.keys[0]?.currentRound || 1;
@@ -1735,6 +1756,12 @@ function AdminMensagens({ state }) {
   }
   function wppLink(phone, msg) {
     return `https://wa.me/55${phone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`;
+  }
+  function wppLinkReenviar(m) {
+    if (!m.athleteId) return `https://wa.me/?text=${encodeURIComponent(m.texto)}`;
+    const atleta = state.athletes.find(a=>a.id===m.athleteId);
+    if (!atleta || !atleta.phone) return `https://wa.me/?text=${encodeURIComponent(m.texto)}`;
+    return wppLink(atleta.phone, m.texto);
   }
   function rankingAtual() {
     return [...ativos]
@@ -1909,6 +1936,14 @@ function AdminMensagens({ state }) {
 
   // ── FLUXO SEQUENCIAL ──────────────────────────────────────────────────────
   const mensagens = getMensagens(categoria);
+  const categorias = [
+    {id:"confrontos", icon:"⚔️", label:"Confrontos da Rodada",  desc:"Avisa cada atleta sobre seu adversário"},
+    {id:"resultados", icon:"📊", label:"Resultados Confirmados", desc:"Envia resultado e novo rating para cada atleta"},
+    {id:"lembretes",  icon:"⏰", label:"Lembretes de Prazo",    desc:"Alerta atletas com prazo próximo (≤3 dias)"},
+    {id:"backlog",    icon:"🆕", label:"Inscrição Aprovada",    desc:"Avisa quem foi aceito e entra na próxima rodada"},
+    {id:"ranking",    icon:"🏆", label:"Ranking para Todos",    desc:"Envia ranking atualizado para cada atleta"},
+    {id:"torneio",    icon:"🎯", label:"Convocação Torneio",    desc:"Notifica os Top 8 classificados"},
+  ];
 
   function iniciarDisparo() {
     setDisparoIdx(0);
@@ -1993,6 +2028,11 @@ function AdminMensagens({ state }) {
             style={{textDecoration:"none",display:"block",marginBottom:10}}
             onClick={()=>{
               if (atual.matchId) dispatch({type:"MARCAR_RESULTADO_COMUNICADO",payload:{matchId:atual.matchId,comunicado:true}});
+              dispatch({type:"REGISTRAR_MENSAGEM_ENVIADA",payload:{
+                id:`${Date.now()}-${atual.atleta.id}`, athleteId:atual.atleta.id, athleteName:nomeExibicao(atual.atleta),
+                categoria, categoriaLabel:categorias.find(c=>c.id===categoria)?.label||categoria,
+                texto:atual.msg, enviadoEm:new Date().toISOString(),
+              }});
               setTimeout(()=>proxMensagem(atual.atleta.id), 300);
             }}>
             <Btn color="#25d366" full>
@@ -2022,18 +2062,47 @@ function AdminMensagens({ state }) {
     );
   }
 
+  // ── TELA DE HISTÓRICO ──────────────────────────────────────────────────────
+  if (mostrarHistorico) {
+    return (
+      <div>
+        <button onClick={()=>setMostrarHistorico(false)} style={{background:"none",border:"none",color:"#7d9188",cursor:"pointer",fontSize:12,marginBottom:10}}>
+          ← Voltar
+        </button>
+        <SecTitle>📜 Histórico de Envios</SecTitle>
+        <div style={{fontSize:12,color:"#7d9188",marginBottom:12}}>
+          As {state.mensagensEnviadas.length} mensagens mais recentes, individuais e coletivas.
+        </div>
+        {state.mensagensEnviadas.length === 0 && (
+          <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:16}}>Nenhuma mensagem enviada ainda por aqui.</div></Card>
+        )}
+        {state.mensagensEnviadas.map(m => (
+          <Card key={m.id} style={{marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:8}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>{m.athleteName || "Grupo"}</div>
+                <div style={{fontSize:10,color:"#7d9188",marginTop:2}}>{m.categoriaLabel} · {tempoRelativo(new Date(m.enviadoEm).getTime())}</div>
+              </div>
+              <a href={wppLinkReenviar(m)} target="_blank" rel="noreferrer" style={{textDecoration:"none",flexShrink:0}}>
+                <Btn color="#25d366" small>🔄 Reenviar</Btn>
+              </a>
+            </div>
+            <div style={{background:"#1C2B27",borderRadius:8,padding:"9px 10px",fontSize:10.5,color:"#7d9188",lineHeight:1.5,whiteSpace:"pre-line",maxHeight:80,overflowY:"auto"}}>
+              {m.texto}
+            </div>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
   // ── TELA PRINCIPAL ─────────────────────────────────────────────────────────
-  const categorias = [
-    {id:"confrontos", icon:"⚔️", label:"Confrontos da Rodada",  desc:"Avisa cada atleta sobre seu adversário"},
-    {id:"resultados", icon:"📊", label:"Resultados Confirmados", desc:"Envia resultado e novo rating para cada atleta"},
-    {id:"lembretes",  icon:"⏰", label:"Lembretes de Prazo",    desc:"Alerta atletas com prazo próximo (≤3 dias)"},
-    {id:"backlog",    icon:"🆕", label:"Inscrição Aprovada",    desc:"Avisa quem foi aceito e entra na próxima rodada"},
-    {id:"ranking",    icon:"🏆", label:"Ranking para Todos",    desc:"Envia ranking atualizado para cada atleta"},
-    {id:"torneio",    icon:"🎯", label:"Convocação Torneio",    desc:"Notifica os Top 8 classificados"},
-  ];
 
   return (
     <div>
+      <button onClick={()=>setMostrarHistorico(true)} style={{background:"none",border:`1px solid rgba(240,234,224,0.15)`,borderRadius:20,color:"#9db3a8",cursor:"pointer",fontSize:11,padding:"6px 14px",marginBottom:14}}>
+        📜 Ver histórico de envios ({state.mensagensEnviadas.length})
+      </button>
       {/* INDIVIDUAIS */}
       <SecTitle>📲 Disparos Individuais</SecTitle>
       <div style={{fontSize:12,color:"#7d9188",marginBottom:12}}>
@@ -2107,7 +2176,12 @@ function AdminMensagens({ state }) {
             {getMsgColetiva(c.tipo).slice(0,200)}...
           </div>
           <a href={`https://wa.me/?text=${encodeURIComponent(getMsgColetiva(c.tipo))}`}
-            target="_blank" rel="noreferrer" style={{textDecoration:"none"}}>
+            target="_blank" rel="noreferrer" style={{textDecoration:"none"}}
+            onClick={()=>dispatch({type:"REGISTRAR_MENSAGEM_ENVIADA",payload:{
+              id:`${Date.now()}-grupo-${c.tipo}`, athleteId:null, athleteName:"Grupo (coletiva)",
+              categoria:`coletiva-${c.tipo}`, categoriaLabel:c.label,
+              texto:getMsgColetiva(c.tipo), enviadoEm:new Date().toISOString(),
+            }})}>
             <Btn color="#25d366" full>📲 Enviar para o Grupo</Btn>
           </a>
         </Card>
@@ -2492,6 +2566,11 @@ export default function App() {
       const [atletas, partidas, chaves, config] = await Promise.all([
         db.getAtletas(), db.getPartidas(), db.getChaves(), db.getConfig(),
       ]);
+      // Busca isolada: se a tabela mensagens_enviadas ainda não existir (migration
+      // não rodada), isso NÃO pode travar o carregamento do resto do app.
+      let mensagensLog = [];
+      try { mensagensLog = await db.getMensagensEnviadas(); }
+      catch(e) { console.warn("Histórico de mensagens indisponível (migration pendente?):", e.message); }
       const athletesMapped = (atletas||[]).map(a => ({
         id: a.id, name: a.nome, phone: a.telefone, apelido: a.apelido || null,
         federated: a.federado, rating: a.rating,
@@ -2534,11 +2613,17 @@ export default function App() {
         id: k.id, name: k.nome, currentRound: k.rodada_atual, rounds:[],
         athleteIds: athletesMapped.filter(a=>a.key===k.id).map(a=>a.id),
       }));
+      const mensagensEnviadasMapped = (mensagensLog||[]).map(m => ({
+        id: m.id, athleteId: m.atleta_id, athleteName: m.atleta_nome,
+        categoria: m.categoria, categoriaLabel: m.categoria_label,
+        texto: m.texto, enviadoEm: m.enviado_em,
+      }));
       dispatch({ type:"LOAD_FROM_DB", payload:{
         athletes: athletesMapped, matches: matchesMapped,
         keys: keysMapped, phase: config?.[0]?.fase||"inscricoes",
         temporadaNumero: config?.[0]?.temporada_numero || 1,
         temporadaAno: config?.[0]?.temporada_ano || new Date().getFullYear(),
+        mensagensEnviadas: mensagensEnviadasMapped,
       }});
       // Restaurar atleta completo da sessão após carregar do banco
       if (sessaoSalva.athleteId) {
@@ -2642,6 +2727,15 @@ export default function App() {
     else if (action.type === "ATUALIZAR_ESTILO_ATLETA") {
       const { athleteId, estilo } = action.payload;
       await db.updateAtleta(athleteId, { estilo_jogo: estilo });
+    }
+    else if (action.type === "REGISTRAR_MENSAGEM_ENVIADA") {
+      const { athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm } = action.payload;
+      await db.insertMensagemEnviada({
+        atleta_id: athleteId || null,
+        atleta_nome: athleteName || null,
+        categoria, categoria_label: categoriaLabel,
+        texto, enviado_em: enviadoEm,
+      });
     }
     else if (action.type === "PROCESSAR_RODADA") {
       // Espelha a mesma lógica sequencial do reducer local, pra persistir os
@@ -3563,7 +3657,7 @@ function AdminView({ state, dispatch, tab, setTab }) {
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
   if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} />;
   if (tab === "historico") return <AdminHistorico state={state} />;
-  if (tab === "mensagens") return <AdminMensagens state={state} />;
+  if (tab === "mensagens") return <AdminMensagens state={state} dispatch={dispatch} />;
   return null;
 }
 

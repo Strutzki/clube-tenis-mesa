@@ -4087,11 +4087,14 @@ function AthleteView({ state, dispatch, athlete, tab, setTab }) {
 function EditableAvatar({ athlete, dispatch, size = 72 }) {
   const [status, setStatus] = useState(""); // "" | "enviando" | "erro"
   const [errMsg, setErrMsg] = useState("");
-  const inputRef = useRef(null);
+  const [menuAberto, setMenuAberto] = useState(false);
+  const inputCameraRef = useRef(null);
+  const inputGaleriaRef = useRef(null);
 
   async function handleFile(e) {
     const file = e.target.files?.[0];
     e.target.value = ""; // permite escolher o mesmo arquivo de novo depois, se der erro
+    setMenuAberto(false);
     if (!file) return;
     if (!file.type.startsWith("image/")) { setStatus("erro"); setErrMsg("Arquivo não é uma imagem."); return; }
     setStatus("enviando");
@@ -4110,7 +4113,7 @@ function EditableAvatar({ athlete, dispatch, size = 72 }) {
 
   return (
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:18}}>
-      <div onClick={()=>inputRef.current?.click()} style={{position:"relative",cursor:"pointer"}}>
+      <div onClick={()=>setMenuAberto(v=>!v)} style={{position:"relative",cursor:"pointer"}}>
         <Avatar athlete={athlete} size={size} fontSize={Math.round(size*0.4)} ring="rgba(216,90,48,0.5)"/>
         <div style={{position:"absolute",bottom:-2,right:-2,width:26,height:26,borderRadius:"50%",background:T.terracota,display:"flex",alignItems:"center",justifyContent:"center",border:`2px solid ${T.telaFundo}`,fontSize:12}}>
           📷
@@ -4121,9 +4124,26 @@ function EditableAvatar({ athlete, dispatch, size = 72 }) {
           </div>
         )}
       </div>
-      <input ref={inputRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
+
+      {menuAberto && (
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <button onClick={()=>inputCameraRef.current?.click()} style={{fontFamily:T.mono,fontSize:9,letterSpacing:0.5,textTransform:"uppercase",color:T.offwhite,background:T.verdeCard,border:`1px solid ${T.bordaSuave}`,borderRadius:14,padding:"8px 12px",cursor:"pointer"}}>
+            📷 Tirar foto
+          </button>
+          <button onClick={()=>inputGaleriaRef.current?.click()} style={{fontFamily:T.mono,fontSize:9,letterSpacing:0.5,textTransform:"uppercase",color:T.offwhite,background:T.verdeCard,border:`1px solid ${T.bordaSuave}`,borderRadius:14,padding:"8px 12px",cursor:"pointer"}}>
+            🖼️ Galeria
+          </button>
+        </div>
+      )}
+
+      {/* Dois inputs separados: um força a câmera (capture), outro abre a galeria/arquivos.
+          Depender de um único input pra oferecer as duas opções não é confiável —
+          o comportamento varia entre navegadores/aparelhos. */}
+      <input ref={inputCameraRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{display:"none"}}/>
+      <input ref={inputGaleriaRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
+
       <div style={{fontFamily:T.mono,fontSize:9,color: status==="erro" ? T.vermelho : T.cinza,letterSpacing:0.5,textTransform:"uppercase",marginTop:8,textAlign:"center",maxWidth:260,wordBreak:"break-word"}}>
-        {status === "enviando" ? "Enviando..." : status === "erro" ? `Erro: ${errMsg} (toque pra tentar de novo)` : "Toque para alterar sua foto"}
+        {status === "enviando" ? "Enviando..." : status === "erro" ? `Erro: ${errMsg} (toque pra tentar de novo)` : (menuAberto ? "Escolha uma opção acima" : "Toque para alterar sua foto")}
       </div>
     </div>
   );

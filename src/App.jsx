@@ -4659,7 +4659,6 @@ function AthleteGames({ state, dispatch, athlete }) {
   const saldo = eu.saldoTemp || 0;
   const saldoColor = saldo > 0 ? T.verde2 : saldo < 0 ? T.vermelho : T.cinza;
   const classificado = minhaPos >= 0 && minhaPos < 8;
-  const nivelRating = (r) => r>=2200?"ELITE":r>=1700?"DIAMANTE":r>=1300?"PLATINA":r>=1000?"OURO":r>=700?"PRATA":r>=250?"BRONZE":"ENTRADA";
 
   // Contagem crescente (0 → valor) no cabeçalho, conforme o handoff de design
   const posAnimado = useCountUp(minhaPos >= 0 ? minhaPos + 1 : 0);
@@ -4714,7 +4713,6 @@ function AthleteGames({ state, dispatch, athlete }) {
           <div style={{textAlign:"center"}}>
             <div style={{fontFamily:T.mono,fontSize:8,color:T.cinza,letterSpacing:1.5,marginBottom:6}}>RATING</div>
             <div style={{fontFamily:T.serif,fontSize:30,color:T.offwhite,lineHeight:1}}>{ratingAnimado}</div>
-            <div style={{fontFamily:T.mono,fontSize:8,color:T.madeira,marginTop:8,letterSpacing:0.5}}>{nivelRating(eu.rating||250)}</div>
           </div>
         </div>
       </div>

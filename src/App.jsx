@@ -1739,6 +1739,7 @@ function AdminMensagens({ state, dispatch }) {
   const [categoria, setCategoria] = useState("confrontos"); // confrontos | resultados | lembretes | torneio | ranking | coletivas
   const [disparoIdx, setDisparoIdx] = useState(null); // índice do atleta atual no fluxo sequencial
   const [disparados, setDisparados] = useState([]); // ids já disparados nesta sessão
+  const [filaCongelada, setFilaCongelada] = useState([]); // fila fixada ao iniciar (não encolhe ao marcar)
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
 
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
@@ -1937,7 +1938,7 @@ function AdminMensagens({ state, dispatch }) {
   }
 
   // ── FLUXO SEQUENCIAL ──────────────────────────────────────────────────────
-  const mensagens = getMensagens(categoria);
+  const mensagensTodas = getMensagens(categoria);
   const categorias = [
     {id:"confrontos", icon:"⚔️", label:"Confrontos da Rodada",  desc:"Avisa cada atleta sobre seu adversário"},
     {id:"resultados", icon:"📊", label:"Resultados Confirmados", desc:"Envia resultado e novo rating para cada atleta"},
@@ -1947,7 +1948,41 @@ function AdminMensagens({ state, dispatch }) {
     {id:"torneio",    icon:"🎯", label:"Convocação Torneio",    desc:"Notifica os Top 8 classificados"},
   ];
 
+  // "Já enviada" = existe registro no histórico pra esse atleta+categoria depois
+  // do início do par mensal atual. Assim, ao virar o mês (nova rodada), a fila de
+  // pendentes se renova sozinha — o corte temporal invalida os envios antigos.
+  const inicioDoMes = useMemo(() => {
+    const criacoes = state.matches
+      .filter(m => rodadasDoMes.includes(m.round) && m.criadoEm)
+      .map(m => new Date(m.criadoEm).getTime());
+    return criacoes.length ? Math.min(...criacoes) : 0;
+  }, [state.matches, rodadasDoMes]);
+
+  function jaEnviada(atletaId) {
+    return (state.mensagensEnviadas || []).some(log =>
+      log.athleteId === atletaId &&
+      log.categoria === categoria &&
+      new Date(log.enviadoEm).getTime() >= inicioDoMes
+    );
+  }
+
+  const mensagensPendentes = mensagensTodas.filter(m => !jaEnviada(m.atleta?.id));
+  const mensagensJaEnviadas = mensagensTodas.filter(m => jaEnviada(m.atleta?.id));
+  // A fila de disparo usa só as pendentes.
+  const mensagens = mensagensPendentes;
+
+  // Registra o envio no histórico (usado tanto pelo envio real quanto pelo
+  // "marcar como enviada" manual) — é o que tira o atleta da fila de pendentes.
+  function registrarEnvio(msgItem) {
+    dispatch({type:"REGISTRAR_MENSAGEM_ENVIADA",payload:{
+      id:`${Date.now()}-${msgItem.atleta.id}`, athleteId:msgItem.atleta.id, athleteName:nomeExibicao(msgItem.atleta),
+      categoria, categoriaLabel:categorias.find(c=>c.id===categoria)?.label||categoria,
+      texto:msgItem.msg, enviadoEm:new Date().toISOString(),
+    }});
+  }
+
   function iniciarDisparo() {
+    setFilaCongelada(mensagensPendentes);
     setDisparoIdx(0);
     setDisparados([]);
   }
@@ -1958,11 +1993,12 @@ function AdminMensagens({ state, dispatch }) {
   function encerrarDisparo() {
     setDisparoIdx(null);
     setDisparados([]);
+    setFilaCongelada([]);
   }
 
   // ── TELA DE DISPARO SEQUENCIAL ────────────────────────────────────────────
-  if (disparoIdx !== null && mensagens.length > 0) {
-    if (disparoIdx >= mensagens.length) {
+  if (disparoIdx !== null && filaCongelada.length > 0) {
+    if (disparoIdx >= filaCongelada.length) {
       return (
         <div>
           <SecTitle>💬 Disparos Concluídos</SecTitle>
@@ -1972,7 +2008,7 @@ function AdminMensagens({ state, dispatch }) {
               Todas as mensagens enviadas!
             </div>
             <div style={{fontSize:13,color:"#9db3a8",marginBottom:20}}>
-              {mensagens.length} mensagem(s) disparada(s) com sucesso.
+              {filaCongelada.length} mensagem(s) processada(s).
             </div>
             <Btn onClick={encerrarDisparo} color="#D85A30" full>← Voltar</Btn>
           </Card>
@@ -1980,8 +2016,8 @@ function AdminMensagens({ state, dispatch }) {
       );
     }
 
-    const atual = mensagens[disparoIdx];
-    const progresso = Math.round((disparoIdx / mensagens.length) * 100);
+    const atual = filaCongelada[disparoIdx];
+    const progresso = Math.round((disparoIdx / filaCongelada.length) * 100);
 
     return (
       <div>
@@ -1989,7 +2025,7 @@ function AdminMensagens({ state, dispatch }) {
         {/* Progresso */}
         <Card style={{marginBottom:10}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-            <span style={{fontSize:12,color:"#9db3a8"}}>{disparoIdx + 1} de {mensagens.length}</span>
+            <span style={{fontSize:12,color:"#9db3a8"}}>{disparoIdx + 1} de {filaCongelada.length}</span>
             <span style={{fontSize:12,fontWeight:700,color:"#D85A30"}}>{progresso}%</span>
           </div>
           <div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:2}}>
@@ -2030,17 +2066,20 @@ function AdminMensagens({ state, dispatch }) {
             style={{textDecoration:"none",display:"block",marginBottom:10}}
             onClick={()=>{
               if (atual.matchId) dispatch({type:"MARCAR_RESULTADO_COMUNICADO",payload:{matchId:atual.matchId,comunicado:true}});
-              dispatch({type:"REGISTRAR_MENSAGEM_ENVIADA",payload:{
-                id:`${Date.now()}-${atual.atleta.id}`, athleteId:atual.atleta.id, athleteName:nomeExibicao(atual.atleta),
-                categoria, categoriaLabel:categorias.find(c=>c.id===categoria)?.label||categoria,
-                texto:atual.msg, enviadoEm:new Date().toISOString(),
-              }});
+              registrarEnvio(atual);
               setTimeout(()=>proxMensagem(atual.atleta.id), 300);
             }}>
             <Btn color="#25d366" full>
               {atual.comunicado ? "📲 Reenviar WhatsApp →" : "📲 Abrir WhatsApp e Enviar →"}
             </Btn>
           </a>
+          <Btn onClick={()=>{
+              if (atual.matchId) dispatch({type:"MARCAR_RESULTADO_COMUNICADO",payload:{matchId:atual.matchId,comunicado:true}});
+              registrarEnvio(atual);
+              proxMensagem(atual.atleta.id);
+            }} color="#9C6F3E" full small>
+            ✓ Já enviei essa (marcar sem abrir)
+          </Btn>
           <Btn onClick={()=>proxMensagem(atual.atleta.id)} color="#4a5d56" full small>
             ⏭ Pular este atleta
           </Btn>
@@ -2114,10 +2153,14 @@ function AdminMensagens({ state, dispatch }) {
       {categorias.map(cat => {
         const msgs = getMensagens(cat.id);
         const isSelected = categoria === cat.id;
-        const enviados = cat.id === "resultados" ? msgs.filter(m => m.comunicado).length : 0;
+        // Conta enviadas pelo histórico (vale pra todas as categorias)
+        const enviados = msgs.filter(m => (state.mensagensEnviadas||[]).some(log =>
+          log.athleteId === m.atleta?.id && log.categoria === cat.id && new Date(log.enviadoEm).getTime() >= inicioDoMes
+        )).length;
+        const pendentes = msgs.length - enviados;
         return (
           <div key={cat.id} onClick={()=>setCategoria(cat.id)} style={{
-            background: isSelected ? "#223330" : "#223330",
+            background: "#223330",
             border: isSelected ? "1px solid rgba(216,90,48,0.4)" : "1px solid rgba(255,255,255,0.05)",
             borderRadius:12, padding:"13px 14px", marginBottom:8, cursor:"pointer",
           }}>
@@ -2127,17 +2170,18 @@ function AdminMensagens({ state, dispatch }) {
                   {cat.icon} {cat.label}
                 </div>
                 <div style={{fontSize:11,color:"#7d9188",marginTop:2}}>{cat.desc}</div>
-                {cat.id === "resultados" && msgs.length > 0 && (
+                {msgs.length > 0 && (
                   <div style={{fontFamily:T.mono,fontSize:10,color:enviados===msgs.length?T.verde2:T.cinza,marginTop:4}}>
-                    {enviados} de {msgs.length} já enviado(s)
+                    {enviados} de {msgs.length} já enviada(s)
                   </div>
                 )}
               </div>
               <div style={{
-                background:"rgba(216,90,48,0.15)",color:"#D85A30",
+                background: pendentes > 0 ? "rgba(216,90,48,0.15)" : "rgba(127,174,143,0.15)",
+                color: pendentes > 0 ? "#D85A30" : T.verde2,
                 borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,flexShrink:0
               }}>
-                {msgs.length} msg
+                {pendentes > 0 ? `${pendentes} pendente(s)` : "✓ tudo enviado"}
               </div>
             </div>
           </div>
@@ -2146,14 +2190,34 @@ function AdminMensagens({ state, dispatch }) {
 
       {mensagens.length > 0 ? (
         <Btn onClick={iniciarDisparo} color="#25d366" full>
-          📲 Iniciar disparo — {mensagens.length} mensagem(s)
+          📲 Iniciar disparo — {mensagens.length} pendente(s)
         </Btn>
       ) : (
         <Card>
           <div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:12}}>
-            Nenhuma mensagem disponível para esta categoria no momento.
+            {mensagensJaEnviadas.length > 0
+              ? "✓ Todas as mensagens desta categoria já foram enviadas neste mês."
+              : "Nenhuma mensagem disponível para esta categoria no momento."}
           </div>
         </Card>
+      )}
+
+      {/* Já enviadas nesta categoria (mês atual) — com opção de reenviar */}
+      {mensagensJaEnviadas.length > 0 && (
+        <div style={{marginTop:14}}>
+          <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:1,textTransform:"uppercase",color:T.verde2,marginBottom:8}}>
+            ✓ Já enviadas neste mês ({mensagensJaEnviadas.length})
+          </div>
+          {mensagensJaEnviadas.map(m => (
+            <div key={m.atleta.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:"rgba(127,174,143,0.06)",border:"1px solid rgba(127,174,143,0.15)",borderRadius:10,padding:"9px 12px",marginBottom:6}}>
+              <span style={{fontSize:12,color:"#9db3a8",minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(m.atleta)}</span>
+              <a href={wppLink(m.atleta.phone, m.msg)} target="_blank" rel="noreferrer" style={{textDecoration:"none",flexShrink:0}}
+                onClick={()=>registrarEnvio(m)}>
+                <Btn color="#25d366" small>🔄 Reenviar</Btn>
+              </a>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* COLETIVAS */}
@@ -2607,6 +2671,7 @@ export default function App() {
         imputadoPeloAdmin: m.imputado_pelo_admin || false,
         rejeitado: m.rejeitado, motivoRejeicao: m.motivo_rejeicao,
         deadline: m.prazo,
+        criadoEm: m.criado_em || null,
         resultadoComunicado: m.resultado_comunicado || false,
         favoritoId: m.favorito_id || null,
         diferencaRatingMomento: m.diferenca_rating_momento ?? null,

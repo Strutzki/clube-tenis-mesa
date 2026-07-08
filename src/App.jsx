@@ -1776,8 +1776,9 @@ function AdminMensagens({ state, dispatch }) {
     switch(cat) {
 
       case "confrontos": {
-        // Os 2 confrontos do mês corrente, não validados — agrupados por atleta
-        const partidasMes = state.matches.filter(m => rodadasDoMes.includes(m.round) && !m.validated && !m.rejeitado);
+        // Os 2 confrontos do mês corrente — sempre os dois, independente de já
+        // terem sido jogados ou não (a mensagem é a mesma do pareamento inicial).
+        const partidasMes = state.matches.filter(m => rodadasDoMes.includes(m.round) && !m.rejeitado);
         const porAtleta = {};
         partidasMes.forEach(m => {
           const p1 = state.athletes.find(a => a.id === m.p1Id);

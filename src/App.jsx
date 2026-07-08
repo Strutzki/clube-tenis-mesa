@@ -2212,12 +2212,15 @@ function AdminMensagens({ state, dispatch }) {
       {/* Já enviadas nesta categoria (mês atual) — com opção de reenviar */}
       {mensagensJaEnviadas.length > 0 && (
         <div style={{marginTop:14}}>
-          <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:1,textTransform:"uppercase",color:T.verde2,marginBottom:8}}>
+          <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:1,textTransform:"uppercase",color:T.verde2,marginBottom:4}}>
             ✓ Já enviadas neste mês ({mensagensJaEnviadas.length})
+          </div>
+          <div style={{fontFamily:T.mono,fontSize:9,letterSpacing:0.5,textTransform:"uppercase",color:"#7d9188",marginBottom:8}}>
+            {categorias.find(c=>c.id===categoria)?.icon} {categorias.find(c=>c.id===categoria)?.label}
           </div>
           {mensagensJaEnviadas.map(m => (
             <div key={m.atleta.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:"rgba(127,174,143,0.06)",border:"1px solid rgba(127,174,143,0.15)",borderRadius:10,padding:"9px 12px",marginBottom:6}}>
-              <span style={{fontSize:12,color:"#9db3a8",minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(m.atleta)}</span>
+              <span style={{fontSize:12,color:"#9db3a8",minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeComApelido(m.atleta)}</span>
               <a href={wppLink(m.atleta.phone, m.msg)} target="_blank" rel="noreferrer" style={{textDecoration:"none",flexShrink:0}}
                 onClick={()=>registrarEnvio(m)}>
                 <Btn color="#25d366" small>🔄 Reenviar</Btn>

@@ -1851,11 +1851,11 @@ function AdminMensagens({ state, dispatch }) {
           return [
             {
               atleta: p1,
-              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}! Sua partida contra *${nomeExibicao(p2)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${new Date(m.deadline).toLocaleDateString("pt-BR")}*`,
+              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}! Sua partida contra *${nomeExibicao(p2)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
             },
             {
               atleta: p2,
-              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}! Sua partida contra *${nomeExibicao(p1)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${new Date(m.deadline).toLocaleDateString("pt-BR")}*`,
+              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}! Sua partida contra *${nomeExibicao(p1)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
             }
           ];
         }).filter(Boolean).flat();
@@ -3702,12 +3702,17 @@ function AdminDashboard({ state, setTab, dispatch }) {
   });
   const atletasSemSubmeter = useMemo(() => {
     const ids = new Set();
-    roundMatches.forEach(m => {
-      if (!m.p1Submitted) ids.add(m.p1Id);
-      if (!m.p2Submitted) ids.add(m.p2Id);
-    });
+    // Só a rodada mostrada no card (currentRound), não todas as rodadas em aberto —
+    // senão quem já jogou a Rodada 1 mas não a Rodada 2 aparece como pendente
+    // numa lista que fala só da Rodada 1.
+    partidasRodadaAtual
+      .filter(m => !m.validated && !m.rejeitado)
+      .forEach(m => {
+        if (!m.p1Submitted) ids.add(m.p1Id);
+        if (!m.p2Submitted) ids.add(m.p2Id);
+      });
     return [...ids].map(id => state.athletes.find(a => a.id === id)).filter(Boolean);
-  }, [state.matches, state.athletes]);
+  }, [partidasRodadaAtual, state.athletes]);
 
   return (
     <div>
@@ -4166,7 +4171,7 @@ function AdminEtapa({ state, dispatch }) {
               );
               if (partidas.length === 0) return null;
               const prazo = partidas[0]?.deadline
-                ? new Date(partidas[0].deadline).toLocaleDateString("pt-BR")
+                ? fmtDate(partidas[0].deadline)
                 : "a definir";
               return (
                 <div key={rodNum}>
@@ -4239,7 +4244,7 @@ function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, n
         <>
           {!liberado && !confirmando && (
             <div style={{fontSize:11,color:T.cinza,marginBottom:10}}>
-              O prazo desta rodada (até {prazo ? new Date(prazo).toLocaleDateString("pt-BR") : "—"}) ainda não fechou.
+              O prazo desta rodada (até {prazo ? fmtDate(prazo) : "—"}) ainda não fechou.
             </div>
           )}
           {!confirmando ? (

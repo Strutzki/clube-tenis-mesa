@@ -2209,26 +2209,34 @@ function AdminMensagens({ state, dispatch }) {
         </Card>
       )}
 
-      {/* Já enviadas nesta categoria (mês atual) — com opção de reenviar */}
-      {mensagensJaEnviadas.length > 0 && (
-        <div style={{marginTop:14}}>
-          <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:1,textTransform:"uppercase",color:T.verde2,marginBottom:4}}>
-            ✓ Já enviadas neste mês ({mensagensJaEnviadas.length})
-          </div>
-          <div style={{fontFamily:T.mono,fontSize:9,letterSpacing:0.5,textTransform:"uppercase",color:"#7d9188",marginBottom:8}}>
-            {categorias.find(c=>c.id===categoria)?.icon} {categorias.find(c=>c.id===categoria)?.label}
-          </div>
-          {mensagensJaEnviadas.map(m => (
-            <div key={m.atleta.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:"rgba(127,174,143,0.06)",border:"1px solid rgba(127,174,143,0.15)",borderRadius:10,padding:"9px 12px",marginBottom:6}}>
-              <span style={{fontSize:12,color:"#9db3a8",minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeComApelido(m.atleta)}</span>
-              <a href={wppLink(m.atleta.phone, m.msg)} target="_blank" rel="noreferrer" style={{textDecoration:"none",flexShrink:0}}
-                onClick={()=>registrarEnvio(m)}>
-                <Btn color="#25d366" small>🔄 Reenviar</Btn>
-              </a>
+      {/* Histórico geral do mês — todas as categorias, cada uma com seu selo */}
+      {(() => {
+        const enviadasNoMes = (state.mensagensEnviadas || [])
+          .filter(log => new Date(log.enviadoEm).getTime() >= inicioDoMes);
+        if (enviadasNoMes.length === 0) return null;
+        return (
+          <div style={{marginTop:14}}>
+            <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:1,textTransform:"uppercase",color:T.verde2,marginBottom:8}}>
+              ✓ Já enviadas neste mês ({enviadasNoMes.length})
             </div>
-          ))}
-        </div>
-      )}
+            {enviadasNoMes.map(log => (
+              <div key={log.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:"rgba(127,174,143,0.06)",border:"1px solid rgba(127,174,143,0.15)",borderRadius:10,padding:"9px 12px",marginBottom:6}}>
+                <div style={{minWidth:0,display:"flex",flexDirection:"column",gap:4}}>
+                  <span style={{fontSize:12,color:"#9db3a8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{log.athleteName || "Grupo"}</span>
+                  <span style={{
+                    fontFamily:T.mono,fontSize:8.5,letterSpacing:0.3,textTransform:"uppercase",
+                    color:"#D85A30",background:"rgba(216,90,48,0.15)",
+                    borderRadius:10,padding:"2px 7px",whiteSpace:"nowrap",alignSelf:"flex-start",
+                  }}>{log.categoriaLabel}</span>
+                </div>
+                <a href={wppLinkReenviar(log)} target="_blank" rel="noreferrer" style={{textDecoration:"none",flexShrink:0}}>
+                  <Btn color="#25d366" small>🔄 Reenviar</Btn>
+                </a>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* COLETIVAS */}
       <SecTitle>👥 Disparos Coletivos (Grupo)</SecTitle>

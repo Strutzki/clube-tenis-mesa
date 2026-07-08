@@ -2121,8 +2121,15 @@ function AdminMensagens({ state, dispatch }) {
           <Card key={m.id} style={{marginBottom:8}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:8}}>
               <div style={{minWidth:0}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>{m.athleteName || "Grupo"}</div>
-                <div style={{fontSize:10,color:"#7d9188",marginTop:2}}>{m.categoriaLabel} · {tempoRelativo(new Date(m.enviadoEm).getTime())}</div>
+                <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                  <span style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>{m.athleteName || "Grupo"}</span>
+                  <span style={{
+                    fontFamily:T.mono,fontSize:9,letterSpacing:0.3,textTransform:"uppercase",
+                    color:"#D85A30",background:"rgba(216,90,48,0.15)",
+                    borderRadius:12,padding:"2px 8px",whiteSpace:"nowrap",
+                  }}>{m.categoriaLabel}</span>
+                </div>
+                <div style={{fontSize:10,color:"#7d9188",marginTop:3}}>{tempoRelativo(new Date(m.enviadoEm).getTime())}</div>
               </div>
               <a href={wppLinkReenviar(m)} target="_blank" rel="noreferrer" style={{textDecoration:"none",flexShrink:0}}>
                 <Btn color="#25d366" small>🔄 Reenviar</Btn>

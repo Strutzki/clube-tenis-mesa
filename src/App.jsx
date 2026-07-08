@@ -3215,6 +3215,251 @@ function rarityOf(pos) {
   return         { frame: "rgba(125,145,136,.55)",glow: "rgba(125,145,136,.18)" };
 }
 
+// ── Moldura de raridade em cor sólida (versão pra imagem/download) ────────────
+function rarityFrameSolido(pos) {
+  if (pos == null) return "rgba(125,145,136,.65)";
+  if (pos === 1)  return "rgba(156,111,62,.9)";
+  if (pos <= 3)   return "rgba(216,90,48,.85)";
+  if (pos <= 6)   return "rgba(127,174,143,.82)";
+  return           "rgba(125,145,136,.75)";
+}
+
+// Carrega uma imagem (base64 ou url) e resolve quando estiver pronta.
+function carregarImagem(src) {
+  return new Promise((resolve) => {
+    if (!src) return resolve(null);
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+// Desenha um retângulo arredondado (compatível com navegadores sem roundRect).
+function caminhoArredondado(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// ── DESENHA A CARTA NUM CANVAS 1080×1350 (4:5, ideal pro feed do Instagram) ───
+// Autossuficiente: usa só o Canvas do navegador, sem bibliotecas externas.
+// O resultado é idêntico em qualquer aparelho (o brilho holográfico da tela é
+// substituído por um brilho fixo desenhado, que sai igual em todo lugar).
+async function desenharCartaCanvas({ apelido, foto, estilo = "Clássico", membroDesde, posicao, rating, vitorias, derrotas, historico = [], logo }) {
+  const W = 1080, H = 1350;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  const estColor = ESTILO_CORES[estilo] || T.terracota;
+  const frame = rarityFrameSolido(posicao);
+  const nome = (apelido || "").split(" ")[0];
+
+  // Garante que as fontes oficiais estejam carregadas antes de desenhar texto.
+  try {
+    if (document.fonts) {
+      await Promise.all([
+        document.fonts.load("400 90px 'DM Serif Display'"),
+        document.fonts.load("700 30px 'Space Mono'"),
+        document.fonts.load("400 30px 'Space Mono'"),
+        document.fonts.ready,
+      ]);
+    }
+  } catch (e) { /* segue com fontes de fallback */ }
+
+  const serif = "'DM Serif Display', Georgia, serif";
+  const mono  = "'Space Mono', 'Courier New', monospace";
+
+  // ── Fundo ──────────────────────────────────────────────────────────────────
+  ctx.fillStyle = T.verde;
+  ctx.fillRect(0, 0, W, H);
+
+  // brilho suave de raridade no topo
+  const glowTop = ctx.createRadialGradient(W/2, 0, 0, W/2, 0, W*0.9);
+  glowTop.addColorStop(0, frame.replace(/,[^,]+\)$/, ",.22)"));
+  glowTop.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glowTop;
+  ctx.fillRect(0, 0, W, H*0.5);
+
+  const M = 70;              // margem lateral
+  let y = 150;               // caneta vertical
+
+  // ── Cabeçalho: apelido + membro desde ──────────────────────────────────────
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = T.offwhite;
+  ctx.font = `100px ${serif}`;
+  ctx.textAlign = "left";
+  // encolhe o apelido se for muito largo (deixa espaço pro chip de estilo)
+  let tamNome = 100;
+  const larguraMaxNome = W - M - 300;
+  ctx.font = `${tamNome}px ${serif}`;
+  while (ctx.measureText(nome).width > larguraMaxNome && tamNome > 48) {
+    tamNome -= 4; ctx.font = `${tamNome}px ${serif}`;
+  }
+  ctx.fillText(nome, M, y);
+
+  if (membroDesde) {
+    ctx.font = `24px ${mono}`;
+    ctx.fillStyle = "rgba(240,234,224,.5)";
+    ctx.fillText(`MEMBRO DESDE ${String(membroDesde).toUpperCase()}`, M, y + 42);
+  }
+
+  // ── Chip de estilo (canto superior direito) ────────────────────────────────
+  const chipTxt = (estilo || "").toUpperCase();
+  ctx.font = `22px ${mono}`;
+  const chipW = Math.max(190, ctx.measureText(chipTxt).width + 70);
+  const chipH = 92, chipX = W - M - chipW, chipY = 80;
+  ctx.fillStyle = "rgba(28,43,39,.55)";
+  caminhoArredondado(ctx, chipX, chipY, chipW, chipH, 22); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = estColor;
+  caminhoArredondado(ctx, chipX, chipY, chipW, chipH, 22); ctx.stroke();
+  // "raquete" simplificada (bolinha) na cor do estilo
+  ctx.fillStyle = estColor;
+  ctx.beginPath(); ctx.arc(chipX + chipW/2, chipY + 34, 15, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = "rgba(240,234,224,.75)";
+  ctx.textAlign = "center";
+  ctx.fillText(chipTxt, chipX + chipW/2, chipY + 74);
+  ctx.textAlign = "left";
+
+  // ── Janela da foto ─────────────────────────────────────────────────────────
+  const fotoX = M, fotoY = 250, fotoW = W - M*2, fotoH = 620, fotoR = 34;
+  ctx.save();
+  caminhoArredondado(ctx, fotoX, fotoY, fotoW, fotoH, fotoR);
+  ctx.clip();
+  const img = await carregarImagem(foto);
+  if (img) {
+    // cobre a janela mantendo proporção (object-fit: cover)
+    const escala = Math.max(fotoW / img.width, fotoH / img.height);
+    const dw = img.width * escala, dh = img.height * escala;
+    ctx.drawImage(img, fotoX + (fotoW - dw)/2, fotoY + (fotoH - dh)/2, dw, dh);
+  } else {
+    ctx.fillStyle = T.verdeCard;
+    ctx.fillRect(fotoX, fotoY, fotoW, fotoH);
+    ctx.fillStyle = "rgba(240,234,224,.3)";
+    ctx.font = `320px ${serif}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText((nome[0] || "?").toUpperCase(), fotoX + fotoW/2, fotoY + fotoH/2 + 20);
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  }
+  ctx.restore();
+  // moldura da foto na cor da raridade
+  ctx.lineWidth = 5; ctx.strokeStyle = frame;
+  caminhoArredondado(ctx, fotoX, fotoY, fotoW, fotoH, fotoR); ctx.stroke();
+
+  // ── Rodapé de números: Ranking · Rating · V·D ──────────────────────────────
+  const linhaY = 990;
+  // Ranking atual (esquerda)
+  ctx.textAlign = "left";
+  ctx.font = `22px ${mono}`; ctx.fillStyle = "rgba(240,234,224,.5)";
+  ctx.fillText("RANKING ATUAL", M, linhaY - 44);
+  ctx.font = `84px ${serif}`; ctx.fillStyle = T.offwhite;
+  ctx.fillText(posicao != null ? `${posicao}º` : "—", M, linhaY + 24);
+
+  // Rating (centro, destaque)
+  ctx.textAlign = "center";
+  ctx.fillStyle = T.terracota;
+  ctx.font = `132px ${serif}`;
+  ctx.fillText(String(rating), W/2, linhaY + 30);
+  ctx.font = `22px ${mono}`; ctx.fillStyle = "rgba(240,234,224,.55)";
+  ctx.fillText("RATING", W/2, linhaY + 68);
+
+  // V · D (direita)
+  ctx.textAlign = "right";
+  ctx.font = `62px ${serif}`;
+  ctx.fillStyle = T.verde2;
+  const vTxt = String(vitorias ?? 0), dTxt = String(derrotas ?? 0);
+  const dW = ctx.measureText(dTxt).width;
+  ctx.fillStyle = "rgba(240,234,224,.6)"; ctx.fillText(dTxt, W - M, linhaY + 12);
+  ctx.fillStyle = "rgba(240,234,224,.5)"; const sepW = ctx.measureText(" · ").width;
+  ctx.fillText(" · ", W - M - dW, linhaY + 12);
+  ctx.fillStyle = T.verde2; ctx.fillText(vTxt, W - M - dW - sepW, linhaY + 12);
+  ctx.font = `20px ${mono}`; ctx.fillStyle = "rgba(240,234,224,.4)";
+  ctx.fillText("V · D", W - M, linhaY + 48);
+  ctx.textAlign = "left";
+
+  // ── Temporadas anteriores ──────────────────────────────────────────────────
+  const hist = (historico || []).slice(0, 3);
+  const linhas = hist.length ? hist.map(h => ({ label: h.temporada, pos: h.pos + "º" }))
+                             : [{ label: "Estreante", pos: "" }];
+  let hy = 1105;
+  ctx.strokeStyle = "rgba(240,234,224,.14)"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(M, hy); ctx.lineTo(W - M, hy); ctx.stroke();
+  hy += 34;
+  ctx.font = `21px ${mono}`; ctx.fillStyle = "rgba(240,234,224,.45)";
+  ctx.fillText("TEMPORADAS ANTERIORES", M, hy);
+  hy += 40;
+  linhas.forEach(l => {
+    ctx.font = `26px ${mono}`;
+    ctx.fillStyle = "rgba(240,234,224,.7)"; ctx.textAlign = "left";
+    ctx.fillText(l.label, M, hy);
+    ctx.fillStyle = T.offwhite; ctx.textAlign = "right";
+    ctx.fillText(l.pos, W - M, hy);
+    ctx.textAlign = "left";
+    hy += 40;
+  });
+
+  // ── Marca: logo + @clubedotenisdemesa (rodapé, embutido na arte) ────────────
+  const logoImg = await carregarImagem(logo);
+  const rodapeY = H - 70;
+  if (logoImg) {
+    const lh = 60, lw = logoImg.width * (lh / logoImg.height);
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(logoImg, M, rodapeY - 46, lw, lh);
+    ctx.globalAlpha = 1;
+  }
+  ctx.font = `26px ${mono}`;
+  ctx.fillStyle = "rgba(240,234,224,.75)";
+  ctx.textAlign = "right";
+  ctx.fillText("@clubedotenisdemesa", W - M, rodapeY - 6);
+  ctx.textAlign = "left";
+
+  // ── Brilho holográfico fixo (faixa diagonal) — idêntico em todo aparelho ────
+  ctx.save();
+  ctx.globalCompositeOperation = "overlay";
+  const holo = ctx.createLinearGradient(0, 0, W, H);
+  holo.addColorStop(0.00, "rgba(255,255,255,0)");
+  holo.addColorStop(0.30, "rgba(216,90,48,.10)");
+  holo.addColorStop(0.44, "rgba(127,174,143,.13)");
+  holo.addColorStop(0.52, "rgba(255,255,255,.16)");
+  holo.addColorStop(0.60, "rgba(156,111,62,.13)");
+  holo.addColorStop(0.74, "rgba(216,90,48,.09)");
+  holo.addColorStop(1.00, "rgba(255,255,255,0)");
+  ctx.fillStyle = holo;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  // ── Moldura externa de raridade ────────────────────────────────────────────
+  ctx.lineWidth = 8; ctx.strokeStyle = frame;
+  caminhoArredondado(ctx, 12, 12, W - 24, H - 24, 40); ctx.stroke();
+
+  return canvas;
+}
+
+// Gera a carta e dispara o download como PNG.
+async function baixarCartaComoImagem(props, nomeArquivo) {
+  const canvas = await desenharCartaCanvas({ ...props, logo: LOGO });
+  await new Promise((resolve) => {
+    canvas.toBlob((blob) => {
+      if (!blob) return resolve();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nomeArquivo || "carta-clube-tenis-mesa.png";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      resolve();
+    }, "image/png");
+  });
+}
+
 function AtletaCard({ apelido, foto, estilo = "Clássico", membroDesde: membroDesdeTxt, posicao, rating, vitorias, derrotas, historico = [], width = 320 }) {
   const wrapRef = useRef(null);
   const r = rarityOf(posicao);
@@ -3339,8 +3584,35 @@ function AtletaCard({ apelido, foto, estilo = "Clássico", membroDesde: membroDe
 }
 
 // Modal simples pra abrir a carta ao tocar num atleta (Ranking, Comunidade, etc.)
-function CartaModal({ athlete, posicao, onClose }) {
+// podeBaixar: só true na "minha carta" — aí aparece o botão de baixar como imagem.
+function CartaModal({ athlete, posicao, onClose, podeBaixar = false }) {
+  const [baixando, setBaixando] = useState(false);
   if (!athlete) return null;
+
+  const baixar = async () => {
+    if (baixando) return;
+    setBaixando(true);
+    try {
+      const nomeBase = (nomeExibicao(athlete).split(" ")[0] || "atleta")
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+      await baixarCartaComoImagem({
+        apelido: nomeExibicao(athlete).split(" ")[0],
+        foto: athlete.foto,
+        estilo: athlete.estilo || "Clássico",
+        membroDesde: membroDesde(athlete.inscritoEm),
+        posicao,
+        rating: athlete.rating,
+        vitorias: athlete.wins || 0,
+        derrotas: athlete.losses || 0,
+        historico: athlete.historico || [],
+      }, `carta-${nomeBase || "atleta"}-clube-tenis-mesa.png`);
+    } catch (e) {
+      alert("Não consegui gerar a imagem agora. Tente de novo em instantes.");
+    } finally {
+      setBaixando(false);
+    }
+  };
+
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.88)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
@@ -3356,6 +3628,16 @@ function CartaModal({ athlete, posicao, onClose }) {
           historico={athlete.historico || []}
           width={Math.min(300, window.innerWidth - 60)}
         />
+        {podeBaixar && (
+          <button onClick={baixar} disabled={baixando} style={{fontFamily:T.sans,fontWeight:600,fontSize:14,color:T.offwhite,background:T.terracota,border:"none",borderRadius:22,padding:"12px 22px",cursor:baixando?"default":"pointer",opacity:baixando?0.7:1,display:"flex",alignItems:"center",gap:8}}>
+            {baixando ? "Gerando imagem…" : "⬇ Baixar carta"}
+          </button>
+        )}
+        {podeBaixar && (
+          <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:.5,color:"rgba(240,234,224,0.5)",textAlign:"center",maxWidth:280,lineHeight:1.5}}>
+            Salve no celular e compartilhe no WhatsApp ou no Instagram marcando <span style={{color:T.offwhite}}>@clubedotenisdemesa</span>
+          </div>
+        )}
         <button onClick={onClose} style={{fontFamily:T.mono,fontSize:11,letterSpacing:1,textTransform:"uppercase",color:T.offwhite,background:"transparent",border:`1px solid rgba(240,234,224,0.3)`,borderRadius:20,padding:"8px 18px",cursor:"pointer"}}>
           Fechar
         </button>
@@ -4887,7 +5169,7 @@ function AthleteGames({ state, dispatch, athlete }) {
         />
       )}
       {estatisticasAbertas && <EstatisticasView state={state} athlete={eu} onClose={()=>setEstatisticasAbertas(false)}/>}
-      {cartaAberta && <CartaModal athlete={eu} posicao={minhaPos>=0?minhaPos+1:null} onClose={()=>setCartaAberta(false)}/>}
+      {cartaAberta && <CartaModal athlete={eu} posicao={minhaPos>=0?minhaPos+1:null} onClose={()=>setCartaAberta(false)} podeBaixar/>}
       {editarAberto && <EditarPerfilView athlete={eu} dispatch={dispatch} onClose={()=>setEditarAberto(false)}/>}
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,marginBottom:20}}>
         <div style={{position:"relative"}}>

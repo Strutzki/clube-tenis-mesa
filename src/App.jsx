@@ -137,6 +137,12 @@ const db = {
   // Histórico de mensagens de WhatsApp enviadas
   getMensagensEnviadas: () => supaFetch("mensagens_enviadas?order=enviado_em.desc&limit=200"),
   insertMensagemEnviada: (data) => supaFetch("mensagens_enviadas", { method:"POST", body: JSON.stringify(data) }),
+
+  // Solicitações de W.O. Justificado (atleta sinaliza que não vai jogar; admin aprova/recusa)
+  getSolicitacoesWo: () => supaFetch("solicitacoes_wo?order=criado_em.desc&limit=200"),
+  insertSolicitacaoWo: (data) => supaFetch("solicitacoes_wo", { method:"POST", body: JSON.stringify(data) }),
+  updateSolicitacaoWo: (id, data) => supaFetch(`solicitacoes_wo?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data) }),
+  deleteSolicitacaoWo: (id) => supaFetch(`solicitacoes_wo?id=eq.${id}`, { method:"DELETE" }),
 };
 
 // ── FOTO DE PERFIL DO ATLETA (Supabase Storage) ───────────────────────────────
@@ -182,6 +188,27 @@ async function uploadFotoAtleta(athleteId, blob) {
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Erro ao enviar a foto (${res.status}): ${err}`);
+  }
+  return `${SUPA_URL}/storage/v1/object/public/${FOTOS_BUCKET}/${path}`;
+}
+
+// Comprovante anexado numa solicitação de W.O. (atestado, print de viagem etc.)
+// Reaproveita o mesmo bucket público já usado pras fotos de perfil — evita
+// precisar criar/configurar um bucket novo no Supabase Storage.
+async function uploadComprovanteWo(matchId, blob) {
+  const path = `wo-${matchId}-${Date.now()}.jpg`;
+  const res = await fetch(`${SUPA_URL}/storage/v1/object/${FOTOS_BUCKET}/${path}`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPA_KEY,
+      "Authorization": `Bearer ${SUPA_KEY}`,
+      "Content-Type": "image/jpeg",
+    },
+    body: blob,
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Erro ao enviar o comprovante (${res.status}): ${err}`);
   }
   return `${SUPA_URL}/storage/v1/object/public/${FOTOS_BUCKET}/${path}`;
 }
@@ -370,6 +397,7 @@ const INIT = {
   temporadaNumero: 1,    // 1, 2 ou 3 dentro do ano (Cap. 13: 3 temporadas de 3 meses)
   temporadaAno: new Date().getFullYear(),
   mensagensEnviadas: [], // histórico de disparos de WhatsApp (log, não afeta ranking/rating)
+  solicitacoesWo: [],    // pedidos de W.O. Justificado feitos pelo próprio atleta (Cap. 07)
 };
 
 function reducer(state, action) {
@@ -625,6 +653,52 @@ function reducer(state, action) {
       };
     }
 
+    case "SOLICITAR_WO": {
+      // Atleta sinaliza que não vai conseguir jogar a rodada (Cap. 07 —
+      // "Impossibilidade justificada"). Fica pendente até o admin decidir;
+      // NÃO altera a partida ainda — só a decisão aprovada faz isso.
+      const {
+        id, matchId, athleteId, athleteName, adversarioId, adversarioNome,
+        round, justificativa, comprovanteUrl, criadoEm,
+      } = action.payload;
+      const nova = {
+        id, matchId, athleteId, athleteName, adversarioId, adversarioNome,
+        round, justificativa, comprovanteUrl: comprovanteUrl || null,
+        status: "pendente", criadoEm, respondidoEm: null, motivoRecusa: null,
+      };
+      return { ...state, solicitacoesWo: [nova, ...state.solicitacoesWo] };
+    }
+
+    case "CANCELAR_SOLICITACAO_WO": {
+      // Atleta retira o próprio pedido antes do admin decidir (mudou de ideia,
+      // conseguiu resolver, etc.). Só remove se ainda estiver pendente.
+      const { id } = action.payload;
+      return { ...state, solicitacoesWo: state.solicitacoesWo.filter(s => s.id !== id) };
+    }
+
+    case "RESPONDER_WO": {
+      // Admin aprova ou recusa. Aprovado = aciona o MESMO mecanismo que já
+      // existe pra "partida rejeitada/anulada" (usado hoje em divergências de
+      // placar): a partida some do cálculo de rating, ninguém pontua nem
+      // perde — exatamente a consequência do W.O. Justificado (Cap. 07).
+      const { id, matchId, aprovado, motivoRecusa, justificativa } = action.payload;
+      const now = new Date().toISOString();
+      const solicitacoesWo = state.solicitacoesWo.map(s =>
+        s.id === id
+          ? { ...s, status: aprovado ? "aprovado" : "recusado", respondidoEm: now, motivoRecusa: motivoRecusa || null }
+          : s
+      );
+      let matches = state.matches;
+      if (aprovado) {
+        matches = state.matches.map(m =>
+          m.id === matchId
+            ? { ...m, rejeitado: true, motivoRejeicao: `W.O. Justificado — ${justificativa || ""}`.trim() }
+            : m
+        );
+      }
+      return { ...state, solicitacoesWo, matches };
+    }
+
     case "PROCESSAR_RODADA": {
       // Aplica o cálculo de rating (Tabela CBTM) para todas as partidas já
       // validadas de uma rodada específica, ainda não calculadas. Processa em
@@ -742,12 +816,13 @@ function reducer(state, action) {
     }
 
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, mensagensEnviadas } = action.payload;
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, mensagensEnviadas, solicitacoesWo } = action.payload;
       return {
         ...state, athletes, matches, keys, phase,
         temporadaNumero: temporadaNumero ?? state.temporadaNumero,
         temporadaAno: temporadaAno ?? state.temporadaAno,
         mensagensEnviadas: mensagensEnviadas ?? state.mensagensEnviadas,
+        solicitacoesWo: solicitacoesWo ?? state.solicitacoesWo,
       };
     }
 
@@ -2655,6 +2730,10 @@ export default function App() {
       let mensagensLog = [];
       try { mensagensLog = await db.getMensagensEnviadas(); }
       catch(e) { console.warn("Histórico de mensagens indisponível (migration pendente?):", e.message); }
+      // Mesma cautela pra solicitacoes_wo — tabela nova, migration pode ainda não ter rodado.
+      let solicitacoesWoLog = [];
+      try { solicitacoesWoLog = await db.getSolicitacoesWo(); }
+      catch(e) { console.warn("Solicitações de W.O. indisponíveis (migration pendente?):", e.message); }
       const athletesMapped = (atletas||[]).map(a => ({
         id: a.id, name: a.nome, phone: a.telefone, apelido: a.apelido || null,
         federated: a.federado, rating: a.rating,
@@ -2703,12 +2782,20 @@ export default function App() {
         categoria: m.categoria, categoriaLabel: m.categoria_label,
         texto: m.texto, enviadoEm: m.enviado_em,
       }));
+      const solicitacoesWoMapped = (solicitacoesWoLog||[]).map(s => ({
+        id: s.id, matchId: s.match_id, athleteId: s.atleta_id, athleteName: s.atleta_nome,
+        adversarioId: s.adversario_id, adversarioNome: s.adversario_nome, round: s.round,
+        justificativa: s.justificativa, comprovanteUrl: s.comprovante_url,
+        status: s.status, criadoEm: s.criado_em, respondidoEm: s.respondido_em,
+        motivoRecusa: s.motivo_recusa,
+      }));
       dispatch({ type:"LOAD_FROM_DB", payload:{
         athletes: athletesMapped, matches: matchesMapped,
         keys: keysMapped, phase: config?.[0]?.fase||"inscricoes",
         temporadaNumero: config?.[0]?.temporada_numero || 1,
         temporadaAno: config?.[0]?.temporada_ano || new Date().getFullYear(),
         mensagensEnviadas: mensagensEnviadasMapped,
+        solicitacoesWo: solicitacoesWoMapped,
       }});
       // Restaurar atleta completo da sessão após carregar do banco
       if (sessaoSalva.athleteId) {
@@ -2830,6 +2917,42 @@ export default function App() {
         });
       } catch(e) {
         console.warn("Registro de mensagem no histórico falhou (seguindo mesmo assim):", e.message);
+      }
+    }
+    else if (action.type === "SOLICITAR_WO") {
+      const {
+        id, matchId, athleteId, athleteName, adversarioId, adversarioNome,
+        round, justificativa, comprovanteUrl, criadoEm,
+      } = action.payload;
+      await db.insertSolicitacaoWo({
+        id, match_id: matchId,
+        atleta_id: athleteId || null, atleta_nome: athleteName || null,
+        adversario_id: adversarioId || null, adversario_nome: adversarioNome || null,
+        round: round || null, justificativa,
+        comprovante_url: comprovanteUrl || null,
+        status: "pendente", criado_em: criadoEm,
+      });
+    }
+    else if (action.type === "CANCELAR_SOLICITACAO_WO") {
+      const { id } = action.payload;
+      await db.deleteSolicitacaoWo(id);
+    }
+    else if (action.type === "RESPONDER_WO") {
+      // Persiste a decisão da solicitação e, se aprovada, aplica o mesmo
+      // update que VALIDATE_RESULT(approved:false) já usa pra anular uma
+      // partida — reaproveitando o mecanismo existente de "rejeitado".
+      const { id, matchId, aprovado, motivoRecusa, justificativa } = action.payload;
+      const now = new Date().toISOString();
+      await db.updateSolicitacaoWo(id, {
+        status: aprovado ? "aprovado" : "recusado",
+        respondido_em: now,
+        motivo_recusa: motivoRecusa || null,
+      });
+      if (aprovado) {
+        await db.updatePartida(matchId, {
+          rejeitado: true,
+          motivo_rejeicao: `W.O. Justificado — ${justificativa || ""}`.trim(),
+        });
       }
     }
     else if (action.type === "PROCESSAR_RODADA") {
@@ -4046,6 +4169,7 @@ function AdminDashboard({ state, setTab, dispatch }) {
   const roundMatches = state.matches.filter(m => !m.validated && !m.rejeitado);
   const waitingVal = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado);
   const calculoPendente = state.matches.filter(m => m.validated && !m.calculado && !m.rejeitado);
+  const pendentesWoCount = state.solicitacoesWo.filter(s => s.status === "pendente").length;
   const currentRound = state.keys[0]?.currentRound ?? 0;
   // Modelo por rating: as partidas são geradas sob demanda a cada par mensal.
   // Uma nova rodada pode ser gerada quando TODAS as partidas atuais foram resolvidas.
@@ -4090,6 +4214,7 @@ function AdminDashboard({ state, setTab, dispatch }) {
           {label:"Inscrições pendentes",val:pendentes.length,color:"#9C6F3E"},
           {label:"Partidas em aberto",val:roundMatches.length,color:"#c25a45"},
           {label:"Aguardando validação",val:waitingVal.length,color:"#9C6F3E"},
+          {label:"Solicitações de W.O.",val:pendentesWoCount,color:"#9C6F3E"},
         ].map(s => (
           <Card key={s.label} style={{padding:"12px 14px"}}>
             <div style={{fontSize:22,fontWeight:800,color:s.color}}>{s.val}</div>
@@ -4097,6 +4222,14 @@ function AdminDashboard({ state, setTab, dispatch }) {
           </Card>
         ))}
       </div>
+
+      {pendentesWoCount > 0 && (
+        <Card style={{marginBottom:16,border:"1px solid rgba(156,111,62,0.4)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#9C6F3E",marginBottom:6}}>📨 {pendentesWoCount} solicitação(ões) de W.O. aguardando decisão</div>
+          <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>Um atleta sinalizou que não vai conseguir jogar. Analise a justificativa e aprove ou recuse.</div>
+          <Btn onClick={()=>setTab("pendencias")} color="#9C6F3E">Ver solicitações</Btn>
+        </Card>
+      )}
 
       {state.phase === "etapa" && currentRound > 0 && (
         <Card style={{marginBottom:16}}>
@@ -4682,9 +4815,17 @@ function ImputarResultadoForm({ m, p1, p2, dispatch }) {
 function AdminPendencias({ state, dispatch }) {
   const [motivo, setMotivo] = useState({});
   const [desfazerConfirm, setDesfazerConfirm] = useState({});
+  const [recusandoWo, setRecusandoWo] = useState({});   // { [solicitacaoId]: bool } — mostra a textarea antes de confirmar
+  const [motivoRecusaWo, setMotivoRecusaWo] = useState({});
+  const [notificados, setNotificados] = useState({});   // marca visual local de "já cliquei em notificar"
   const waiting = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado);
   const incomplete = state.matches.filter(m => !m.validated && !m.rejeitado && !(m.p1Submitted && m.p2Submitted));
   const calculoPendente = state.matches.filter(m => m.validated && !m.calculado && !m.rejeitado);
+  const pendentesWo = state.solicitacoesWo.filter(s => s.status === "pendente");
+  const respondidasWoRecentes = state.solicitacoesWo
+    .filter(s => s.status !== "pendente" && s.respondidoEm)
+    .sort((a,b) => new Date(b.respondidoEm) - new Date(a.respondidoEm))
+    .slice(0, 5);
   // A numeração de rodada cresce a cada mês (mês 1 = 1/2, mês 2 = 3/4...),
   // então descobrimos dinamicamente quais rodadas têm cálculo pendente
   // em vez de fixar "1" e "2".
@@ -4703,9 +4844,96 @@ function AdminPendencias({ state, dispatch }) {
     dispatch({type:"DESFAZER_VALIDACAO",payload:{matchId:m.id}});
     setDesfazerConfirm({...desfazerConfirm,[m.id]:false});
   }
+  function aprovarWo(s) {
+    dispatch({type:"RESPONDER_WO",payload:{id:s.id,matchId:s.matchId,aprovado:true,justificativa:s.justificativa}});
+  }
+  function recusarWo(s) {
+    dispatch({type:"RESPONDER_WO",payload:{id:s.id,matchId:s.matchId,aprovado:false,motivoRecusa:motivoRecusaWo[s.id]||"Justificativa insuficiente"}});
+    setRecusandoWo({...recusandoWo,[s.id]:false});
+  }
+  // Link wa.me pra avisar o atleta da decisão — reaproveita o mesmo formato
+  // usado no resto do app, sem depender do sistema de categorias de disparo.
+  function wppLinkWo(athleteId, msg) {
+    const atleta = state.athletes.find(a=>a.id===athleteId);
+    if (!atleta?.phone) return null;
+    return `https://wa.me/55${atleta.phone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`;
+  }
 
   return (
     <div>
+      {pendentesWo.length > 0 && <>
+        <SecTitle>📨 Solicitações de W.O. ({pendentesWo.length})</SecTitle>
+        <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
+          O atleta sinalizou que não vai conseguir jogar (W.O. Justificado — Cap. 07). Aprovar anula a rodada pra ambos, sem perda de pontos.
+        </div>
+        {pendentesWo.map(s => (
+          <Card key={s.id} style={{border:"1px solid rgba(156,111,62,0.35)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>{s.athleteName}</span>
+              <span style={{fontFamily:T.mono,fontSize:10,color:"#7d9188",letterSpacing:0.5,textTransform:"uppercase"}}>Rodada {s.round}</span>
+            </div>
+            {s.adversarioNome && <div style={{fontSize:11,color:"#7d9188",marginBottom:8}}>Adversário: {s.adversarioNome}</div>}
+            <div style={{fontSize:12,color:"#F0EAE0",background:"rgba(0,0,0,0.15)",borderRadius:8,padding:"8px 10px",marginBottom:8,lineHeight:1.5}}>"{s.justificativa}"</div>
+            {s.comprovanteUrl && (
+              <a href={s.comprovanteUrl} target="_blank" rel="noreferrer" style={{display:"inline-block",marginBottom:10}}>
+                <img src={s.comprovanteUrl} alt="Comprovante" style={{width:64,height:64,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)"}}/>
+              </a>
+            )}
+            {!recusandoWo[s.id] ? (
+              <div style={{display:"flex",gap:8}}>
+                <Btn small onClick={()=>aprovarWo(s)} color="#6a9d7a">✅ Aprovar (W.O. Justificado)</Btn>
+                <Btn small onClick={()=>setRecusandoWo({...recusandoWo,[s.id]:true})} color="#c25a45">❌ Recusar</Btn>
+              </div>
+            ) : (
+              <>
+                <textarea value={motivoRecusaWo[s.id]||""} onChange={e=>setMotivoRecusaWo({...motivoRecusaWo,[s.id]:e.target.value})}
+                  placeholder="Motivo da recusa (o atleta vai ver isso)..." rows={2}
+                  style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"#F0EAE0",padding:"8px 10px",fontSize:12,width:"100%",marginBottom:8,outline:"none",boxSizing:"border-box",resize:"none"}}/>
+                <div style={{display:"flex",gap:8}}>
+                  <Btn small onClick={()=>recusarWo(s)} color="#c25a45">Confirmar recusa</Btn>
+                  <Btn small onClick={()=>setRecusandoWo({...recusandoWo,[s.id]:false})} color="#6a9d7a">Cancelar</Btn>
+                </div>
+              </>
+            )}
+          </Card>
+        ))}
+      </>}
+
+      {respondidasWoRecentes.length > 0 && <>
+        <SecTitle>📋 W.O. Decididos Recentemente</SecTitle>
+        {respondidasWoRecentes.map(s => {
+          const aprovado = s.status === "aprovado";
+          const msgSolicitante = aprovado
+            ? `Oi ${s.athleteName?.split(" ")[0]}! Sua solicitação de W.O. Justificado pra rodada ${s.round} foi aprovada. O confronto contra ${s.adversarioNome||"seu adversário"} foi anulado — ninguém perde pontos. 🎾`
+            : `Oi ${s.athleteName?.split(" ")[0]}, sua solicitação de W.O. pra rodada ${s.round} não foi aprovada. Motivo: ${s.motivoRecusa||"—"}. Você ainda precisa jogar e registrar o placar dentro do prazo normal.`;
+          const msgAdversario = `Oi ${s.adversarioNome?.split(" ")[0]||""}! O confronto de vocês na rodada ${s.round} foi anulado (W.O. Justificado de ${s.athleteName}) — ninguém perde pontos. Você já pode seguir pro próximo confronto normalmente.`;
+          const linkSolicitante = wppLinkWo(s.athleteId, msgSolicitante);
+          const linkAdversario = aprovado ? wppLinkWo(s.adversarioId, msgAdversario) : null;
+          return (
+            <Card key={s.id} style={{border:`1px solid ${aprovado?"rgba(106,157,122,0.25)":"rgba(194,90,69,0.25)"}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span style={{fontSize:13,color:"#F0EAE0"}}>{s.athleteName} · Rodada {s.round}</span>
+                <Badge label={aprovado ? "✓ Aprovado" : "✗ Recusado"} color={aprovado?"#6a9d7a":"#c25a45"}/>
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {linkSolicitante && (
+                  <a href={linkSolicitante} target="_blank" rel="noreferrer" onClick={()=>setNotificados({...notificados,[s.id+"_req"]:true})}
+                    style={{fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:"#F0EAE0",background:notificados[s.id+"_req"]?"transparent":"#D85A30",border:notificados[s.id+"_req"]?"1px solid rgba(255,255,255,0.2)":"none",borderRadius:14,padding:"7px 12px",textDecoration:"none"}}>
+                    📲 {notificados[s.id+"_req"]?"Notificado":`Notificar ${s.athleteName?.split(" ")[0]}`}
+                  </a>
+                )}
+                {linkAdversario && (
+                  <a href={linkAdversario} target="_blank" rel="noreferrer" onClick={()=>setNotificados({...notificados,[s.id+"_adv"]:true})}
+                    style={{fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:"#F0EAE0",background:notificados[s.id+"_adv"]?"transparent":"#D85A30",border:notificados[s.id+"_adv"]?"1px solid rgba(255,255,255,0.2)":"none",borderRadius:14,padding:"7px 12px",textDecoration:"none"}}>
+                    📲 {notificados[s.id+"_adv"]?"Notificado":`Notificar ${s.adversarioNome?.split(" ")[0]||"adversário"}`}
+                  </a>
+                )}
+              </div>
+            </Card>
+          );
+        })}
+      </>}
+
       {waiting.length > 0 && <>
         <SecTitle>🔔 Aguardando Validação ({waiting.length})</SecTitle>
         {waiting.map(m => {
@@ -4820,7 +5048,7 @@ function AdminPendencias({ state, dispatch }) {
         })}
       </>}
 
-      {waiting.length === 0 && incomplete.length === 0 && (
+      {waiting.length === 0 && incomplete.length === 0 && pendentesWo.length === 0 && (
         <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:20}}>Nenhuma pendência no momento. 🎉</div></Card>
       )}
     </div>
@@ -5242,12 +5470,118 @@ function AthleteGames({ state, dispatch, athlete }) {
   );
 }
 
+// ── SOLICITAR W.O. JUSTIFICADO (atleta sinaliza que não vai jogar) ───────────
+// Cap. 07 do regulamento: "Impossibilidade justificada". O atleta descreve o
+// motivo (+ comprovante opcional); vira um pedido pendente até o admin decidir.
+function SolicitarWoModal({ m, athlete, adversario, dispatch, onClose }) {
+  const [justificativa, setJustificativa] = useState("");
+  const [comprovanteFile, setComprovanteFile] = useState(null);
+  const [comprovantePreview, setComprovantePreview] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const inputCameraRef = useRef(null);
+  const inputGaleriaRef = useRef(null);
+
+  const ds = deadlineStatus(m.scoreDeadline || m.deadline);
+
+  function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setComprovanteFile(file);
+    setComprovantePreview(URL.createObjectURL(file));
+  }
+
+  async function enviar() {
+    const texto = justificativa.trim();
+    if (texto.length < 10) {
+      setErro("Escreva um pouco mais sobre o motivo (mínimo 10 caracteres).");
+      return;
+    }
+    setEnviando(true);
+    setErro("");
+    try {
+      let comprovanteUrl = null;
+      if (comprovanteFile) {
+        const blob = await resizeImageFile(comprovanteFile);
+        comprovanteUrl = await uploadComprovanteWo(m.id, blob);
+      }
+      dispatch({
+        type: "SOLICITAR_WO",
+        payload: {
+          id: `wo_${m.id}_${Date.now()}`,
+          matchId: m.id,
+          athleteId: athlete.id,
+          athleteName: nomeExibicao(athlete),
+          adversarioId: adversario?.id || null,
+          adversarioNome: adversario ? nomeExibicao(adversario) : null,
+          round: m.round,
+          justificativa: texto,
+          comprovanteUrl,
+          criadoEm: new Date().toISOString(),
+        },
+      });
+      onClose();
+    } catch (e) {
+      setErro("Não consegui enviar agora. Tente de novo em instantes.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.88)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:380,background:T.verdeCard,borderRadius:18,padding:20,border:`1px solid ${T.bordaSuave}`,maxHeight:"88vh",overflowY:"auto",boxSizing:"border-box"}}>
+        <div style={{fontFamily:T.serif,fontSize:20,color:T.offwhite,marginBottom:6}}>Não vou conseguir jogar</div>
+        <div style={{fontSize:12,color:T.cinza,marginBottom:16,lineHeight:1.5}}>
+          Isso vira um pedido de <b style={{color:T.offwhite}}>W.O. Justificado</b> — o admin vai analisar. Se aprovado, a rodada é anulada e ninguém perde pontos.
+        </div>
+
+        {ds.urgent && (
+          <div style={{background:`${ds.color}1f`,border:`1px solid ${ds.color}55`,borderRadius:10,padding:"9px 12px",marginBottom:14,fontFamily:T.mono,fontSize:10.5,color:ds.color,lineHeight:1.5}}>
+            ⚠️ O prazo da rodada está perto ({ds.label}). Pra garantir que o admin veja a tempo, avise também no grupo do WhatsApp.
+          </div>
+        )}
+
+        <div style={{fontFamily:T.mono,fontSize:10,color:T.cinzaSuave,letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Motivo</div>
+        <textarea value={justificativa} onChange={e=>setJustificativa(e.target.value)} rows={4} placeholder="Ex: viagem a trabalho já marcada, atestado médico, imprevisto..."
+          style={{width:"100%",boxSizing:"border-box",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:10,color:T.offwhite,padding:"10px 12px",fontSize:13,outline:"none",resize:"none",fontFamily:"inherit",marginBottom:12}}/>
+
+        <div style={{fontFamily:T.mono,fontSize:10,color:T.cinzaSuave,letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Comprovante (opcional)</div>
+        {comprovantePreview ? (
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <img src={comprovantePreview} alt="Comprovante" style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:`1px solid ${T.bordaSuave}`}}/>
+            <button onClick={()=>{setComprovanteFile(null);setComprovantePreview(null);}} style={{fontFamily:T.mono,fontSize:10,color:T.vermelho,background:"transparent",border:"none",cursor:"pointer",textDecoration:"underline"}}>remover</button>
+          </div>
+        ) : (
+          <div style={{display:"flex",gap:8,marginBottom:12}}>
+            <button onClick={()=>inputCameraRef.current?.click()} style={{fontFamily:T.mono,fontSize:9,letterSpacing:0.5,textTransform:"uppercase",color:T.offwhite,background:T.verde,border:`1px solid ${T.bordaSuave}`,borderRadius:14,padding:"8px 12px",cursor:"pointer"}}>📷 Tirar foto</button>
+            <button onClick={()=>inputGaleriaRef.current?.click()} style={{fontFamily:T.mono,fontSize:9,letterSpacing:0.5,textTransform:"uppercase",color:T.offwhite,background:T.verde,border:`1px solid ${T.bordaSuave}`,borderRadius:14,padding:"8px 12px",cursor:"pointer"}}>🖼️ Galeria</button>
+          </div>
+        )}
+        <input ref={inputCameraRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{display:"none"}}/>
+        <input ref={inputGaleriaRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
+
+        {erro && <div style={{fontSize:12,color:T.vermelho,marginBottom:10}}>{erro}</div>}
+
+        <Btn onClick={enviar} color={T.terracota} full disabled={enviando}>{enviando ? "Enviando…" : "Enviar solicitação"}</Btn>
+        <button onClick={onClose} style={{width:"100%",marginTop:8,fontFamily:T.mono,fontSize:11,letterSpacing:1,textTransform:"uppercase",color:T.cinza,background:"transparent",border:"none",cursor:"pointer",padding:"8px 0"}}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
 function SubmitMatchCard({ m, state, dispatch, athlete }) {
   const isP1 = m.p1Id === athlete.id;
   const mySubmit = isP1 ? m.p1Submitted : m.p2Submitted;
   const [s1, setS1] = useState(""), [s2, setS2] = useState("");
   const [sent, setSent] = useState(false);
   const [cartaAberta, setCartaAberta] = useState(false);
+  const [woModalAberto, setWoModalAberto] = useState(false);
+  // Minha solicitação de W.O. mais recente pra essa partida (se existir).
+  const minhaSolicitacaoWo = state.solicitacoesWo
+    .filter(sw => sw.matchId === m.id && sw.athleteId === athlete.id)
+    .sort((a,b) => new Date(b.criadoEm) - new Date(a.criadoEm))[0];
+  const woPendente = minhaSolicitacaoWo?.status === "pendente";
   const p1 = state.athletes.find(a=>a.id===m.p1Id);
   const p2 = state.athletes.find(a=>a.id===m.p2Id);
   const adversario = isP1 ? p2 : p1;
@@ -5263,6 +5597,9 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
   return (
     <Card style={{border:`1px solid ${T.terracota}33`}}>
       {cartaAberta && <CartaModal athlete={adversario} posicao={posicaoAdversario} onClose={()=>setCartaAberta(false)}/>}
+      {woModalAberto && (
+        <SolicitarWoModal m={m} athlete={athlete} adversario={adversario} dispatch={dispatch} onClose={()=>setWoModalAberto(false)}/>
+      )}
       {(() => {
         // Faixa de urgência: só aparece quando o prazo está apertado (urgent),
         // pra criar senso de urgência sem poluir quando ainda há tempo de sobra.
@@ -5313,37 +5650,64 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
       </div>
       <H2HBadge state={state} idA={m.p1Id} idB={m.p2Id} />
       <div style={{marginBottom:10}} />
-      {mySubmit || sent ? (
-        <div style={{background:`${T.verde2}1a`,borderRadius:9,padding:"10px 12px",fontFamily:T.mono,fontSize:11,fontWeight:700,color:T.verde2,textAlign:"center",letterSpacing:0.3,textTransform:"uppercase"}}>
-          ✓ Resultado enviado — aguardando validação do admin
+      {woPendente ? (
+        <div style={{background:`${T.madeira}1a`,border:`1px solid ${T.madeira}44`,borderRadius:9,padding:"12px 14px"}}>
+          <div style={{fontFamily:T.mono,fontSize:11,fontWeight:700,color:T.madeira,textAlign:"center",letterSpacing:0.3,textTransform:"uppercase",marginBottom:8}}>
+            📨 Solicitação de W.O. enviada
+          </div>
+          <div style={{fontSize:12,color:T.offwhite,lineHeight:1.5,marginBottom:10}}>"{minhaSolicitacaoWo.justificativa}"</div>
+          <div style={{fontSize:11,color:T.cinza,marginBottom:10}}>Aguardando análise do admin. Se aprovado, a rodada é anulada e ninguém perde pontos.</div>
+          <button onClick={()=>dispatch({type:"CANCELAR_SOLICITACAO_WO",payload:{id:minhaSolicitacaoWo.id}})}
+            style={{fontFamily:T.mono,fontSize:10,letterSpacing:0.5,color:T.vermelho,background:"transparent",border:"none",cursor:"pointer",textDecoration:"underline",padding:0}}>
+            Retirar solicitação
+          </button>
         </div>
       ) : (
         <>
-          <div style={{fontFamily:T.mono,fontSize:10,color:T.cinzaSuave,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Informe apenas o placar em sets</div>
-          <div style={{fontSize:11,color:T.cinza,marginBottom:12}}>Ex: vitória por 3×1 → digite 3 e 1</div>
-          <div style={{display:"flex",gap:8,marginBottom:8}}>
-            <div style={{flex:1,textAlign:"center",fontFamily:T.mono,fontSize:10,color:T.offwhite,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>{nomeExibicao(p1).split(" ")[0]}</div>
-            <div style={{width:40,flexShrink:0}}/>
-            <div style={{flex:1,textAlign:"center",fontFamily:T.mono,fontSize:10,color:T.offwhite,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>{nomeExibicao(p2).split(" ")[0]}</div>
-          </div>
-          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
-            <div style={{flex:1,minWidth:0}}>
-              <input value={s1} onChange={e=>setS1(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
-                style={{width:"100%",boxSizing:"border-box",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:9,color:T.terracota,padding:"14px",fontFamily:T.serif,fontSize:28,textAlign:"center",outline:"none"}}/>
+          {minhaSolicitacaoWo?.status === "recusado" && (
+            <div style={{background:`${T.vermelho}1a`,border:`1px solid ${T.vermelho}44`,borderRadius:9,padding:"10px 12px",marginBottom:12,fontSize:12,color:T.offwhite,lineHeight:1.5}}>
+              <div style={{fontFamily:T.mono,fontSize:10,fontWeight:700,color:T.vermelho,letterSpacing:0.3,textTransform:"uppercase",marginBottom:4}}>❌ Solicitação de W.O. recusada</div>
+              {minhaSolicitacaoWo.motivoRecusa && <div>{minhaSolicitacaoWo.motivoRecusa}</div>}
+              <div style={{color:T.cinza,marginTop:4}}>Você ainda precisa registrar o placar normalmente.</div>
             </div>
-            <div style={{width:40,flexShrink:0,textAlign:"center"}}>
-              <div style={{color:T.cinza,fontSize:20,fontWeight:800,lineHeight:1}}>×</div>
-              <div style={{fontFamily:T.mono,fontSize:9,color:T.borda,marginTop:4,textTransform:"uppercase",letterSpacing:0.5}}>sets</div>
+          )}
+          {mySubmit || sent ? (
+            <div style={{background:`${T.verde2}1a`,borderRadius:9,padding:"10px 12px",fontFamily:T.mono,fontSize:11,fontWeight:700,color:T.verde2,textAlign:"center",letterSpacing:0.3,textTransform:"uppercase"}}>
+              ✓ Resultado enviado — aguardando validação do admin
             </div>
-            <div style={{flex:1,minWidth:0}}>
-              <input value={s2} onChange={e=>setS2(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
-                style={{width:"100%",boxSizing:"border-box",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:9,color:T.terracota,padding:"14px",fontFamily:T.serif,fontSize:28,textAlign:"center",outline:"none"}}/>
-            </div>
-          </div>
-          <Btn onClick={submit} color={T.terracota} full disabled={!s1||!s2}>Enviar resultado</Btn>
+          ) : (
+            <>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.cinzaSuave,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Informe apenas o placar em sets</div>
+              <div style={{fontSize:11,color:T.cinza,marginBottom:12}}>Ex: vitória por 3×1 → digite 3 e 1</div>
+              <div style={{display:"flex",gap:8,marginBottom:8}}>
+                <div style={{flex:1,textAlign:"center",fontFamily:T.mono,fontSize:10,color:T.offwhite,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>{nomeExibicao(p1).split(" ")[0]}</div>
+                <div style={{width:40,flexShrink:0}}/>
+                <div style={{flex:1,textAlign:"center",fontFamily:T.mono,fontSize:10,color:T.offwhite,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>{nomeExibicao(p2).split(" ")[0]}</div>
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <input value={s1} onChange={e=>setS1(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
+                    style={{width:"100%",boxSizing:"border-box",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:9,color:T.terracota,padding:"14px",fontFamily:T.serif,fontSize:28,textAlign:"center",outline:"none"}}/>
+                </div>
+                <div style={{width:40,flexShrink:0,textAlign:"center"}}>
+                  <div style={{color:T.cinza,fontSize:20,fontWeight:800,lineHeight:1}}>×</div>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.borda,marginTop:4,textTransform:"uppercase",letterSpacing:0.5}}>sets</div>
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <input value={s2} onChange={e=>setS2(e.target.value.replace(/\D/g,"").slice(0,1))} type="tel" inputMode="numeric" placeholder="0"
+                    style={{width:"100%",boxSizing:"border-box",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:9,color:T.terracota,padding:"14px",fontFamily:T.serif,fontSize:28,textAlign:"center",outline:"none"}}/>
+                </div>
+              </div>
+              <Btn onClick={submit} color={T.terracota} full disabled={!s1||!s2}>Enviar resultado</Btn>
+              <button onClick={()=>setWoModalAberto(true)}
+                style={{display:"block",width:"100%",marginTop:10,fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:T.cinza,background:"transparent",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"center"}}>
+                Não vou conseguir jogar esta rodada
+              </button>
+            </>
+          )}
         </>
       )}
-      {(m.p1Submitted||m.p2Submitted) && !mySubmit && !sent && (
+      {(m.p1Submitted||m.p2Submitted) && !mySubmit && !sent && !woPendente && (
         <div style={{fontFamily:T.mono,fontSize:10,color:T.madeira,marginTop:8,textAlign:"center",letterSpacing:0.3,textTransform:"uppercase"}}>⚡ Adversário já enviou — aguardando seu resultado</div>
       )}
     </Card>

@@ -126,9 +126,9 @@ function membroDesde(inscritoEm) {
 
 const db = {
   // Atletas
-  getAtletas: () => supaFetch("atletas?order=rating.desc"),
-  insertAtleta: (data) => supaFetch("atletas", { method:"POST", body: JSON.stringify(data) }),
-  updateAtleta: (id, data) => supaFetch(`atletas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data) }),
+  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico"),
+  insertAtleta: (data) => supaFetch("atletas", { method:"POST", body: JSON.stringify(data), prefer: "return=minimal" }),
+  updateAtleta: (id, data) => supaFetch(`atletas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data), prefer: "return=minimal" }),
 
   // Partidas
   getPartidas: () => supaFetch("partidas?order=rodada.asc,criado_em.asc"),

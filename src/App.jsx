@@ -207,6 +207,54 @@ async function uploadFotoAtleta(athleteId, blob) {
 // Comprovante anexado numa solicitação de W.O. (atestado, print de viagem etc.)
 // Reaproveita o mesmo bucket público já usado pras fotos de perfil — evita
 // precisar criar/configurar um bucket novo no Supabase Storage.
+// Converte uma linha crua do Supabase (snake_case) pro formato que o app usa
+// (camelCase). Extraído como função própria pra ser reaproveitado tanto no
+// carregamento em massa (loadFromSupabase) quanto na busca pública estreita
+// por telefone (login/checagem de duplicidade) — mesma forma final, uma só
+// fonte de verdade pro mapeamento.
+function mapAtletaFromDb(a) {
+  return {
+    id: a.id, name: a.nome, phone: a.telefone, apelido: a.apelido || null,
+    federated: a.federado, rating: a.rating,
+    ratingInicial: a.rating_inicial, saldoTemp: a.saldo_temp||0,
+    status: a.status, motivo: a.motivo_reprovacao,
+    key: a.chave, wins: a.vitorias||0, losses: a.derrotas||0,
+    winsTotal: a.vitorias_total||0, lossesTotal: a.derrotas_total||0,
+    aceiteRegulamento: a.aceite_regulamento,
+    dataAceiteRegulamento: a.data_aceite_regulamento,
+    versaoRegulamento: a.versao_regulamento,
+    aceiteLGPD: a.aceite_lgpd, inscritoEm: a.inscrito_em,
+    pendenteCircuito: a.pendente_circuito || false,
+    ultimaRecusaCircuitoEm: a.ultima_recusa_circuito_em || null,
+    foto: a.foto_url || null,
+    estilo: a.estilo_jogo || "Clássico",
+    historico: a.historico || [],
+    ratingPico: a.rating_pico || null,
+    ratingHistorico: a.rating_historico || [],
+    posicaoHistorico: a.posicao_historico || [],
+  };
+}
+
+// Busca UM atleta pelo telefone, sem precisar da lista inteira (e sem PIN —
+// é o caminho seguro pro login e pra checagem de duplicidade na inscrição,
+// que acontecem antes de qualquer autenticação). Usa a função de banco
+// buscar_atleta_por_telefone (SECURITY DEFINER, devolve só o atleta que bate).
+async function buscarAtletaPorTelefonePublico(telefone) {
+  const res = await fetch(`${SUPA_URL}/rest/v1/rpc/buscar_atleta_por_telefone`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPA_KEY,
+      "Authorization": `Bearer ${SUPA_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ telefone_busca: telefone }),
+  });
+  if (!res.ok) throw new Error(`Erro ao verificar telefone (${res.status})`);
+  const data = await res.json();
+  const row = Array.isArray(data) ? data[0] : null;
+  return row ? mapAtletaFromDb(row) : null;
+}
+
 async function uploadComprovanteWo(matchId, blob) {
   const path = `wo-${matchId}-${Date.now()}.jpg`;
   const res = await fetch(`${SUPA_URL}/storage/v1/object/${FOTOS_BUCKET}/${path}`, {
@@ -434,10 +482,11 @@ function reducer(state, action) {
 
     case "INSCRICAO_ADD": {
       const { name, phone, apelido, federated, rating, aceiteRegulamento, aceiteLGPD, dataAceite, ipAceite } = action.payload;
-      // Verificar duplicata por telefone no estado local
+      // A checagem de telefone duplicado agora acontece ANTES do dispatch
+      // (busca assíncrona estreita, sem precisar da lista inteira de
+      // atletas no cliente) — e o banco tem uma trava de unicidade real
+      // como rede de segurança. Esse case só cria o registro otimista local.
       const telFormatado = phone.replace(/\D/g, "");
-      const jaExiste = state.athletes.some(a => a.phone.replace(/\D/g, "") === telFormatado);
-      if (jaExiste) return state; // Bloqueia sem alterar estado
       const id = Date.now();
       const ath = {
         id, name, phone: telFormatado, apelido: apelido || null, federated,
@@ -1021,6 +1070,24 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
   const [aceiteLGPD, setAceiteLGPD] = useState(false);
   const [aceiteReg, setAceiteReg] = useState(false);
   const [lerReg, setLerReg] = useState(false);
+  // Checagem de telefone duplicado — agora é uma busca assíncrona estreita
+  // (não depende mais da lista inteira de atletas trazer telefone). Debounce
+  // de 500ms pra não disparar uma consulta a cada tecla digitada.
+  const [telDuplStatus, setTelDuplStatus] = useState("idle"); // idle | checking | duplicado | livre
+  useEffect(() => {
+    const limpo = phone.replace(/\D/g,"");
+    if (limpo.length < 10) { setTelDuplStatus("idle"); return; }
+    setTelDuplStatus("checking");
+    const timer = setTimeout(async () => {
+      try {
+        const encontrado = await buscarAtletaPorTelefonePublico(limpo);
+        setTelDuplStatus(encontrado ? "duplicado" : "livre");
+      } catch(e) {
+        setTelDuplStatus("idle"); // falha na checagem não deve travar o formulário
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [phone]);
 
   const s = {
     wrap: { minHeight:"100vh", background:"#1C2B27", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-start", padding:"24px 16px 40px", fontFamily:"Inter,sans-serif" },
@@ -1060,7 +1127,10 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
 
         <label style={s.label}>WhatsApp (com DDD) *</label>
         <input style={s.input} value={phone} onChange={e=>setPhone(e.target.value)} placeholder="31999999999" type="tel"/>
-        {phone.replace(/\D/g,"").length >= 10 && athletes.some(a => a.phone.replace(/\D/g,"") === phone.replace(/\D/g,"")) && (
+        {telDuplStatus === "checking" && (
+          <div style={{fontSize:11,color:"#7d9188",marginTop:4}}>Verificando…</div>
+        )}
+        {telDuplStatus === "duplicado" && (
           <div style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#c25a45",marginTop:4}}>
             ⚠️ Este número já possui uma inscrição cadastrada.
           </div>
@@ -1093,7 +1163,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
         </div>
 
         {(() => {
-          const telDupl = phone.replace(/\D/g,"").length >= 10 && athletes.some(a => a.phone.replace(/\D/g,"") === phone.replace(/\D/g,""));
+          const telDupl = telDuplStatus === "duplicado";
           return (
             <button style={s.btn(!name.trim()||!phone.trim()||telDupl)}
               onClick={()=>{ if(name.trim()&&phone.trim()&&!telDupl) setStep(2); }}
@@ -1855,12 +1925,17 @@ function AdminHistorico({ state }) {
 
 
 // ── ADMIN MENSAGENS ───────────────────────────────────────────────────────────
-function AdminMensagens({ state, dispatch }) {
+function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
   const [categoria, setCategoria] = useState("confrontos"); // confrontos | resultados | lembretes | torneio | ranking | coletivas
   const [disparoIdx, setDisparoIdx] = useState(null); // índice do atleta atual no fluxo sequencial
   const [disparados, setDisparados] = useState([]); // ids já disparados nesta sessão
   const [filaCongelada, setFilaCongelada] = useState([]); // fila fixada ao iniciar (não encolhe ao marcar)
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
+
+  // Toda categoria aqui envolve telefone (destinatário do WhatsApp) — carrega
+  // assim que a tela abre.
+  useEffect(() => { garantirTelefones(); }, []);
+
 
   const ativos = state.athletes.filter(a => estaNoRanking(a, state.matches));
   const rodadaAtual = state.keys[0]?.currentRound || 1;
@@ -1881,9 +1956,9 @@ function AdminMensagens({ state, dispatch }) {
   }
   function wppLinkReenviar(m) {
     if (!m.athleteId) return `https://wa.me/?text=${encodeURIComponent(m.texto)}`;
-    const atleta = state.athletes.find(a=>a.id===m.athleteId);
-    if (!atleta || !atleta.phone) return `https://wa.me/?text=${encodeURIComponent(m.texto)}`;
-    return wppLink(atleta.phone, m.texto);
+    const telefone = telefones[m.athleteId];
+    if (!telefone) return `https://wa.me/?text=${encodeURIComponent(m.texto)}`;
+    return wppLink(telefone, m.texto);
   }
   function rankingAtual() {
     return [...ativos]
@@ -1913,7 +1988,7 @@ function AdminMensagens({ state, dispatch }) {
         return Object.values(porAtleta).map(({ atleta, jogos }) => {
           const linhasJogos = jogos
             .sort((a,b) => a.rodada - b.rodada)
-            .map(j => `⚔️ *Rodada ${j.rodada}:* ${nomeExibicao(j.adversario)} — 📱 ${j.adversario.phone}`)
+            .map(j => `⚔️ *Rodada ${j.rodada}:* ${nomeExibicao(j.adversario)} — 📱 ${telefones[j.adversario.id] || "—"}`)
             .join("\n");
           return {
             atleta,
@@ -2169,7 +2244,7 @@ function AdminMensagens({ state, dispatch }) {
             {nomeComApelido(atual.atleta)}
           </div>
           <div style={{fontSize:12,color:"#7d9188",marginBottom:12}}>
-            📱 {atual.atleta.phone}
+            📱 {telefones[atual.atleta.id] || "carregando…"}
           </div>
           {/* Preview da mensagem */}
           <div style={{background:"#1C2B27",borderRadius:10,padding:"12px",marginBottom:14,fontSize:11,color:"#9db3a8",lineHeight:1.6,whiteSpace:"pre-line",maxHeight:160,overflowY:"auto"}}>
@@ -2187,9 +2262,9 @@ function AdminMensagens({ state, dispatch }) {
           )}
           {/* Número destinatário bem visível antes do botão */}
           <div style={{background:"rgba(37,211,102,0.1)",border:"1px solid rgba(37,211,102,0.3)",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#6a9d7a",textAlign:"center"}}>
-            📱 Destinatário: <strong>{atual.atleta.phone}</strong>
+            📱 Destinatário: <strong>{telefones[atual.atleta.id] || "carregando…"}</strong>
           </div>
-          <a href={wppLink(atual.atleta.phone, atual.msg)} target="_blank" rel="noreferrer"
+          <a href={wppLink(telefones[atual.atleta.id] || "", atual.msg)} target="_blank" rel="noreferrer"
             style={{textDecoration:"none",display:"block",marginBottom:10}}
             onClick={()=>{
               if (atual.matchId) dispatch({type:"MARCAR_RESULTADO_COMUNICADO",payload:{matchId:atual.matchId,comunicado:true}});
@@ -2598,6 +2673,7 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
   const [bioStatus, setBioStatus] = useState(""); // "", "verificando", "erro"
   const [mostrarFallback, setMostrarFallback] = useState(false);
   const [oferecerBio, setOferecerBio] = useState(null); // atleta recém-logado, pendente de oferta
+  const [buscandoLogin, setBuscandoLogin] = useState(false);
 
   useEffect(() => {
     async function verificar() {
@@ -2677,13 +2753,27 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
     setMostrarFallback(true);
   }
 
-  function doAthlete() {
+  async function doAthlete() {
     const clean = phone.replace(/\D/g,"");
-    const found = athletes.find(a => a.phone.replace(/\D/g,"") === clean && a.status === "ativo");
-    if (!found) { setErr("Telefone não encontrado ou cadastro não aprovado."); setTimeout(()=>setErr(""),3000); return; }
-    const jaTemBioNesteAparelho = bioCredId && String(bioAtletaId) === String(found.id);
-    if (bioDisponivel && !jaTemBioNesteAparelho) setOferecerBio(found);
-    else onAthleteLogin(found);
+    if (buscandoLogin) return;
+    setBuscandoLogin(true);
+    setErr("");
+    try {
+      const found = await buscarAtletaPorTelefonePublico(clean);
+      if (!found || found.status !== "ativo") {
+        setErr("Telefone não encontrado ou cadastro não aprovado.");
+        setTimeout(()=>setErr(""),3000);
+        return;
+      }
+      const jaTemBioNesteAparelho = bioCredId && String(bioAtletaId) === String(found.id);
+      if (bioDisponivel && !jaTemBioNesteAparelho) setOferecerBio(found);
+      else onAthleteLogin(found);
+    } catch(e) {
+      setErr("Não consegui verificar agora. Tente de novo.");
+      setTimeout(()=>setErr(""),3000);
+    } finally {
+      setBuscandoLogin(false);
+    }
   }
 
   // Tela: oferta de ativação de biometria, logo após login por telefone
@@ -2742,7 +2832,7 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
         <br/>
         <label style={s.label}>Seu WhatsApp (com DDD)</label>
         <input style={s.input} value={phone} onChange={e=>setPhone(e.target.value)} placeholder="31999999999" type="tel" autoComplete="tel" onKeyDown={e=>e.key==="Enter"&&doAthlete()}/>
-        <button style={s.btn()} onClick={doAthlete}>Entrar</button>
+        <button style={s.btn()} onClick={doAthlete} disabled={buscandoLogin}>{buscandoLogin?"Verificando…":"Entrar"}</button>
         {err && <div style={s.err}>⚠️ {err}</div>}
       </div>
     </div>
@@ -2791,6 +2881,9 @@ export default function App() {
   // Confirmação de PIN pra ações de escrita do admin (Edge Function admin-action).
   // null = nenhum prompt aberto; senão, { onSubmit, onCancel }.
   const [pinPrompt, setPinPrompt] = useState(null);
+  // Mapa {id: telefone} carregado sob demanda (com PIN) só quando alguma
+  // tela de admin realmente precisa mostrar telefone — não no login geral.
+  const [telefones, setTelefones] = useState({});
 
   // ── Salvar sessão quando muda ──────────────────────────────
   useEffect(() => {
@@ -2820,26 +2913,7 @@ export default function App() {
       let solicitacoesWoLog = [];
       try { solicitacoesWoLog = await db.getSolicitacoesWo(); }
       catch(e) { console.warn("Solicitações de W.O. indisponíveis (migration pendente?):", e.message); }
-      const athletesMapped = (atletas||[]).map(a => ({
-        id: a.id, name: a.nome, phone: a.telefone, apelido: a.apelido || null,
-        federated: a.federado, rating: a.rating,
-        ratingInicial: a.rating_inicial, saldoTemp: a.saldo_temp||0,
-        status: a.status, motivo: a.motivo_reprovacao,
-        key: a.chave, wins: a.vitorias||0, losses: a.derrotas||0,
-        winsTotal: a.vitorias_total||0, lossesTotal: a.derrotas_total||0,
-        aceiteRegulamento: a.aceite_regulamento,
-        dataAceiteRegulamento: a.data_aceite_regulamento,
-        versaoRegulamento: a.versao_regulamento,
-        aceiteLGPD: a.aceite_lgpd, inscritoEm: a.inscrito_em,
-        pendenteCircuito: a.pendente_circuito || false,
-        ultimaRecusaCircuitoEm: a.ultima_recusa_circuito_em || null,
-        foto: a.foto_url || null,
-        estilo: a.estilo_jogo || "Clássico",
-        historico: a.historico || [],
-        ratingPico: a.rating_pico || null,
-        ratingHistorico: a.rating_historico || [],
-        posicaoHistorico: a.posicao_historico || [],
-      }));
+      const athletesMapped = (atletas||[]).map(mapAtletaFromDb);
       const matchesMapped = (partidas||[]).map(m => ({
         id: m.id, keyId: m.chave_id, round: m.rodada,
         p1Id: m.atleta1_id, p2Id: m.atleta2_id,
@@ -2933,6 +3007,23 @@ export default function App() {
     return data.dados;
   }
 
+  // Garante que o mapa {id: telefone} está carregado, buscando via Edge
+  // Function (PIN) só na primeira vez que alguma tela realmente precisa —
+  // chamadas seguintes reaproveitam o que já foi buscado nessa sessão.
+  async function garantirTelefones() {
+    if (Object.keys(telefones).length > 0) return telefones;
+    try {
+      const dados = await chamarAdminAction("LISTAR_TELEFONES", {});
+      const mapa = {};
+      (dados || []).forEach(t => { mapa[t.id] = t.telefone; });
+      setTelefones(mapa);
+      return mapa;
+    } catch(e) {
+      console.warn("Não consegui carregar telefones:", e.message);
+      return {};
+    }
+  }
+
   async function dispatchAndSync(action) {
     dispatch(action);
     try { await syncToSupabase(action, state); }
@@ -2945,25 +3036,36 @@ export default function App() {
   async function syncToSupabase(action, st) {
     if (action.type === "INSCRICAO_ADD") {
       const p = action.payload;
-      // Verificar se já existe atleta com o mesmo telefone
+      // Checagem de duplicidade pela busca pública estreita (não precisa
+      // mais da lista inteira de atletas com telefone no cliente).
       const telefoneFormatado = p.phone.replace(/\D/g, "");
-      const existentes = await supaFetch(`atletas?telefone=eq.${telefoneFormatado}`);
-      if (existentes && existentes.length > 0) {
+      const existente = await buscarAtletaPorTelefonePublico(telefoneFormatado);
+      if (existente) {
         setDbMsg("telefone_duplicado");
         return;
       }
-      await db.insertAtleta({
-        nome:p.name, telefone:telefoneFormatado, apelido:p.apelido||null, federado:p.federated,
-        rating: p.federated?(p.rating||null):250,
-        rating_inicial: p.federated?(p.rating||null):250,
-        saldo_temp:0, status:"pendente",
-        aceite_regulamento:p.aceiteRegulamento||false,
-        data_aceite_regulamento:p.dataAceite||null,
-        versao_regulamento:"v03-5",
-        aceite_lgpd:p.aceiteLGPD||false,
-        data_aceite_lgpd:p.dataAceite||null,
-        inscrito_em:p.dataAceite||new Date().toISOString(),
-      });
+      try {
+        await db.insertAtleta({
+          nome:p.name, telefone:telefoneFormatado, apelido:p.apelido||null, federado:p.federated,
+          rating: p.federated?(p.rating||null):250,
+          rating_inicial: p.federated?(p.rating||null):250,
+          saldo_temp:0, status:"pendente",
+          aceite_regulamento:p.aceiteRegulamento||false,
+          data_aceite_regulamento:p.dataAceite||null,
+          versao_regulamento:"v03-5",
+          aceite_lgpd:p.aceiteLGPD||false,
+          data_aceite_lgpd:p.dataAceite||null,
+          inscrito_em:p.dataAceite||new Date().toISOString(),
+        });
+      } catch(e) {
+        // Rede de segurança: trava de unicidade real no banco (atletas_telefone_unique).
+        // Cobre o raro caso de duas inscrições simultâneas com o mesmo número.
+        if (String(e.message||"").includes("atletas_telefone_unique") || String(e.message||"").includes("duplicate key")) {
+          setDbMsg("telefone_duplicado");
+          return;
+        }
+        throw e;
+      }
       await loadFromSupabase();
     }
     else if (action.type === "INSCRICAO_VALIDAR") {
@@ -3123,7 +3225,7 @@ export default function App() {
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
-          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} />
+          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} />
         ) : (
           <AthleteView state={state} dispatch={dispatchAndSync} athlete={currentAthlete} tab={tab} setTab={setTab} />
         )}
@@ -4091,14 +4193,14 @@ const Badge = ({label, color="#D85A30"}) => (
 );
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
-function AdminView({ state, dispatch, tab, setTab }) {
+function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones }) {
   if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} />;
-  if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} />;
+  if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
-  if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} />;
+  if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "historico") return <AdminHistorico state={state} />;
-  if (tab === "mensagens") return <AdminMensagens state={state} dispatch={dispatch} />;
+  if (tab === "mensagens") return <AdminMensagens state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   return null;
 }
 
@@ -4308,7 +4410,7 @@ function IniciarEtapaPanel({ state, dispatch }) {
 }
 
 // ── ADMIN INSCRIÇÕES ──────────────────────────────────────────────────────────
-function AdminInscricoes({ state, dispatch }) {
+function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
   const [modo, setModo] = useState("lista"); // lista | revisar | editar
   const [selected, setSelected] = useState(null);
   const [ratingEdit, setRatingEdit] = useState("");
@@ -4320,6 +4422,10 @@ function AdminInscricoes({ state, dispatch }) {
   const [editApelido, setEditApelido] = useState("");
   const [editRating, setEditRating] = useState("");
   const [editStatus, setEditStatus] = useState("");
+
+  // Essa tela mostra telefone em várias listas — carrega assim que abre
+  // (pede PIN na 1ª vez da sessão; reaproveita depois).
+  useEffect(() => { garantirTelefones(); }, []);
 
   const pendentes = state.athletes.filter(a => a.status === "pendente");
   const backlog = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito);
@@ -4359,7 +4465,7 @@ function AdminInscricoes({ state, dispatch }) {
   function abrirEditar(a) {
     setSelected(a);
     setEditNome(a.name);
-    setEditTelefone(a.phone);
+    setEditTelefone(telefones[a.id] || "");
     setEditApelido(a.apelido || "");
     setEditRating(a.rating || "");
     setEditStatus(a.status);
@@ -4377,7 +4483,9 @@ function AdminInscricoes({ state, dispatch }) {
     const msg = ath.status==="reprovado"
       ? `Olá ${ath.name.split(" ")[0]}, sua inscrição no Clube do Tênis de Mesa — inscrição não aprovada. Motivo: ${ath.motivo||"informações inconsistentes"}. Entre em contato para mais detalhes.`
       : `Olá ${ath.name.split(" ")[0]}, sua inscrição no Clube do Tênis de Mesa — inscrição APROVADA! Rating inicial: ${ath.rating}. Bem-vindo(a)! 🏓`;
-    return <a href={`https://wa.me/55${ath.phone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer" style={{textDecoration:"none"}}>
+    const telefone = telefones[ath.id];
+    if (!telefone) return <Btn small color="#5E7569" onClick={()=>{}}>📲 carregando…</Btn>;
+    return <a href={`https://wa.me/55${telefone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer" style={{textDecoration:"none"}}>
       <Btn small color="#25d366">📲 WhatsApp</Btn>
     </a>;
   };
@@ -4437,7 +4545,7 @@ function AdminInscricoes({ state, dispatch }) {
       <SecTitle>Validar Inscrição</SecTitle>
       <Card>
         <div style={{fontSize:15,fontWeight:700,color:"#F0EAE0",marginBottom:4}}>{nomeComApelido(selected)}</div>
-        <div style={{fontSize:12,color:"#9db3a8",marginBottom:8}}>📱 {selected.phone} · {selected.federated?"Federado CBTM":"Não federado"}</div>
+        <div style={{fontSize:12,color:"#9db3a8",marginBottom:8}}>📱 {telefones[selected.id] || "carregando…"} · {selected.federated?"Federado CBTM":"Não federado"}</div>
         <div style={{fontSize:12,color:"#7d9188",marginBottom:6}}>
           Rating informado: <b style={{color: selected.rating ? "#D85A30" : "#c25a45"}}>{selected.rating || "não informado"}</b>
         </div>
@@ -4484,7 +4592,7 @@ function AdminInscricoes({ state, dispatch }) {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
                 <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}</div>
-                <div style={{fontSize:11,color:"#9db3a8"}}>{a.phone} · {a.federated?"Federado":"Não fed."} · Rating: {a.rating}</div>
+                <div style={{fontSize:11,color:"#9db3a8"}}>{telefones[a.id] || "···"} · {a.federated?"Federado":"Não fed."} · Rating: {a.rating}</div>
               </div>
               <div style={{display:"flex",gap:6}}>
                 <Btn small onClick={()=>{setSelected(a);setRatingEdit(a.rating);setModo("revisar")}}>Revisar</Btn>
@@ -4505,7 +4613,7 @@ function AdminInscricoes({ state, dispatch }) {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
               <div>
                 <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}</div>
-                <div style={{fontSize:11,color:"#9db3a8"}}>{a.phone} · Rating: {a.rating}</div>
+                <div style={{fontSize:11,color:"#9db3a8"}}>{telefones[a.id] || "···"} · Rating: {a.rating}</div>
                 {a.ultimaRecusaCircuitoEm && (
                   <div style={{fontSize:10,color:"#9C6F3E",marginTop:2}}>
                     ↩️ Recusado em {new Date(a.ultimaRecusaCircuitoEm).toLocaleDateString("pt-BR")} · segue no backlog
@@ -4530,7 +4638,7 @@ function AdminInscricoes({ state, dispatch }) {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}</div>
-                <div style={{fontSize:11,color:"#9db3a8"}}>{a.phone} · Rating: {a.rating}</div>
+                <div style={{fontSize:11,color:"#9db3a8"}}>{telefones[a.id] || "···"} · Rating: {a.rating}</div>
                 <div style={{display:"flex",gap:4,marginTop:3}}>
                   {a.aceiteRegulamento && <span style={{fontSize:9,background:"rgba(74,222,128,0.15)",color:"#6a9d7a",padding:"1px 6px",borderRadius:8,fontWeight:700}}>📋 Reg. aceito</span>}
                   {a.aceiteLGPD && <span style={{fontSize:9,background:"rgba(77,163,255,0.15)",color:"#D85A30",padding:"1px 6px",borderRadius:8,fontWeight:700}}>🔒 LGPD</span>}
@@ -4570,7 +4678,7 @@ function AdminInscricoes({ state, dispatch }) {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}</div>
-                <div style={{fontSize:11,color:"#7d9188"}}>{a.phone} · fora do backlog do circuito</div>
+                <div style={{fontSize:11,color:"#7d9188"}}>{telefones[a.id] || "···"} · fora do backlog do circuito</div>
               </div>
               <Btn small color="#D85A30" onClick={()=>abrirEditar(a)}>✏️ Reativar</Btn>
             </div>
@@ -4753,7 +4861,10 @@ function ImputarResultadoForm({ m, p1, p2, dispatch }) {
 }
 
 // ── ADMIN PENDÊNCIAS ──────────────────────────────────────────────────────────
-function AdminPendencias({ state, dispatch }) {
+function AdminPendencias({ state, dispatch, telefones, garantirTelefones }) {
+  // Precisa de telefone pra notificar via WhatsApp depois de decidir um W.O.
+  useEffect(() => { garantirTelefones(); }, []);
+
   const [motivo, setMotivo] = useState({});
   const [desfazerConfirm, setDesfazerConfirm] = useState({});
   const [recusandoWo, setRecusandoWo] = useState({});   // { [solicitacaoId]: bool } — mostra a textarea antes de confirmar
@@ -4795,9 +4906,9 @@ function AdminPendencias({ state, dispatch }) {
   // Link wa.me pra avisar o atleta da decisão — reaproveita o mesmo formato
   // usado no resto do app, sem depender do sistema de categorias de disparo.
   function wppLinkWo(athleteId, msg) {
-    const atleta = state.athletes.find(a=>a.id===athleteId);
-    if (!atleta?.phone) return null;
-    return `https://wa.me/55${atleta.phone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`;
+    const telefone = telefones[athleteId];
+    if (!telefone) return null;
+    return `https://wa.me/55${telefone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`;
   }
 
   return (

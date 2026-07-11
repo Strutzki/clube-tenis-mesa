@@ -213,6 +213,23 @@ async function uploadComprovanteWo(matchId, blob) {
   return `${SUPA_URL}/storage/v1/object/public/${FOTOS_BUCKET}/${path}`;
 }
 
+// ── PIN DE ADMIN — cache por sessão de aba (Edge Function admin-action) ───────
+// Guardado só em sessionStorage (some ao fechar a aba/navegador), nunca em
+// localStorage. Login por PIN digitado ou por biometria são só a "tela de
+// entrada" do admin — cada AÇÃO DE ESCRITA exige o PIN confirmado de verdade
+// pelo menos 1x por sessão, porque a biometria nunca verifica o PIN em si.
+const PIN_SESSAO_KEY = "ctm_admin_pin_sessao";
+function getPinCache() {
+  try { return sessionStorage.getItem(PIN_SESSAO_KEY) || null; }
+  catch(e) { return null; }
+}
+function setPinCache(pin) {
+  try { sessionStorage.setItem(PIN_SESSAO_KEY, pin); } catch(e) {}
+}
+function clearPinCache() {
+  try { sessionStorage.removeItem(PIN_SESSAO_KEY); } catch(e) {}
+}
+
 // ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-5, Cap. 05) ──────
 // Tabela Básica de Cálculo do Rating do Manual Tênis de Mesa Brasil (item 1.7.2.4.5)
 // Valores por faixa de diferença de rating. Peso: rodada regular = 1, torneio = 2.
@@ -973,7 +990,8 @@ function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
   if (mode === "inscricao") return <InscricaoForm onBack={() => setMode("select")} onSubmit={onInscricao} athletes={athletes} />;
   if (mode === "regulamento") return <RegulamentoView onBack={() => setMode("select")} />;
   function doAdmin(bypass=false) {
-    if (bypass || (user===ADMIN_USER && pass===ADMIN_PASS)) { onLogin(); }
+    if (bypass) { onLogin(); return; }
+    if (user===ADMIN_USER && pass===ADMIN_PASS) { setPinCache(pass); onLogin(); }
     else { setErr("Usuário ou senha incorretos."); setTimeout(()=>setErr(""),3000); }
   }
 }
@@ -2693,6 +2711,33 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
   );
 }
 
+// ── CONFIRMAÇÃO DE PIN (ações de escrita do admin) ────────────────────────────
+function PinPromptModal({ onSubmit, onCancel }) {
+  const [pin, setPin] = useState("");
+  function confirmar() {
+    if (!pin) return;
+    onSubmit(pin);
+  }
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{width:"100%",maxWidth:340,background:T.verdeCard,borderRadius:18,padding:24,border:`1px solid ${T.bordaSuave}`,textAlign:"center",boxSizing:"border-box"}}>
+        <div style={{fontSize:28,marginBottom:8}}>🔐</div>
+        <div style={{fontFamily:T.serif,fontSize:19,color:T.offwhite,marginBottom:6}}>Confirme seu PIN</div>
+        <div style={{fontSize:12,color:T.cinza,marginBottom:18,lineHeight:1.5}}>
+          Primeira ação de escrita desta sessão — confirme o PIN pra continuar. Não pede de novo até você fechar o navegador.
+        </div>
+        <input
+          value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,""))}
+          type="password" inputMode="numeric" placeholder="····" autoFocus
+          onKeyDown={e=>e.key==="Enter" && confirmar()}
+          style={{width:"100%",boxSizing:"border-box",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:10,color:T.offwhite,padding:"14px",fontFamily:T.mono,fontSize:22,textAlign:"center",letterSpacing:8,outline:"none",marginBottom:16}}/>
+        <Btn onClick={confirmar} color={T.terracota} full disabled={!pin}>Confirmar</Btn>
+        <button onClick={onCancel} style={{width:"100%",marginTop:8,fontFamily:T.mono,fontSize:11,letterSpacing:1,textTransform:"uppercase",color:T.cinza,background:"transparent",border:"none",cursor:"pointer",padding:"8px 0"}}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [state, dispatch] = useReducer(reducer, INIT);
   // ── Restaurar sessão do localStorage ─────────────────────────
@@ -2705,6 +2750,9 @@ export default function App() {
   const [tab, setTab] = useState(sessaoSalva.tab || "dashboard");
   const [dbStatus, setDbStatus] = useState("loading");
   const [dbMsg, setDbMsg] = useState("");
+  // Confirmação de PIN pra ações de escrita do admin (Edge Function admin-action).
+  // null = nenhum prompt aberto; senão, { onSubmit, onCancel }.
+  const [pinPrompt, setPinPrompt] = useState(null);
 
   // ── Salvar sessão quando muda ──────────────────────────────
   useEffect(() => {
@@ -2811,6 +2859,42 @@ export default function App() {
     }
   }
 
+  // Resolve com o PIN em cache, ou abre o PinPromptModal e espera a confirmação.
+  // Rejeita se o admin cancelar o prompt.
+  function obterPin() {
+    const cached = getPinCache();
+    if (cached) return Promise.resolve(cached);
+    return new Promise((resolve, reject) => {
+      setPinPrompt({
+        onSubmit: (pin) => { setPinCache(pin); setPinPrompt(null); resolve(pin); },
+        onCancel: () => { setPinPrompt(null); reject(new Error("Confirmação de PIN cancelada.")); },
+      });
+    });
+  }
+
+  // Chama a Edge Function admin-action pra qualquer ação de escrita do admin.
+  // Se o PIN vier errado (401) ou expirar, limpa o cache — a PRÓXIMA ação pede
+  // confirmação de novo automaticamente, em vez de continuar tentando com um
+  // PIN que já sabemos que está errado.
+  async function chamarAdminAction(acao, payload) {
+    const pin = await obterPin();
+    const res = await fetch(`${SUPA_URL}/functions/v1/admin-action`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPA_KEY}`,
+        "apikey": SUPA_KEY,
+      },
+      body: JSON.stringify({ pin, acao, payload }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.sucesso) {
+      if (res.status === 401) clearPinCache();
+      throw new Error(data.erro || `Erro ${res.status} ao executar ${acao}`);
+    }
+    return data.dados;
+  }
+
   async function dispatchAndSync(action) {
     dispatch(action);
     try { await syncToSupabase(action, state); }
@@ -2846,12 +2930,7 @@ export default function App() {
     }
     else if (action.type === "INSCRICAO_VALIDAR") {
       const {id,rating,approved,motivo} = action.payload;
-      // Buscar o atleta no Supabase para garantir uso do UUID correto
-      const atletas = await supaFetch(`atletas?id=eq.${id}`);
-      const uuid = atletas?.[0]?.id || id;
-      await db.updateAtleta(uuid, approved
-        ? {status:"ativo",rating,rating_inicial:rating,saldo_temp:0,pendente_circuito:true}
-        : {status:"reprovado",motivo_reprovacao:motivo});
+      await chamarAdminAction("INSCRICAO_VALIDAR", { id, rating, approved, motivo });
       await loadFromSupabase();
     }
     else if (action.type === "SUBMIT_RESULT") {
@@ -2864,36 +2943,18 @@ export default function App() {
     }
     else if (action.type === "VALIDATE_RESULT") {
       const {matchId,approved,motivo} = action.payload;
-      const match = st.matches.find(m=>m.id===matchId);
-      if (approved) {
-        const now = new Date().toISOString();
-        // Só confirma o placar — o cálculo de rating acontece depois, via PROCESSAR_RODADA.
-        await db.updatePartida(matchId, {
-          placar1:match.p1Submitted.score1, placar2:match.p1Submitted.score2,
-          validado:true, validado_por_admin:true, admin_aprovado_em:now,
-          calculado:false,
-        });
-      } else {
-        await db.updatePartida(matchId,{rejeitado:true,motivo_rejeicao:motivo});
-      }
+      await chamarAdminAction("VALIDATE_RESULT", { matchId, approved, motivo });
+      await loadFromSupabase();
     }
     else if (action.type === "DESFAZER_VALIDACAO") {
       const { matchId } = action.payload;
-      const match = st.matches.find(m => m.id === matchId);
-      if (match?.calculado) return; // proteção: nunca desfaz o que já foi calculado
-      await db.updatePartida(matchId, {
-        validado: false, validado_por_admin: false, admin_aprovado_em: null,
-        placar1: null, placar2: null, imputado_pelo_admin: false,
-      });
+      await chamarAdminAction("DESFAZER_VALIDACAO", { matchId });
+      await loadFromSupabase();
     }
     else if (action.type === "ADMIN_IMPUTAR_RESULTADO") {
       const { matchId, score1, score2 } = action.payload;
-      const now = new Date().toISOString();
-      await db.updatePartida(matchId, {
-        placar1: score1, placar2: score2,
-        validado: true, validado_por_admin: true, admin_aprovado_em: now,
-        calculado: false, imputado_pelo_admin: true,
-      });
+      await chamarAdminAction("ADMIN_IMPUTAR_RESULTADO", { matchId, score1, score2 });
+      await loadFromSupabase();
     }
     else if (action.type === "ATUALIZAR_FOTO_ATLETA") {
       const { athleteId, url } = action.payload;
@@ -2908,12 +2969,8 @@ export default function App() {
       // coluna divergente, etc.), NÃO pode derrubar o "marcar como enviado".
       const { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm } = action.payload;
       try {
-        await db.insertMensagemEnviada({
-          id,
-          atleta_id: athleteId || null,
-          atleta_nome: athleteName || null,
-          categoria, categoria_label: categoriaLabel,
-          texto, enviado_em: enviadoEm,
+        await chamarAdminAction("REGISTRAR_MENSAGEM_ENVIADA", {
+          id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm,
         });
       } catch(e) {
         console.warn("Registro de mensagem no histórico falhou (seguindo mesmo assim):", e.message);
@@ -2938,219 +2995,64 @@ export default function App() {
       await db.deleteSolicitacaoWo(id);
     }
     else if (action.type === "RESPONDER_WO") {
-      // Persiste a decisão da solicitação e, se aprovada, aplica o mesmo
-      // update que VALIDATE_RESULT(approved:false) já usa pra anular uma
-      // partida — reaproveitando o mecanismo existente de "rejeitado".
       const { id, matchId, aprovado, motivoRecusa, justificativa } = action.payload;
-      const now = new Date().toISOString();
-      await db.updateSolicitacaoWo(id, {
-        status: aprovado ? "aprovado" : "recusado",
-        respondido_em: now,
-        motivo_recusa: motivoRecusa || null,
-      });
-      if (aprovado) {
-        await db.updatePartida(matchId, {
-          rejeitado: true,
-          motivo_rejeicao: `W.O. Justificado — ${justificativa || ""}`.trim(),
-        });
-      }
+      await chamarAdminAction("RESPONDER_WO", { id, matchId, aprovado, motivoRecusa, justificativa });
+      await loadFromSupabase();
     }
     else if (action.type === "PROCESSAR_RODADA") {
-      // Espelha a mesma lógica sequencial do reducer local, pra persistir os
-      // mesmos valores finais de rating/saldo no Supabase.
+      // O cálculo (rating, saldo, favorito, snapshot de posição de todo mundo)
+      // agora é feito inteiro dentro da Edge Function — o servidor é a fonte
+      // da verdade. Recarregamos do banco depois pra refletir o resultado real.
       const { round } = action.payload;
-
-      const rodadaAnteriorPendente = round % 2 === 0 && st.matches.some(
-        m => m.round === round - 1 && m.validated && !m.calculado && !m.rejeitado
-      );
-      if (rodadaAnteriorPendente) return;
-
-      const pendentes = st.matches
-        .filter(m => m.round === round && m.validated && !m.calculado && !m.rejeitado)
-        .sort((a,b) => new Date(a.adminAprovadoEm||0) - new Date(b.adminAprovadoEm||0));
-
-      const athletesMap = {};
-      st.athletes.forEach(a => { athletesMap[a.id] = { ...a }; });
-      const infoPorPartida = {}; // matchId -> { favoritoId, diferencaRatingMomento }
-
-      pendentes.forEach(match => {
-        const p1 = athletesMap[match.p1Id];
-        const p2 = athletesMap[match.p2Id];
-        if (!p1 || !p2) return;
-        const p1wins = match.score1 > match.score2;
-        const favoritoId = p1.rating >= p2.rating ? p1.id : p2.id;
-        const diferencaRatingMomento = Math.abs(p1.rating - p2.rating);
-        const newR1 = calcElo(p1.rating, p2.rating, p1wins?1:0);
-        const newR2 = calcElo(p2.rating, p1.rating, p1wins?0:1);
-        const delta1 = newR1 - p1.rating, delta2 = newR2 - p2.rating;
-        const dataCalculo = match.adminAprovadoEm || new Date().toISOString();
-        athletesMap[match.p1Id] = {
-          ...p1, rating:newR1, saldoTemp:(p1.saldoTemp||0)+delta1,
-          wins:(p1.wins||0)+(p1wins?1:0), losses:(p1.losses||0)+(p1wins?0:1),
-          ratingPico: Math.max(p1.ratingPico || p1.rating, newR1),
-          ratingHistorico: [...(p1.ratingHistorico||[]), { data: dataCalculo, rating: newR1 }].slice(-30),
-        };
-        athletesMap[match.p2Id] = {
-          ...p2, rating:newR2, saldoTemp:(p2.saldoTemp||0)+delta2,
-          wins:(p2.wins||0)+(p1wins?0:1), losses:(p2.losses||0)+(p1wins?1:0),
-          ratingPico: Math.max(p2.ratingPico || p2.rating, newR2),
-          ratingHistorico: [...(p2.ratingHistorico||[]), { data: dataCalculo, rating: newR2 }].slice(-30),
-        };
-        infoPorPartida[match.id] = { favoritoId, diferencaRatingMomento };
-      });
-
-      // Snapshot da posição de TODOS os atletas ranqueáveis (não só os dois da
-      // partida — a posição de todo mundo pode mudar quando o saldo muda).
-      const dataSnapshot = new Date().toISOString();
-      const rankingAtual = Object.values(athletesMap)
-        .filter(a => a.status === "ativo" && !a.pendenteCircuito)
-        .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0));
-      rankingAtual.forEach((a,i) => {
-        athletesMap[a.id] = {
-          ...athletesMap[a.id],
-          posicaoHistorico: [...(athletesMap[a.id].posicaoHistorico||[]), { data: dataSnapshot, posicao: i+1 }].slice(-30),
-        };
-      });
-
-      const idsAlterados = new Set();
-      pendentes.forEach(m => { idsAlterados.add(m.p1Id); idsAlterados.add(m.p2Id); });
-      rankingAtual.forEach(a => idsAlterados.add(a.id)); // todo mundo ranqueável recebe o novo snapshot de posição
-
-      await Promise.all([...idsAlterados].map(id => {
-        const a = athletesMap[id];
-        return db.updateAtleta(id, {
-          rating:a.rating, saldo_temp:a.saldoTemp, vitorias:a.wins, derrotas:a.losses,
-          rating_pico: a.ratingPico, rating_historico: a.ratingHistorico,
-          posicao_historico: a.posicaoHistorico,
-        });
-      }));
-      await Promise.all(pendentes.map(m => db.updatePartida(m.id, {
-        calculado:true,
-        favorito_id: infoPorPartida[m.id]?.favoritoId,
-        diferenca_rating_momento: infoPorPartida[m.id]?.diferencaRatingMomento,
-      })));
+      await chamarAdminAction("PROCESSAR_RODADA", { round });
       await loadFromSupabase();
     }
     else if (action.type === "INICIAR_ETAPA") {
-      await db.updateConfig({fase:"etapa"});
-      const ativos = st.athletes.filter(a=>a.status==="ativo" && !a.pendenteCircuito);
-
-      // Prazo de REGISTRO de cada rodada: 1ª até dia 15, 2ª até dia 25 (Cap. 01/13).
-      const hoje = new Date();
-      const ano = hoje.getFullYear(), mes = hoje.getMonth();
-      const prazoA = new Date(ano, mes, 15);
-      const prazoB = new Date(ano, mes, 25);
-      if (prazoA < hoje) prazoA.setMonth(prazoA.getMonth() + 1);
-      if (prazoB < hoje) prazoB.setMonth(prazoB.getMonth() + 1);
-      const prazoAStr = prazoA.toISOString().split("T")[0];
-      const prazoBStr = prazoB.toISOString().split("T")[0];
-
-      const keyId = "key_1";
-      try { await db.insertChave({id:keyId,nome:"Chave Única",rodada_atual:1}); } catch(e){}
-      for (const a of ativos) await db.updateAtleta(a.id,{chave:keyId});
-
-      // Pareamento por rating com anti-repetição da temporada (Cap. 03)
-      const { rodada1, rodada2 } = gerarPareamentoPorRating(ativos, []);
-
-      for (const pair of rodada1) {
-        const mid=`m_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
-        await db.insertPartida({id:mid,chave_id:keyId,rodada:1,atleta1_id:pair.p1,atleta2_id:pair.p2,prazo:prazoAStr});
-      }
-      for (const pair of rodada2) {
-        const mid=`m_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
-        await db.insertPartida({id:mid,chave_id:keyId,rodada:2,atleta1_id:pair.p1,atleta2_id:pair.p2,prazo:prazoBStr});
-      }
+      // Validação de mínimo de 8 atletas, criação da chave, pareamento por
+      // rating e geração das partidas — tudo isso já roda dentro da Edge
+      // Function agora, então só recarregamos do banco depois.
+      await chamarAdminAction("INICIAR_ETAPA", {});
       await loadFromSupabase();
     }
     else if (action.type === "MARCAR_RESULTADO_COMUNICADO") {
       const { matchId, comunicado } = action.payload;
-      await db.updatePartida(matchId, { resultado_comunicado: comunicado });
+      await chamarAdminAction("MARCAR_RESULTADO_COMUNICADO", { matchId, comunicado });
     }
     else if (action.type === "NOVA_TEMPORADA") {
-      // Antes de zerar, grava a posição final de cada atleta (mesmo critério do
-      // ranking: ativo, fora do backlog, ordenado por saldo) — alimenta a carta.
-      const rankingFinal = [...st.athletes]
-        .filter(a => a.status === "ativo" && !a.pendenteCircuito)
-        .sort((a, b) => (b.saldoTemp || 0) - (a.saldoTemp || 0));
-      const rotuloTemporada = `${st.temporadaNumero}/${st.temporadaAno}`;
-      const posicaoFinal = {};
-      rankingFinal.forEach((a, i) => { posicaoFinal[a.id] = i + 1; });
-
-      // Zera saldo/vitórias/derrotas da temporada, acumula histórico, preserva rating.
-      const ativos = st.athletes.filter(a => a.status === "ativo");
-      for (const a of ativos) {
-        const historicoAtualizado = posicaoFinal[a.id]
-          ? [{ temporada: rotuloTemporada, pos: posicaoFinal[a.id] }, ...(a.historico || [])]
-          : (a.historico || []);
-        await db.updateAtleta(a.id, {
-          vitorias_total: (a.winsTotal||0) + (a.wins||0),
-          derrotas_total: (a.lossesTotal||0) + (a.losses||0),
-          saldo_temp: 0,
-          vitorias: 0,
-          derrotas: 0,
-          chave: null,
-          historico: historicoAtualizado,
-        });
-      }
-      // Remove partidas e chaves da temporada anterior
-      try { await db.deleteAllPartidas(); } catch(e){}
-      try { await db.deleteAllChaves(); } catch(e){}
-      // Avança o contador: 3 temporadas por ano (Cap. 13), depois vira o ano
-      const proximoNumero = st.temporadaNumero >= 3 ? 1 : st.temporadaNumero + 1;
-      const proximoAno = st.temporadaNumero >= 3 ? st.temporadaAno + 1 : st.temporadaAno;
-      await db.updateConfig({ fase: "inscricoes", temporada_numero: proximoNumero, temporada_ano: proximoAno });
+      // Zera saldo/vitórias/derrotas, arquiva a posição final no histórico,
+      // apaga partidas/chaves e avança o contador — tudo dentro da Edge
+      // Function agora (ação de altíssimo impacto, ótima candidata a proteção).
+      await chamarAdminAction("NOVA_TEMPORADA", {});
       await loadFromSupabase();
     }
     else if (action.type === "AVANCAR_RODADA") {
-      // Gera o próximo par mensal por rating, evitando repetir confrontos da temporada
-      const ativos = st.athletes.filter(a=>a.status==="ativo" && !a.pendenteCircuito);
-      const roundBase = Math.max(0, ...st.matches.map(m => m.round || 0));
-      const keyId = st.keys[0]?.id || "key_1";
-
-      const hoje = new Date();
-      const ano = hoje.getFullYear(), mes = hoje.getMonth();
-      const prazoA = new Date(ano, mes, 15);
-      const prazoB = new Date(ano, mes, 25);
-      if (prazoA < hoje) prazoA.setMonth(prazoA.getMonth() + 1);
-      if (prazoB < hoje) prazoB.setMonth(prazoB.getMonth() + 1);
-      const prazoAStr = prazoA.toISOString().split("T")[0];
-      const prazoBStr = prazoB.toISOString().split("T")[0];
-
-      const { rodada1, rodada2 } = gerarPareamentoPorRating(ativos, st.matches);
-      const rA = roundBase + 1, rB = roundBase + 2;
-
-      try { await db.updateChave(keyId, { rodada_atual: rB }); } catch(e){}
-      for (const pair of rodada1) {
-        const mid=`m_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
-        await db.insertPartida({id:mid,chave_id:keyId,rodada:rA,atleta1_id:pair.p1,atleta2_id:pair.p2,prazo:prazoAStr});
-      }
-      for (const pair of rodada2) {
-        const mid=`m_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
-        await db.insertPartida({id:mid,chave_id:keyId,rodada:rB,atleta1_id:pair.p1,atleta2_id:pair.p2,prazo:prazoBStr});
-      }
+      // Pareamento do próximo par mensal também roda inteiro na Edge Function.
+      await chamarAdminAction("AVANCAR_RODADA", {});
       await loadFromSupabase();
     }
     else if (action.type === "EDITAR_ATLETA") {
       const { id, nome, telefone, apelido, rating, status } = action.payload;
-      await db.updateAtleta(id, { nome, telefone, apelido: apelido||null, rating, status });
+      await chamarAdminAction("EDITAR_ATLETA", { id, nome, telefone, apelido, rating, status });
+      await loadFromSupabase();
     }
     else if (action.type === "INCLUIR_NO_CIRCUITO") {
       const { id } = action.payload;
-      await db.updateAtleta(id, { pendente_circuito: false });
+      await chamarAdminAction("INCLUIR_NO_CIRCUITO", { id });
+      await loadFromSupabase();
     }
     else if (action.type === "RECUSAR_CIRCUITO") {
       const { id } = action.payload;
-      await db.updateAtleta(id, { ultima_recusa_circuito_em: new Date().toISOString() });
+      await chamarAdminAction("RECUSAR_CIRCUITO", { id });
+      await loadFromSupabase();
     }
     else if (action.type === "ARQUIVAR_ATLETA") {
       const { id } = action.payload;
-      await db.updateAtleta(id, { status: "arquivado", pendente_circuito: false });
+      await chamarAdminAction("ARQUIVAR_ATLETA", { id });
+      await loadFromSupabase();
     }
     else if (action.type === "EXCLUIR_ATLETA") {
-      const idLocal = action.payload.id;
-      const atletas = await supaFetch(`atletas?id=eq.${idLocal}`);
-      const uuid = atletas?.[0]?.id || idLocal;
-      await supaFetch(`atletas?id=eq.${uuid}`, { method: "DELETE", prefer: "return=minimal" });
+      const { id } = action.payload;
+      await chamarAdminAction("EXCLUIR_ATLETA", { id });
       await loadFromSupabase();
     }
   }
@@ -3177,7 +3079,8 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} athlete={currentAthlete} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); }} />
+      <Header isAdmin={isAdmin} athlete={currentAthlete} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); }} />
+      {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       <DbBar/>
 
       <div style={{padding:"12px 16px 0"}}>

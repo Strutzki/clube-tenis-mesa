@@ -1822,14 +1822,25 @@ function AdminHistorico({ state }) {
                     <div style={{flex:1}}>
                       <div style={{fontSize:13,fontWeight:700,color:p1venceu?"#6a9d7a":"#F0EAE0"}}>{p1venceu?"🏆 ":""}{p1?.name}</div>
                       <div style={{fontSize:10,color:"#7d9188"}}>Rating: {p1?.rating}</div>
+                      {m.p1SubAt && (
+                        <div style={{fontSize:9,color:"#4a5d56",marginTop:1}}>Lançado em {new Date(m.p1SubAt).toLocaleDateString("pt-BR")}</div>
+                      )}
                     </div>
-                    <div style={{background:"#1C2B27",borderRadius:10,padding:"8px 14px",textAlign:"center",minWidth:64,flexShrink:0}}>
-                      <div style={{fontSize:20,fontWeight:800,color:"#fff",letterSpacing:2}}>{m.score1}<span style={{color:"#4a5d56",fontSize:14}}> × </span>{m.score2}</div>
-                      <div style={{fontSize:9,color:"#7d9188",marginTop:1}}>sets</div>
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
+                      <div style={{background:"#1C2B27",borderRadius:10,padding:"8px 14px",textAlign:"center",minWidth:64}}>
+                        <div style={{fontSize:20,fontWeight:800,color:"#fff",letterSpacing:2}}>{m.score1}<span style={{color:"#4a5d56",fontSize:14}}> × </span>{m.score2}</div>
+                        <div style={{fontSize:9,color:"#7d9188",marginTop:1}}>sets</div>
+                      </div>
+                      {m.adminAprovadoEm && (
+                        <div style={{fontSize:9,color:"#4a5d56",marginTop:3,textAlign:"center",whiteSpace:"nowrap"}}>Validado em {new Date(m.adminAprovadoEm).toLocaleDateString("pt-BR")}</div>
+                      )}
                     </div>
                     <div style={{flex:1,textAlign:"right"}}>
                       <div style={{fontSize:13,fontWeight:700,color:!p1venceu?"#6a9d7a":"#F0EAE0"}}>{!p1venceu?"🏆 ":""}{p2?.name}</div>
                       <div style={{fontSize:10,color:"#7d9188"}}>Rating: {p2?.rating}</div>
+                      {m.p2SubAt && (
+                        <div style={{fontSize:9,color:"#4a5d56",marginTop:1}}>Lançado em {new Date(m.p2SubAt).toLocaleDateString("pt-BR")}</div>
+                      )}
                     </div>
                   </div>
                 </Card>

@@ -956,7 +956,7 @@ function deadlineStatus(dateStr) {
 }
 
 // ── LOGIN SCREEN ─────────────────────────────────────────────────────────────
-function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
+function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscricao }) {
   const [mode, setMode] = useState("select"); // select | admin | athlete | inscricao | regulamento
   const [user, setUser] = useState(""), [pass, setPass] = useState("");
   const [err, setErr] = useState("");
@@ -1009,6 +1009,12 @@ function LoginScreen({ onLogin, onAthleteLogin, athletes, onInscricao }) {
             <span style={{width:36,height:36,borderRadius:11,background:"rgba(156,111,62,0.28)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:T.offwhite,fontSize:22,lineHeight:1}}>+</span>
             <span style={{flex:1}}><span style={{display:"block",fontFamily:T.serif,fontStyle:"italic",fontSize:20,lineHeight:1}}>Inscreva-se</span><span style={{display:"block",fontFamily:T.mono,fontSize:8.5,letterSpacing:0.5,textTransform:"uppercase",color:"rgba(240,234,224,0.7)",marginTop:5}}>Entre para o clube</span></span>
             <span style={{fontSize:19,color:T.offwhite}}>→</span>
+          </button>
+
+          <button onClick={onVisitante} style={{display:"flex",alignItems:"center",gap:14,width:"100%",textAlign:"left",background:"transparent",color:T.offwhite,border:"1px solid rgba(240,234,224,0.16)",borderRadius:16,padding:"17px 18px",marginTop:12,cursor:"pointer",fontFamily:T.sans}}>
+            <span style={{width:36,height:36,borderRadius:11,background:"rgba(240,234,224,0.07)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:16}}>◎</span>
+            <span style={{flex:1}}><span style={{display:"block",fontFamily:T.serif,fontSize:20,lineHeight:1}}>Visitante</span><span style={{display:"block",fontFamily:T.mono,fontSize:8.5,letterSpacing:0.5,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:5}}>Ranking e atletas, sem cadastro</span></span>
+            <span style={{fontSize:19,color:"rgba(240,234,224,0.6)"}}>→</span>
           </button>
         </div>
 
@@ -2840,6 +2846,24 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
 }
 
 // ── CONFIRMAÇÃO DE PIN (ações de escrita do admin) ────────────────────────────
+// ── BOAS-VINDAS AO VISITANTE (aparece 1x, ao entrar nesse modo) ──────────────
+function BoasVindasVisitanteModal({ onClose }) {
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:1500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{width:"100%",maxWidth:360,background:T.verdeCard,borderRadius:20,padding:"34px 26px 26px",border:`1px solid ${T.bordaSuave}`,textAlign:"center",boxSizing:"border-box"}}>
+        <span style={{display:"inline-flex",borderRadius:"50%",marginBottom:18,animation:"ctm-logoRing 3.6s ease-in-out infinite"}}>
+          <img src={LOGO} alt="Clube do Tênis de Mesa" width={64} height={64} style={{borderRadius:"50%",display:"block",border:"1px solid rgba(240,234,224,0.18)"}}/>
+        </span>
+        <div style={{fontFamily:T.serif,fontSize:24,color:T.offwhite,lineHeight:1.2,marginBottom:14}}>Que bom ter você aqui.</div>
+        <div style={{fontSize:14,color:T.cinza,lineHeight:1.65,marginBottom:26}}>
+          Dá uma olhada no ranking, veja quem está jogando e conheça a comunidade do clube — sem precisar se cadastrar. Se curtir, a inscrição é rápida.
+        </div>
+        <Btn onClick={onClose} color={T.terracota} full>Explorar</Btn>
+      </div>
+    </div>
+  );
+}
+
 function PinPromptModal({ onSubmit, onCancel }) {
   const [pin, setPin] = useState("");
   function confirmar() {
@@ -2875,6 +2899,8 @@ export default function App() {
 
   const [isAdmin, setIsAdmin] = useState(sessaoSalva.isAdmin || false);
   const [currentAthlete, setCurrentAthlete] = useState(sessaoSalva.athleteId ? {id: sessaoSalva.athleteId} : null);
+  const [isVisitante, setIsVisitante] = useState(sessaoSalva.isVisitante || false);
+  const [mostrarBoasVindasVisitante, setMostrarBoasVindasVisitante] = useState(false);
   const [tab, setTab] = useState(sessaoSalva.tab || "dashboard");
   const [dbStatus, setDbStatus] = useState("loading");
   const [dbMsg, setDbMsg] = useState("");
@@ -2890,10 +2916,11 @@ export default function App() {
     const sessao = {
       isAdmin,
       athleteId: currentAthlete?.id || null,
+      isVisitante,
       tab,
     };
     localStorage.setItem("ctm_sessao", JSON.stringify(sessao));
-  }, [isAdmin, currentAthlete, tab]);
+  }, [isAdmin, currentAthlete, isVisitante, tab]);
 
   // ── Carregar dados do Supabase ao iniciar ──────────────────
   useEffect(() => { loadFromSupabase(); }, []);
@@ -3208,10 +3235,11 @@ export default function App() {
     </div>
   ) : null;
 
-  if (!isAdmin && !currentAthlete) return (
+  if (!isAdmin && !currentAthlete && !isVisitante) return (
     <LoginScreen
       onLogin={() => { setIsAdmin(true); setTab("dashboard"); }}
       onAthleteLogin={a => { setCurrentAthlete(a); setTab("meus_jogos"); }}
+      onVisitante={() => { setIsVisitante(true); setTab("ranking"); setMostrarBoasVindasVisitante(true); }}
       athletes={state.athletes}
       onInscricao={p => dispatchAndSync({type:"INSCRICAO_ADD", payload:p})}
     />
@@ -3219,25 +3247,28 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} athlete={currentAthlete} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); }} />
+      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); }} />
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
+      {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
           <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} />
+        ) : isVisitante ? (
+          <VisitanteView state={state} tab={tab} setTab={setTab} />
         ) : (
           <AthleteView state={state} dispatch={dispatchAndSync} athlete={currentAthlete} tab={tab} setTab={setTab} />
         )}
       </div>
 
-      <BottomNav isAdmin={isAdmin} tab={tab} setTab={setTab} />
+      <BottomNav isAdmin={isAdmin} isVisitante={isVisitante} tab={tab} setTab={setTab} />
     </div>
   );
 }
 
 // ── HEADER ───────────────────────────────────────────────────────────────────
-function Header({ isAdmin, athlete, onLogout }) {
+function Header({ isAdmin, isVisitante, athlete, onLogout }) {
   return (
     <div style={{background:T.telaFundo, padding:"12px 22px 16px", display:"flex", alignItems:"center", gap:12, borderBottom:`1px solid rgba(240,234,224,0.08)`}}>
       <span style={{position:"relative",display:"inline-flex",flexShrink:0,borderRadius:"50%",animation:"ctm-logoRing 3.6s ease-in-out infinite"}}>
@@ -3248,7 +3279,7 @@ function Header({ isAdmin, athlete, onLogout }) {
         <div style={{display:"flex",alignItems:"center",gap:6,marginTop:3}}>
           <span style={{width:7,height:7,borderRadius:"50%",background:T.terracota,flexShrink:0}}/>
           <span style={{fontFamily:T.mono,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",color:"rgba(240,234,224,0.6)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-            {isAdmin ? "Administrador" : athlete?.name?.split(" ")[0]}
+            {isAdmin ? "Administrador" : isVisitante ? "Visitante" : athlete?.name?.split(" ")[0]}
           </span>
         </div>
       </div>
@@ -3294,7 +3325,7 @@ const IconComunidade = ({ ativo }) => {
   );
 };
 
-function BottomNav({ isAdmin, tab, setTab }) {
+function BottomNav({ isAdmin, isVisitante, tab, setTab }) {
   const adminTabs = [
     {id:"dashboard",  label:"Início",  icon:"🏠"},
     {id:"inscricoes", label:"Inscr.",  icon:"📝"},
@@ -3310,6 +3341,13 @@ function BottomNav({ isAdmin, tab, setTab }) {
     {id:"tabela",     label:"Tabela",     Icon:IconTabela},
     {id:"comunidade", label:"Comunidade", Icon:IconComunidade},
   ];
+  // Visitante: só as duas abas públicas, sem login — mesmos ícones já usados
+  // pro atleta, pra manter a linguagem visual consistente.
+  const visitanteTabs = [
+    {id:"ranking",    label:"Ranking",    Icon:IconRanking},
+    {id:"comunidade", label:"Comunidade", Icon:IconComunidade},
+  ];
+  const tabsComIcone = isVisitante ? visitanteTabs : athleteTabs;
   return (
     <nav style={{
       position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)",
@@ -3329,7 +3367,7 @@ function BottomNav({ isAdmin, tab, setTab }) {
             <span style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:0.6,textTransform:"uppercase",color: ativo ? T.terracota : "rgba(240,234,224,0.5)",whiteSpace:"nowrap"}}>{t.label}</span>
           </div>
         );
-      }) : athleteTabs.map(t => {
+      }) : tabsComIcone.map(t => {
         const ativo = tab === t.id;
         const Icon = t.Icon;
         return (
@@ -5276,6 +5314,13 @@ function MatchCard({ m, state, admin=false, currentAthleteId }) {
 }
 
 // ── ATHLETE VIEW ──────────────────────────────────────────────────────────────
+// Modo Visitante: só as telas públicas (ranking e comunidade), sem login.
+// currentAthleteId null em ambas — nenhum destaque de "é você" (não há você).
+function VisitanteView({ state, tab, setTab }) {
+  if (tab === "comunidade") return <ComunidadeView state={state} currentAthleteId={null} />;
+  return <RankingView state={state} currentAthleteId={null} />;
+}
+
 function AthleteView({ state, dispatch, athlete, tab, setTab }) {
   if (tab === "meus_jogos") return <AthleteGames state={state} dispatch={dispatch} athlete={athlete} />;
   if (tab === "ranking") return <RankingView state={state} currentAthleteId={athlete.id} />;

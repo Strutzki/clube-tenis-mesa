@@ -4834,7 +4834,7 @@ function AdminPendencias({ state, dispatch }) {
         {respondidasWoRecentes.map(s => {
           const aprovado = s.status === "aprovado";
           const msgSolicitante = aprovado
-            ? `Oi ${s.athleteName?.split(" ")[0]}! Sua solicitação de W.O. Justificado pra rodada ${s.round} foi aprovada. O confronto contra ${s.adversarioNome||"seu adversário"} foi anulado — ninguém perde pontos. 🎾`
+            ? `Oi ${s.athleteName?.split(" ")[0]}! Sua solicitação de W.O. Justificado pra rodada ${s.round} foi aprovada. O confronto contra ${s.adversarioNome||"seu adversário"} foi anulado — ninguém perde pontos. 🏓`
             : `Oi ${s.athleteName?.split(" ")[0]}, sua solicitação de W.O. pra rodada ${s.round} não foi aprovada. Motivo: ${s.motivoRecusa||"—"}. Você ainda precisa jogar e registrar o placar dentro do prazo normal.`;
           const msgAdversario = `Oi ${s.adversarioNome?.split(" ")[0]||""}! O confronto de vocês na rodada ${s.round} foi anulado (W.O. Justificado de ${s.athleteName}) — ninguém perde pontos. Você já pode seguir pro próximo confronto normalmente.`;
           const linkSolicitante = wppLinkWo(s.athleteId, msgSolicitante);

@@ -97,6 +97,18 @@ function nomeExibicao(atleta) {
   if (!atleta) return "?";
   return atleta.apelido ? atleta.apelido : atleta.name;
 }
+// Um atleta só entra no RANKING (não confundir com "estar no circuito") quando,
+// além de estar ativo e fora do backlog (pendenteCircuito:false), já recebeu
+// pelo menos uma partida na temporada atual. `pendenteCircuito:false` sozinho
+// só diz que ele PODE ser pareado no próximo par mensal — o admin pode incluir
+// alguém no circuito a qualquer momento, mas isso não o coloca no ranking até
+// ele de fato ter jogos atribuídos. Sem essa checagem extra, quem é incluído
+// no meio do mês aparece prematuramente no ranking com 0 pts (bug relatado
+// em 11/07 — Fabrício e Wander apareciam sem nunca terem sido pareados).
+function estaNoRanking(atleta, matches) {
+  if (!atleta || atleta.status !== "ativo" || atleta.pendenteCircuito) return false;
+  return matches.some(m => m.p1Id === atleta.id || m.p2Id === atleta.id);
+}
 // Nome com apelido entre parênteses (para telas administrativas)
 function nomeComApelido(atleta) {
   if (!atleta) return "?";
@@ -526,7 +538,7 @@ function reducer(state, action) {
       // (mesmo critério do RankingView: ativo, fora do backlog, ordenado por saldo)
       // e guarda no histórico — é o que alimenta a carta colecionável.
       const rankingFinal = [...state.athletes]
-        .filter(a => a.status === "ativo" && !a.pendenteCircuito)
+        .filter(a => estaNoRanking(a, state.matches))
         .sort((a, b) => (b.saldoTemp || 0) - (a.saldoTemp || 0));
       const rotuloTemporada = `${state.temporadaNumero}/${state.temporadaAno}`;
       const posicaoFinal = {};
@@ -659,12 +671,16 @@ function reducer(state, action) {
     case "REGISTRAR_MENSAGEM_ENVIADA": {
       // Log de disparo de WhatsApp — guarda o texto exatamente como foi
       // enviado, pra "Reenviar" funcionar igual mesmo se o dado de origem
-      // (rating, ranking etc.) já tiver mudado depois.
-      const { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm } = action.payload;
+      // (rating, ranking etc.) já tiver mudado depois. matchId (quando a
+      // categoria é por-partida, como "resultados"/"lembretes") permite
+      // diferenciar "já mandei o resultado DESSA partida" de "já mandei
+      // ALGUM resultado esse mês" — sem isso, a 2ª partida do mês de um
+      // atleta ficava presa depois que a 1ª já tinha sido comunicada.
+      const { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm, matchId } = action.payload;
       return {
         ...state,
         mensagensEnviadas: [
-          { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm },
+          { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm, matchId: matchId || null },
           ...state.mensagensEnviadas,
         ].slice(0, 200),
       };
@@ -782,7 +798,7 @@ function reducer(state, action) {
       // no ranking — alimenta o gráfico de "Evolução da posição" das Estatísticas.
       const dataSnapshot = new Date().toISOString();
       const rankingAtual = [...athletes]
-        .filter(a => a.status === "ativo" && !a.pendenteCircuito)
+        .filter(a => estaNoRanking(a, matches))
         .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0));
       const posicaoPorId = {};
       rankingAtual.forEach((a,i) => { posicaoPorId[a.id] = i+1; });
@@ -1835,7 +1851,7 @@ function AdminMensagens({ state, dispatch }) {
   const [filaCongelada, setFilaCongelada] = useState([]); // fila fixada ao iniciar (não encolhe ao marcar)
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
 
-  const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
+  const ativos = state.athletes.filter(a => estaNoRanking(a, state.matches));
   const rodadaAtual = state.keys[0]?.currentRound || 1;
   // Rodadas do PAR mensal corrente. Não dá pra assumir "1 e 2" fixos — a
   // numeração cresce a cada mês (mês 2 = rodadas 3/4, mês 3 = 5/6...). Como as
@@ -1946,10 +1962,12 @@ function AdminMensagens({ state, dispatch }) {
           return [
             {
               atleta: p1,
+              matchId: m.id,
               msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}! Sua partida contra *${nomeExibicao(p2)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
             },
             {
               atleta: p2,
+              matchId: m.id,
               msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}! Sua partida contra *${nomeExibicao(p1)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
             }
           ];
@@ -2051,16 +2069,21 @@ function AdminMensagens({ state, dispatch }) {
     return criacoes.length ? Math.min(...criacoes) : 0;
   }, [state.matches, rodadasDoMes]);
 
-  function jaEnviada(atletaId) {
+  // matchId só existe pras categorias por-partida ("resultados"/"lembretes").
+  // Quando existe, a checagem precisa bater a PARTIDA também — sem isso, a
+  // 2ª partida do mês de um atleta ficava presa depois que a 1ª já tinha
+  // sido comunicada (elas têm resultados diferentes, mas mesma categoria).
+  function jaEnviada(atletaId, matchId) {
     return (state.mensagensEnviadas || []).some(log =>
       log.athleteId === atletaId &&
       log.categoria === categoria &&
+      (matchId ? log.matchId === matchId : true) &&
       new Date(log.enviadoEm).getTime() >= inicioDoMes
     );
   }
 
-  const mensagensPendentes = mensagensTodas.filter(m => !jaEnviada(m.atleta?.id));
-  const mensagensJaEnviadas = mensagensTodas.filter(m => jaEnviada(m.atleta?.id));
+  const mensagensPendentes = mensagensTodas.filter(m => !jaEnviada(m.atleta?.id, m.matchId));
+  const mensagensJaEnviadas = mensagensTodas.filter(m => jaEnviada(m.atleta?.id, m.matchId));
   // A fila de disparo usa só as pendentes.
   const mensagens = mensagensPendentes;
 
@@ -2070,7 +2093,7 @@ function AdminMensagens({ state, dispatch }) {
     dispatch({type:"REGISTRAR_MENSAGEM_ENVIADA",payload:{
       id:`${Date.now()}-${msgItem.atleta.id}`, athleteId:msgItem.atleta.id, athleteName:nomeExibicao(msgItem.atleta),
       categoria, categoriaLabel:categorias.find(c=>c.id===categoria)?.label||categoria,
-      texto:msgItem.msg, enviadoEm:new Date().toISOString(),
+      texto:msgItem.msg, enviadoEm:new Date().toISOString(), matchId: msgItem.matchId || null,
     }});
   }
 
@@ -2828,7 +2851,7 @@ export default function App() {
       const mensagensEnviadasMapped = (mensagensLog||[]).map(m => ({
         id: m.id, athleteId: m.atleta_id, athleteName: m.atleta_nome,
         categoria: m.categoria, categoriaLabel: m.categoria_label,
-        texto: m.texto, enviadoEm: m.enviado_em,
+        texto: m.texto, enviadoEm: m.enviado_em, matchId: m.match_id || null,
       }));
       const solicitacoesWoMapped = (solicitacoesWoLog||[]).map(s => ({
         id: s.id, matchId: s.match_id, athleteId: s.atleta_id, athleteName: s.atleta_nome,
@@ -2967,10 +2990,10 @@ export default function App() {
     else if (action.type === "REGISTRAR_MENSAGEM_ENVIADA") {
       // Registro no histórico é acessório: se falhar (tabela ausente, tipo de
       // coluna divergente, etc.), NÃO pode derrubar o "marcar como enviado".
-      const { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm } = action.payload;
+      const { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm, matchId } = action.payload;
       try {
         await chamarAdminAction("REGISTRAR_MENSAGEM_ENVIADA", {
-          id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm,
+          id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm, matchId,
         });
       } catch(e) {
         console.warn("Registro de mensagem no histórico falhou (seguindo mesmo assim):", e.message);
@@ -3676,7 +3699,7 @@ function CartaModal({ athlete, posicao, onClose, podeBaixar = false }) {
 // ── PERFIL DO ATLETA (tela cheia, "capa" com foto — abre Estatísticas e Carta) ─
 function PerfilAtletaView({ state, athlete, onClose, onVerCarta, onVerEstatisticas }) {
   const eu = state.athletes.find(a => a.id === athlete.id) || athlete;
-  const ranking = [...state.athletes].filter(a=>a.status==="ativo" && !a.pendenteCircuito).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
   const minhaPos = ranking.findIndex(a => a.id === eu.id);
   const totalJogos = (eu.wins||0) + (eu.losses||0);
   const aproveitamento = totalJogos > 0 ? Math.round((eu.wins||0)/totalJogos*100) : null;
@@ -4554,7 +4577,7 @@ function AdminEtapa({ state, dispatch }) {
     <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:20}}>Inicie a etapa pelo Dashboard após aprovar atletas.</div></Card>
   );
 
-  const ranking = [...state.athletes].filter(a=>a.status==="ativo" && !a.pendenteCircuito).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
   const posicaoDe = (athleteId) => { const idx = ranking.findIndex(a => a.id === athleteId); return idx === -1 ? null : idx + 1; };
 
   return (
@@ -4962,9 +4985,9 @@ function AdminPendencias({ state, dispatch }) {
 function RankingView({ state, currentAthleteId, isAdmin=false }) {
   const [cartaAberta, setCartaAberta] = useState(null); // { athlete, posicao } | null
   const sorted = useMemo(() => [...state.athletes]
-    .filter(a=>a.status==="ativo" && !a.pendenteCircuito)
+    .filter(a=>estaNoRanking(a, state.matches))
     .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
-    [state.athletes]);
+    [state.athletes, state.matches]);
   if (sorted.length === 0) return <Card><div style={{fontSize:13,color:T.cinza,textAlign:"center",padding:20}}>Nenhum atleta ativo ainda.</div></Card>;
   const temPartidas = sorted.some(a => (a.wins||0) + (a.losses||0) > 0);
   const CORTE = 8; // Top 8 classifica para o torneio final (Cap. 09/10)
@@ -5276,7 +5299,7 @@ function AthleteGames({ state, dispatch, athlete }) {
 
   // Dados do atleta para o cabeçalho editorial
   const eu = state.athletes.find(a => a.id === athlete.id) || {};
-  const ranking = [...state.athletes].filter(a=>a.status==="ativo" && !a.pendenteCircuito).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
   const minhaPos = ranking.findIndex(a => a.id === athlete.id);
   const saldo = eu.saldoTemp || 0;
   const saldoColor = saldo > 0 ? T.verde2 : saldo < 0 ? T.vermelho : T.cinza;
@@ -5488,7 +5511,7 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
   const p1 = state.athletes.find(a=>a.id===m.p1Id);
   const p2 = state.athletes.find(a=>a.id===m.p2Id);
   const adversario = isP1 ? p2 : p1;
-  const ranking = [...state.athletes].filter(a=>a.status==="ativo" && !a.pendenteCircuito).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
   const posicaoAdversario = (() => { const idx = ranking.findIndex(a => a.id === adversario?.id); return idx === -1 ? null : idx + 1; })();
 
   function submit() {
@@ -5734,9 +5757,9 @@ function ComunidadeView({ state, currentAthleteId }) {
   // Quem ainda está no backlog não tem posição de verdade; cai depois do
   // último colocado (mesma regra já usada no "Ver carta" da tela Etapa).
   const ranking = useMemo(() => [...state.athletes]
-    .filter(a => a.status === "ativo" && !a.pendenteCircuito)
+    .filter(a => estaNoRanking(a, state.matches))
     .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
-    [state.athletes]);
+    [state.athletes, state.matches]);
   const posicaoDe = (athleteId) => { const idx = ranking.findIndex(a => a.id === athleteId); return idx === -1 ? null : idx + 1; };
 
   const feed = useMemo(() => {

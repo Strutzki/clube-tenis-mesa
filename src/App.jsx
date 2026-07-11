@@ -5317,7 +5317,7 @@ function MatchCard({ m, state, admin=false, currentAthleteId }) {
 // Modo Visitante: só as telas públicas (ranking e comunidade), sem login.
 // currentAthleteId null em ambas — nenhum destaque de "é você" (não há você).
 function VisitanteView({ state, tab, setTab }) {
-  if (tab === "comunidade") return <ComunidadeView state={state} currentAthleteId={null} />;
+  if (tab === "comunidade") return <ComunidadeView state={state} currentAthleteId={null} somenteAtletas={true} />;
   return <RankingView state={state} currentAthleteId={null} />;
 }
 
@@ -5913,7 +5913,7 @@ function tempoRelativo(ts) {
   return `Há ${dias} dias`;
 }
 
-function ComunidadeView({ state, currentAthleteId }) {
+function ComunidadeView({ state, currentAthleteId, somenteAtletas = false }) {
   const [cartaAberta, setCartaAberta] = useState(null); // { athlete, posicao } | null
 
   // Diferente do Ranking: aqui é a lista geral de membros do clube, não o
@@ -5980,34 +5980,36 @@ function ComunidadeView({ state, currentAthleteId }) {
         </div>
       </div>
 
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
-        <span style={{fontFamily:T.mono,fontSize:10,letterSpacing:2,textTransform:"uppercase",color:T.cinza,whiteSpace:"nowrap"}}>No clube</span>
-        <div style={{flex:1,height:1,background:T.bordaSuave}}/>
-      </div>
+      {!somenteAtletas && <>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
+          <span style={{fontFamily:T.mono,fontSize:10,letterSpacing:2,textTransform:"uppercase",color:T.cinza,whiteSpace:"nowrap"}}>No clube</span>
+          <div style={{flex:1,height:1,background:T.bordaSuave}}/>
+        </div>
 
-      {feed.length === 0 && (
-        <div style={{fontSize:13,color:T.cinza,textAlign:"center",padding:"16px 0"}}>Ainda não há novidades por aqui.</div>
-      )}
+        {feed.length === 0 && (
+          <div style={{fontSize:13,color:T.cinza,textAlign:"center",padding:"16px 0"}}>Ainda não há novidades por aqui.</div>
+        )}
 
-      {feed.map((f, i) => {
-        const c = tagCores[f.tipo] || tagCores.match;
-        return (
-          <div key={i} style={{display:"flex",gap:12,padding:"10px 0"}}>
-            <Avatar athlete={f.atleta} size={38}/>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontFamily:T.mono,fontSize:8,letterSpacing:0.6,textTransform:"uppercase",color:c.color,background:c.bg,padding:"3px 7px",borderRadius:12}}>{f.tag}</span>
-                <span style={{fontFamily:T.mono,fontSize:9,letterSpacing:0.5,textTransform:"uppercase",color:T.cinza}}>{tempoRelativo(f.ts)}</span>
-              </div>
-              <div style={{fontSize:13.5,lineHeight:1.4,marginTop:6,color:"rgba(240,234,224,0.8)"}}>
-                <span style={{color:T.offwhite,fontWeight:600}}>{nomeExibicao(f.atleta)}</span> {f.texto}
+        {feed.map((f, i) => {
+          const c = tagCores[f.tipo] || tagCores.match;
+          return (
+            <div key={i} style={{display:"flex",gap:12,padding:"10px 0"}}>
+              <Avatar athlete={f.atleta} size={38}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontFamily:T.mono,fontSize:8,letterSpacing:0.6,textTransform:"uppercase",color:c.color,background:c.bg,padding:"3px 7px",borderRadius:12}}>{f.tag}</span>
+                  <span style={{fontFamily:T.mono,fontSize:9,letterSpacing:0.5,textTransform:"uppercase",color:T.cinza}}>{tempoRelativo(f.ts)}</span>
+                </div>
+                <div style={{fontSize:13.5,lineHeight:1.4,marginTop:6,color:"rgba(240,234,224,0.8)"}}>
+                  <span style={{color:T.offwhite,fontWeight:600}}>{nomeExibicao(f.atleta)}</span> {f.texto}
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </>}
 
-      <div style={{marginTop:24}}>
+      <div style={{marginTop:somenteAtletas?4:24}}>
         <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:2,textTransform:"uppercase",color:T.cinza,marginBottom:14}}>Atletas do clube</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"16px 8px"}}>
           {ativos.map(a => {

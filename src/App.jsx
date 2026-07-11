@@ -2276,9 +2276,13 @@ function AdminMensagens({ state, dispatch }) {
       {categorias.map(cat => {
         const msgs = getMensagens(cat.id);
         const isSelected = categoria === cat.id;
-        // Conta enviadas pelo histórico (vale pra todas as categorias)
+        // Conta enviadas pelo histórico (vale pra todas as categorias).
+        // Mesma regra do jaEnviada(): categorias por-partida (resultados/
+        // lembretes) exigem bater a partida também, não só o atleta.
         const enviados = msgs.filter(m => (state.mensagensEnviadas||[]).some(log =>
-          log.athleteId === m.atleta?.id && log.categoria === cat.id && new Date(log.enviadoEm).getTime() >= inicioDoMes
+          log.athleteId === m.atleta?.id && log.categoria === cat.id &&
+          (m.matchId ? log.matchId === m.matchId : true) &&
+          new Date(log.enviadoEm).getTime() >= inicioDoMes
         )).length;
         const pendentes = msgs.length - enviados;
         return (

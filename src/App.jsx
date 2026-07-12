@@ -290,7 +290,7 @@ function clearPinCache() {
   try { sessionStorage.removeItem(PIN_SESSAO_KEY); } catch(e) {}
 }
 
-// ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-5, Cap. 05) ──────
+// ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-6, Cap. 05) ──────
 // Tabela Básica de Cálculo do Rating do Manual Tênis de Mesa Brasil (item 1.7.2.4.5)
 // Valores por faixa de diferença de rating. Peso: rodada regular = 1, torneio = 2.
 
@@ -477,7 +477,7 @@ function reducer(state, action) {
         status: "pendente", key: null,
         aceiteRegulamento: aceiteRegulamento || false,
         dataAceiteRegulamento: dataAceite || null,
-        versaoRegulamento: "v03-5",
+        versaoRegulamento: "v03-6",
         aceiteLGPD: aceiteLGPD || false,
         dataAceiteLGPD: dataAceite || null,
         inscritoEm: dataAceite || new Date().toISOString(),
@@ -1270,7 +1270,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
                 <div style={{fontSize:11,color:"#9db3a8",lineHeight:1.6}}>{d}</div>
               </div>
             ))}
-            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>Regulamento completo disponível na tela inicial · v03-5</div>
+            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>Regulamento completo disponível na tela inicial · v03-6</div>
           </div>
         )}
 
@@ -1280,7 +1280,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
               {aceiteReg && <span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}
             </div>
             <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>
-              Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-5). Estou ciente do aviso sobre atletas federados pela CBTM.
+              Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-6). Estou ciente do aviso sobre atletas federados pela CBTM.
             </div>
           </div>
         )}
@@ -1317,7 +1317,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
         <div style={{background:"rgba(74,222,128,0.08)", border:"1px solid rgba(74,222,128,0.2)", borderRadius:10, padding:"12px 14px", marginBottom:16, textAlign:"left"}}>
           <div style={{fontSize:11, fontWeight:700, color:"#6a9d7a", marginBottom:8}}>✓ Registrado com sucesso</div>
           <div style={{fontSize:11, color:"#7d9188", lineHeight:1.8}}>
-            📋 Aceite do regulamento v03-5<br/>
+            📋 Aceite do regulamento v03-6<br/>
             🔒 Consentimento LGPD (Lei 13.709/2018)<br/>
             📅 Data/hora: {new Date().toLocaleString("pt-BR")}
           </div>
@@ -1332,7 +1332,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
 
 
 
-// ── REGULAMENTO VIEW (regulamento v03-5) ─────────────────────────────────────
+// ── REGULAMENTO VIEW (regulamento v03-6) ─────────────────────────────────────
 function RegulamentoView({ onBack }) {
   const [capAberto, setCapAberto] = useState(null);
 
@@ -1764,7 +1764,7 @@ function RegulamentoView({ onBack }) {
           ]}/>
           <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A decisão do administrador em casos omissos é final. Situações recorrentes podem motivar a inclusão de uma nova regra em versão futura deste regulamento.</p>
         </Box>
-        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Circuito BH · Regulamento v03-5</div>
+        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Circuito BH · Regulamento v03-6</div>
       </div>
     );
     return null;
@@ -1780,7 +1780,7 @@ function RegulamentoView({ onBack }) {
         <div style={s.logoWrap}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
         <div style={{flex:1,marginLeft:10}}>
           <div style={{fontSize:14,fontWeight:800,color:"#fff"}}>Regulamento Oficial</div>
-          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · v03-5</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · v03-6</div>
         </div>
         <button style={s.backBtn} onClick={onBack}>← Voltar</button>
       </div>
@@ -3130,7 +3130,7 @@ export default function App() {
           saldo_temp:0, status:"pendente",
           aceite_regulamento:p.aceiteRegulamento||false,
           data_aceite_regulamento:p.dataAceite||null,
-          versao_regulamento:"v03-5",
+          versao_regulamento:"v03-6",
           aceite_lgpd:p.aceiteLGPD||false,
           data_aceite_lgpd:p.dataAceite||null,
           inscrito_em:p.dataAceite||new Date().toISOString(),

@@ -367,14 +367,19 @@ function jaSeEnfrentaram(idA, idB, historico) {
   return historico.has(`${a}|${b}`);
 }
 
-// Pareia uma rodada única por proximidade de rating, evitando confrontos já ocorridos
-// na temporada. Usa backtracking para não deixar o último par cair em repetição.
+// Pareia uma rodada única (Regulamento Cap. 03). Regra:
+//   1) EVITAR AO MÁXIMO a repetição de confrontos na temporada — prioridade
+//      absoluta, independentemente do rating.
+//   2) Quando a repetição for inevitável, escolher os reencontros de rating
+//      mais próximo.
+// Implementação: emparelhamento de custo mínimo, onde um reencontro custa muito
+// mais que qualquer diferença de rating. Assim minimiza-se PRIMEIRO o número de
+// repetições e, só como desempate, a diferença de rating.
 // Retorna { pares: [{p1,p2}], bye: idOuNull }
 function parearRodada(athletes, historico) {
   const sorted = [...athletes].sort((a, b) => (b.rating || 250) - (a.rating || 250));
 
-  // Se ímpar, o atleta com menos "opções de par válidas" recebe bye.
-  // Simplificação: tiramos o de menor rating para o bye (mais justo: menos chance de subir).
+  // Ímpar: o atleta de menor rating folga (bye), sem pontos.
   let byeId = null;
   let jogadores = sorted;
   if (sorted.length % 2 !== 0) {
@@ -382,60 +387,38 @@ function parearRodada(athletes, historico) {
     jogadores = sorted.slice(0, -1);
   }
 
-  // Backtracking: tenta emparelhar todos sem repetição, priorizando rating próximo.
   const n = jogadores.length;
-  const usados = new Array(n).fill(false);
+  const PENAL_REPETICAO = 1e7; // reencontro domina qualquer diferença de rating
 
   function custo(i, j) {
-    // quanto menor a diferença de rating, melhor (menor custo)
-    return Math.abs((jogadores[i].rating || 250) - (jogadores[j].rating || 250));
+    const repetido = jaSeEnfrentaram(jogadores[i].id, jogadores[j].id, historico) ? PENAL_REPETICAO : 0;
+    return repetido + Math.abs((jogadores[i].rating || 250) - (jogadores[j].rating || 250));
   }
 
-  function resolver(pares) {
-    // acha o primeiro não usado
-    let i = usados.findIndex(u => !u);
-    if (i === -1) return pares; // todos emparelhados
+  const usados = new Array(n).fill(false);
+  let melhorPares = null, melhorCusto = Infinity;
 
+  function resolver(pares, custoAcc) {
+    if (custoAcc >= melhorCusto) return; // poda: este caminho já não melhora
+    const i = usados.findIndex(u => !u);
+    if (i === -1) { melhorCusto = custoAcc; melhorPares = pares; return; }
     usados[i] = true;
-    // candidatos ordenados por proximidade de rating, sem repetição de histórico
     const candidatos = [];
     for (let j = 0; j < n; j++) {
       if (j === i || usados[j]) continue;
-      if (jaSeEnfrentaram(jogadores[i].id, jogadores[j].id, historico)) continue;
       candidatos.push({ j, c: custo(i, j) });
     }
-    candidatos.sort((a, b) => a.c - b.c);
-
-    for (const { j } of candidatos) {
+    candidatos.sort((a, b) => a.c - b.c); // tenta os melhores primeiro (poda mais cedo)
+    for (const { j, c } of candidatos) {
       usados[j] = true;
-      const res = resolver([...pares, { p1: jogadores[i].id, p2: jogadores[j].id }]);
-      if (res) return res;
+      resolver([...pares, { p1: jogadores[i].id, p2: jogadores[j].id }], custoAcc + c);
       usados[j] = false;
     }
     usados[i] = false;
-    return null; // sem solução por este caminho
   }
+  resolver([], 0);
 
-  let pares = resolver([]);
-
-  // Fallback: se não há solução 100% sem repetição, permite repetição pelo mais próximo
-  if (!pares) {
-    pares = [];
-    const u2 = new Array(n).fill(false);
-    for (let i = 0; i < n; i++) {
-      if (u2[i]) continue;
-      u2[i] = true;
-      let best = -1, bestC = Infinity;
-      for (let j = i + 1; j < n; j++) {
-        if (u2[j]) continue;
-        const c = custo(i, j);
-        if (c < bestC) { bestC = c; best = j; }
-      }
-      if (best >= 0) { u2[best] = true; pares.push({ p1: jogadores[i].id, p2: jogadores[best].id }); }
-    }
-  }
-
-  return { pares, bye: byeId };
+  return { pares: melhorPares || [], bye: byeId };
 }
 
 // Gera o PAR MENSAL (2 rodadas) por rating, com anti-repetição na temporada.
@@ -1459,10 +1442,10 @@ function RegulamentoView({ onBack }) {
       <div>
         <p style={s.p}>O sistema pareia os jogadores de forma inteligente a cada rodada, garantindo confrontos equilibrados e progressão natural no ranking.</p>
         <Box cor="#D85A30" titulo="⚖️ Rating Próximo">
-          <p style={s.p}>Jogadores são pareados com adversários de rating mais próximo. Quanto menor a diferença de rating, mais equilibrado o confronto.</p>
+          <p style={s.p}>Sempre que dá para evitar reencontros, os jogadores são pareados com adversários de rating mais próximo — quanto menor a diferença, mais equilibrado o confronto.</p>
         </Box>
         <Box cor="#6a9d7a" titulo="🔀 Anti-Repetição">
-          <p style={s.p}>O sistema evita repetir o mesmo confronto na mesma temporada. Só repete se não houver outro adversário disponível de nível similar.</p>
+          <p style={s.p}>Evitar reencontros na mesma temporada é a prioridade máxima do pareamento, independentemente do rating. O sistema só repete um confronto quando não há como evitar — e, nesse caso, escolhe o reencontro de rating mais próximo.</p>
         </Box>
         <Box cor="#9C6F3E" titulo="📈 Ascensão Natural">
           <p style={s.p}>Jogadores que ganham vão subindo no ranking e enfrentando adversários mais fortes ao longo da temporada.</p>

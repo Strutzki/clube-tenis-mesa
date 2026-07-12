@@ -1522,17 +1522,6 @@ function RegulamentoView({ onBack }) {
         <Box cor="#c25a45" titulo="🚫 Autodeclaração Proibida para Federados">
           <p style={s.p}>O admin pode solicitar comprovante do cadastro CBTM-Web antes de confirmar a inscrição. A tentativa de fraude no rating de entrada resulta em suspensão imediata.</p>
         </Box>
-        <Box cor="#D85A30" titulo="🏅 Tabela de Níveis — Referência rating/CBTM">
-          <Tbl headers={["Faixa","Nível","Perfil"]} rows={[
-            ["0–249","🔰 Entrada","Abaixo de 250 / sem ranking ativo"],
-            ["250–499","🥉 Bronze","Iniciante"],
-            ["700–999","🥈 Prata","Amador"],
-            ["1000–1299","🥇 Ouro","Intermediário"],
-            ["1300–1699","💎 Platina","Avançado / Clubista"],
-            ["1700–2199","💠 Diamante","Federado / Regional"],
-            ["2200+","👑 Elite","Nacional / Top BR"],
-          ]}/>
-        </Box>
         <div style={{fontSize:10,color:"#5E7569",marginTop:10,lineHeight:1.6}}>Fonte: Manual Tênis de Mesa Brasil (CBTM), item 1.7.2.4.5 — "Tabela Básica de Cálculo do Rating".</div>
       </div>
     );

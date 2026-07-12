@@ -1931,6 +1931,174 @@ function AdminHistorico({ state }) {
 
 
 // ── ADMIN MENSAGENS ───────────────────────────────────────────────────────────
+// ── GERADOR DE MENSAGENS (nível superior — sem closures do componente) ────────
+// Extraído do AdminMensagens pra poder ser chamado também do Dashboard (só
+// contagem, sem telefone — daí o default {}) sem duplicar a lógica em dois
+// lugares. Foi exatamente essa duplicação que causou o bug de mensagem
+// "presa" resolvido em 11/07 — não repetir o erro.
+const CATEGORIAS_MENSAGEM = [
+  {id:"confrontos", icon:"⚔️", label:"Confrontos da Rodada",  desc:"Avisa cada atleta sobre seu adversário"},
+  {id:"resultados", icon:"📊", label:"Resultados Confirmados", desc:"Envia resultado e novo rating para cada atleta"},
+  {id:"lembretes",  icon:"⏰", label:"Lembretes de Prazo",    desc:"Alerta atletas com prazo próximo (≤3 dias)"},
+  {id:"backlog",    icon:"🆕", label:"Inscrição Aprovada",    desc:"Avisa quem foi aceito e entra na próxima rodada"},
+  {id:"ranking",    icon:"🏆", label:"Ranking para Todos",    desc:"Envia ranking atualizado para cada atleta"},
+  {id:"torneio",    icon:"🎯", label:"Convocação Torneio",    desc:"Notifica os Top 8 classificados"},
+];
+
+function calcularRodadasDoMes(state) {
+  const maxRodada = Math.max(0, ...state.matches.map(m => m.round || 0));
+  return maxRodada > 0 ? [maxRodada - 1, maxRodada] : [];
+}
+
+function calcularInicioDoMes(state) {
+  const rodadasDoMes = calcularRodadasDoMes(state);
+  const criacoes = state.matches
+    .filter(m => rodadasDoMes.includes(m.round) && m.criadoEm)
+    .map(m => new Date(m.criadoEm).getTime());
+  return criacoes.length ? Math.min(...criacoes) : 0;
+}
+
+// matchId só existe pras categorias por-partida ("resultados"/"lembretes").
+function mensagemJaEnviada(mensagensEnviadas, atletaId, categoriaItem, matchId, inicioDoMes) {
+  return (mensagensEnviadas || []).some(log =>
+    log.athleteId === atletaId &&
+    log.categoria === categoriaItem &&
+    (matchId ? log.matchId === matchId : true) &&
+    new Date(log.enviadoEm).getTime() >= inicioDoMes
+  );
+}
+
+function gerarMensagensCategoria(cat, state, telefones = {}) {
+  const ativos = state.athletes.filter(a => estaNoRanking(a, state.matches));
+  const rodadaAtual = state.keys[0]?.currentRound || 1;
+  const rodadasDoMes = calcularRodadasDoMes(state);
+
+  switch(cat) {
+
+    case "confrontos": {
+      const partidasMes = state.matches.filter(m => rodadasDoMes.includes(m.round) && !m.rejeitado);
+      const porAtleta = {};
+      partidasMes.forEach(m => {
+        const p1 = state.athletes.find(a => a.id === m.p1Id);
+        const p2 = state.athletes.find(a => a.id === m.p2Id);
+        if (!p1 || !p2) return;
+        if (!porAtleta[p1.id]) porAtleta[p1.id] = { atleta: p1, jogos: [] };
+        if (!porAtleta[p2.id]) porAtleta[p2.id] = { atleta: p2, jogos: [] };
+        porAtleta[p1.id].jogos.push({ rodada: m.round, adversario: p2, deadline: m.deadline });
+        porAtleta[p2.id].jogos.push({ rodada: m.round, adversario: p1, deadline: m.deadline });
+      });
+      return Object.values(porAtleta).map(({ atleta, jogos }) => {
+        const linhasJogos = jogos
+          .sort((a,b) => a.rodada - b.rodada)
+          .map(j => `⚔️ *Rodada ${j.rodada}:* ${nomeExibicao(j.adversario)} — 📱 ${telefones[j.adversario.id] || "—"}`)
+          .join("\n");
+        return {
+          atleta,
+          msg: `🏓 *Clube do Tênis de Mesa — Confrontos do Mês*\n\nOlá ${nomeExibicao(atleta).split(" ")[0]}! Seus dois confrontos deste mês:\n\n${linhasJogos}\n\n📅 1ª rodada: jogar e registrar entre os dias 1 e 15\n📅 2ª rodada: jogar e registrar entre os dias 1 e 25\n\nBons jogos! 🏆`,
+        };
+      });
+    }
+
+    case "resultados": {
+      const validadas = state.matches.filter(m => m.validated);
+      return validadas.map(m => {
+        const p1 = state.athletes.find(a => a.id === m.p1Id);
+        const p2 = state.athletes.find(a => a.id === m.p2Id);
+        if (!p1 || !p2) return null;
+        const p1venceu = m.score1 > m.score2;
+        const statusPontuacao = (p1b) => m.calculado
+          ? `📊 Seu novo Rating: *${p1b.rating}*\nSaldo na temporada: *${(p1b.saldoTemp||0) > 0 ? "+" : ""}${p1b.saldoTemp||0} pts*`
+          : `📊 Rating e saldo: *ainda em processamento* — aguardando o fechamento da rodada`;
+        return [
+          {
+            atleta: p1,
+            matchId: m.id,
+            comunicado: m.resultadoComunicado || false,
+            msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}!\n\n${p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p1)}\n\nConfira o ranking atualizado no app! 🏅`,
+          },
+          {
+            atleta: p2,
+            matchId: m.id,
+            comunicado: m.resultadoComunicado || false,
+            msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}!\n\n${!p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p2)}\n\nConfira o ranking atualizado no app! 🏅`,
+          }
+        ];
+      }).filter(Boolean).flat();
+    }
+
+    case "lembretes": {
+      const hoje = new Date();
+      const pendentes = state.matches.filter(m => {
+        if (m.validated || m.rejeitado) return false;
+        if (!m.deadline) return false;
+        const prazo = new Date(m.deadline);
+        const diff = (prazo - hoje) / (1000*60*60*24);
+        return diff <= 3 && diff >= 0;
+      });
+      return pendentes.map(m => {
+        const p1 = state.athletes.find(a => a.id === m.p1Id);
+        const p2 = state.athletes.find(a => a.id === m.p2Id);
+        if (!p1 || !p2) return null;
+        const diasRestantes = Math.ceil((new Date(m.deadline) - hoje) / (1000*60*60*24));
+        return [
+          {
+            atleta: p1,
+            matchId: m.id,
+            msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}! Sua partida contra *${nomeExibicao(p2)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
+          },
+          {
+            atleta: p2,
+            matchId: m.id,
+            msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}! Sua partida contra *${nomeExibicao(p1)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
+          }
+        ];
+      }).filter(Boolean).flat();
+    }
+
+    case "backlog": {
+      const emBacklog = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito);
+      return emBacklog.map(a => ({
+        atleta: a,
+        msg: `🏓 *Clube do Tênis de Mesa — Inscrição Aprovada!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Sua inscrição no Clube foi *aprovada*! 🎉\n\nComo você entrou no meio do mês, seus confrontos começam a partir da *próxima rodada* — assim que a nova etapa abrir, seus jogos já vão aparecer pra você no app.\n\nQualquer dúvida, é só chamar. Bem-vindo(a) ao Clube! 🏆`,
+      }));
+    }
+
+    case "torneio": {
+      const top8 = [...ativos]
+        .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
+        .slice(0, 8);
+      return top8.map((a, i) => ({
+        atleta: a,
+        msg: `🏆 *Clube do Tênis de Mesa — Você está no Torneio Presencial!*\n\nParabéns ${nomeExibicao(a).split(" ")[0]}! 🎉\n\nVocê terminou a temporada em *${i+1}º lugar* e está classificado para o *Torneio Presencial de Encerramento*!\n\n📅 Data e local serão divulgados em breve pelo @clubedotenisdemesa.\n\nAguarde mais informações! 🏓`,
+      }));
+    }
+
+    case "ranking": {
+      const top = [...ativos]
+        .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
+        .slice(0, 10)
+        .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
+      return ativos.map(a => ({
+        atleta: a,
+        msg: `🏆 *Clube do Tênis de Mesa — Ranking Atualizado*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Confira o ranking após a Rodada ${rodadaAtual}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | Rating: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
+      }));
+    }
+
+    default: return [];
+  }
+}
+
+// Todas as mensagens pendentes de TODAS as categorias por-atleta juntas —
+// alimenta tanto o contador do Dashboard (chamada sem telefone) quanto a
+// fila unificada de disparo em Mensagens (chamada com telefone de verdade).
+function todasMensagensPendentes(state, telefones = {}) {
+  const inicioDoMes = calcularInicioDoMes(state);
+  return CATEGORIAS_MENSAGEM.flatMap(c =>
+    gerarMensagensCategoria(c.id, state, telefones)
+      .map(item => ({ ...item, categoria: c.id, categoriaLabel: c.label }))
+  ).filter(m => !mensagemJaEnviada(state.mensagensEnviadas, m.atleta?.id, m.categoria, m.matchId, inicioDoMes));
+}
+
 function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
   const [categoria, setCategoria] = useState("confrontos"); // confrontos | resultados | lembretes | torneio | ranking | coletivas
   const [disparoIdx, setDisparoIdx] = useState(null); // índice do atleta atual no fluxo sequencial
@@ -1945,13 +2113,9 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
 
   const ativos = state.athletes.filter(a => estaNoRanking(a, state.matches));
   const rodadaAtual = state.keys[0]?.currentRound || 1;
-  // Rodadas do PAR mensal corrente. Não dá pra assumir "1 e 2" fixos — a
-  // numeração cresce a cada mês (mês 2 = rodadas 3/4, mês 3 = 5/6...). Como as
-  // duas rodadas de cada mês são sempre criadas juntas, as duas maiores
-  // rodadas existentes são sempre o par do mês atual, não importa o valor de
-  // currentRound (que tem semântica diferente logo após iniciar a etapa).
-  const maxRodada = Math.max(0, ...state.matches.map(m => m.round || 0));
-  const rodadasDoMes = maxRodada > 0 ? [maxRodada - 1, maxRodada] : [];
+  // Rodadas do PAR mensal corrente — cálculo compartilhado (calcularRodadasDoMes),
+  // pra não divergir do que o Dashboard usa pro contador.
+  const rodadasDoMes = calcularRodadasDoMes(state);
 
   // ── HELPERS ────────────────────────────────────────────────────────────────
   function nomeAdv(athleteId) {
@@ -1972,137 +2136,13 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
       .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts (Rating: ${a.rating})`)
       .join("\n");
   }
-
-  // ── GERADOR DE MENSAGENS ───────────────────────────────────────────────────
+  // Geração de mensagens por categoria agora vem da função compartilhada
+  // gerarMensagensCategoria (nível superior) — evita duplicar a lógica que já
+  // causou bug uma vez (mensagem "presa" por categoria/matchId dessincronizados).
   function getMensagens(cat) {
-    switch(cat) {
-
-      case "confrontos": {
-        // Os 2 confrontos do mês corrente — sempre os dois, independente de já
-        // terem sido jogados ou não (a mensagem é a mesma do pareamento inicial).
-        const partidasMes = state.matches.filter(m => rodadasDoMes.includes(m.round) && !m.rejeitado);
-        const porAtleta = {};
-        partidasMes.forEach(m => {
-          const p1 = state.athletes.find(a => a.id === m.p1Id);
-          const p2 = state.athletes.find(a => a.id === m.p2Id);
-          if (!p1 || !p2) return;
-          if (!porAtleta[p1.id]) porAtleta[p1.id] = { atleta: p1, jogos: [] };
-          if (!porAtleta[p2.id]) porAtleta[p2.id] = { atleta: p2, jogos: [] };
-          porAtleta[p1.id].jogos.push({ rodada: m.round, adversario: p2, deadline: m.deadline });
-          porAtleta[p2.id].jogos.push({ rodada: m.round, adversario: p1, deadline: m.deadline });
-        });
-        return Object.values(porAtleta).map(({ atleta, jogos }) => {
-          const linhasJogos = jogos
-            .sort((a,b) => a.rodada - b.rodada)
-            .map(j => `⚔️ *Rodada ${j.rodada}:* ${nomeExibicao(j.adversario)} — 📱 ${telefones[j.adversario.id] || "—"}`)
-            .join("\n");
-          return {
-            atleta,
-            msg: `🏓 *Clube do Tênis de Mesa — Confrontos do Mês*\n\nOlá ${nomeExibicao(atleta).split(" ")[0]}! Seus dois confrontos deste mês:\n\n${linhasJogos}\n\n📅 1ª rodada: jogar e registrar entre os dias 1 e 15\n📅 2ª rodada: jogar e registrar entre os dias 1 e 25\n\nBons jogos! 🏆`,
-          };
-        });
-      }
-
-      case "resultados": {
-        // Todas as partidas validadas (não só da rodada atual).
-        // No modelo de par mensal, as 2 rodadas têm números diferentes — filtrar
-        // só pela rodada atual escondia os resultados da outra rodada do mês.
-        const validadas = state.matches.filter(m => m.validated);
-        return validadas.map(m => {
-          const p1 = state.athletes.find(a => a.id === m.p1Id);
-          const p2 = state.athletes.find(a => a.id === m.p2Id);
-          if (!p1 || !p2) return null;
-          const p1venceu = m.score1 > m.score2;
-          // Se o cálculo ainda não rodou, o rating/saldo mostrados são os
-          // ANTIGOS (o resultado ainda não foi contabilizado) — não faz
-          // sentido anunciar "seu novo rating" com um número que não mudou.
-          const statusPontuacao = (p1b) => m.calculado
-            ? `📊 Seu novo Rating: *${p1b.rating}*\nSaldo na temporada: *${(p1b.saldoTemp||0) > 0 ? "+" : ""}${p1b.saldoTemp||0} pts*`
-            : `📊 Rating e saldo: *ainda em processamento* — aguardando o fechamento da rodada`;
-          return [
-            {
-              atleta: p1,
-              matchId: m.id,
-              comunicado: m.resultadoComunicado || false,
-              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}!\n\n${p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p1)}\n\nConfira o ranking atualizado no app! 🏅`,
-            },
-            {
-              atleta: p2,
-              matchId: m.id,
-              comunicado: m.resultadoComunicado || false,
-              msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}!\n\n${!p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p2)}\n\nConfira o ranking atualizado no app! 🏅`,
-            }
-          ];
-        }).filter(Boolean).flat();
-      }
-
-      case "lembretes": {
-        // Partidas próximas do prazo (menos de 3 dias) e ainda não realizadas
-        const hoje = new Date();
-        const pendentes = state.matches.filter(m => {
-          if (m.validated || m.rejeitado) return false;
-          if (!m.deadline) return false;
-          const prazo = new Date(m.deadline);
-          const diff = (prazo - hoje) / (1000*60*60*24);
-          return diff <= 3 && diff >= 0;
-        });
-        return pendentes.map(m => {
-          const p1 = state.athletes.find(a => a.id === m.p1Id);
-          const p2 = state.athletes.find(a => a.id === m.p2Id);
-          if (!p1 || !p2) return null;
-          const diasRestantes = Math.ceil((new Date(m.deadline) - hoje) / (1000*60*60*24));
-          return [
-            {
-              atleta: p1,
-              matchId: m.id,
-              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}! Sua partida contra *${nomeExibicao(p2)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
-            },
-            {
-              atleta: p2,
-              matchId: m.id,
-              msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}! Sua partida contra *${nomeExibicao(p1)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
-            }
-          ];
-        }).filter(Boolean).flat();
-      }
-
-      case "backlog": {
-        // Atletas aprovados mas ainda no backlog do circuito — entraram no
-        // meio do mês, então só começam a jogar quando o admin os incluir
-        // na próxima rodada (INCLUIR_NO_CIRCUITO).
-        const emBacklog = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito);
-        return emBacklog.map(a => ({
-          atleta: a,
-          msg: `🏓 *Clube do Tênis de Mesa — Inscrição Aprovada!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Sua inscrição no Clube foi *aprovada*! 🎉\n\nComo você entrou no meio do mês, seus confrontos começam a partir da *próxima rodada* — assim que a nova etapa abrir, seus jogos já vão aparecer pra você no app.\n\nQualquer dúvida, é só chamar. Bem-vindo(a) ao Clube! 🏆`,
-        }));
-      }
-
-      case "torneio": {
-        // Top 8 atletas convocados para o torneio
-        const top8 = [...ativos]
-          .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
-          .slice(0, 8);
-        return top8.map((a, i) => ({
-          atleta: a,
-          msg: `🏆 *Clube do Tênis de Mesa — Você está no Torneio Presencial!*\n\nParabéns ${nomeExibicao(a).split(" ")[0]}! 🎉\n\nVocê terminou a temporada em *${i+1}º lugar* e está classificado para o *Torneio Presencial de Encerramento*!\n\n📅 Data e local serão divulgados em breve pelo @clubedotenisdemesa.\n\nAguarde mais informações! 🏓`,
-        }));
-      }
-
-      case "ranking": {
-        // Enviar ranking atual para todos os atletas
-        const top = [...ativos]
-          .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
-          .slice(0, 10)
-          .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
-        return ativos.map(a => ({
-          atleta: a,
-          msg: `🏆 *Clube do Tênis de Mesa — Ranking Atualizado*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Confira o ranking após a Rodada ${rodadaAtual}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | Rating: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
-        }));
-      }
-
-      default: return [];
-    }
+    return gerarMensagensCategoria(cat, state, telefones);
   }
+
 
   // ── COLETIVAS ──────────────────────────────────────────────────────────────
   const LINK_GRUPO = "https://chat.whatsapp.com/DqgZGorS9QYKYNVP1PZ0Fw";
@@ -2141,37 +2181,22 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
   }
 
   // ── FLUXO SEQUENCIAL ──────────────────────────────────────────────────────
-  const mensagensTodas = getMensagens(categoria);
-  const categorias = [
-    {id:"confrontos", icon:"⚔️", label:"Confrontos da Rodada",  desc:"Avisa cada atleta sobre seu adversário"},
-    {id:"resultados", icon:"📊", label:"Resultados Confirmados", desc:"Envia resultado e novo rating para cada atleta"},
-    {id:"lembretes",  icon:"⏰", label:"Lembretes de Prazo",    desc:"Alerta atletas com prazo próximo (≤3 dias)"},
-    {id:"backlog",    icon:"🆕", label:"Inscrição Aprovada",    desc:"Avisa quem foi aceito e entra na próxima rodada"},
-    {id:"ranking",    icon:"🏆", label:"Ranking para Todos",    desc:"Envia ranking atualizado para cada atleta"},
-    {id:"torneio",    icon:"🎯", label:"Convocação Torneio",    desc:"Notifica os Top 8 classificados"},
-  ];
+  // Cada item já sai marcado com sua própria categoria/categoriaLabel — assim
+  // registrarEnvio funciona igual tanto na fila de 1 categoria quanto na fila
+  // unificada (que mistura várias categorias), sem depender de qual categoria
+  // está selecionada no momento.
+  const mensagensTodas = getMensagens(categoria).map(m => ({
+    ...m, categoria, categoriaLabel: CATEGORIAS_MENSAGEM.find(c=>c.id===categoria)?.label||categoria,
+  }));
+  const categorias = CATEGORIAS_MENSAGEM;
 
   // "Já enviada" = existe registro no histórico pra esse atleta+categoria depois
   // do início do par mensal atual. Assim, ao virar o mês (nova rodada), a fila de
   // pendentes se renova sozinha — o corte temporal invalida os envios antigos.
-  const inicioDoMes = useMemo(() => {
-    const criacoes = state.matches
-      .filter(m => rodadasDoMes.includes(m.round) && m.criadoEm)
-      .map(m => new Date(m.criadoEm).getTime());
-    return criacoes.length ? Math.min(...criacoes) : 0;
-  }, [state.matches, rodadasDoMes]);
+  const inicioDoMes = useMemo(() => calcularInicioDoMes(state), [state.matches, rodadasDoMes]);
 
-  // matchId só existe pras categorias por-partida ("resultados"/"lembretes").
-  // Quando existe, a checagem precisa bater a PARTIDA também — sem isso, a
-  // 2ª partida do mês de um atleta ficava presa depois que a 1ª já tinha
-  // sido comunicada (elas têm resultados diferentes, mas mesma categoria).
-  function jaEnviada(atletaId, matchId) {
-    return (state.mensagensEnviadas || []).some(log =>
-      log.athleteId === atletaId &&
-      log.categoria === categoria &&
-      (matchId ? log.matchId === matchId : true) &&
-      new Date(log.enviadoEm).getTime() >= inicioDoMes
-    );
+  function jaEnviada(atletaId, matchId, cat = categoria) {
+    return mensagemJaEnviada(state.mensagensEnviadas, atletaId, cat, matchId, inicioDoMes);
   }
 
   const mensagensPendentes = mensagensTodas.filter(m => !jaEnviada(m.atleta?.id, m.matchId));
@@ -2179,18 +2204,30 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
   // A fila de disparo usa só as pendentes.
   const mensagens = mensagensPendentes;
 
+  // Fila única com TODAS as categorias por-atleta juntas — despacha tudo numa
+  // sequência só, sem precisar entrar categoria por categoria.
+  const todasPendentesUnificadas = todasMensagensPendentes(state, telefones);
+
   // Registra o envio no histórico (usado tanto pelo envio real quanto pelo
   // "marcar como enviada" manual) — é o que tira o atleta da fila de pendentes.
+  // Lê a categoria do próprio item (não da seleção atual), pra funcionar igual
+  // na fila de 1 categoria e na fila unificada.
   function registrarEnvio(msgItem) {
     dispatch({type:"REGISTRAR_MENSAGEM_ENVIADA",payload:{
       id:`${Date.now()}-${msgItem.atleta.id}`, athleteId:msgItem.atleta.id, athleteName:nomeExibicao(msgItem.atleta),
-      categoria, categoriaLabel:categorias.find(c=>c.id===categoria)?.label||categoria,
+      categoria: msgItem.categoria || categoria,
+      categoriaLabel: msgItem.categoriaLabel || categorias.find(c=>c.id===categoria)?.label||categoria,
       texto:msgItem.msg, enviadoEm:new Date().toISOString(), matchId: msgItem.matchId || null,
     }});
   }
 
   function iniciarDisparo() {
     setFilaCongelada(mensagensPendentes);
+    setDisparoIdx(0);
+    setDisparados([]);
+  }
+  function iniciarDisparoUnificado() {
+    setFilaCongelada(todasPendentesUnificadas);
     setDisparoIdx(0);
     setDisparados([]);
   }
@@ -2243,8 +2280,15 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
 
         {/* Card do atleta atual */}
         <Card style={{border:"1px solid rgba(216,90,48,0.3)"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#D85A30",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
-            Próxima mensagem
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#D85A30",textTransform:"uppercase",letterSpacing:1}}>
+              Próxima mensagem
+            </div>
+            {atual.categoriaLabel && (
+              <span style={{fontFamily:T.mono,fontSize:9,letterSpacing:0.3,textTransform:"uppercase",color:"#9C6F3E",background:"rgba(156,111,62,0.15)",padding:"3px 8px",borderRadius:10}}>
+                {atual.categoriaLabel}
+              </span>
+            )}
           </div>
           <div style={{fontSize:16,fontWeight:800,color:"#F0EAE0",marginBottom:4}}>
             {nomeComApelido(atual.atleta)}
@@ -2359,23 +2403,34 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
       <button onClick={()=>setMostrarHistorico(true)} style={{background:"none",border:`1px solid rgba(240,234,224,0.15)`,borderRadius:20,color:"#9db3a8",cursor:"pointer",fontSize:11,padding:"6px 14px",marginBottom:14}}>
         📜 Ver histórico de envios ({state.mensagensEnviadas.length})
       </button>
+
+      {/* DESPACHO UNIFICADO — todas as categorias numa fila só, sem entrar
+          categoria por categoria. As opções de sempre (por categoria,
+          reenviar, histórico) continuam abaixo, intactas. */}
+      {todasPendentesUnificadas.length > 0 && (
+        <Card style={{border:"1px solid rgba(37,211,102,0.4)",marginBottom:16}}>
+          <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0",marginBottom:4}}>🚀 Despachar tudo de uma vez</div>
+          <div style={{fontSize:12,color:"#9db3a8",marginBottom:12}}>
+            {todasPendentesUnificadas.length} mensagem(s) pendente(s), de todas as categorias juntas — clica, confirma, próxima, sem precisar escolher categoria antes.
+          </div>
+          <Btn onClick={iniciarDisparoUnificado} color="#25d366" full>
+            📲 Despachar tudo — {todasPendentesUnificadas.length} pendente(s)
+          </Btn>
+        </Card>
+      )}
+
       {/* INDIVIDUAIS */}
-      <SecTitle>📲 Disparos Individuais</SecTitle>
+      <SecTitle>📲 Disparos por Categoria</SecTitle>
       <div style={{fontSize:12,color:"#7d9188",marginBottom:12}}>
-        Selecione o tipo e o app vai guiando atleta por atleta.
+        Prefere ir categoria por categoria? Selecione o tipo e o app vai guiando atleta por atleta.
       </div>
 
       {categorias.map(cat => {
         const msgs = getMensagens(cat.id);
         const isSelected = categoria === cat.id;
-        // Conta enviadas pelo histórico (vale pra todas as categorias).
-        // Mesma regra do jaEnviada(): categorias por-partida (resultados/
-        // lembretes) exigem bater a partida também, não só o atleta.
-        const enviados = msgs.filter(m => (state.mensagensEnviadas||[]).some(log =>
-          log.athleteId === m.atleta?.id && log.categoria === cat.id &&
-          (m.matchId ? log.matchId === m.matchId : true) &&
-          new Date(log.enviadoEm).getTime() >= inicioDoMes
-        )).length;
+        // Mesma função usada em todo o resto (mensagemJaEnviada) — uma só
+        // fonte de verdade pra "já foi enviada", sem duplicar a regra aqui.
+        const enviados = msgs.filter(m => jaEnviada(m.atleta?.id, m.matchId, cat.id)).length;
         const pendentes = msgs.length - enviados;
         return (
           <div key={cat.id} onClick={()=>setCategoria(cat.id)} style={{
@@ -4251,6 +4306,9 @@ function AdminDashboard({ state, setTab, dispatch }) {
   const waitingVal = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado);
   const calculoPendente = state.matches.filter(m => m.validated && !m.calculado && !m.rejeitado);
   const pendentesWoCount = state.solicitacoesWo.filter(s => s.status === "pendente").length;
+  // Mesma função compartilhada com Mensagens — sem telefone aqui, só contagem
+  // (telefone só é necessário na hora de montar o link de WhatsApp de verdade).
+  const pendentesMensagensCount = todasMensagensPendentes(state, {}).length;
   const currentRound = state.keys[0]?.currentRound ?? 0;
   // Modelo por rating: as partidas são geradas sob demanda a cada par mensal.
   // Uma nova rodada pode ser gerada quando TODAS as partidas atuais foram resolvidas.
@@ -4296,6 +4354,7 @@ function AdminDashboard({ state, setTab, dispatch }) {
           {label:"Partidas em aberto",val:roundMatches.length,color:"#c25a45"},
           {label:"Aguardando validação",val:waitingVal.length,color:"#9C6F3E"},
           {label:"Solicitações de W.O.",val:pendentesWoCount,color:"#9C6F3E"},
+          {label:"Mensagens pendentes",val:pendentesMensagensCount,color:"#25d366"},
         ].map(s => (
           <Card key={s.label} style={{padding:"12px 14px"}}>
             <div style={{fontSize:22,fontWeight:800,color:s.color}}>{s.val}</div>
@@ -4311,6 +4370,15 @@ function AdminDashboard({ state, setTab, dispatch }) {
           <Btn onClick={()=>setTab("pendencias")} color="#9C6F3E">Ver solicitações</Btn>
         </Card>
       )}
+
+      {pendentesMensagensCount > 0 && (
+        <Card style={{marginBottom:16,border:"1px solid rgba(37,211,102,0.4)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#25d366",marginBottom:6}}>📲 {pendentesMensagensCount} mensagem(ns) de WhatsApp pendente(s)</div>
+          <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>Confrontos, resultados, lembretes e outras notificações esperando pra sair.</div>
+          <Btn onClick={()=>setTab("mensagens")} color="#25d366">Despachar mensagens</Btn>
+        </Card>
+      )}
+
 
       {state.phase === "etapa" && currentRound > 0 && (
         <Card style={{marginBottom:16}}>

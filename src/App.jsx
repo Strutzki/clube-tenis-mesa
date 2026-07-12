@@ -232,6 +232,7 @@ function mapAtletaFromDb(a) {
     ratingPico: a.rating_pico || null,
     ratingHistorico: a.rating_historico || [],
     posicaoHistorico: a.posicao_historico || [],
+    woCulpososTemporada: a.wo_culposos_temporada || 0,
   };
 }
 
@@ -739,6 +740,22 @@ function reducer(state, action) {
       // conseguiu resolver, etc.). Só remove se ainda estiver pendente.
       const { id } = action.payload;
       return { ...state, solicitacoesWo: state.solicitacoesWo.filter(s => s.id !== id) };
+    }
+
+    case "APLICAR_WO": {
+      // Classifica um W.O. numa partida. Justificado anula; Culposo/A Favor
+      // gravam a classificação (pontos entram no processamento da rodada).
+      const { matchId, tipo, faltosoId, beneficiarioId } = action.payload;
+      const matches = state.matches.map(m => {
+        if (m.id !== matchId) return m;
+        if (tipo === "justificado") return { ...m, rejeitado: true, motivoRejeicao: "W.O. Justificado" };
+        return { ...m, woTipo: tipo, woFaltosoId: tipo === "culposo" ? (faltosoId || null) : null, woBeneficiarioId: beneficiarioId || null };
+      });
+      let athletes = state.athletes;
+      if (tipo === "culposo" && faltosoId) {
+        athletes = state.athletes.map(a => a.id === faltosoId ? { ...a, woCulpososTemporada: (a.woCulpososTemporada || 0) + 1 } : a);
+      }
+      return { ...state, matches, athletes };
     }
 
     case "MARCAR_WO_NOTIFICADO": {
@@ -3006,6 +3023,9 @@ export default function App() {
         deadline: m.prazo,
         criadoEm: m.criado_em || null,
         resultadoComunicado: m.resultado_comunicado || false,
+        woTipo: m.wo_tipo || null,
+        woFaltosoId: m.wo_faltoso_id || null,
+        woBeneficiarioId: m.wo_beneficiario_id || null,
         favoritoId: m.favorito_id || null,
         diferencaRatingMomento: m.diferenca_rating_momento ?? null,
       }));
@@ -3193,6 +3213,10 @@ export default function App() {
       } catch(e) {
         console.warn("Registro de mensagem no histórico falhou (seguindo mesmo assim):", e.message);
       }
+    }
+    else if (action.type === "APLICAR_WO") {
+      await chamarAdminAction("APLICAR_WO", action.payload);
+      await loadFromSupabase();
     }
     else if (action.type === "MARCAR_WO_NOTIFICADO") {
       const { id, quem } = action.payload;
@@ -4967,6 +4991,61 @@ function ImputarResultadoForm({ m, p1, p2, dispatch }) {
 }
 
 // ── ADMIN PENDÊNCIAS ──────────────────────────────────────────────────────────
+// Controle do admin pra classificar um W.O. numa partida (Cap. 07).
+// Justificado anula; Culposo (−15 faltoso / +8 adversário) e A Favor (+8 ao
+// presente) entram no cálculo da rodada.
+function RegistrarWoInline({ m, p1, p2, dispatch }) {
+  const [aberto, setAberto] = useState(false);
+  const [tipo, setTipo] = useState(null);
+  const primeiro = (a) => a?.name?.split(" ")[0] || "?";
+  function aplicar(faltosoId, beneficiarioId) {
+    dispatch({ type: "APLICAR_WO", payload: { matchId: m.id, tipo, faltosoId, beneficiarioId } });
+    setAberto(false); setTipo(null);
+  }
+  if (!aberto) return (
+    <button onClick={() => setAberto(true)}
+      style={{ marginTop: 8, fontFamily: T.mono, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: "#9C6F3E", background: "transparent", border: "1px solid rgba(156,111,62,0.5)", borderRadius: 12, padding: "6px 12px", cursor: "pointer" }}>
+      🏳️ Registrar W.O.
+    </button>
+  );
+  return (
+    <div style={{ marginTop: 10, padding: 10, background: "#1C2B27", borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)" }}>
+      {!tipo ? (
+        <>
+          <div style={{ fontSize: 11, color: "#9db3a8", marginBottom: 8 }}>Tipo de W.O.:</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Btn small color="#6a9d7a" onClick={() => setTipo("justificado")}>Justificado (anula)</Btn>
+            <Btn small color="#c25a45" onClick={() => setTipo("culposo")}>Culposo</Btn>
+            <Btn small color="#9C6F3E" onClick={() => setTipo("a_favor")}>A Favor</Btn>
+          </div>
+          <button onClick={() => setAberto(false)} style={{ marginTop: 8, fontSize: 11, color: "#7d9188", background: "none", border: "none", cursor: "pointer" }}>cancelar</button>
+        </>
+      ) : tipo === "justificado" ? (
+        <>
+          <div style={{ fontSize: 11, color: "#9db3a8", marginBottom: 8 }}>Anular a partida — ninguém perde ou ganha pontos?</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <Btn small color="#6a9d7a" onClick={() => aplicar(null, null)}>Confirmar anulação</Btn>
+            <Btn small color={T.borda} onClick={() => setTipo(null)}>Voltar</Btn>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ fontSize: 11, color: "#9db3a8", marginBottom: 8 }}>
+            {tipo === "culposo"
+              ? "Quem faltou (confirmou e não foi)? Leva −15; o adversário ganha +8."
+              : "Quem sumiu desde o início? O adversário (presente) ganha +8; o ausente não perde pontos."}
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Btn small color="#c25a45" onClick={() => aplicar(m.p1Id, m.p2Id)}>{primeiro(p1)} faltou</Btn>
+            <Btn small color="#c25a45" onClick={() => aplicar(m.p2Id, m.p1Id)}>{primeiro(p2)} faltou</Btn>
+            <Btn small color={T.borda} onClick={() => setTipo(null)}>Voltar</Btn>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AdminPendencias({ state, dispatch, telefones, garantirTelefones }) {
   // Precisa de telefone pra notificar via WhatsApp depois de decidir um W.O.
   useEffect(() => { garantirTelefones(); }, []);
@@ -4976,9 +5055,14 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones }) {
   const [recusandoWo, setRecusandoWo] = useState({});   // { [solicitacaoId]: bool } — mostra a textarea antes de confirmar
   const [motivoRecusaWo, setMotivoRecusaWo] = useState({});
   const [notificados, setNotificados] = useState({});   // marca visual local de "já cliquei em notificar"
-  const waiting = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado);
-  const incomplete = state.matches.filter(m => !m.validated && !m.rejeitado && !(m.p1Submitted && m.p2Submitted));
+  const ehWo = m => m.woTipo === "culposo" || m.woTipo === "a_favor";
+  const waiting = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado && !ehWo(m));
+  const incomplete = state.matches.filter(m => !m.validated && !m.rejeitado && !(m.p1Submitted && m.p2Submitted) && !ehWo(m));
   const calculoPendente = state.matches.filter(m => m.validated && !m.calculado && !m.rejeitado);
+  // W.O. Culposo / A Favor classificados, aguardando entrar no cálculo da rodada.
+  const woPendente = state.matches.filter(m => ehWo(m) && !m.calculado && !m.rejeitado);
+  // Atletas que atingiram 2 W.O. culposos na temporada — admin decide a exclusão.
+  const atletasCulposos = state.athletes.filter(a => (a.woCulpososTemporada || 0) >= 2 && a.status === "ativo");
   const pendentesWo = state.solicitacoesWo.filter(s => s.status === "pendente");
   const respondidasWoRecentes = state.solicitacoesWo
     .filter(s => s.status !== "pendente" && s.respondidoEm)
@@ -4987,7 +5071,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones }) {
   // A numeração de rodada cresce a cada mês (mês 1 = 1/2, mês 2 = 3/4...),
   // então descobrimos dinamicamente quais rodadas têm cálculo pendente
   // em vez de fixar "1" e "2".
-  const roundsPendentes = [...new Set(calculoPendente.map(m => m.round))].sort((a,b) => a-b);
+  const roundsPendentes = [...new Set([...calculoPendente, ...woPendente].map(m => m.round))].sort((a,b) => a-b);
 
   function validate(m) {
     const s1 = m.p1Submitted, s2 = m.p2Submitted;
@@ -5092,6 +5176,40 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones }) {
         })}
       </>}
 
+      {atletasCulposos.length > 0 && (
+        <Card style={{border:"1px solid rgba(194,90,69,0.4)", background:"rgba(194,90,69,0.08)"}}>
+          <div style={{fontSize:12, color:"#e79b8c", fontWeight:700, marginBottom:6}}>⚠️ Atleta(s) com 2 W.O. culposos na temporada</div>
+          <div style={{fontSize:11, color:"#9db3a8"}}>Pelo regulamento (Cap. 07), 2 W.O.s culposos levam à exclusão da temporada. Você decide se vai excluir (o app não exclui sozinho):</div>
+          <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:8}}>
+            {atletasCulposos.map(a => (
+              <span key={a.id} style={{fontSize:11, color:"#F0EAE0", background:"#1C2B27", borderRadius:10, padding:"4px 10px"}}>{a.name} — {a.woCulpososTemporada} culposos</span>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {woPendente.length > 0 && <>
+        <SecTitle>🏳️ W.O. Aguardando Cálculo ({woPendente.length})</SecTitle>
+        {woPendente.map(m => {
+          const p1 = state.athletes.find(a=>a.id===m.p1Id);
+          const p2 = state.athletes.find(a=>a.id===m.p2Id);
+          const benef = state.athletes.find(a=>a.id===m.woBeneficiarioId);
+          const falt = state.athletes.find(a=>a.id===m.woFaltosoId);
+          return (
+            <Card key={m.id} style={{border:"1px solid rgba(156,111,62,0.3)"}}>
+              <div style={{fontFamily:T.mono, fontSize:10, color:T.cinza, letterSpacing:1, textTransform:"uppercase", marginBottom:6}}>Rodada {m.round}</div>
+              <div style={{fontSize:13, color:"#F0EAE0", marginBottom:4}}>{p1?.name} vs {p2?.name}</div>
+              <div style={{fontSize:11, color:"#9db3a8"}}>
+                {m.woTipo === "culposo"
+                  ? `Culposo — ${falt?.name?.split(" ")[0]} −15 · ${benef?.name?.split(" ")[0]} +8`
+                  : `A Favor — ${benef?.name?.split(" ")[0]} +8`}
+                <span style={{color:"#7d9188"}}> · aplica no processamento da rodada</span>
+              </div>
+            </Card>
+          );
+        })}
+      </>}
+
       {waiting.length > 0 && <>
         <SecTitle>🔔 Aguardando Validação ({waiting.length})</SecTitle>
         {waiting.map(m => {
@@ -5167,7 +5285,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones }) {
           // sem resolver (nem validada, nem rejeitada) — evita divulgar
           // ranking parcial antes do previsto.
           const naoResolvidos = state.matches.filter(
-            m => m.round === round && !m.validated && !m.rejeitado
+            m => m.round === round && !m.validated && !m.rejeitado && !ehWo(m)
           ).length;
           return (
             <ProcessarRodadaButton
@@ -5201,6 +5319,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones }) {
                 return <div style={{fontSize:11,color:ds.color,fontWeight:ds.urgent?700:400,marginTop:4}}>{label}</div>;
               })()}
               <ImputarResultadoForm m={m} p1={p1} p2={p2} dispatch={dispatch} />
+              <RegistrarWoInline m={m} p1={p1} p2={p2} dispatch={dispatch} />
             </Card>
           );
         })}

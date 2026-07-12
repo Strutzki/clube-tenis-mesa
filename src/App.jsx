@@ -3596,7 +3596,7 @@ async function desenharCartaCanvas({ apelido, foto, estilo = "Clássico", membro
     // cobre a janela mantendo proporção (object-fit: cover)
     const escala = Math.max(fotoW / img.width, fotoH / img.height);
     const dw = img.width * escala, dh = img.height * escala;
-    ctx.drawImage(img, fotoX + (fotoW - dw)/2, fotoY + (fotoH - dh)/2, dw, dh);
+    ctx.drawImage(img, fotoX + (fotoW - dw)/2, fotoY + (fotoH - dh)*0.2, dw, dh);
   } else {
     ctx.fillStyle = T.verdeCard;
     ctx.fillRect(fotoX, fotoY, fotoW, fotoH);
@@ -3791,7 +3791,7 @@ function AtletaCard({ apelido, foto, estilo = "Clássico", membroDesde: membroDe
           {/* janela da foto (ou retrato de reserva, se o atleta ainda não subiu foto) */}
           <div style={{ position:"relative", margin:`${px(12)}px 0 0`, borderRadius:px(14), overflow:"hidden", height:px(230), border:`2px solid ${r.frame}`, boxShadow:"inset 0 0 0 3px rgba(28,43,39,.5)" }}>
             {foto
-              ? <img src={foto} alt={apelido} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+              ? <img src={foto} alt={apelido} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", objectPosition:"center 20%", display:"block" }} />
               : <div style={{ position:"absolute", inset:0, background:T.verdeCard, display:"flex", alignItems:"center", justifyContent:"center" }}>
                   <span style={{ fontFamily:T.serif, fontSize:px(90), color:T.offwhite, opacity:0.3 }}>{apelido?.[0]?.toUpperCase()}</span>
                 </div>

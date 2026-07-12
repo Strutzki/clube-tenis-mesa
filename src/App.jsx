@@ -758,6 +758,17 @@ function reducer(state, action) {
       return { ...state, solicitacoesWo: state.solicitacoesWo.filter(s => s.id !== id) };
     }
 
+    case "MARCAR_WO_NOTIFICADO": {
+      // Marca (e persiste) que o admin já disparou a notificação de W.O. pra um
+      // dos atletas. Antes era só visual/local e sumia no refresh.
+      const { id, quem } = action.payload;
+      const campo = quem === "solicitante" ? "notificadoSolicitante" : "notificadoAdversario";
+      const solicitacoesWo = state.solicitacoesWo.map(s =>
+        s.id === id ? { ...s, [campo]: true } : s
+      );
+      return { ...state, solicitacoesWo };
+    }
+
     case "RESPONDER_WO": {
       // Admin aprova ou recusa. Aprovado = aciona o MESMO mecanismo que já
       // existe pra "partida rejeitada/anulada" (usado hoje em divergências de
@@ -3030,6 +3041,8 @@ export default function App() {
         justificativa: s.justificativa, comprovanteUrl: s.comprovante_url,
         status: s.status, criadoEm: s.criado_em, respondidoEm: s.respondido_em,
         motivoRecusa: s.motivo_recusa,
+        notificadoSolicitante: s.notificado_solicitante || false,
+        notificadoAdversario: s.notificado_adversario || false,
       }));
       dispatch({ type:"LOAD_FROM_DB", payload:{
         athletes: athletesMapped, matches: matchesMapped,
@@ -3197,6 +3210,10 @@ export default function App() {
       } catch(e) {
         console.warn("Registro de mensagem no histórico falhou (seguindo mesmo assim):", e.message);
       }
+    }
+    else if (action.type === "MARCAR_WO_NOTIFICADO") {
+      const { id, quem } = action.payload;
+      await chamarAdminAction("MARCAR_WO_NOTIFICADO", { id, quem });
     }
     else if (action.type === "SOLICITAR_WO") {
       const {
@@ -5075,15 +5092,15 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones }) {
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 {linkSolicitante && (
-                  <a href={linkSolicitante} target="_blank" rel="noreferrer" onClick={()=>setNotificados({...notificados,[s.id+"_req"]:true})}
-                    style={{fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:"#F0EAE0",background:notificados[s.id+"_req"]?"transparent":"#D85A30",border:notificados[s.id+"_req"]?"1px solid rgba(255,255,255,0.2)":"none",borderRadius:14,padding:"7px 12px",textDecoration:"none"}}>
-                    📲 {notificados[s.id+"_req"]?"Notificado":`Notificar ${s.athleteName?.split(" ")[0]}`}
+                  <a href={linkSolicitante} target="_blank" rel="noreferrer" onClick={()=>dispatch({type:"MARCAR_WO_NOTIFICADO",payload:{id:s.id,quem:"solicitante"}})}
+                    style={{fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:"#F0EAE0",background:s.notificadoSolicitante?"transparent":"#D85A30",border:s.notificadoSolicitante?"1px solid rgba(255,255,255,0.2)":"none",borderRadius:14,padding:"7px 12px",textDecoration:"none"}}>
+                    📲 {s.notificadoSolicitante?"Notificado":`Notificar ${s.athleteName?.split(" ")[0]}`}
                   </a>
                 )}
                 {linkAdversario && (
-                  <a href={linkAdversario} target="_blank" rel="noreferrer" onClick={()=>setNotificados({...notificados,[s.id+"_adv"]:true})}
-                    style={{fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:"#F0EAE0",background:notificados[s.id+"_adv"]?"transparent":"#D85A30",border:notificados[s.id+"_adv"]?"1px solid rgba(255,255,255,0.2)":"none",borderRadius:14,padding:"7px 12px",textDecoration:"none"}}>
-                    📲 {notificados[s.id+"_adv"]?"Notificado":`Notificar ${s.adversarioNome?.split(" ")[0]||"adversário"}`}
+                  <a href={linkAdversario} target="_blank" rel="noreferrer" onClick={()=>dispatch({type:"MARCAR_WO_NOTIFICADO",payload:{id:s.id,quem:"adversario"}})}
+                    style={{fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:"#F0EAE0",background:s.notificadoAdversario?"transparent":"#D85A30",border:s.notificadoAdversario?"1px solid rgba(255,255,255,0.2)":"none",borderRadius:14,padding:"7px 12px",textDecoration:"none"}}>
+                    📲 {s.notificadoAdversario?"Notificado":`Notificar ${s.adversarioNome?.split(" ")[0]||"adversário"}`}
                   </a>
                 )}
               </div>

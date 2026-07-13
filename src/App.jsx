@@ -293,7 +293,8 @@ function clearPinCache() {
 
 // ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-7, Cap. 05) ──────
 // Tabela Básica de Cálculo do Rating do Manual Tênis de Mesa Brasil (item 1.7.2.4.5)
-// Valores por faixa de diferença de rating. Peso: rodada regular = 1, torneio = 2.
+// Valores por faixa de diferença de rating. Usados sempre com peso 1 (rodada
+// regular). O torneio presencial é só pódio/prêmios — NÃO afeta o rating.
 
 // Favorito vence (quem tem rating MAIOR ou igual ganha): ganha pouco
 const CBTM_FAVORITO = [
@@ -870,6 +871,8 @@ function reducer(state, action) {
     }
 
     case "AVANCAR_RODADA": {
+      // Trava de segurança (Cap. 13): no máximo 6 rodadas por temporada.
+      if (Math.max(0, ...state.matches.map(m => m.round || 0)) >= 6) return state;
       // No modelo por rating, cada "avanço" gera o próximo PAR MENSAL (2 rodadas),
       // pareando pelo rating vigente e evitando repetir confrontos da temporada (Cap. 03).
       const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
@@ -4368,7 +4371,9 @@ function AdminDashboard({ state, setTab, dispatch }) {
   // Exige validated E calculado — evita avançar de par mensal com rating desatualizado
   // (ex: jogo da Rodada 2 validado cedo, mas ainda sem o cálculo processado).
   const todasResolvidas = state.matches.length > 0 && state.matches.every(m => (m.validated && m.calculado) || m.rejeitado);
-  const hasNextRound = todasResolvidas; // sempre pode gerar o próximo par mensal se tudo foi resolvido
+  const maxRodadaTemporada = Math.max(0, ...state.matches.map(m => m.round || 0));
+  const temporadaCompleta = maxRodadaTemporada >= 6; // Cap. 13: 6 rodadas por temporada
+  const hasNextRound = todasResolvidas && !temporadaCompleta;
 
   // ── Saúde da etapa ──
   const partidasRodadaAtual = state.matches.filter(m => m.round === currentRound);
@@ -4485,6 +4490,13 @@ function AdminDashboard({ state, setTab, dispatch }) {
           <div style={{fontSize:13,fontWeight:700,color:"#6a9d7a",marginBottom:6}}>✅ Rodada {currentRound} concluída!</div>
           <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>Todos os resultados validados. Pronto para avançar.</div>
           <Btn onClick={()=>dispatch({type:"AVANCAR_RODADA"})} color="#6a9d7a">▶️ Confirmar Rodada {currentRound+1}</Btn>
+        </Card>
+      )}
+
+      {state.phase === "etapa" && temporadaCompleta && (
+        <Card style={{border:"1px solid rgba(156,111,62,0.4)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#9C6F3E",marginBottom:6}}>🏁 Temporada completa (6 rodadas)</div>
+          <div style={{fontSize:12,color:"#9db3a8"}}>A temporada atingiu as 6 rodadas previstas (Cap. 13). Para continuar, inicie uma nova temporada.</div>
         </Card>
       )}
 

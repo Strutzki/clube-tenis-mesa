@@ -457,6 +457,7 @@ const INIT = {
   matches: [],           // {id, keyId, round, p1Id, p2Id, score1, score2, validated, deadline}
   results: [],           // validated match results
   temporadaNumero: 1,    // 1, 2 ou 3 dentro do ano (Cap. 13: 3 temporadas de 3 meses)
+  rodadasPorTemporada: 6, // Cap. 13: nº de rodadas por temporada (configurável, padrão 6)
   temporadaAno: new Date().getFullYear(),
   mensagensEnviadas: [], // histórico de disparos de WhatsApp (log, não afeta ranking/rating)
   solicitacoesWo: [],    // pedidos de W.O. Justificado feitos pelo próprio atleta (Cap. 07)
@@ -871,8 +872,8 @@ function reducer(state, action) {
     }
 
     case "AVANCAR_RODADA": {
-      // Trava de segurança (Cap. 13): no máximo 6 rodadas por temporada.
-      if (Math.max(0, ...state.matches.map(m => m.round || 0)) >= 6) return state;
+      // Trava de segurança (Cap. 13): respeita o nº de rodadas configurado.
+      if (Math.max(0, ...state.matches.map(m => m.round || 0)) >= (state.rodadasPorTemporada || 6)) return state;
       // No modelo por rating, cada "avanço" gera o próximo PAR MENSAL (2 rodadas),
       // pareando pelo rating vigente e evitando repetir confrontos da temporada (Cap. 03).
       const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
@@ -911,10 +912,18 @@ function reducer(state, action) {
       return { ...state, keys, matches: [...state.matches, ...newMatches] };
     }
 
+    case "DEFINIR_RODADAS": {
+      // Define quantas rodadas a temporada tem (par, mínimo 2 — o mês publica 2 por vez).
+      const n = action.payload?.rodadas;
+      if (typeof n !== "number" || n < 2 || n % 2 !== 0) return state;
+      return { ...state, rodadasPorTemporada: n };
+    }
+
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, mensagensEnviadas, solicitacoesWo } = action.payload;
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, mensagensEnviadas, solicitacoesWo } = action.payload;
       return {
         ...state, athletes, matches, keys, phase,
+        rodadasPorTemporada: rodadasPorTemporada ?? state.rodadasPorTemporada,
         temporadaNumero: temporadaNumero ?? state.temporadaNumero,
         temporadaAno: temporadaAno ?? state.temporadaAno,
         mensagensEnviadas: mensagensEnviadas ?? state.mensagensEnviadas,
@@ -1764,7 +1773,7 @@ function RegulamentoView({ onBack }) {
     );
     if (id===13) return (
       <div>
-        <p style={s.p}>O ano é dividido em <span style={s.dest}>3 temporadas de 3 meses</span>, com janeiro, julho e dezembro reservados para férias. Cada temporada tem 6 rodadas, organizadas em pares mensais — 2 rodadas por mês.</p>
+        <p style={s.p}>O ano é dividido em <span style={s.dest}>3 temporadas de 3 meses</span>, com janeiro, julho e dezembro reservados para férias. Cada temporada tem, por padrão, 6 rodadas (número definido pelo administrador), organizadas em pares mensais — 2 rodadas por mês.</p>
         <Box cor="#D85A30" titulo="📅 Estrutura do Ano">
           <Ul items={[
             "Janeiro, julho e dezembro: meses sem rodadas",
@@ -3081,6 +3090,7 @@ export default function App() {
         keys: keysMapped, phase: config?.[0]?.fase||"inscricoes",
         temporadaNumero: config?.[0]?.temporada_numero || 1,
         temporadaAno: config?.[0]?.temporada_ano || new Date().getFullYear(),
+        rodadasPorTemporada: config?.[0]?.rodadas_por_temporada || 6,
         mensagensEnviadas: mensagensEnviadasMapped,
         solicitacoesWo: solicitacoesWoMapped,
       }});
@@ -3242,6 +3252,9 @@ export default function App() {
       } catch(e) {
         console.warn("Registro de mensagem no histórico falhou (seguindo mesmo assim):", e.message);
       }
+    }
+    else if (action.type === "DEFINIR_RODADAS") {
+      await chamarAdminAction("DEFINIR_RODADAS", { rodadas: action.payload.rodadas });
     }
     else if (action.type === "APLICAR_WO") {
       await chamarAdminAction("APLICAR_WO", action.payload);
@@ -4372,7 +4385,8 @@ function AdminDashboard({ state, setTab, dispatch }) {
   // (ex: jogo da Rodada 2 validado cedo, mas ainda sem o cálculo processado).
   const todasResolvidas = state.matches.length > 0 && state.matches.every(m => (m.validated && m.calculado) || m.rejeitado);
   const maxRodadaTemporada = Math.max(0, ...state.matches.map(m => m.round || 0));
-  const temporadaCompleta = maxRodadaTemporada >= 6; // Cap. 13: 6 rodadas por temporada
+  const rodadasPorTemp = state.rodadasPorTemporada || 6;
+  const temporadaCompleta = maxRodadaTemporada >= rodadasPorTemp; // Cap. 13: nº de rodadas por temporada (configurável)
   const hasNextRound = todasResolvidas && !temporadaCompleta;
 
   // ── Saúde da etapa ──
@@ -4495,8 +4509,8 @@ function AdminDashboard({ state, setTab, dispatch }) {
 
       {state.phase === "etapa" && temporadaCompleta && (
         <Card style={{border:"1px solid rgba(156,111,62,0.4)"}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#9C6F3E",marginBottom:6}}>🏁 Temporada completa (6 rodadas)</div>
-          <div style={{fontSize:12,color:"#9db3a8"}}>A temporada atingiu as 6 rodadas previstas (Cap. 13). Para continuar, inicie uma nova temporada.</div>
+          <div style={{fontSize:13,fontWeight:700,color:"#9C6F3E",marginBottom:6}}>🏁 Temporada completa ({rodadasPorTemp} rodadas)</div>
+          <div style={{fontSize:12,color:"#9db3a8"}}>A temporada atingiu as {rodadasPorTemp} rodadas configuradas (Cap. 13). Para continuar, inicie uma nova temporada.</div>
         </Card>
       )}
 
@@ -4569,6 +4583,15 @@ function IniciarEtapaPanel({ state, dispatch }) {
       <div style={{fontSize:11,color: faltam > 0 ? "#D85A30" : "#7d9188",marginBottom:10}}>
         {ativos.length} atleta(s) ativo(s){impar && faltam===0 ? " · número ímpar: um atleta terá folga (bye) por rodada" : ""}
         {faltam > 0 && ` · faltam ${faltam} pra atingir o mínimo de ${MINIMO} (Cap. 13 do regulamento)`}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,fontSize:12,color:"#9db3a8",flexWrap:"wrap"}}>
+        <span>Rodadas por temporada:</span>
+        <button onClick={()=>dispatch({type:"DEFINIR_RODADAS",payload:{rodadas:Math.max(2,(state.rodadasPorTemporada||6)-2)}})}
+          style={{width:28,height:28,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:16,lineHeight:1}}>−</button>
+        <b style={{color:"#F0EAE0",minWidth:22,textAlign:"center"}}>{state.rodadasPorTemporada||6}</b>
+        <button onClick={()=>dispatch({type:"DEFINIR_RODADAS",payload:{rodadas:(state.rodadasPorTemporada||6)+2}})}
+          style={{width:28,height:28,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:16,lineHeight:1}}>+</button>
+        <span style={{fontSize:10,color:"#7d9188"}}>(sempre par — o mês publica 2 rodadas por vez)</span>
       </div>
       <Btn onClick={()=>dispatch({type:"INICIAR_ETAPA",payload:{}})} color="#6a9d7a" full disabled={faltam > 0}>
         🚀 Iniciar Etapa · Pareamento por Rating

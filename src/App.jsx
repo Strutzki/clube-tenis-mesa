@@ -572,7 +572,7 @@ function reducer(state, action) {
       // e guarda no histórico — é o que alimenta a carta colecionável.
       const rankingFinal = [...state.athletes]
         .filter(a => estaNoRanking(a, state.matches))
-        .sort((a, b) => (b.saldoTemp || 0) - (a.saldoTemp || 0));
+        .sort(cmpRanking(state.matches));
       const rotuloTemporada = `${state.temporadaNumero}/${state.temporadaAno}`;
       const posicaoFinal = {};
       rankingFinal.forEach((a, i) => { posicaoFinal[a.id] = i + 1; });
@@ -859,7 +859,7 @@ function reducer(state, action) {
       const dataSnapshot = new Date().toISOString();
       const rankingAtual = [...athletes]
         .filter(a => estaNoRanking(a, matches))
-        .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0));
+        .sort(cmpRanking(matches));
       const posicaoPorId = {};
       rankingAtual.forEach((a,i) => { posicaoPorId[a.id] = i+1; });
       athletes = athletes.map(a => posicaoPorId[a.id] ? {
@@ -939,6 +939,32 @@ function reducer(state, action) {
 // ── UTILS ────────────────────────────────────────────────────────────────────
 const fmtDate = d => d ? d.split("-").reverse().join("/") : "-";
 const medalColor = i => i===0?"#FFD700":i===1?"#C0C0C0":i===2?"#CD7F32":"#6B7280";
+
+// Confronto direto entre dois atletas na temporada (só partidas validadas e não
+// anuladas): >0 se `aId` venceu mais, <0 se `bId` venceu mais.
+function confrontoDireto(aId, bId, matches) {
+  let av = 0, bv = 0;
+  (matches || []).forEach(m => {
+    if (m.rejeitado || !m.validated) return;
+    if (m.score1 == null || m.score2 == null) return;
+    if (!((m.p1Id === aId && m.p2Id === bId) || (m.p1Id === bId && m.p2Id === aId))) return;
+    const vencedor = m.score1 > m.score2 ? m.p1Id : m.p2Id;
+    if (vencedor === aId) av++; else if (vencedor === bId) bv++;
+  });
+  return av - bv;
+}
+
+// Comparador oficial do ranking da temporada (Regulamento Cap. 09):
+// 1) saldo de pontos · 2) vitórias · 3) confronto direto · 4) rating.
+function cmpRanking(matches) {
+  return (a, b) => {
+    if ((b.saldoTemp||0) !== (a.saldoTemp||0)) return (b.saldoTemp||0) - (a.saldoTemp||0);
+    if ((b.wins||0) !== (a.wins||0)) return (b.wins||0) - (a.wins||0);
+    const h2h = confrontoDireto(a.id, b.id, matches);
+    if (h2h !== 0) return -h2h; // quem venceu o confronto direto vem primeiro
+    return (b.rating||0) - (a.rating||0);
+  };
+}
 function getH2H(matches, idA, idB) {
   const jogos = matches
     .filter(m => m.validated && ((m.p1Id === idA && m.p2Id === idB) || (m.p1Id === idB && m.p2Id === idA)))
@@ -1614,6 +1640,9 @@ function RegulamentoView({ onBack }) {
         <Box cor="#D85A30" titulo="📲 App do Circuito">
           <p style={s.p}>O ranking também está disponível em tempo real no app. O placar de uma partida aparece confirmado assim que os dois atletas validam, mas o Rating e o saldo de pontos só refletem a partida depois que o administrador processa a rodada correspondente — o app mostra esse status ("aguardando cálculo") em cada partida ainda não processada.</p>
         </Box>
+        <Box cor="#D85A30" titulo="⚖️ Desempate no Ranking">
+          <p style={s.p}>Em caso de empate no saldo de pontos, a posição é definida, nesta ordem: (1) número de vitórias na temporada; (2) confronto direto entre os empatados; (3) maior rating.</p>
+        </Box>
         <Box cor="#9C6F3E" titulo="📈 Maior Salto">
           <p style={s.p}>Jogador que mais subiu de rating na rodada ganha destaque especial — "Escalada da Rodada" — publicado no Instagram e no grupo.</p>
         </Box>
@@ -1645,7 +1674,7 @@ function RegulamentoView({ onBack }) {
           <Ul items={[
             "1º: Número de vitórias no grupo",
             "2º (empate): Saldo de sets",
-            "3º (empate): Saldo de pontos",
+            "3º (empate): Saldo de pontos de jogo — anotado manualmente pelo admin no torneio presencial (não fica registrado no app)",
             "4º (empate): Confronto direto entre os empatados",
           ]}/>
         </Box>
@@ -2073,7 +2102,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
 
     case "torneio": {
       const top8 = [...ativos]
-        .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
+        .sort(cmpRanking(state.matches))
         .slice(0, 8);
       return top8.map((a, i) => ({
         atleta: a,
@@ -2083,7 +2112,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
 
     case "ranking": {
       const top = [...ativos]
-        .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
+        .sort(cmpRanking(state.matches))
         .slice(0, 10)
         .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
       return ativos.map(a => ({
@@ -2140,7 +2169,7 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
   }
   function rankingAtual() {
     return [...ativos]
-      .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
+      .sort(cmpRanking(state.matches))
       .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts (Rating: ${a.rating})`)
       .join("\n");
   }
@@ -2157,7 +2186,7 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
 
   function getMsgColetiva(tipo) {
     const top = [...ativos]
-      .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0))
+      .sort(cmpRanking(state.matches))
       .slice(0, 10)
       .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
 
@@ -3930,7 +3959,7 @@ function CartaModal({ athlete, posicao, onClose, podeBaixar = false }) {
 // ── PERFIL DO ATLETA (tela cheia, "capa" com foto — abre Estatísticas e Carta) ─
 function PerfilAtletaView({ state, athlete, onClose, onVerCarta, onVerEstatisticas }) {
   const eu = state.athletes.find(a => a.id === athlete.id) || athlete;
-  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort(cmpRanking(state.matches));
   const minhaPos = ranking.findIndex(a => a.id === eu.id);
   const totalJogos = (eu.wins||0) + (eu.losses||0);
   const aproveitamento = totalJogos > 0 ? Math.round((eu.wins||0)/totalJogos*100) : null;
@@ -4827,7 +4856,7 @@ function AdminEtapa({ state, dispatch }) {
     <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:20}}>Inicie a etapa pelo Dashboard após aprovar atletas.</div></Card>
   );
 
-  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort(cmpRanking(state.matches));
   const posicaoDe = (athleteId) => { const idx = ranking.findIndex(a => a.id === athleteId); return idx === -1 ? null : idx + 1; };
 
   return (
@@ -5334,7 +5363,7 @@ function RankingView({ state, currentAthleteId, isAdmin=false }) {
   const [cartaAberta, setCartaAberta] = useState(null); // { athlete, posicao } | null
   const sorted = useMemo(() => [...state.athletes]
     .filter(a=>estaNoRanking(a, state.matches))
-    .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
+    .sort(cmpRanking(state.matches)),
     [state.athletes, state.matches]);
   if (sorted.length === 0) return <Card><div style={{fontSize:13,color:T.cinza,textAlign:"center",padding:20}}>Nenhum atleta ativo ainda.</div></Card>;
   const temPartidas = sorted.some(a => (a.wins||0) + (a.losses||0) > 0);
@@ -5654,7 +5683,7 @@ function AthleteGames({ state, dispatch, athlete }) {
 
   // Dados do atleta para o cabeçalho editorial
   const eu = state.athletes.find(a => a.id === athlete.id) || {};
-  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort(cmpRanking(state.matches));
   const minhaPos = ranking.findIndex(a => a.id === athlete.id);
   const saldo = eu.saldoTemp || 0;
   const saldoColor = saldo > 0 ? T.verde2 : saldo < 0 ? T.vermelho : T.cinza;
@@ -5866,7 +5895,7 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
   const p1 = state.athletes.find(a=>a.id===m.p1Id);
   const p2 = state.athletes.find(a=>a.id===m.p2Id);
   const adversario = isP1 ? p2 : p1;
-  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort((a,b)=>(b.saldoTemp||0)-(a.saldoTemp||0));
+  const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort(cmpRanking(state.matches));
   const posicaoAdversario = (() => { const idx = ranking.findIndex(a => a.id === adversario?.id); return idx === -1 ? null : idx + 1; })();
 
   function submit() {
@@ -6105,7 +6134,7 @@ function ComunidadeView({ state, currentAthleteId, somenteAtletas = false }) {
   // próxima rodada) devem aparecer normalmente.
   const ativos = useMemo(() => [...state.athletes]
     .filter(a => a.status === "ativo")
-    .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
+    .sort(cmpRanking(state.matches)),
     [state.athletes]);
 
   // Posição real no ranking (exclui backlog) — usada só pra abrir a carta.
@@ -6113,7 +6142,7 @@ function ComunidadeView({ state, currentAthleteId, somenteAtletas = false }) {
   // último colocado (mesma regra já usada no "Ver carta" da tela Etapa).
   const ranking = useMemo(() => [...state.athletes]
     .filter(a => estaNoRanking(a, state.matches))
-    .sort((a,b) => (b.saldoTemp||0) - (a.saldoTemp||0)),
+    .sort(cmpRanking(state.matches)),
     [state.athletes, state.matches]);
   const posicaoDe = (athleteId) => { const idx = ranking.findIndex(a => a.id === athleteId); return idx === -1 ? null : idx + 1; };
 

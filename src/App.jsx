@@ -4542,23 +4542,26 @@ function NovaTemporadaPanel({ state, dispatch }) {
   return (
     <Card style={{border:"1px solid rgba(216,90,48,0.25)",marginTop:8}}>
       <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>🔄 Nova Temporada</div>
-      {!confirmando ? (
-        <>
-          <div style={{fontSize:11,color:"#9db3a8",marginBottom:10,lineHeight:1.5}}>
-            Zera o saldo de pontos, vitórias e derrotas da temporada de todos os atletas. O <b>rating é preservado</b> (nunca zera) e o histórico total de vitórias/derrotas é mantido. As partidas e chaves atuais são removidas e o circuito volta para inscrições.
+      <div style={{fontSize:11,color:"#9db3a8",marginBottom:10,lineHeight:1.5}}>
+        Zera o saldo de pontos, vitórias e derrotas da temporada de todos os atletas. O <b>rating é preservado</b> (nunca zera) e o histórico total de vitórias/derrotas é mantido. As partidas e chaves atuais são removidas e o circuito volta para inscrições.
+      </div>
+      <Btn onClick={()=>setConfirmando(true)} color="#D85A30">Iniciar nova temporada…</Btn>
+
+      {confirmando && (
+        <div onClick={()=>setConfirmando(false)}
+          style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:T.verdeCard,borderRadius:16,padding:22,maxWidth:380,width:"100%",border:"1px solid rgba(216,90,48,0.45)",boxShadow:"0 20px 50px rgba(0,0,0,0.5)"}}>
+            <div style={{fontSize:17,fontWeight:700,color:"#F0EAE0",marginBottom:12}}>⚠️ Iniciar nova temporada?</div>
+            <div style={{fontSize:13,color:"#c9d4ce",marginBottom:20,lineHeight:1.6}}>
+              Isto <b style={{color:"#e79b8c"}}>zera pontos, vitórias e derrotas</b> de <b>{ativos.length} atleta(s)</b> e remove todas as partidas e chaves da temporada atual. O rating é preservado. <b style={{color:"#e79b8c"}}>Esta ação não pode ser desfeita.</b>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <Btn onClick={()=>{dispatch({type:"NOVA_TEMPORADA"});setConfirmando(false);}} color="#c25a45" full>Sim, zerar temporada</Btn>
+              <Btn onClick={()=>setConfirmando(false)} color="#5E7569" full>Cancelar</Btn>
+            </div>
           </div>
-          <Btn onClick={()=>setConfirmando(true)} color="#D85A30">Iniciar nova temporada…</Btn>
-        </>
-      ) : (
-        <>
-          <div style={{fontSize:12,color:"#c25a45",marginBottom:10,lineHeight:1.5}}>
-            ⚠️ Confirma? Isto zera pontos/vitórias/derrotas de <b>{ativos.length} atleta(s)</b> e remove todas as partidas da temporada atual. Esta ação não pode ser desfeita.
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <Btn onClick={()=>{dispatch({type:"NOVA_TEMPORADA"});setConfirmando(false);}} color="#c25a45">Sim, zerar temporada</Btn>
-            <Btn onClick={()=>setConfirmando(false)} color="#5E7569">Cancelar</Btn>
-          </div>
-        </>
+        </div>
       )}
     </Card>
   );

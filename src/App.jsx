@@ -2007,6 +2007,14 @@ function calcularRodadasDoMes(state) {
   return maxRodada > 0 ? [maxRodada - 1, maxRodada] : [];
 }
 
+// Última rodada já processada (calculada no rating). As mensagens de ranking
+// refletem os resultados já computados, então usam este número — não o
+// "rodada_atual" da chave (que no par mensal fica na 1ª rodada do par).
+function ultimaRodadaProcessada(state) {
+  const rounds = (state.matches || []).filter(m => m.calculado).map(m => m.round || 0);
+  return rounds.length ? Math.max(...rounds) : 0;
+}
+
 function calcularInicioDoMes(state) {
   const rodadasDoMes = calcularRodadasDoMes(state);
   const criacoes = state.matches
@@ -2139,7 +2147,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
         .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
       return ativos.map(a => ({
         atleta: a,
-        msg: `🏆 *Clube do Tênis de Mesa — Ranking Atualizado*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Confira o ranking após a Rodada ${rodadaAtual}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | Rating: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
+        msg: `🏆 *Clube do Tênis de Mesa — Ranking Atualizado*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Confira o ranking após a Rodada ${ultimaRodadaProcessada(state) || rodadaAtual}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | Rating: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
       }));
     }
 
@@ -2232,7 +2240,7 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
       case "abertura":
         return `🏓 *Clube do Tênis de Mesa — Confrontos do Mês!*\n\nOlá galera! Os dois confrontos deste mês já estão definidos:\n\n*🗓️ Rodada ${rodadaA} — jogar e registrar até dia 15:*\n${confrontosA.join("\n")}\n\n*🗓️ Rodada ${rodadaB} — jogar e registrar até dia 25:*\n${confrontosB.join("\n")}\n\nBons jogos! 🏆`;
       case "ranking":
-        return `🏆 *Clube do Tênis de Mesa — Ranking Rodada ${rodadaAtual}*\n\n${top.join("\n")}\n\nAcompanhe todos os detalhes no app e no @clubedotenisdemesa! 🏓`;
+        return `🏆 *Clube do Tênis de Mesa — Ranking Rodada ${ultimaRodadaProcessada(state) || rodadaAtual}*\n\n${top.join("\n")}\n\nAcompanhe todos os detalhes no app e no @clubedotenisdemesa! 🏓`;
       case "encerramento":
         return `⚠️ *Clube do Tênis de Mesa — Prazo se Encerrando!*\n\nAtenção! O prazo da Rodada ${rodadaAtual} se encerra em breve.\n\nQuem ainda não jogou ou não registrou o placar, corram! Partidas não registradas serão anuladas.\n\n📲 Registre no app agora!`;
       default: return "";

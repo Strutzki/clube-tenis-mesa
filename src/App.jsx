@@ -5130,6 +5130,9 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones }) {
   const pendentesWo = state.solicitacoesWo.filter(s => s.status === "pendente");
   const respondidasWoRecentes = state.solicitacoesWo
     .filter(s => s.status !== "pendente" && s.respondidoEm)
+    // Só mostra enquanto ainda falta notificar alguém. Aprovado: solicitante E
+    // adversário. Recusado: só o solicitante. Notificados todos → some da lista.
+    .filter(s => !s.notificadoSolicitante || (s.status === "aprovado" && !s.notificadoAdversario))
     .sort((a,b) => new Date(b.respondidoEm) - new Date(a.respondidoEm))
     .slice(0, 5);
   // A numeração de rodada cresce a cada mês (mês 1 = 1/2, mês 2 = 3/4...),

@@ -1994,6 +1994,14 @@ const CATEGORIAS_MENSAGEM = [
   {id:"torneio",    icon:"🎯", label:"Convocação Torneio",    desc:"Notifica os Top 8 classificados"},
 ];
 
+// Temporada completa = todas as rodadas configuradas já jogadas E processadas.
+// Usado pra liberar a "Convocação Torneio" só no fim da temporada (não no meio).
+function temporadaCompletaCheck(state) {
+  const maxRound = Math.max(0, ...state.matches.map(m => m.round || 0));
+  if (maxRound === 0 || maxRound < (state.rodadasPorTemporada || 6)) return false;
+  return state.matches.every(m => m.calculado || m.rejeitado);
+}
+
 function calcularRodadasDoMes(state) {
   const maxRodada = Math.max(0, ...state.matches.map(m => m.round || 0));
   return maxRodada > 0 ? [maxRodada - 1, maxRodada] : [];
@@ -2113,6 +2121,8 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
     }
 
     case "torneio": {
+      // Convocação só no fim da temporada (todas as rodadas jogadas e processadas).
+      if (!temporadaCompletaCheck(state)) return [];
       const top8 = [...ativos]
         .sort(cmpRanking(state.matches))
         .slice(0, 8);
@@ -2237,7 +2247,9 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
   const mensagensTodas = getMensagens(categoria).map(m => ({
     ...m, categoria, categoriaLabel: CATEGORIAS_MENSAGEM.find(c=>c.id===categoria)?.label||categoria,
   }));
-  const categorias = CATEGORIAS_MENSAGEM;
+  const categorias = temporadaCompletaCheck(state)
+    ? CATEGORIAS_MENSAGEM
+    : CATEGORIAS_MENSAGEM.filter(c => c.id !== "torneio");
 
   // "Já enviada" = existe registro no histórico pra esse atleta+categoria depois
   // do início do par mensal atual. Assim, ao virar o mês (nova rodada), a fila de

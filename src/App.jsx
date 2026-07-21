@@ -4021,8 +4021,8 @@ function PerfilAtletaView({ state, athlete, onClose, onVerCarta, onVerEstatistic
   const barAltura = (v) => barMax === barMin ? 60 : 18 + ((v - barMin) / (barMax - barMin)) * 82;
 
   return (
-    <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column",overflowY:"auto"}}>
-      <div style={{position:"relative",height:230,flexShrink:0}}>
+    <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column",alignItems:"center",overflowY:"auto"}}>
+      <div style={{position:"relative",height:230,flexShrink:0,width:"100%",maxWidth:480}}>
         {eu.foto
           ? <img src={eu.foto} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
           : <div style={{position:"absolute",inset:0,background:T.verdeCard,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -4044,7 +4044,7 @@ function PerfilAtletaView({ state, athlete, onClose, onVerCarta, onVerEstatistic
         </div>
       </div>
 
-      <div style={{padding:"20px 22px 26px"}}>
+      <div style={{padding:"20px 22px 26px",width:"100%",maxWidth:480,boxSizing:"border-box"}}>
         <div style={{display:"flex",gap:10}}>
           <div style={{flex:1,background:"rgba(216,90,48,0.12)",border:"1px solid rgba(216,90,48,0.3)",borderRadius:16,padding:"13px 6px",textAlign:"center"}}>
             <div style={{fontFamily:T.serif,fontSize:26,lineHeight:1,color:T.offwhite}}>{eu.rating}</div>
@@ -4217,14 +4217,14 @@ function EstatisticasView({ state, athlete, onClose }) {
   };
 
   return (
-    <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column"}}>
-      <div style={{height:3,background:T.terracota,flexShrink:0}}/>
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 20px",flexShrink:0,borderBottom:`1px solid rgba(240,234,224,0.08)`}}>
+    <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column",alignItems:"center"}}>
+      <div style={{height:3,background:T.terracota,flexShrink:0,width:"100%",maxWidth:480}}/>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 20px",flexShrink:0,borderBottom:`1px solid rgba(240,234,224,0.08)`,width:"100%",maxWidth:480,boxSizing:"border-box"}}>
         <span onClick={onClose} style={{cursor:"pointer",fontSize:18,color:T.offwhite}}>←</span>
         <span style={{fontFamily:T.mono,fontSize:12,letterSpacing:1,color:T.offwhite}}>Estatísticas</span>
       </div>
 
-      <div style={{flex:1,overflowY:"auto",padding:"18px 22px 30px"}}>
+      <div style={{flex:1,overflowY:"auto",padding:"18px 22px 30px",width:"100%",maxWidth:480,boxSizing:"border-box"}}>
         <div style={{display:"flex",gap:10,marginBottom:14}}>
           <div style={{flex:1,background:"rgba(216,90,48,0.12)",border:"1px solid rgba(216,90,48,0.3)",borderRadius:16,padding:"14px 16px"}}>
             <div style={{fontFamily:T.serif,fontSize:32,lineHeight:1,color:T.offwhite}}>{eu.rating}</div>
@@ -5701,13 +5701,13 @@ function SeletorEstilo({ athlete, dispatch }) {
 // ── EDITAR PERFIL (tela cheia — reúne foto + estilo de jogo num só lugar) ─────
 function EditarPerfilView({ athlete, dispatch, onClose }) {
   return (
-    <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column"}}>
-      <div style={{height:3,background:T.terracota,flexShrink:0}}/>
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 20px",flexShrink:0,borderBottom:`1px solid rgba(240,234,224,0.08)`}}>
+    <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column",alignItems:"center"}}>
+      <div style={{height:3,background:T.terracota,flexShrink:0,width:"100%",maxWidth:480}}/>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 20px",flexShrink:0,borderBottom:`1px solid rgba(240,234,224,0.08)`,width:"100%",maxWidth:480,boxSizing:"border-box"}}>
         <span onClick={onClose} style={{cursor:"pointer",fontSize:18,color:T.offwhite}}>←</span>
         <span style={{fontFamily:T.mono,fontSize:12,letterSpacing:1,color:T.offwhite}}>Editar perfil</span>
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:"26px 22px 30px"}}>
+      <div style={{flex:1,overflowY:"auto",padding:"26px 22px 30px",width:"100%",maxWidth:480,boxSizing:"border-box"}}>
         <EditableAvatar athlete={athlete} dispatch={dispatch}/>
         <SeletorEstilo athlete={athlete} dispatch={dispatch}/>
       </div>

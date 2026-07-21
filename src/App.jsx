@@ -5808,9 +5808,11 @@ function AthleteGames({ state, dispatch, athlete }) {
       </div>
 
       <div style={{fontFamily:T.serif,fontSize:26,color:T.offwhite,lineHeight:1,marginBottom:4}}>Meus jogos</div>
-      <div style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:2,marginBottom:16}}>
-        {open.length} {open.length===1?"PARTIDA":"PARTIDAS"} EM ABERTO
-      </div>
+      {open.length > 0 && (
+        <div style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:2,marginBottom:16}}>
+          {open.length} {open.length===1?"PARTIDA":"PARTIDAS"} EM ABERTO
+        </div>
+      )}
 
       {open.length === 0 && <Card><div style={{fontSize:13,color:T.cinza,textAlign:"center",padding:16}}>Nenhuma partida em aberto.</div></Card>}
       {open.map(m => <SubmitMatchCard key={m.id} m={m} state={state} dispatch={dispatch} athlete={athlete} />)}

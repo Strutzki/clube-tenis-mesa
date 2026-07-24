@@ -117,11 +117,21 @@ function nomeComApelido(atleta) {
 // "mês/ano" de ingresso, calculado a partir da data de inscrição já existente —
 // usado na carta colecionável ("Membro desde"), sem precisar de um campo novo.
 const MESES_ABREV = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+const MESES_NOME = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 function membroDesde(inscritoEm) {
   if (!inscritoEm) return "";
   const d = new Date(inscritoEm);
   if (isNaN(d.getTime())) return "";
   return `${MESES_ABREV[d.getMonth()]}/${d.getFullYear()}`;
+}
+// Nome do mês (por extenso) a partir do prazo da rodada ("YYYY-MM-DD"). Como o
+// prazo já reflete o mês real do par (jul, ago...), a mensagem mostra o mês certo
+// mesmo que o admin envie a programação do mês seguinte com antecedência.
+function mesDoPrazo(deadline) {
+  if (!deadline) return "";
+  const d = new Date((typeof deadline === "string" && deadline.length === 10) ? deadline + "T12:00:00" : deadline);
+  if (isNaN(d.getTime())) return "";
+  return MESES_NOME[d.getMonth()];
 }
 
 const db = {
@@ -2071,9 +2081,12 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
           .sort((a,b) => a.rodada - b.rodada)
           .map(j => `⚔️ *Rodada ${j.rodada}:* ${nomeExibicao(j.adversario)} — 📱 ${telefones[j.adversario.id] || "—"}`)
           .join("\n");
+        const mesRef = mesDoPrazo(jogos[0]?.deadline);
+        const tituloMes = mesRef ? `Confrontos de ${mesRef}` : "Confrontos do Mês";
+        const rotuloMes = mesRef ? `de ${mesRef}` : "deste mês";
         return {
           atleta,
-          msg: `🏓 *Clube do Tênis de Mesa — Confrontos do Mês*\n\nOlá ${nomeExibicao(atleta).split(" ")[0]}! Seus dois confrontos deste mês:\n\n${linhasJogos}\n\n📅 1ª rodada: jogar e registrar entre os dias 1 e 15\n📅 2ª rodada: jogar e registrar entre os dias 1 e 25\n\nBons jogos! 🏆`,
+          msg: `🏓 *Clube do Tênis de Mesa — ${tituloMes}*\n\nOlá ${nomeExibicao(atleta).split(" ")[0]}! Seus dois confrontos ${rotuloMes}:\n\n${linhasJogos}\n\n📅 1ª rodada: jogar e registrar entre os dias 1 e 15\n📅 2ª rodada: jogar e registrar entre os dias 1 e 25\n\nBons jogos! 🏆`,
         };
       });
     }
@@ -2250,9 +2263,13 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
         return p1 && p2 ? `⚔️ ${nomeExibicao(p1)} vs ${nomeExibicao(p2)}` : null;
       }).filter(Boolean);
 
+    const mesColetiva = mesDoPrazo(state.matches.find(m => m.round === rodadaA)?.deadline);
+    const tituloMesColetiva = mesColetiva ? `Confrontos de ${mesColetiva}` : "Confrontos do Mês";
+    const rotuloMesColetiva = mesColetiva ? `de ${mesColetiva}` : "deste mês";
+
     switch(tipo) {
       case "abertura":
-        return `🏓 *Clube do Tênis de Mesa — Confrontos do Mês!*\n\nOlá galera! Os dois confrontos deste mês já estão definidos:\n\n*🗓️ Rodada ${rodadaA} — jogar e registrar até dia 15:*\n${confrontosA.join("\n")}\n\n*🗓️ Rodada ${rodadaB} — jogar e registrar até dia 25:*\n${confrontosB.join("\n")}\n\nBons jogos! 🏆`;
+        return `🏓 *Clube do Tênis de Mesa — ${tituloMesColetiva}!*\n\nOlá galera! Os dois confrontos ${rotuloMesColetiva} já estão definidos:\n\n*🗓️ Rodada ${rodadaA} — jogar e registrar até dia 15:*\n${confrontosA.join("\n")}\n\n*🗓️ Rodada ${rodadaB} — jogar e registrar até dia 25:*\n${confrontosB.join("\n")}\n\nBons jogos! 🏆`;
       case "ranking":
         return `🏆 *Clube do Tênis de Mesa — Ranking Rodada ${ultimaRodadaProcessada(state) || rodadaAtual}*\n\n${top.join("\n")}\n\nAcompanhe todos os detalhes no app e no @clubedotenisdemesa! 🏓`;
       case "encerramento":

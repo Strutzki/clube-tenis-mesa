@@ -882,11 +882,23 @@ function reducer(state, action) {
 
       const { rodada1, rodada2, bye1, bye2 } = gerarPareamentoPorRating(ativos, state.matches);
 
-      // Próximo mês no calendário fixo
-      const hoje = new Date();
-      const ano = hoje.getFullYear(), mes = hoje.getMonth();
-      const prazoR1 = new Date(ano, mes, 15).toISOString().split("T")[0];
-      const prazoR2 = new Date(ano, mes, 25).toISOString().split("T")[0];
+      // Prazos por calendário sequencial (Cap. 01/13): o novo par mensal usa o
+      // mês da rodada 1 da temporada + o índice do par (jul, ago, set...),
+      // independentemente da data em que o admin avança. Os dois prazos ficam
+      // SEMPRE no mesmo mês (R1 dia 15, R2 dia 25).
+      const r1Match = state.matches.find(m => (m.round || 0) === 1 && (m.deadline || m.scoreDeadline));
+      const parIndex = Math.floor(roundBase / 2); // pares: (1,2)=0, (3,4)=1...
+      let baseAno, baseMes;
+      if (r1Match) {
+        const raw1 = r1Match.deadline || r1Match.scoreDeadline;
+        const d1 = new Date(typeof raw1 === "string" && raw1.length === 10 ? raw1 + "T12:00:00" : raw1);
+        baseAno = d1.getFullYear(); baseMes = d1.getMonth() + parIndex;
+      } else {
+        const hoje = new Date();
+        baseAno = hoje.getFullYear(); baseMes = hoje.getMonth();
+      }
+      const prazoR1 = new Date(baseAno, baseMes, 15).toISOString().split("T")[0];
+      const prazoR2 = new Date(baseAno, baseMes, 25).toISOString().split("T")[0];
 
       const mkMatch = (pair, round, prazo) => ({
         id: `m_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
@@ -1044,6 +1056,8 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
         </span>
 
         <div style={{fontFamily:T.serif,fontSize:34,lineHeight:1.02,textAlign:"center",marginTop:22}}>Clube do Tênis<br/><span style={{fontStyle:"italic",color:T.terracota}}>de Mesa</span></div>
+        {/* slogan da marca — voz editorial (Adendo 01 do manual) */}
+        <div style={{fontFamily:T.serif,fontSize:19,lineHeight:1,textAlign:"center",color:T.offwhite,marginTop:10}}>Vem pro <span style={{fontStyle:"italic",color:T.terracota}}>Clube</span></div>
         <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:"rgba(240,234,224,0.5)",marginTop:12}}>Ranking · Rodadas · Resultados</div>
 
         {/* acessos principais */}
@@ -4520,11 +4534,7 @@ function AdminDashboard({ state, setTab, dispatch }) {
       )}
 
       {state.phase === "etapa" && allCurrentValidated && hasNextRound && (
-        <Card style={{border:"1px solid rgba(74,222,128,0.3)"}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#6a9d7a",marginBottom:6}}>✅ Rodada {currentRound} concluída!</div>
-          <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>Todos os resultados validados. Pronto para avançar.</div>
-          <Btn onClick={()=>dispatch({type:"AVANCAR_RODADA"})} color="#6a9d7a">▶️ Confirmar Rodada {currentRound+1}</Btn>
-        </Card>
+        <AvancarParButton currentRound={currentRound} dispatch={dispatch} />
       )}
 
       {state.phase === "etapa" && temporadaCompleta && (
@@ -4967,6 +4977,36 @@ function AdminEtapa({ state, dispatch }) {
         );
       })}
     </div>
+  );
+}
+
+// ── GERAR PRÓXIMO PAR MENSAL (comando separado, dupla confirmação) ────────────
+// Este é um comando à PARTE do processamento: processar o rating de uma rodada
+// NUNCA gera partidas. Só este botão publica o próximo par mensal (2 rodadas),
+// e de forma deliberada — para não ser confundido com "confirmar a rodada atual".
+function AvancarParButton({ currentRound, dispatch }) {
+  const [confirmando, setConfirmando] = useState(false);
+  const rA = currentRound + 1, rB = currentRound + 2;
+  return (
+    <Card style={{border:"1px solid rgba(74,222,128,0.3)"}}>
+      <div style={{fontSize:13,fontWeight:700,color:"#6a9d7a",marginBottom:6}}>✅ Rodada {currentRound} concluída!</div>
+      <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>
+        Resultados validados e processados. Gerar o próximo par mensal é um passo <b>separado</b> — faça isso só quando quiser publicar as próximas rodadas do mês seguinte.
+      </div>
+      {!confirmando ? (
+        <Btn onClick={()=>setConfirmando(true)} color="#6a9d7a">➕ Gerar próximo par mensal (Rodadas {rA} e {rB})</Btn>
+      ) : (
+        <>
+          <div style={{fontSize:12,color:"#F0EAE0",marginBottom:10}}>
+            Isto cria <b>2 rodadas novas</b> ({rA} e {rB}), com novos confrontos e prazos (dias 15 e 25 do próximo mês). Confirma a publicação?
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn small onClick={()=>{ dispatch({type:"AVANCAR_RODADA"}); setConfirmando(false); }} color="#6a9d7a">Sim, gerar Rodadas {rA} e {rB}</Btn>
+            <Btn small onClick={()=>setConfirmando(false)} color="#c25a45">Cancelar</Btn>
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 

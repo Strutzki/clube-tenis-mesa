@@ -953,6 +953,10 @@ function reducer(state, action) {
       };
     }
 
+    case "SET_MENSAGENS_ENVIADAS": {
+      return { ...state, mensagensEnviadas: action.payload || [] };
+    }
+
     case "EDITAR_ATLETA": {
       const { id, nome, telefone, apelido, rating, status } = action.payload;
       const athletes = state.athletes.map(a =>
@@ -3065,6 +3069,9 @@ export default function App() {
   // Mapa {id: telefone} carregado sob demanda (com PIN) só quando alguma
   // tela de admin realmente precisa mostrar telefone — não no login geral.
   const [telefones, setTelefones] = useState({});
+  // Histórico de mensagens (admin) — carregado sob demanda com PIN, não na carga
+  // geral (deixou de ser leitura pública). Flag pra buscar só uma vez por sessão.
+  const [msgsCarregadas, setMsgsCarregadas] = useState(false);
 
   // ── Salvar sessão quando muda ──────────────────────────────
   useEffect(() => {
@@ -3086,11 +3093,9 @@ export default function App() {
       const [atletas, partidas, chaves, config] = await Promise.all([
         db.getAtletas(), db.getPartidas(), db.getChaves(), db.getConfig(),
       ]);
-      // Busca isolada: se a tabela mensagens_enviadas ainda não existir (migration
-      // não rodada), isso NÃO pode travar o carregamento do resto do app.
-      let mensagensLog = [];
-      try { mensagensLog = await db.getMensagensEnviadas(); }
-      catch(e) { console.warn("Histórico de mensagens indisponível (migration pendente?):", e.message); }
+      // Histórico de mensagens NÃO é mais carregado aqui (deixou de ser leitura
+      // pública — LGPD). Só o admin carrega, sob demanda e com PIN, via
+      // garantirMensagensEnviadas(). Fica fora da carga geral de propósito.
       // Mesma cautela pra solicitacoes_wo — tabela nova, migration pode ainda não ter rodado.
       let solicitacoesWoLog = [];
       try { solicitacoesWoLog = await db.getSolicitacoesWo(); }
@@ -3122,11 +3127,6 @@ export default function App() {
         id: k.id, name: k.nome, currentRound: k.rodada_atual, rounds:[],
         athleteIds: athletesMapped.filter(a=>a.key===k.id).map(a=>a.id),
       }));
-      const mensagensEnviadasMapped = (mensagensLog||[]).map(m => ({
-        id: m.id, athleteId: m.atleta_id, athleteName: m.atleta_nome,
-        categoria: m.categoria, categoriaLabel: m.categoria_label,
-        texto: m.texto, enviadoEm: m.enviado_em, matchId: m.match_id || null,
-      }));
       const solicitacoesWoMapped = (solicitacoesWoLog||[]).map(s => ({
         id: s.id, matchId: s.match_id, athleteId: s.atleta_id, athleteName: s.atleta_nome,
         adversarioId: s.adversario_id, adversarioNome: s.adversario_nome, round: s.round,
@@ -3142,7 +3142,6 @@ export default function App() {
         temporadaNumero: config?.[0]?.temporada_numero || 1,
         temporadaAno: config?.[0]?.temporada_ano || new Date().getFullYear(),
         rodadasPorTemporada: config?.[0]?.rodadas_por_temporada || 6,
-        mensagensEnviadas: mensagensEnviadasMapped,
         solicitacoesWo: solicitacoesWoMapped,
       }});
       // Restaurar atleta completo da sessão após carregar do banco
@@ -3218,7 +3217,27 @@ export default function App() {
   // Garante que o mapa {id: telefone} está carregado, buscando via Edge
   // Function (PIN) só na primeira vez que alguma tela realmente precisa —
   // chamadas seguintes reaproveitam o que já foi buscado nessa sessão.
+  // Histórico de mensagens (admin) sob demanda, com PIN, via Edge Function —
+  // não é mais leitura pública. Busca uma vez por sessão; falha graciosa.
+  async function garantirMensagensEnviadas() {
+    if (msgsCarregadas) return;
+    try {
+      const dados = await chamarAdminAction("LISTAR_MENSAGENS", {});
+      const mapa = (dados || []).map(m => ({
+        id: m.id, athleteId: m.atleta_id, athleteName: m.atleta_nome,
+        categoria: m.categoria, categoriaLabel: m.categoria_label,
+        texto: m.texto, enviadoEm: m.enviado_em, matchId: m.match_id || null,
+      }));
+      dispatch({ type: "SET_MENSAGENS_ENVIADAS", payload: mapa });
+      setMsgsCarregadas(true);
+    } catch(e) {
+      console.warn("Não consegui carregar o histórico de mensagens:", e.message);
+    }
+  }
+
   async function garantirTelefones() {
+    // Carrega junto o histórico de mensagens (mesmo gatilho de admin, um só PIN).
+    await garantirMensagensEnviadas();
     if (Object.keys(telefones).length > 0) return telefones;
     try {
       const dados = await chamarAdminAction("LISTAR_TELEFONES", {});

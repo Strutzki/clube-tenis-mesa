@@ -136,7 +136,7 @@ function mesDoPrazo(deadline) {
 
 const db = {
   // Atletas
-  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico"),
+  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,exclusao_solicitada_em"),
   insertAtleta: (data) => supaFetch("atletas", { method:"POST", body: JSON.stringify(data), prefer: "return=minimal" }),
   updateAtleta: (id, data) => supaFetch(`atletas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data), prefer: "return=minimal" }),
 
@@ -244,6 +244,7 @@ function mapAtletaFromDb(a) {
     ratingHistorico: a.rating_historico || [],
     posicaoHistorico: a.posicao_historico || [],
     woCulpososTemporada: a.wo_culposos_temporada || 0,
+    exclusaoSolicitadaEm: a.exclusao_solicitada_em || null,
   };
 }
 
@@ -3275,6 +3276,26 @@ export default function App() {
     return data.dados?.url;
   }
 
+  // Anonimiza (finaliza a exclusão de) um atleta — só admin, com PIN.
+  async function anonimizarAtleta(id) {
+    const pin = await obterPin();
+    const res = await fetch(`${SUPA_URL}/functions/v1/anonimizar-atleta`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPA_KEY}`,
+        "apikey": SUPA_KEY,
+      },
+      body: JSON.stringify({ pin, id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.sucesso) {
+      if (res.status === 401) clearPinCache();
+      throw new Error(data.erro || `Erro ${res.status} ao anonimizar`);
+    }
+    await loadFromSupabase();
+  }
+
   async function dispatchAndSync(action) {
     dispatch(action);
     try { await syncToSupabase(action, state); }
@@ -3387,6 +3408,9 @@ export default function App() {
       const { id } = action.payload;
       await chamarAtletaAction("CANCELAR_WO", { id });
     }
+    else if (action.type === "SOLICITAR_EXCLUSAO") {
+      await chamarAtletaAction("SOLICITAR_EXCLUSAO", { athleteId: action.payload.athleteId });
+    }
     else if (action.type === "RESPONDER_WO") {
       const { id, matchId, aprovado, motivoRecusa, justificativa } = action.payload;
       await chamarAdminAction("RESPONDER_WO", { id, matchId, aprovado, motivoRecusa, justificativa });
@@ -3480,7 +3504,7 @@ export default function App() {
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
-          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} />
+          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} />
         ) : isVisitante ? (
           <VisitanteView state={state} tab={tab} setTab={setTab} />
         ) : (
@@ -4457,12 +4481,12 @@ const Badge = ({label, color="#D85A30"}) => (
 );
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
-function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante }) {
+function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta }) {
   if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
-  if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} />;
+  if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} />;
   if (tab === "historico") return <AdminHistorico state={state} />;
   if (tab === "mensagens") return <AdminMensagens state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   return null;
@@ -5262,7 +5286,7 @@ function ComprovanteBotao({ path, urlComprovante }) {
   );
 }
 
-function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlComprovante }) {
+function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlComprovante, anonimizarAtleta }) {
   // Precisa de telefone pra notificar via WhatsApp depois de decidir um W.O.
   useEffect(() => { garantirTelefones(); }, []);
 
@@ -5271,6 +5295,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
   const [recusandoWo, setRecusandoWo] = useState({});   // { [solicitacaoId]: bool } — mostra a textarea antes de confirmar
   const [motivoRecusaWo, setMotivoRecusaWo] = useState({});
   const [notificados, setNotificados] = useState({});   // marca visual local de "já cliquei em notificar"
+  const [finalizExcl, setFinalizExcl] = useState({});   // { [atletaId]: bool } — confirmação de finalizar exclusão
   const ehWo = m => m.woTipo === "culposo" || m.woTipo === "a_favor";
   const waiting = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado && !ehWo(m));
   const incomplete = state.matches.filter(m => !m.validated && !m.rejeitado && !(m.p1Submitted && m.p2Submitted) && !ehWo(m));
@@ -5280,6 +5305,8 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
   // Atletas que atingiram 2 W.O. culposos na temporada — admin decide a exclusão.
   const atletasCulposos = state.athletes.filter(a => (a.woCulpososTemporada || 0) >= 2 && a.status === "ativo");
   const pendentesWo = state.solicitacoesWo.filter(s => s.status === "pendente");
+  // Pedidos de exclusão de dados (LGPD) aguardando o admin finalizar.
+  const pedidosExclusao = state.athletes.filter(a => a.exclusaoSolicitadaEm && a.status !== "arquivado");
   const respondidasWoRecentes = state.solicitacoesWo
     .filter(s => s.status !== "pendente" && s.respondidoEm)
     // Só mostra enquanto ainda falta notificar alguém. Aprovado: solicitante E
@@ -5322,6 +5349,31 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
 
   return (
     <div>
+      {pedidosExclusao.length > 0 && <>
+        <SecTitle>🗑️ Pedidos de exclusão de dados ({pedidosExclusao.length})</SecTitle>
+        <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
+          O atleta pediu a exclusão dos dados (LGPD). Finalizar anonimiza o cadastro e o remove do circuito — as partidas e o histórico dos adversários são preservados. Não dá pra desfazer.
+        </div>
+        {pedidosExclusao.map(a => (
+          <Card key={a.id} style={{border:"1px solid rgba(200,90,69,0.35)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>{nomeExibicao(a)}</span>
+              <span style={{fontFamily:T.mono,fontSize:10,color:"#7d9188"}}>{a.exclusaoSolicitadaEm ? fmtDate(a.exclusaoSolicitadaEm) : ""}</span>
+            </div>
+            {!finalizExcl[a.id] ? (
+              <Btn small color={T.madeira} onClick={()=>setFinalizExcl({...finalizExcl,[a.id]:true})}>Finalizar exclusão</Btn>
+            ) : (
+              <div style={{background:`${T.vermelho}12`,border:`1px solid ${T.vermelho}44`,borderRadius:10,padding:"12px 14px"}}>
+                <div style={{fontSize:12,color:T.offwhite,marginBottom:10,lineHeight:1.5}}>Isto <b>anonimiza {nomeExibicao(a)}</b> (apaga nome, telefone e foto) e o remove do circuito. Não dá pra desfazer. Confirma?</div>
+                <div style={{display:"flex",gap:8}}>
+                  <Btn small color={T.vermelho} onClick={async()=>{ try{ await anonimizarAtleta(a.id); }catch(e){ alert("Erro ao anonimizar: "+e.message); } setFinalizExcl({...finalizExcl,[a.id]:false}); }}>Confirmar anonimização</Btn>
+                  <Btn small color={T.borda} onClick={()=>setFinalizExcl({...finalizExcl,[a.id]:false})}>Cancelar</Btn>
+                </div>
+              </div>
+            )}
+          </Card>
+        ))}
+      </>}
       {pendentesWo.length > 0 && <>
         <SecTitle>📨 Solicitações de W.O. ({pendentesWo.length})</SecTitle>
         <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
@@ -5829,7 +5881,44 @@ function SeletorEstilo({ athlete, dispatch }) {
 }
 
 // ── EDITAR PERFIL (tela cheia — reúne foto + estilo de jogo num só lugar) ─────
-function EditarPerfilView({ athlete, dispatch, onClose }) {
+// Exporta os dados pessoais do atleta num arquivo JSON (direito de acesso — LGPD).
+// Monta tudo no cliente, a partir do que o atleta logado já tem — sem novo endpoint.
+function baixarMeusDados(perfil, telefone, minhasPartidas, meusWos) {
+  const dados = {
+    exportadoEm: new Date().toISOString(),
+    aviso: "Dados pessoais que o app do Clube do Tênis de Mesa mantém sobre você (LGPD).",
+    perfil: {
+      nome: perfil.name, apelido: perfil.apelido || null, telefone: telefone || null,
+      federado: perfil.federated, rating: perfil.rating, ratingInicial: perfil.ratingInicial,
+      saldoTemporada: perfil.saldoTemp, vitorias: perfil.wins, derrotas: perfil.losses,
+      vitoriasTotais: perfil.winsTotal, derrotasTotais: perfil.lossesTotal,
+      estiloJogo: perfil.estilo, membroDesde: perfil.inscritoEm,
+      historicoTemporadas: perfil.historico || [],
+      evolucaoRating: perfil.ratingHistorico || [],
+      evolucaoPosicao: perfil.posicaoHistorico || [],
+    },
+    minhasPartidas: (minhasPartidas || []).map(m => ({
+      rodada: m.round,
+      adversarioId: m.p1Id === perfil.id ? m.p2Id : m.p1Id,
+      placar: m.score1 != null ? `${m.score1}x${m.score2}` : null,
+      validada: !!m.validated, prazo: m.deadline || null,
+    })),
+    minhasSolicitacoesWo: (meusWos || []).map(w => ({
+      rodada: w.round, justificativa: w.justificativa, status: w.status, criadoEm: w.criadoEm,
+    })),
+  };
+  const blob = new Blob([JSON.stringify(dados, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `meus-dados-clube-tenis-${(perfil.name || "atleta").replace(/\s+/g, "-").toLowerCase()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function EditarPerfilView({ athlete, dispatch, onClose, state, telefone }) {
+  const [confirmandoExcl, setConfirmandoExcl] = useState(false);
+  const [exclusaoSolicitada, setExclusaoSolicitada] = useState(!!athlete.exclusaoSolicitadaEm);
   return (
     <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column",alignItems:"center"}}>
       <div style={{height:3,background:T.terracota,flexShrink:0,width:"100%",maxWidth:480}}/>
@@ -5840,6 +5929,34 @@ function EditarPerfilView({ athlete, dispatch, onClose }) {
       <div style={{flex:1,overflowY:"auto",padding:"26px 22px 30px",width:"100%",maxWidth:480,boxSizing:"border-box"}}>
         <EditableAvatar athlete={athlete} dispatch={dispatch}/>
         <SeletorEstilo athlete={athlete} dispatch={dispatch}/>
+        <div style={{marginTop:24,borderTop:`1px solid rgba(240,234,224,0.08)`,paddingTop:18}}>
+          <div style={{fontFamily:T.mono,fontSize:10,letterSpacing:1,color:T.cinza,textTransform:"uppercase",marginBottom:10}}>Privacidade e dados (LGPD)</div>
+          <Btn small color={T.madeira} onClick={()=>{
+            const minhas = (state?.matches || []).filter(m => m.p1Id === athlete.id || m.p2Id === athlete.id);
+            const wos = (state?.solicitacoesWo || []).filter(w => w.athleteId === athlete.id);
+            baixarMeusDados(athlete, telefone, minhas, wos);
+          }}>⬇️ Baixar meus dados</Btn>
+          <div style={{fontSize:11,color:T.cinza,marginTop:6,lineHeight:1.5}}>Baixa um arquivo com os dados que o app guarda sobre você (perfil, partidas e solicitações).</div>
+          <div style={{marginTop:16}}>
+            {exclusaoSolicitada ? (
+              <div style={{fontSize:11,color:T.madeira,lineHeight:1.5}}>📩 Pedido de exclusão registrado. O administrador vai processar sua saída do circuito e a remoção dos seus dados.</div>
+            ) : !confirmandoExcl ? (
+              <button onClick={()=>setConfirmandoExcl(true)} style={{fontFamily:T.mono,fontSize:11,letterSpacing:0.5,color:T.vermelho,background:"transparent",border:`1px solid ${T.vermelho}55`,padding:"8px 12px",borderRadius:10,cursor:"pointer"}}>
+                🗑️ Solicitar exclusão dos meus dados
+              </button>
+            ) : (
+              <div style={{background:`${T.vermelho}12`,border:`1px solid ${T.vermelho}44`,borderRadius:10,padding:"12px 14px"}}>
+                <div style={{fontSize:12,color:T.offwhite,lineHeight:1.5,marginBottom:10}}>
+                  Isto solicita a <b>exclusão dos seus dados pessoais</b> (nome, telefone, foto). Como esses dados são necessários para jogar, você <b>será removido do circuito</b>. O administrador processa o pedido. Deseja continuar?
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <Btn small color={T.vermelho} onClick={()=>{ dispatch({type:"SOLICITAR_EXCLUSAO",payload:{athleteId:athlete.id}}); setExclusaoSolicitada(true); setConfirmandoExcl(false); }}>Confirmar pedido</Btn>
+                  <Btn small color={T.borda} onClick={()=>setConfirmandoExcl(false)}>Cancelar</Btn>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -5899,7 +6016,7 @@ function AthleteGames({ state, dispatch, athlete }) {
       )}
       {estatisticasAbertas && <EstatisticasView state={state} athlete={eu} onClose={()=>setEstatisticasAbertas(false)}/>}
       {cartaAberta && <CartaModal athlete={eu} posicao={minhaPos>=0?minhaPos+1:null} onClose={()=>setCartaAberta(false)} podeBaixar/>}
-      {editarAberto && <EditarPerfilView athlete={eu} dispatch={dispatch} onClose={()=>setEditarAberto(false)}/>}
+      {editarAberto && <EditarPerfilView athlete={eu} dispatch={dispatch} onClose={()=>setEditarAberto(false)} state={state} telefone={athlete.phone}/>}
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,marginBottom:20}}>
         <div style={{position:"relative"}}>
           <div onClick={()=>setPerfilAberto(true)} style={{cursor:"pointer"}}>

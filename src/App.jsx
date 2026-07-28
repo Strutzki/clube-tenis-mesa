@@ -3195,6 +3195,26 @@ export default function App() {
     return data.dados;
   }
 
+  // Ações do ATLETA (sem PIN) — a escrita passa pela Edge Function athlete-action,
+  // que valida no servidor e força os campos inegociáveis. Fecha a escrita direta
+  // com a chave pública (nenhuma gravação de atleta vai mais direto na tabela).
+  async function chamarAtletaAction(acao, payload) {
+    const res = await fetch(`${SUPA_URL}/functions/v1/athlete-action`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPA_KEY}`,
+        "apikey": SUPA_KEY,
+      },
+      body: JSON.stringify({ acao, payload }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.sucesso) {
+      throw new Error(data.erro || `Erro ${res.status} ao executar ${acao}`);
+    }
+    return data.dados;
+  }
+
   // Garante que o mapa {id: telefone} está carregado, buscando via Edge
   // Function (PIN) só na primeira vez que alguma tela realmente precisa —
   // chamadas seguintes reaproveitam o que já foi buscado nessa sessão.
@@ -3233,22 +3253,19 @@ export default function App() {
         return;
       }
       try {
-        await db.insertAtleta({
-          nome:p.name, telefone:telefoneFormatado, apelido:p.apelido||null, federado:p.federated,
-          rating: p.federated?(p.rating||null):250,
-          rating_inicial: p.federated?(p.rating||null):250,
-          saldo_temp:0, status:"pendente",
-          aceite_regulamento:p.aceiteRegulamento||false,
-          data_aceite_regulamento:p.dataAceite||null,
-          versao_regulamento:"v03-8",
-          aceite_lgpd:p.aceiteLGPD||false,
-          data_aceite_lgpd:p.dataAceite||null,
-          inscrito_em:p.dataAceite||new Date().toISOString(),
+        // Escrita via Edge Function (athlete-action): o servidor força status
+        // pendente/saldo 0, grava o consentimento e trata telefone duplicado.
+        await chamarAtletaAction("INSCREVER", {
+          nome: p.name, telefone: telefoneFormatado, apelido: p.apelido || null,
+          federado: p.federated, rating: p.rating,
+          aceiteRegulamento: p.aceiteRegulamento || false,
+          aceiteLGPD: p.aceiteLGPD || false,
+          dataAceite: p.dataAceite || null,
         });
       } catch(e) {
-        // Rede de segurança: trava de unicidade real no banco (atletas_telefone_unique).
-        // Cobre o raro caso de duas inscrições simultâneas com o mesmo número.
-        if (String(e.message||"").includes("atletas_telefone_unique") || String(e.message||"").includes("duplicate key")) {
+        // Rede de segurança: telefone duplicado (retornado pela função ou pela
+        // trava de unicidade do banco), inclusive em inscrições simultâneas.
+        if (String(e.message||"").includes("telefone_duplicado") || String(e.message||"").includes("atletas_telefone_unique") || String(e.message||"").includes("duplicate key")) {
           setDbMsg("telefone_duplicado");
           return;
         }
@@ -3263,11 +3280,8 @@ export default function App() {
     }
     else if (action.type === "SUBMIT_RESULT") {
       const {matchId,athleteId,score1,score2} = action.payload;
-      const match = st.matches.find(m=>m.id===matchId);
-      const isP1 = match?.p1Id===athleteId;
-      await db.updatePartida(matchId, isP1
-        ? {p1_placar1:score1,p1_placar2:score2,p1_enviado_em:new Date().toISOString()}
-        : {p2_placar1:score1,p2_placar2:score2,p2_enviado_em:new Date().toISOString()});
+      // O servidor decide o lado (p1/p2) e só grava o placar do próprio atleta.
+      await chamarAtletaAction("ENVIAR_PLACAR", { matchId, athleteId, score1, score2 });
     }
     else if (action.type === "VALIDATE_RESULT") {
       const {matchId,approved,motivo} = action.payload;
@@ -3286,11 +3300,11 @@ export default function App() {
     }
     else if (action.type === "ATUALIZAR_FOTO_ATLETA") {
       const { athleteId, url } = action.payload;
-      await db.updateAtleta(athleteId, { foto_url: url });
+      await chamarAtletaAction("ATUALIZAR_PERFIL", { athleteId, foto_url: url });
     }
     else if (action.type === "ATUALIZAR_ESTILO_ATLETA") {
       const { athleteId, estilo } = action.payload;
-      await db.updateAtleta(athleteId, { estilo_jogo: estilo });
+      await chamarAtletaAction("ATUALIZAR_PERFIL", { athleteId, estilo_jogo: estilo });
     }
     else if (action.type === "REGISTRAR_MENSAGEM_ENVIADA") {
       // Registro no histórico é acessório: se falhar (tabela ausente, tipo de
@@ -3320,18 +3334,15 @@ export default function App() {
         id, matchId, athleteId, athleteName, adversarioId, adversarioNome,
         round, justificativa, comprovanteUrl, criadoEm,
       } = action.payload;
-      await db.insertSolicitacaoWo({
-        id, match_id: matchId,
-        atleta_id: athleteId || null, atleta_nome: athleteName || null,
-        adversario_id: adversarioId || null, adversario_nome: adversarioNome || null,
-        round: round || null, justificativa,
-        comprovante_url: comprovanteUrl || null,
-        status: "pendente", criado_em: criadoEm,
+      // O servidor força status "pendente" e confere que o atleta participa da partida.
+      await chamarAtletaAction("SOLICITAR_WO", {
+        id, matchId, athleteId, athleteName, adversarioId, adversarioNome,
+        round, justificativa, comprovanteUrl, criadoEm,
       });
     }
     else if (action.type === "CANCELAR_SOLICITACAO_WO") {
       const { id } = action.payload;
-      await db.deleteSolicitacaoWo(id);
+      await chamarAtletaAction("CANCELAR_WO", { id });
     }
     else if (action.type === "RESPONDER_WO") {
       const { id, matchId, aprovado, motivoRecusa, justificativa } = action.payload;

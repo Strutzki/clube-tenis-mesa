@@ -169,6 +169,7 @@ const db = {
 
 // ── FOTO DE PERFIL DO ATLETA (Supabase Storage) ───────────────────────────────
 const FOTOS_BUCKET = "fotos-atletas";
+const COMPROVANTES_BUCKET = "comprovantes-wo"; // bucket PRIVADO dos comprovantes de W.O. (LGPD)
 
 // Redimensiona/comprime a imagem no navegador antes de enviar — fotos de
 // celular podem ter vários MB, e isso deixaria o upload lento e o app pesado.
@@ -268,7 +269,7 @@ async function buscarAtletaPorTelefonePublico(telefone) {
 
 async function uploadComprovanteWo(matchId, blob) {
   const path = `wo-${matchId}-${Date.now()}.jpg`;
-  const res = await fetch(`${SUPA_URL}/storage/v1/object/${FOTOS_BUCKET}/${path}`, {
+  const res = await fetch(`${SUPA_URL}/storage/v1/object/${COMPROVANTES_BUCKET}/${path}`, {
     method: "POST",
     headers: {
       "apikey": SUPA_KEY,
@@ -281,7 +282,9 @@ async function uploadComprovanteWo(matchId, blob) {
     const err = await res.text();
     throw new Error(`Erro ao enviar o comprovante (${res.status}): ${err}`);
   }
-  return `${SUPA_URL}/storage/v1/object/public/${FOTOS_BUCKET}/${path}`;
+  // Bucket PRIVADO: guardamos só o CAMINHO do arquivo (não uma URL pública).
+  // O admin abre depois via link assinado temporário (função comprovante-url).
+  return path;
 }
 
 // ── PIN DE ADMIN — cache por sessão de aba (Edge Function admin-action) ───────
@@ -3251,6 +3254,27 @@ export default function App() {
     }
   }
 
+  // Link assinado temporário pra um comprovante de W.O. (bucket privado), com
+  // PIN, via Edge Function comprovante-url. Recebe o CAMINHO e devolve a URL.
+  async function urlComprovante(path) {
+    const pin = await obterPin();
+    const res = await fetch(`${SUPA_URL}/functions/v1/comprovante-url`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPA_KEY}`,
+        "apikey": SUPA_KEY,
+      },
+      body: JSON.stringify({ pin, path }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.sucesso) {
+      if (res.status === 401) clearPinCache();
+      throw new Error(data.erro || `Erro ${res.status} ao abrir comprovante`);
+    }
+    return data.dados?.url;
+  }
+
   async function dispatchAndSync(action) {
     dispatch(action);
     try { await syncToSupabase(action, state); }
@@ -3456,7 +3480,7 @@ export default function App() {
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
-          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} />
+          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} />
         ) : isVisitante ? (
           <VisitanteView state={state} tab={tab} setTab={setTab} />
         ) : (
@@ -4433,12 +4457,12 @@ const Badge = ({label, color="#D85A30"}) => (
 );
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
-function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones }) {
+function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante }) {
   if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
-  if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
+  if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} />;
   if (tab === "historico") return <AdminHistorico state={state} />;
   if (tab === "mensagens") return <AdminMensagens state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   return null;
@@ -5217,7 +5241,28 @@ function RegistrarWoInline({ m, p1, p2, dispatch }) {
   );
 }
 
-function AdminPendencias({ state, dispatch, telefones, garantirTelefones }) {
+// Abre o comprovante de W.O. via link ASSINADO temporário (bucket privado).
+// Compat: se o valor já for uma URL http (legado), abre direto.
+function ComprovanteBotao({ path, urlComprovante }) {
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState("");
+  async function abrir() {
+    setCarregando(true); setErro("");
+    try {
+      const url = /^https?:\/\//.test(path) ? path : await urlComprovante(path);
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+    } catch(e) { setErro(e.message || "Erro ao abrir"); }
+    finally { setCarregando(false); }
+  }
+  return (
+    <div style={{marginBottom:10}}>
+      <Btn small onClick={abrir} color="#9C6F3E">{carregando ? "Abrindo…" : "📎 Ver comprovante"}</Btn>
+      {erro && <div style={{fontSize:11,color:T.vermelho,marginTop:4}}>{erro}</div>}
+    </div>
+  );
+}
+
+function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlComprovante }) {
   // Precisa de telefone pra notificar via WhatsApp depois de decidir um W.O.
   useEffect(() => { garantirTelefones(); }, []);
 
@@ -5291,9 +5336,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones }) {
             {s.adversarioNome && <div style={{fontSize:11,color:"#7d9188",marginBottom:8}}>Adversário: {s.adversarioNome}</div>}
             <div style={{fontSize:12,color:"#F0EAE0",background:"rgba(0,0,0,0.15)",borderRadius:8,padding:"8px 10px",marginBottom:8,lineHeight:1.5}}>"{s.justificativa}"</div>
             {s.comprovanteUrl && (
-              <a href={s.comprovanteUrl} target="_blank" rel="noreferrer" style={{display:"inline-block",marginBottom:10}}>
-                <img src={s.comprovanteUrl} alt="Comprovante" style={{width:64,height:64,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)"}}/>
-              </a>
+              <ComprovanteBotao path={s.comprovanteUrl} urlComprovante={urlComprovante} />
             )}
             {!recusandoWo[s.id] ? (
               <div style={{display:"flex",gap:8}}>

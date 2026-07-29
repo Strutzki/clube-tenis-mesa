@@ -3553,6 +3553,20 @@ export default function App() {
       await chamarAdminAction("EXCLUIR_ATLETA", { id });
       await loadFromSupabase();
     }
+    else if (action.type === "RESETAR_PIN_ATLETA") {
+      // Destrava do admin (Fase 3): apaga o PIN do atleta via função dedicada.
+      const pin = await obterPin();
+      const res = await fetch(`${SUPA_URL}/functions/v1/resetar-pin-atleta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+        body: JSON.stringify({ pin, id: action.payload.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.sucesso) {
+        if (res.status === 401) clearPinCache();
+        throw new Error(data.erro || `Erro ${res.status} ao resetar PIN`);
+      }
+    }
   }
 
   // Barra de status de conexão
@@ -4818,6 +4832,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
   const [confirmExcluir, setConfirmExcluir] = useState(null);
   // Campos de edição
   const [editNome, setEditNome] = useState("");
+  const [resetPinConf, setResetPinConf] = useState(false);
   const [editTelefone, setEditTelefone] = useState("");
   const [editApelido, setEditApelido] = useState("");
   const [editRating, setEditRating] = useState("");
@@ -4930,6 +4945,19 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
           <option value="arquivado">🗄️ Arquivado (fora do backlog)</option>
         </select>
         <Btn onClick={salvarEdicao} color="#D85A30" full>💾 Salvar alterações</Btn>
+        <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          {!resetPinConf ? (
+            <Btn onClick={()=>setResetPinConf(true)} color="#9C6F3E" full small>🔑 Resetar PIN de acesso</Btn>
+          ) : (
+            <div>
+              <div style={{fontSize:11,color:"#9db3a8",marginBottom:8,lineHeight:1.5}}>Isso apaga o PIN de {selected.name}. No próximo acesso, ele cria um novo. Confirmar?</div>
+              <div style={{display:"flex",gap:8}}>
+                <Btn small color="#9C6F3E" onClick={()=>{ dispatch({type:"RESETAR_PIN_ATLETA",payload:{id:selected.id}}); setResetPinConf(false); }}>Confirmar reset</Btn>
+                <Btn small color="#5E7569" onClick={()=>setResetPinConf(false)}>Cancelar</Btn>
+              </div>
+            </div>
+          )}
+        </div>
         <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
           <Btn onClick={()=>setConfirmExcluir(selected)} color="#c25a45" full small>🗑️ Excluir este atleta</Btn>
         </div>

@@ -324,7 +324,7 @@ function clearPinCache() {
   try { sessionStorage.removeItem(PIN_SESSAO_KEY); } catch(e) {}
 }
 
-// ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-8, Cap. 05) ──────
+// ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-9, Cap. 05) ──────
 // Tabela Básica de Cálculo do Rating do Manual Tênis de Mesa Brasil (item 1.7.2.4.5)
 // Valores por faixa de diferença de rating. Usados sempre com peso 1 (rodada
 // regular). O torneio presencial é só pódio/prêmios — NÃO afeta o rating.
@@ -513,7 +513,7 @@ function reducer(state, action) {
         status: "pendente", key: null,
         aceiteRegulamento: aceiteRegulamento || false,
         dataAceiteRegulamento: dataAceite || null,
-        versaoRegulamento: "v03-8",
+        versaoRegulamento: "v03-9",
         aceiteLGPD: aceiteLGPD || false,
         dataAceiteLGPD: dataAceite || null,
         inscritoEm: dataAceite || new Date().toISOString(),
@@ -561,8 +561,13 @@ function reducer(state, action) {
     }
 
     case "INICIAR_ETAPA": {
-      const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
-      const athletesUpdated = state.athletes.map(a =>
+      // Virada de temporada: promove todo o backlog (Aprovado — próxima etapa/temporada)
+      // para dentro do circuito antes de parear (entrada liberada "antes da Rodada 1").
+      const promovidos = state.athletes.map(a =>
+        (a.status === "ativo" && a.pendenteCircuito) ? { ...a, pendenteCircuito: false } : a
+      );
+      const ativos = promovidos.filter(a => a.status === "ativo" && !a.pendenteCircuito);
+      const athletesUpdated = promovidos.map(a =>
         (a.status === "ativo" && !a.pendenteCircuito) ? { ...a, key: "key_1" } : a
       );
 
@@ -905,13 +910,22 @@ function reducer(state, action) {
     }
 
     case "AVANCAR_RODADA": {
+      const maxRod = state.rodadasPorTemporada || 6;
+      const roundBase = Math.max(0, ...state.matches.map(m => m.round || 0));
       // Trava de segurança (Cap. 13): respeita o nº de rodadas configurado.
-      if (Math.max(0, ...state.matches.map(m => m.round || 0)) >= (state.rodadasPorTemporada || 6)) return state;
+      if (roundBase >= maxRod) return state;
       // No modelo por rating, cada "avanço" gera o próximo PAR MENSAL (2 rodadas),
       // pareando pelo rating vigente e evitando repetir confrontos da temporada (Cap. 03).
-      const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
+      // Regra do último terço (Cap. 11): só promove o backlog (Aprovado — próxima etapa/
+      // temporada) se o novo par NÃO cair no último terço. inicioUltimoTerco =
+      // maxRod − teto(maxRod/3) + 1 (para 6 rodadas → 5). Senão, aguardam a próxima temporada.
+      const inicioUltimoTerco = maxRod - Math.ceil(maxRod / 3) + 1;
+      const permiteEntrada = (roundBase + 1) < inicioUltimoTerco;
+      const athletesBase = permiteEntrada
+        ? state.athletes.map(a => (a.status === "ativo" && a.pendenteCircuito) ? { ...a, pendenteCircuito: false } : a)
+        : state.athletes;
+      const ativos = athletesBase.filter(a => a.status === "ativo" && !a.pendenteCircuito);
       const key = state.keys[0];
-      const roundBase = Math.max(0, ...state.matches.map(m => m.round || 0));
 
       const { rodada1, rodada2, bye1, bye2 } = gerarPareamentoPorRating(ativos, state.matches);
 
@@ -954,7 +968,7 @@ function reducer(state, action) {
         byes: { ...(k.byes||{}), [rA]: bye1, [rB]: bye2 },
       }));
 
-      return { ...state, keys, matches: [...state.matches, ...newMatches] };
+      return { ...state, athletes: athletesBase, keys, matches: [...state.matches, ...newMatches] };
     }
 
     case "DEFINIR_RODADAS": {
@@ -981,9 +995,10 @@ function reducer(state, action) {
     }
 
     case "EDITAR_ATLETA": {
-      const { id, nome, telefone, apelido, rating, status } = action.payload;
+      const { id, nome, telefone, apelido, rating, status, pendenteCircuito } = action.payload;
       const athletes = state.athletes.map(a =>
-        a.id === id ? { ...a, name: nome, phone: telefone, apelido: apelido||null, rating, status } : a
+        a.id === id ? { ...a, name: nome, phone: telefone, apelido: apelido||null, rating, status,
+          ...(typeof pendenteCircuito === "boolean" ? { pendenteCircuito } : {}) } : a
       );
       return { ...state, athletes };
     }
@@ -1376,7 +1391,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
                 <div style={{fontSize:11,color:"#9db3a8",lineHeight:1.6}}>{d}</div>
               </div>
             ))}
-            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>Regulamento completo disponível na tela inicial · v03-8</div>
+            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>Regulamento completo disponível na tela inicial · v03-9</div>
           </div>
         )}
 
@@ -1386,7 +1401,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
               {aceiteReg && <span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}
             </div>
             <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>
-              Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-8). Estou ciente do aviso sobre atletas federados pela CBTM.
+              Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-9). Estou ciente do aviso sobre atletas federados pela CBTM.
             </div>
           </div>
         )}
@@ -1423,7 +1438,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
         <div style={{background:"rgba(74,222,128,0.08)", border:"1px solid rgba(74,222,128,0.2)", borderRadius:10, padding:"12px 14px", marginBottom:16, textAlign:"left"}}>
           <div style={{fontSize:11, fontWeight:700, color:"#6a9d7a", marginBottom:8}}>✓ Registrado com sucesso</div>
           <div style={{fontSize:11, color:"#7d9188", lineHeight:1.8}}>
-            📋 Aceite do regulamento v03-8<br/>
+            📋 Aceite do regulamento v03-9<br/>
             🔒 Consentimento LGPD (Lei 13.709/2018)<br/>
             📅 Data/hora: {new Date().toLocaleString("pt-BR")}
           </div>
@@ -1438,7 +1453,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
 
 
 
-// ── REGULAMENTO VIEW (regulamento v03-8) ─────────────────────────────────────
+// ── REGULAMENTO VIEW (regulamento v03-9) ─────────────────────────────────────
 function RegulamentoView({ onBack }) {
   const [capAberto, setCapAberto] = useState(null);
 
@@ -1766,14 +1781,15 @@ function RegulamentoView({ onBack }) {
         </Box>
         <Tbl headers={["Situação","Pode entrar?","Condição"]} rows={[
           ["Antes da Rodada 1","✅ Inscrição normal","Fluxo padrão"],
-          ["Após Rodada 1","⚠️ Somente por convite","Admin abre vaga quando há queda de atletas ativos"],
-          ["Último terço da temporada","⛔ Entrada suspensa","Sem novas entradas nas 4 últimas rodadas"],
+          ["Após Rodada 1","⚠️ Somente por convite","Admin aprova (status 'próxima etapa/temporada'); a entrada é automática no próximo par permitido"],
+          ["Último terço (última etapa)","⛔ Entrada suspensa","Sem novas entradas na última etapa — as 2 últimas rodadas numa temporada de 6"],
         ]}/>
         <Box cor="#D85A30" titulo="📋 Como Funciona o Convite">
           <Ul items={[
             "Gatilho: suspensão por inadimplência, abandono ou queda do mínimo operacional por +2 rodadas",
             "Fila de espera: manifestar interesse a qualquer momento ao @clubedotenisdemesa",
             "Prioridade de entrada para o primeiro da fila — mediante avaliação e aprovação do administrador",
+            "No app: ao aprovar o atleta como 'próxima etapa/temporada', a entrada é automática no próximo par permitido (fora do último terço) ou na virada de temporada",
             "Rating de entrada: 250 pts (não-federados) ou rating CBTM-Web (federados)",
             "Mensalidade cobrada proporcionalmente a partir da Temporada 2",
             "Elegível ao torneio presencial normalmente se atingir top 8",
@@ -1870,7 +1886,7 @@ function RegulamentoView({ onBack }) {
           ]}/>
           <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A decisão do administrador em casos omissos é final. Situações recorrentes podem motivar a inclusão de uma nova regra em versão futura deste regulamento.</p>
         </Box>
-        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Circuito BH · Regulamento v03-8</div>
+        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Circuito BH · Regulamento v03-9</div>
       </div>
     );
     return null;
@@ -1886,7 +1902,7 @@ function RegulamentoView({ onBack }) {
         <div style={s.logoWrap}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
         <div style={{flex:1,marginLeft:10}}>
           <div style={{fontSize:14,fontWeight:800,color:"#fff"}}>Regulamento Oficial</div>
-          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · v03-8</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · v03-9</div>
         </div>
         <button style={s.backBtn} onClick={onBack}>← Voltar</button>
       </div>
@@ -3528,8 +3544,8 @@ export default function App() {
       await loadFromSupabase();
     }
     else if (action.type === "EDITAR_ATLETA") {
-      const { id, nome, telefone, apelido, rating, status } = action.payload;
-      await chamarAdminAction("EDITAR_ATLETA", { id, nome, telefone, apelido, rating, status });
+      const { id, nome, telefone, apelido, rating, status, pendenteCircuito } = action.payload;
+      await chamarAdminAction("EDITAR_ATLETA", { id, nome, telefone, apelido, rating, status, pendenteCircuito });
       await loadFromSupabase();
     }
     else if (action.type === "INCLUIR_NO_CIRCUITO") {
@@ -4796,7 +4812,7 @@ function IniciarEtapaPanel({ state, dispatch }) {
     <div style={{marginTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
       {backlogCount > 0 && (
         <div style={{background:"rgba(167,139,250,0.1)",border:"1px solid rgba(167,139,250,0.3)",borderRadius:10,padding:"8px 12px",marginBottom:10,fontSize:11,color:"#9C6F3E"}}>
-          🗂️ {backlogCount} atleta(s) aguardando decisão no backlog do circuito — eles NÃO entrarão nesta etapa a menos que você os inclua primeiro em Inscrições.
+          🗂️ {backlogCount} atleta(s) "Aprovado — próxima etapa/temporada" no backlog — entram automaticamente ao iniciar a temporada ou no próximo par permitido (fora do último terço). Não precisa incluir manualmente; use "Incluir no circuito" em Inscrições só se quiser antecipar.
         </div>
       )}
       <div style={{fontSize:12,color:"#9db3a8",marginBottom:6}}>
@@ -4882,13 +4898,17 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
     setEditTelefone(telefones[a.id] || "");
     setEditApelido(a.apelido || "");
     setEditRating(a.rating || "");
-    setEditStatus(a.status);
+    setEditStatus(a.status === "ativo" && a.pendenteCircuito ? "ativo_backlog" : a.status);
     setModo("editar");
   }
   function salvarEdicao() {
+    // "ativo_backlog" é só rótulo de UI: mapeia para status=ativo + pendenteCircuito=true
+    // (Aprovado — entra na próxima etapa/temporada). Os demais status limpam o flag.
+    const isBacklog = editStatus === "ativo_backlog";
+    const statusFinal = isBacklog ? "ativo" : editStatus;
     dispatch({type:"EDITAR_ATLETA",payload:{
       id:selected.id, nome:editNome, telefone:editTelefone, apelido:editApelido.trim()||null,
-      rating:parseInt(editRating)||selected.rating, status:editStatus
+      rating:parseInt(editRating)||selected.rating, status:statusFinal, pendenteCircuito:isBacklog
     }});
     setSelected(null); setModo("lista");
   }
@@ -4938,7 +4958,8 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
         <select value={editStatus} onChange={e=>setEditStatus(e.target.value)}
           style={{...inp,marginBottom:16}}>
           <option value="pendente">⏳ Pendente</option>
-          <option value="ativo">✅ Ativo</option>
+          <option value="ativo_backlog">✅ Aprovado — entra na próxima etapa/temporada</option>
+          <option value="ativo">✅ Ativo no circuito</option>
           <option value="reprovado">❌ Reprovado</option>
           <option value="suspenso">🚫 Suspenso</option>
           <option value="arquivado">🗄️ Arquivado (fora do backlog)</option>
@@ -5033,7 +5054,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
       {backlog.length > 0 && <>
         <SecTitle>🗂️ Backlog do Circuito ({backlog.length})</SecTitle>
         <div style={{fontSize:11,color:"#7d9188",marginBottom:8,marginTop:-4}}>
-          Aprovados mas ainda sem decisão: incluir na próxima etapa, recusar (revisa de novo depois) ou arquivar (some do backlog).
+          Aprovados que entram sozinhos na próxima oportunidade permitida (virada de temporada, ou próximo par fora do último terço). Você pode antecipar a entrada agora, recusar (revisa de novo depois) ou arquivar (some do backlog).
         </div>
         {backlog.map(a => (
           <Card key={a.id} style={{border:"1px solid rgba(167,139,250,0.25)"}}>
@@ -5050,7 +5071,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
               <Btn small color="#5E7569" onClick={()=>abrirEditar(a)}>✏️</Btn>
             </div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              <Btn small color="#6a9d7a" onClick={()=>incluirCircuito(a.id)}>✅ Incluir no circuito</Btn>
+              <Btn small color="#6a9d7a" onClick={()=>incluirCircuito(a.id)}>✅ Incluir agora (antecipar)</Btn>
               <Btn small color="#9C6F3E" onClick={()=>recusarCircuito(a.id)}>↩️ Recusar por ora</Btn>
               <Btn small color="#5E7569" onClick={()=>arquivarAtleta(a.id)}>🗄️ Arquivar</Btn>
             </div>

@@ -6195,6 +6195,7 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
   const mySubmit = isP1 ? m.p1Submitted : m.p2Submitted;
   const [s1, setS1] = useState(""), [s2, setS2] = useState("");
   const [sent, setSent] = useState(false);
+  const [editando, setEditando] = useState(false);
   const [cartaAberta, setCartaAberta] = useState(false);
   const [woModalAberto, setWoModalAberto] = useState(false);
   // Minha solicitação de W.O. mais recente pra essa partida (se existir).
@@ -6212,6 +6213,7 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
     if (!s1||!s2) return;
     dispatch({type:"SUBMIT_RESULT",payload:{matchId:m.id,athleteId:athlete.id,score1:parseInt(s1),score2:parseInt(s2)}});
     setSent(true);
+    setEditando(false);
   }
 
   return (
@@ -6291,9 +6293,15 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
               <div style={{color:T.cinza,marginTop:4}}>Você ainda precisa registrar o placar normalmente.</div>
             </div>
           )}
-          {mySubmit || sent ? (
-            <div style={{background:`${T.verde2}1a`,borderRadius:9,padding:"10px 12px",fontFamily:T.mono,fontSize:11,fontWeight:700,color:T.verde2,textAlign:"center",letterSpacing:0.3,textTransform:"uppercase"}}>
-              ✓ Resultado enviado — aguardando validação do admin
+          {(mySubmit || sent) && !editando ? (
+            <div>
+              <div style={{background:`${T.verde2}1a`,borderRadius:9,padding:"10px 12px",fontFamily:T.mono,fontSize:11,fontWeight:700,color:T.verde2,textAlign:"center",letterSpacing:0.3,textTransform:"uppercase"}}>
+                ✓ Resultado enviado — aguardando validação do admin
+              </div>
+              <button onClick={()=>{ if(mySubmit){ setS1(String(mySubmit.score1)); setS2(String(mySubmit.score2)); } setEditando(true); }}
+                style={{display:"block",width:"100%",marginTop:8,fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:T.cinza,background:"transparent",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"center"}}>
+                ✏️ Corrigir placar (enquanto o admin não validou)
+              </button>
             </div>
           ) : (
             <>
@@ -6318,11 +6326,18 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
                     style={{width:"100%",boxSizing:"border-box",background:T.verde,border:`1px solid ${T.borda}`,borderRadius:9,color:T.terracota,padding:"14px",fontFamily:T.serif,fontSize:28,textAlign:"center",outline:"none"}}/>
                 </div>
               </div>
-              <Btn onClick={submit} color={T.terracota} full disabled={!s1||!s2}>Enviar resultado</Btn>
-              <button onClick={()=>setWoModalAberto(true)}
-                style={{display:"block",width:"100%",marginTop:10,fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:T.cinza,background:"transparent",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"center"}}>
-                Não vou conseguir jogar esta rodada
-              </button>
+              <Btn onClick={submit} color={T.terracota} full disabled={!s1||!s2}>{editando ? "Salvar correção" : "Enviar resultado"}</Btn>
+              {editando ? (
+                <button onClick={()=>setEditando(false)}
+                  style={{display:"block",width:"100%",marginTop:10,fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:T.cinza,background:"transparent",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"center"}}>
+                  Cancelar correção
+                </button>
+              ) : (
+                <button onClick={()=>setWoModalAberto(true)}
+                  style={{display:"block",width:"100%",marginTop:10,fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:T.cinza,background:"transparent",border:"none",cursor:"pointer",padding:"4px 0",textAlign:"center"}}>
+                  Não vou conseguir jogar esta rodada
+                </button>
+              )}
             </>
           )}
         </>

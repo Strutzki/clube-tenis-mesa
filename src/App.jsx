@@ -4861,6 +4861,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
   const backlog = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito);
   const aprovados = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const reprovados = state.athletes.filter(a => a.status === "reprovado");
+  const suspensos = state.athletes.filter(a => a.status === "suspenso");
   const arquivados = state.athletes.filter(a => a.status === "arquivado");
 
   const ratingFinal = ratingEdit ? parseInt(ratingEdit) : selected?.rating;
@@ -5114,6 +5115,24 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
                 <MsgBtn ath={a}/>
                 <Btn small color="#D85A30" onClick={()=>abrirEditar(a)}>✏️</Btn>
               </div>
+            </div>
+          </Card>
+        ))}
+      </>}
+
+      {suspensos.length > 0 && <>
+        <SecTitle>🚫 Suspensos ({suspensos.length})</SecTitle>
+        <div style={{fontSize:11,color:"#7d9188",marginBottom:8,marginTop:-4}}>
+          Fora do circuito temporariamente (ex.: inadimplência — Cap. 12). Revise e ajuste o status quando o atleta regularizar.
+        </div>
+        {suspensos.map(a => (
+          <Card key={a.id} style={{border:"1px solid rgba(194,90,69,0.2)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}</div>
+                <div style={{fontSize:11,color:"#c25a45"}}>{telefones[a.id] || "···"} · suspenso · Rating: {a.rating}</div>
+              </div>
+              <Btn small color="#D85A30" onClick={()=>abrirEditar(a)}>✏️ Revisar</Btn>
             </div>
           </Card>
         ))}

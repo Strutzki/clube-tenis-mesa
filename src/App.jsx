@@ -268,6 +268,26 @@ async function buscarAtletaPorTelefonePublico(telefone) {
   return row ? mapAtletaFromDb(row) : null;
 }
 
+// Login do atleta por telefone + PIN (Edge Function login-atleta). Devolve
+// data.dados: { encontrado, primeiroAcesso, precisaPin, ok, atleta }. Lança o
+// erro (PIN incorreto, bloqueado, etc.) pra a tela de login tratar.
+async function chamarLoginAtleta(acao, telefone, pin) {
+  const res = await fetch(`${SUPA_URL}/functions/v1/login-atleta`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${SUPA_KEY}`,
+      "apikey": SUPA_KEY,
+    },
+    body: JSON.stringify({ acao, telefone, pin }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.sucesso) {
+    throw new Error(data.erro || `Erro ${res.status} ao entrar`);
+  }
+  return data.dados || {};
+}
+
 async function uploadComprovanteWo(matchId, blob) {
   const path = `wo-${matchId}-${Date.now()}.jpg`;
   const res = await fetch(`${SUPA_URL}/storage/v1/object/${COMPROVANTES_BUCKET}/${path}`, {
@@ -2843,6 +2863,9 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
   const [mostrarFallback, setMostrarFallback] = useState(false);
   const [oferecerBio, setOferecerBio] = useState(null); // atleta recém-logado, pendente de oferta
   const [buscandoLogin, setBuscandoLogin] = useState(false);
+  const [etapaPin, setEtapaPin] = useState("");     // "", "criar", "entrar"
+  const [pin, setPin] = useState("");
+  const [pinConfirma, setPinConfirma] = useState("");
 
   useEffect(() => {
     async function verificar() {
@@ -2925,21 +2948,47 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
   async function doAthlete() {
     const clean = phone.replace(/\D/g,"");
     if (buscandoLogin) return;
+    if (clean.length < 10) { setErr("Digite seu telefone com DDD."); setTimeout(()=>setErr(""),3000); return; }
     setBuscandoLogin(true);
     setErr("");
     try {
-      const found = await buscarAtletaPorTelefonePublico(clean);
-      if (!found || found.status !== "ativo") {
+      const d = await chamarLoginAtleta("LOGIN", clean);
+      if (!d.encontrado) {
         setErr("Telefone não encontrado ou cadastro não aprovado.");
         setTimeout(()=>setErr(""),3000);
         return;
       }
+      setPin(""); setPinConfirma("");
+      setEtapaPin(d.primeiroAcesso ? "criar" : "entrar");
+    } catch(e) {
+      setErr(e.message || "Não consegui verificar agora. Tente de novo.");
+      setTimeout(()=>setErr(""),4000);
+    } finally {
+      setBuscandoLogin(false);
+    }
+  }
+
+  // Segunda etapa: cria o PIN (1º acesso) ou verifica o PIN (acessos seguintes).
+  async function enviarPin() {
+    if (buscandoLogin) return;
+    const clean = phone.replace(/\D/g,"");
+    const pinLimpo = pin.replace(/\D/g,"");
+    if (!/^\d{4,6}$/.test(pinLimpo)) { setErr("O PIN deve ter de 4 a 6 números."); return; }
+    if (etapaPin === "criar" && pinLimpo !== pinConfirma.replace(/\D/g,"")) { setErr("Os dois PINs não são iguais."); return; }
+    setBuscandoLogin(true);
+    setErr("");
+    try {
+      const acao = etapaPin === "criar" ? "DEFINIR_PIN" : "LOGIN";
+      const d = await chamarLoginAtleta(acao, clean, pinLimpo);
+      if (!d.atleta) { setErr("Não consegui entrar. Tente de novo."); return; }
+      const found = mapAtletaFromDb(d.atleta);
+      if (found.status !== "ativo") { setErr("Seu cadastro ainda não foi aprovado pelo admin."); return; }
       const jaTemBioNesteAparelho = bioCredId && String(bioAtletaId) === String(found.id);
+      setEtapaPin("");
       if (bioDisponivel && !jaTemBioNesteAparelho) setOferecerBio(found);
       else onAthleteLogin(found);
     } catch(e) {
-      setErr("Não consegui verificar agora. Tente de novo.");
-      setTimeout(()=>setErr(""),3000);
+      setErr(e.message || "Erro ao entrar.");
     } finally {
       setBuscandoLogin(false);
     }
@@ -2987,6 +3036,38 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
         <div onClick={removerBiometria} style={{textAlign:"center",marginTop:14,fontFamily:T.mono,fontSize:9,color:T.borda,letterSpacing:0.5,cursor:"pointer"}}>
           Não é você? Remover biometria deste aparelho
         </div>
+      </div>
+    </div>
+  );
+
+  // Tela: PIN — criar (1º acesso) ou digitar (acessos seguintes)
+  if (etapaPin) return (
+    <div style={s.wrap}>
+      <div style={s.logo}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
+      <div style={s.card}>
+        <button style={s.back} onClick={()=>{ setEtapaPin(""); setPin(""); setPinConfirma(""); setErr(""); }}>← Voltar</button>
+        <div style={s.title}>{etapaPin === "criar" ? "Crie seu PIN" : "Digite seu PIN"}</div>
+        <div style={{...s.sub,marginBottom:18}}>
+          {etapaPin === "criar"
+            ? "Escolha um PIN de 4 a 6 números. Você vai usar ele pra entrar nas próximas vezes."
+            : "Informe seu PIN de acesso."}
+        </div>
+        <label style={s.label}>PIN</label>
+        <input style={s.input} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="••••" type="tel" inputMode="numeric" autoComplete="off"
+          onKeyDown={e=>e.key==="Enter" && etapaPin==="entrar" && enviarPin()}/>
+        {etapaPin === "criar" && <>
+          <label style={s.label}>Confirme o PIN</label>
+          <input style={s.input} value={pinConfirma} onChange={e=>setPinConfirma(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="••••" type="tel" inputMode="numeric" autoComplete="off"
+            onKeyDown={e=>e.key==="Enter" && enviarPin()}/>
+        </>}
+        <button style={s.btn()} onClick={enviarPin} disabled={buscandoLogin}>{buscandoLogin ? "Entrando…" : (etapaPin==="criar" ? "Criar PIN e entrar" : "Entrar")}</button>
+        {etapaPin === "entrar" && (
+          <div onClick={()=>setErr("Esqueceu o PIN? Peça ao administrador do clube para resetar — aí você cria um novo no próximo acesso.")}
+            style={{textAlign:"center",marginTop:14,fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:0.3,cursor:"pointer"}}>
+            Esqueci meu PIN
+          </div>
+        )}
+        {err && <div style={s.err}>⚠️ {err}</div>}
       </div>
     </div>
   );

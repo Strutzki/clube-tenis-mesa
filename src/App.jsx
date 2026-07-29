@@ -98,16 +98,15 @@ function nomeExibicao(atleta) {
   return atleta.apelido ? atleta.apelido : atleta.name;
 }
 // Um atleta só entra no RANKING (não confundir com "estar no circuito") quando,
-// além de estar ativo e fora do backlog (pendenteCircuito:false), já recebeu
-// pelo menos uma partida na temporada atual. `pendenteCircuito:false` sozinho
-// só diz que ele PODE ser pareado no próximo par mensal — o admin pode incluir
-// alguém no circuito a qualquer momento, mas isso não o coloca no ranking até
-// ele de fato ter jogos atribuídos. Sem essa checagem extra, quem é incluído
-// no meio do mês aparece prematuramente no ranking com 0 pts (bug relatado
-// em 11/07 — Fabrício e Wander apareciam sem nunca terem sido pareados).
+// além de estar ativo e fora do backlog (pendenteCircuito:false), já JOGOU pelo
+// menos uma partida cujo resultado foi PROCESSADO (calculado) na temporada.
+// `pendenteCircuito:false` sozinho só diz que ele PODE ser pareado; ter partida
+// ATRIBUÍDA (só pareado) também não basta — senão quem entra no meio da temporada
+// aparece na frente de quem já jogou, ainda com 0 pts. Ele entra no ranking na
+// hora em que o admin atualiza o ranking (processa a rodada da 1ª partida dele).
 function estaNoRanking(atleta, matches) {
   if (!atleta || atleta.status !== "ativo" || atleta.pendenteCircuito) return false;
-  return matches.some(m => m.p1Id === atleta.id || m.p2Id === atleta.id);
+  return matches.some(m => (m.p1Id === atleta.id || m.p2Id === atleta.id) && m.calculado && !m.rejeitado);
 }
 // Nome com apelido entre parênteses (para telas administrativas)
 function nomeComApelido(atleta) {

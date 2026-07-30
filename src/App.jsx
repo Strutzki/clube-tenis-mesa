@@ -2198,9 +2198,24 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
 
     case "backlog": {
       const emBacklog = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito);
+      // Onde o aprovado vai estrear, conforme o regulamento (regra do último terço):
+      // - fora de temporada / antes da Rodada 1 → próxima temporada (Rodada 1);
+      // - em temporada, próximo par fora do último terço → próxima etapa;
+      // - em temporada, já no último terço → só na próxima temporada.
+      const maxRod = state.rodadasPorTemporada || 6;
+      const roundBase = Math.max(0, ...state.matches.map(m => m.round || 0));
+      const inicioUltimoTerco = maxRod - Math.ceil(maxRod / 3) + 1;
+      let fraseEntrada;
+      if (state.phase !== "etapa" || roundBase === 0) {
+        fraseEntrada = "Você entra *na próxima temporada*, desde a primeira rodada — assim que o circuito abrir, seus jogos já aparecem pra você no app.";
+      } else if ((roundBase + 1) < inicioUltimoTerco) {
+        fraseEntrada = "Você entra *na próxima etapa* — assim que o circuito avançar para o próximo par de rodadas, seus jogos já aparecem pra você no app.";
+      } else {
+        fraseEntrada = "O circuito já está na reta final desta temporada, e pelo regulamento não há novas entradas nas últimas rodadas. Então sua estreia fica *para a próxima temporada* — e você já entra desde a primeira rodada dela.";
+      }
       return emBacklog.map(a => ({
         atleta: a,
-        msg: `🏓 *Clube do Tênis de Mesa — Inscrição Aprovada!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Sua inscrição no Clube foi *aprovada*! 🎉\n\nComo você entrou no meio do mês, seus confrontos começam a partir da *próxima rodada* — assim que a nova etapa abrir, seus jogos já vão aparecer pra você no app.\n\nQualquer dúvida, é só chamar. Bem-vindo(a) ao Clube! 🏆`,
+        msg: `🏓 *Clube do Tênis de Mesa — Inscrição Aprovada!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Sua inscrição foi *aprovada*! 🎉\n\n${fraseEntrada}\n\nEnquanto isso, você já pode entrar no app, completar seu perfil e colocar sua foto. 📲\n\nQualquer dúvida, é só chamar. Bem-vindo(a) ao Clube! 🏆`,
       }));
     }
 

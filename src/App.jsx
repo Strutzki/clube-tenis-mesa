@@ -4662,6 +4662,25 @@ function AdminDashboard({ state, setTab, dispatch }) {
     return [...ids].map(id => state.athletes.find(a => a.id === id)).filter(Boolean);
   }, [partidasRodadaAtual, state.athletes]);
 
+  // ── Lembrete por calendário (Fase 2a): destaca quando o prazo de uma rodada
+  //    fechou e ela precisa ser processada. SÓ informa — nunca processa sozinho.
+  //    Pega a menor rodada que ainda tem partida não-calculada (a próxima a processar).
+  const ehWoCal = m => m.woTipo === "culposo" || m.woTipo === "a_favor";
+  const hojeStrCal = new Date().toISOString().slice(0, 10);
+  let calRodada = null;
+  {
+    const rs = [...new Set(state.matches.map(m => m.round))].sort((a, b) => a - b);
+    for (const r of rs) {
+      const doR = state.matches.filter(m => m.round === r && !m.rejeitado);
+      if (doR.length === 0 || !doR.some(m => !m.calculado)) continue;
+      const prazo = doR.map(m => m.deadline).filter(Boolean).sort()[0] || null;
+      const total = doR.length;
+      const resolvidas = doR.filter(m => m.validated || ehWoCal(m)).length;
+      calRodada = { r, prazo, total, resolvidas, pendentes: total - resolvidas, prazoPassou: prazo ? hojeStrCal >= prazo : false };
+      break;
+    }
+  }
+
   return (
     <div>
       <SecTitle>Visão Geral</SecTitle>
@@ -4681,6 +4700,24 @@ function AdminDashboard({ state, setTab, dispatch }) {
           </Card>
         ))}
       </div>
+
+      {state.phase === "etapa" && calRodada && calRodada.prazoPassou && (
+        <Card style={{marginBottom:16, border:`1px solid ${calRodada.pendentes===0 ? "rgba(106,157,122,0.45)" : "rgba(216,90,48,0.45)"}`}}>
+          {calRodada.pendentes === 0 ? (
+            <>
+              <div style={{fontSize:13,fontWeight:700,color:"#6a9d7a",marginBottom:6}}>📅 Rodada {calRodada.r}: prazo fechou{calRodada.prazo ? ` (${fmtDate(calRodada.prazo)})` : ""} — pronta pra processar</div>
+              <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>Todas as {calRodada.total} partidas resolvidas. É a hora de processar o rating desta rodada.</div>
+              <Btn onClick={()=>setTab("pendencias")} color="#6a9d7a">Ir processar</Btn>
+            </>
+          ) : (
+            <>
+              <div style={{fontSize:13,fontWeight:700,color:"#D85A30",marginBottom:6}}>📅 Rodada {calRodada.r}: prazo fechou{calRodada.prazo ? ` (${fmtDate(calRodada.prazo)})` : ""}</div>
+              <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>Faltam {calRodada.pendentes} de {calRodada.total} (validar ou rejeitar) antes de poder processar.</div>
+              <Btn onClick={()=>setTab("pendencias")} color="#D85A30">Resolver pendências</Btn>
+            </>
+          )}
+        </Card>
+      )}
 
       {pendentesWoCount > 0 && (
         <Card style={{marginBottom:16,border:"1px solid rgba(156,111,62,0.4)"}}>

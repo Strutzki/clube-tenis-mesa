@@ -4624,7 +4624,17 @@ function AdminDashboard({ state, setTab, dispatch }) {
   const pendentesWoCount = state.solicitacoesWo.filter(s => s.status === "pendente").length;
   // Mesma função compartilhada com Mensagens — sem telefone aqui, só contagem
   // (telefone só é necessário na hora de montar o link de WhatsApp de verdade).
-  const pendentesMensagensCount = todasMensagensPendentes(state, {}).length;
+  const msgsPendentes = todasMensagensPendentes(state, {});
+  const pendentesMensagensCount = msgsPendentes.length;
+  // Quebra das pendentes por categoria (pro contador detalhado no painel).
+  const pendentesPorCategoria = CATEGORIAS_MENSAGEM
+    .map(c => ({ id: c.id, icon: c.icon, label: c.label, n: msgsPendentes.filter(m => m.categoria === c.id).length }))
+    .filter(c => c.n > 0);
+  // Lembretes de prazo (≤3 dias) ainda não enviados — empurrão por data.
+  const lembretesPend = msgsPendentes.filter(m => m.categoria === "lembretes").length;
+  // Resultados já processados (rating calculado) mas ainda não divulgados — some
+  // sozinho quando o admin envia (dispara MARCAR_RESULTADO_COMUNICADO).
+  const resultadosParaDivulgar = state.matches.filter(m => m.validated && m.calculado && !m.rejeitado && !m.resultadoComunicado).length;
   const currentRound = state.keys[0]?.currentRound ?? 0;
   // Modelo por rating: as partidas são geradas sob demanda a cada par mensal.
   // Uma nova rodada pode ser gerada quando TODAS as partidas atuais foram resolvidas.
@@ -4727,10 +4737,30 @@ function AdminDashboard({ state, setTab, dispatch }) {
         </Card>
       )}
 
+      {state.phase === "etapa" && lembretesPend > 0 && (
+        <Card style={{marginBottom:16,border:"1px solid rgba(216,90,48,0.4)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#D85A30",marginBottom:6}}>⏰ {lembretesPend} lembrete(s) de prazo pra enviar</div>
+          <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>Atletas com partida vencendo em até 3 dias que ainda não receberam aviso.</div>
+          <Btn onClick={()=>setTab("mensagens")} color="#D85A30">Enviar lembretes</Btn>
+        </Card>
+      )}
+
+      {state.phase === "etapa" && resultadosParaDivulgar > 0 && (
+        <Card style={{marginBottom:16,border:"1px solid rgba(156,111,62,0.4)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#9C6F3E",marginBottom:6}}>🏆 {resultadosParaDivulgar} resultado(s) processado(s) ainda não divulgado(s)</div>
+          <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>Rodada processada — hora de publicar os resultados e o ranking atualizado no grupo.</div>
+          <Btn onClick={()=>setTab("mensagens")} color="#9C6F3E">Publicar ranking/resultados</Btn>
+        </Card>
+      )}
+
       {pendentesMensagensCount > 0 && (
         <Card style={{marginBottom:16,border:"1px solid rgba(37,211,102,0.4)"}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#25d366",marginBottom:6}}>📲 {pendentesMensagensCount} mensagem(ns) de WhatsApp pendente(s)</div>
-          <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>Confrontos, resultados, lembretes e outras notificações esperando pra sair.</div>
+          <div style={{fontSize:13,fontWeight:700,color:"#25d366",marginBottom:8}}>📲 {pendentesMensagensCount} mensagem(ns) de WhatsApp pendente(s)</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>
+            {pendentesPorCategoria.map(c => (
+              <span key={c.id} style={{fontSize:12,color:"#9db3a8",background:"#1C2B27",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:"4px 8px"}}>{c.icon} {c.n} · {c.label}</span>
+            ))}
+          </div>
           <Btn onClick={()=>setTab("mensagens")} color="#25d366">Despachar mensagens</Btn>
         </Card>
       )}

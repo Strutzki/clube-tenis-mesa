@@ -491,6 +491,7 @@ const INIT = {
   results: [],           // validated match results
   temporadaNumero: 1,    // 1, 2 ou 3 dentro do ano (Cap. 13: 3 temporadas de 3 meses)
   rodadasPorTemporada: 6, // Cap. 13: nº de rodadas por temporada (configurável, padrão 6)
+  autoValidarPlacar: false, // interruptor: auto-valida placar quando os dois atletas concordam
   temporadaAno: new Date().getFullYear(),
   mensagensEnviadas: [], // histórico de disparos de WhatsApp (log, não afeta ranking/rating)
   solicitacoesWo: [],    // pedidos de W.O. Justificado feitos pelo próprio atleta (Cap. 07)
@@ -978,11 +979,16 @@ function reducer(state, action) {
       return { ...state, rodadasPorTemporada: n };
     }
 
+    case "DEFINIR_AUTO_VALIDAR": {
+      return { ...state, autoValidarPlacar: !!action.payload?.ligado };
+    }
+
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, mensagensEnviadas, solicitacoesWo } = action.payload;
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, mensagensEnviadas, solicitacoesWo } = action.payload;
       return {
         ...state, athletes, matches, keys, phase,
         rodadasPorTemporada: rodadasPorTemporada ?? state.rodadasPorTemporada,
+        autoValidarPlacar: autoValidarPlacar ?? state.autoValidarPlacar,
         temporadaNumero: temporadaNumero ?? state.temporadaNumero,
         temporadaAno: temporadaAno ?? state.temporadaAno,
         mensagensEnviadas: mensagensEnviadas ?? state.mensagensEnviadas,
@@ -3210,6 +3216,7 @@ export default function App() {
         p2Submitted: m.p2_placar1!=null ? {score1:m.p2_placar1,score2:m.p2_placar2} : null,
         p2SubAt: m.p2_enviado_em,
         validated: m.validado, validadoPorAdmin: m.validado_por_admin,
+        validadoAutomatico: m.validado_automatico || false,
         adminAprovadoEm: m.admin_aprovado_em,
         calculado: m.calculado ?? true,
         imputadoPeloAdmin: m.imputado_pelo_admin || false,
@@ -3242,6 +3249,7 @@ export default function App() {
         temporadaNumero: config?.[0]?.temporada_numero || 1,
         temporadaAno: config?.[0]?.temporada_ano || new Date().getFullYear(),
         rodadasPorTemporada: config?.[0]?.rodadas_por_temporada || 6,
+        autoValidarPlacar: config?.[0]?.auto_validar_placar || false,
         solicitacoesWo: solicitacoesWoMapped,
       }});
       // Restaurar atleta completo da sessão após carregar do banco
@@ -3480,6 +3488,9 @@ export default function App() {
     }
     else if (action.type === "DEFINIR_RODADAS") {
       await chamarAdminAction("DEFINIR_RODADAS", { rodadas: action.payload.rodadas });
+    }
+    else if (action.type === "DEFINIR_AUTO_VALIDAR") {
+      await chamarAdminAction("DEFINIR_AUTO_VALIDAR", { ligado: action.payload.ligado });
     }
     else if (action.type === "APLICAR_WO") {
       await chamarAdminAction("APLICAR_WO", action.payload);
@@ -5497,6 +5508,19 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
 
   return (
     <div>
+      <Card style={{border:`1px solid ${state.autoValidarPlacar?"rgba(106,157,122,0.35)":"rgba(255,255,255,0.08)"}`,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>⚡ Auto-validação de placar</div>
+            <div style={{fontSize:11,color:"#7d9188",lineHeight:1.5}}>Quando os dois atletas enviam o mesmo placar, valida sozinho. Divergências e W.O. continuam com você. Dá pra desfazer até o cálculo da rodada.</div>
+          </div>
+          <button onClick={()=>dispatch({type:"DEFINIR_AUTO_VALIDAR",payload:{ligado:!state.autoValidarPlacar}})}
+            style={{padding:"8px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.2)",background:state.autoValidarPlacar?"#6a9d7a":"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>
+            {state.autoValidarPlacar ? "✓ Ligada" : "Desligada"}
+          </button>
+        </div>
+      </Card>
+
       {pedidosExclusao.length > 0 && <>
         <SecTitle>🗑️ Pedidos de exclusão de dados ({pedidosExclusao.length})</SecTitle>
         <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
@@ -5670,7 +5694,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
           const p2 = state.athletes.find(a=>a.id===m.p2Id);
           return (
             <Card key={m.id} style={{border:"1px solid rgba(255,255,255,0.05)"}}>
-              <div style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Rodada {m.round}</div>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Rodada {m.round}{m.validadoAutomatico && <span style={{marginLeft:8,color:"#6a9d7a",textTransform:"none",letterSpacing:0,fontWeight:700}}>⚡ validado automaticamente</span>}</div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}}>
                 <span style={{fontSize:13,color:"#F0EAE0",flex:1}}>{p1?.name}</span>
                 <span style={{fontSize:14,fontWeight:700,color:"#9db3a8"}}>{m.score1} × {m.score2}</span>

@@ -2150,18 +2150,23 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
         const statusPontuacao = (p1b) => m.calculado
           ? `📊 Seu novo Rating: *${p1b.rating}*\nSaldo na temporada: *${(p1b.saldoTemp||0) > 0 ? "+" : ""}${p1b.saldoTemp||0} pts*`
           : `📊 Rating e saldo: *ainda em processamento* — aguardando o fechamento da rodada`;
+        // O ranking só muda depois que TODA a rodada é processada — então o fecho
+        // só afirma "ranking atualizado" quando o resultado já foi calculado.
+        const fechamento = m.calculado
+          ? "Confira o ranking atualizado no app! 🏅"
+          : "⏳ O ranking atualiza só depois que toda a rodada for processada. Assim que fechar, sua nova posição aparece no app! 🏓";
         return [
           {
             atleta: p1,
             matchId: m.id,
             comunicado: m.resultadoComunicado || false,
-            msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}!\n\n${p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p1)}\n\nConfira o ranking atualizado no app! 🏅`,
+            msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}!\n\n${p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p1)}\n\n${fechamento}`,
           },
           {
             atleta: p2,
             matchId: m.id,
             comunicado: m.resultadoComunicado || false,
-            msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}!\n\n${!p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p2)}\n\nConfira o ranking atualizado no app! 🏅`,
+            msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}!\n\n${!p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p2)}\n\n${fechamento}`,
           }
         ];
       }).filter(Boolean).flat();
@@ -2251,7 +2256,14 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
 // fila unificada de disparo em Mensagens (chamada com telefone de verdade).
 function todasMensagensPendentes(state, telefones = {}) {
   const inicioDoMes = calcularInicioDoMes(state);
-  return CATEGORIAS_MENSAGEM.flatMap(c =>
+  // Prioridade de disparo: primeiro o mais imediato (resultado de jogo recém-validado
+  // e lembrete de prazo), depois confrontos, e por fim os informativos. Assim o que
+  // é urgente não fica no fim da fila "despachar tudo".
+  const ORDEM_DISPARO = ["resultados", "lembretes", "confrontos", "backlog", "ranking", "torneio"];
+  const cats = ORDEM_DISPARO
+    .map(id => CATEGORIAS_MENSAGEM.find(c => c.id === id))
+    .filter(Boolean);
+  return cats.flatMap(c =>
     gerarMensagensCategoria(c.id, state, telefones)
       .map(item => ({ ...item, categoria: c.id, categoriaLabel: c.label }))
   ).filter(m => !mensagemJaEnviada(state.mensagensEnviadas, m.atleta?.id, m.categoria, m.matchId, inicioDoMes));

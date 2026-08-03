@@ -135,7 +135,7 @@ function mesDoPrazo(deadline) {
 
 const db = {
   // Atletas
-  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,exclusao_solicitada_em"),
+  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,exclusao_solicitada_em,pagamento_confirmado"),
   insertAtleta: (data) => supaFetch("atletas", { method:"POST", body: JSON.stringify(data), prefer: "return=minimal" }),
   updateAtleta: (id, data) => supaFetch(`atletas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data), prefer: "return=minimal" }),
 
@@ -235,6 +235,7 @@ function mapAtletaFromDb(a) {
     versaoRegulamento: a.versao_regulamento,
     aceiteLGPD: a.aceite_lgpd, inscritoEm: a.inscrito_em,
     pendenteCircuito: a.pendente_circuito || false,
+    pagamentoConfirmado: a.pagamento_confirmado || false,
     ultimaRecusaCircuitoEm: a.ultima_recusa_circuito_em || null,
     foto: a.foto_url || null,
     estilo: a.estilo_jogo || "Clássico",
@@ -492,6 +493,10 @@ const INIT = {
   temporadaNumero: 1,    // 1, 2 ou 3 dentro do ano (Cap. 13: 3 temporadas de 3 meses)
   rodadasPorTemporada: 6, // Cap. 13: nº de rodadas por temporada (configurável, padrão 6)
   autoValidarPlacar: false, // interruptor: auto-valida placar quando os dois atletas concordam
+  financeiroAtivo: false,   // interruptor do módulo financeiro (trava de pareamento por pagamento)
+  valorTemporada: null,     // centavos; nulo até o admin definir
+  descontoGlobalPct: 0,     // desconto global aplicado a todos
+  percentualEntradaMeio: 80,// % pago por quem entra na Rodada 3
   temporadaAno: new Date().getFullYear(),
   mensagensEnviadas: [], // histórico de disparos de WhatsApp (log, não afeta ranking/rating)
   solicitacoesWo: [],    // pedidos de W.O. Justificado feitos pelo próprio atleta (Cap. 07)
@@ -984,11 +989,15 @@ function reducer(state, action) {
     }
 
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, mensagensEnviadas, solicitacoesWo } = action.payload;
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, mensagensEnviadas, solicitacoesWo } = action.payload;
       return {
         ...state, athletes, matches, keys, phase,
         rodadasPorTemporada: rodadasPorTemporada ?? state.rodadasPorTemporada,
         autoValidarPlacar: autoValidarPlacar ?? state.autoValidarPlacar,
+        financeiroAtivo: financeiroAtivo ?? state.financeiroAtivo,
+        valorTemporada: valorTemporada !== undefined ? valorTemporada : state.valorTemporada,
+        descontoGlobalPct: descontoGlobalPct ?? state.descontoGlobalPct,
+        percentualEntradaMeio: percentualEntradaMeio ?? state.percentualEntradaMeio,
         temporadaNumero: temporadaNumero ?? state.temporadaNumero,
         temporadaAno: temporadaAno ?? state.temporadaAno,
         mensagensEnviadas: mensagensEnviadas ?? state.mensagensEnviadas,
@@ -3277,6 +3286,10 @@ export default function App() {
         temporadaAno: config?.[0]?.temporada_ano || new Date().getFullYear(),
         rodadasPorTemporada: config?.[0]?.rodadas_por_temporada || 6,
         autoValidarPlacar: config?.[0]?.auto_validar_placar || false,
+        financeiroAtivo: config?.[0]?.financeiro_ativo || false,
+        valorTemporada: config?.[0]?.valor_temporada ?? null,
+        descontoGlobalPct: config?.[0]?.desconto_global_pct || 0,
+        percentualEntradaMeio: config?.[0]?.percentual_entrada_meio || 80,
         solicitacoesWo: solicitacoesWoMapped,
       }});
       // Restaurar atleta completo da sessão após carregar do banco
@@ -3652,7 +3665,7 @@ export default function App() {
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
-          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} />
+          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} />
         ) : isVisitante ? (
           <VisitanteView state={state} tab={tab} setTab={setTab} />
         ) : (
@@ -3732,6 +3745,7 @@ function BottomNav({ isAdmin, isVisitante, tab, setTab }) {
     {id:"pendencias", label:"Pend.",   icon:"⚠️"},
     {id:"historico",  label:"Hist.",   icon:"📋"},
     {id:"mensagens",  label:"Msgs",    icon:"💬"},
+    {id:"financeiro", label:"$",       icon:"💰"},
   ];
   const athleteTabs = [
     {id:"meus_jogos", label:"Jogos",      Icon:IconJogos},
@@ -4629,7 +4643,7 @@ const Badge = ({label, color="#D85A30"}) => (
 );
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
-function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta }) {
+function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, loadFromSupabase }) {
   if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
@@ -4637,7 +4651,185 @@ function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones,
   if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} />;
   if (tab === "historico") return <AdminHistorico state={state} />;
   if (tab === "mensagens") return <AdminMensagens state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
+  if (tab === "financeiro") return <AdminFinanceiro state={state} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} />;
   return null;
+}
+
+// ── ADMIN FINANCEIRO (F2) ─────────────────────────────────────────────────────
+function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
+  const [pagamentos, setPagamentos] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [salvandoCfg, setSalvandoCfg] = useState(false);
+  const [valorReais, setValorReais] = useState("");
+  const [descGlobal, setDescGlobal] = useState("");
+  const [pctMeio, setPctMeio] = useState("");
+  const [registrando, setRegistrando] = useState(null);
+  const [regMeio, setRegMeio] = useState(false);
+  const [regDescInd, setRegDescInd] = useState("");
+  const [regValor, setRegValor] = useState("");
+  const [regObs, setRegObs] = useState("");
+  const [salvandoReg, setSalvandoReg] = useState(false);
+  const [estornarConf, setEstornarConf] = useState(null);
+
+  const financeiroAtivo = !!state.financeiroAtivo;
+  const valorTemporada = state.valorTemporada;
+  const descontoGlobalPct = state.descontoGlobalPct || 0;
+  const percentualMeio = state.percentualEntradaMeio || 80;
+  const rotuloTemp = `${state.temporadaNumero}/${state.temporadaAno}`;
+
+  async function carregarPagamentos() {
+    setCarregando(true); setErro("");
+    try { const d = await chamarAdminAction("LISTAR_PAGAMENTOS", {}); setPagamentos(d || []); }
+    catch(e) { setErro(e.message || "Erro ao carregar"); setPagamentos([]); }
+    finally { setCarregando(false); }
+  }
+  useEffect(() => { carregarPagamentos(); }, []);
+  useEffect(() => {
+    setValorReais(valorTemporada != null ? (valorTemporada/100).toFixed(2) : "");
+    setDescGlobal(String(descontoGlobalPct));
+    setPctMeio(String(percentualMeio));
+  }, [valorTemporada, descontoGlobalPct, percentualMeio]);
+
+  const reaisParaCent = v => v.trim()==="" ? null : Math.round(parseFloat(v.replace(",","."))*100);
+  const fmtR = c => c==null ? "—" : `R$ ${(c/100).toFixed(2).replace(".",",")}`;
+  function centSugerido(meio, descPct) {
+    if (valorTemporada == null) return null;
+    const base = valorTemporada * (meio ? percentualMeio : 100) / 100;
+    const d = (descPct===""||descPct==null) ? descontoGlobalPct : Number(descPct);
+    return Math.round(base * (1 - (d||0)/100));
+  }
+
+  async function salvarConfig(novoAtivo) {
+    setSalvandoCfg(true); setErro("");
+    try {
+      await chamarAdminAction("DEFINIR_FINANCEIRO", {
+        ativo: novoAtivo != null ? novoAtivo : financeiroAtivo,
+        valorTemporada: reaisParaCent(valorReais),
+        descontoGlobalPct: Number(descGlobal)||0,
+        percentualMeio: Number(pctMeio)||80,
+      });
+      await loadFromSupabase();
+    } catch(e) { setErro(e.message); }
+    finally { setSalvandoCfg(false); }
+  }
+
+  function abrir(a) {
+    setRegistrando(a.id); setRegMeio(false); setRegDescInd("");
+    const s = centSugerido(false, ""); setRegValor(s!=null ? (s/100).toFixed(2) : ""); setRegObs("");
+  }
+  async function confirmar(a) {
+    setSalvandoReg(true); setErro("");
+    try {
+      await chamarAdminAction("REGISTRAR_PAGAMENTO", {
+        atletaId: a.id, temporadaRotulo: rotuloTemp,
+        valor: reaisParaCent(regValor), percentual: regMeio ? percentualMeio : 100,
+        descontoPctAplicado: regDescInd==="" ? descontoGlobalPct : Number(regDescInd)||0,
+        metodo: "pix", observacao: regObs || null,
+      });
+      setRegistrando(null);
+      await loadFromSupabase(); await carregarPagamentos();
+    } catch(e) { setErro(e.message); }
+    finally { setSalvandoReg(false); }
+  }
+  async function estornar(id) {
+    setErro("");
+    try { await chamarAdminAction("ESTORNAR_PAGAMENTO", { id }); setEstornarConf(null); await loadFromSupabase(); await carregarPagamentos(); }
+    catch(e) { setErro(e.message); }
+  }
+
+  const atletas = [...state.athletes.filter(a => a.status === "ativo")]
+    .sort((a,b)=> (a.pagamentoConfirmado?1:0)-(b.pagamentoConfirmado?1:0) || (a.name||"").localeCompare(b.name||""));
+  const pagosN = atletas.filter(a => a.pagamentoConfirmado).length;
+  const retidosN = atletas.length - pagosN;
+  const totalArrecadado = (pagamentos||[]).filter(p=>p.status==="confirmado").reduce((s,p)=>s+(p.valor||0),0);
+  const inp = {background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:8,outline:"none",boxSizing:"border-box"};
+  const lbl = {fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4,marginTop:6};
+
+  return (
+    <div>
+      <SecTitle>💰 Financeiro — Temporada {rotuloTemp}</SecTitle>
+      {erro && <Card style={{border:"1px solid rgba(194,90,69,0.4)"}}><div style={{fontSize:12,color:"#c25a45"}}>⚠️ {erro}</div></Card>}
+
+      <Card style={{border:`1px solid ${financeiroAtivo?"rgba(106,157,122,0.4)":"rgba(255,255,255,0.06)"}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:10,flexWrap:"wrap"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>⚙️ Configuração</div>
+          <button onClick={()=>salvarConfig(!financeiroAtivo)} disabled={salvandoCfg}
+            style={{padding:"7px 13px",borderRadius:10,border:"1px solid rgba(255,255,255,0.2)",background:financeiroAtivo?"#6a9d7a":"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>
+            {financeiroAtivo ? "✓ Financeiro LIGADO" : "Financeiro desligado"}
+          </button>
+        </div>
+        {financeiroAtivo && <div style={{fontSize:11,color:"#D85A30",marginBottom:8,lineHeight:1.5}}>⚠️ Trava ativa: só é pareado quem tem pagamento confirmado. Hoje {pagosN} pago(s), {retidosN} retido(s).</div>}
+        <label style={lbl}>Valor da temporada (R$)</label>
+        <input style={inp} value={valorReais} onChange={e=>setValorReais(e.target.value)} placeholder="ex: 90,00" inputMode="decimal"/>
+        <div style={{display:"flex",gap:8}}>
+          <div style={{flex:1}}><label style={lbl}>Desconto global (%)</label><input style={inp} value={descGlobal} onChange={e=>setDescGlobal(e.target.value)} inputMode="numeric"/></div>
+          <div style={{flex:1}}><label style={lbl}>Entrada meio (%)</label><input style={inp} value={pctMeio} onChange={e=>setPctMeio(e.target.value)} inputMode="numeric"/></div>
+        </div>
+        <Btn onClick={()=>salvarConfig(null)} color="#D85A30" full small disabled={salvandoCfg}>{salvandoCfg?"Salvando…":"💾 Salvar configuração"}</Btn>
+      </Card>
+
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-around",textAlign:"center",gap:8}}>
+          <div><div style={{fontSize:17,fontWeight:800,color:"#6a9d7a"}}>{fmtR(totalArrecadado)}</div><div style={{fontSize:10,color:"#7d9188"}}>arrecadado</div></div>
+          <div><div style={{fontSize:17,fontWeight:800,color:"#F0EAE0"}}>{pagosN}</div><div style={{fontSize:10,color:"#7d9188"}}>pagos</div></div>
+          <div><div style={{fontSize:17,fontWeight:800,color:"#D85A30"}}>{retidosN}</div><div style={{fontSize:10,color:"#7d9188"}}>retidos</div></div>
+        </div>
+      </Card>
+
+      <SecTitle>Pagamentos por atleta</SecTitle>
+      {valorTemporada==null && <Card><div style={{fontSize:12,color:"#9C6F3E"}}>Defina o valor da temporada acima para ver os valores sugeridos.</div></Card>}
+      {atletas.map(a => (
+        <Card key={a.id} style={{border:a.pagamentoConfirmado?"1px solid rgba(106,157,122,0.25)":"1px solid rgba(216,90,48,0.2)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}{a.pendenteCircuito ? <span style={{fontSize:10,color:"#9C6F3E"}}> · backlog</span> : null}</div>
+              <div style={{fontSize:11,color:a.pagamentoConfirmado?"#6a9d7a":"#D85A30"}}>{a.pagamentoConfirmado ? "✅ Pagamento confirmado" : "🔒 Retido — sem pagamento"}</div>
+            </div>
+            {a.pagamentoConfirmado
+              ? (estornarConf===a.id
+                  ? <div style={{display:"flex",gap:6}}><Btn small color="#c25a45" onClick={()=>{const p=(pagamentos||[]).find(x=>x.atleta_id===a.id && x.status==="confirmado"); if(p) estornar(p.id); else setEstornarConf(null);}}>Confirmar</Btn><Btn small color="#5E7569" onClick={()=>setEstornarConf(null)}>Não</Btn></div>
+                  : <Btn small color="#5E7569" onClick={()=>setEstornarConf(a.id)}>↩️ Estornar</Btn>)
+              : <Btn small color="#6a9d7a" onClick={()=>abrir(a)} disabled={valorTemporada==null}>💵 Registrar</Btn>}
+          </div>
+          {registrando===a.id && (
+            <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+              <div style={{display:"flex",gap:6,marginBottom:8}}>
+                <button onClick={()=>{setRegMeio(false); const s=centSugerido(false,regDescInd); setRegValor(s!=null?(s/100).toFixed(2):"");}} style={{flex:1,padding:"7px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:!regMeio?"#6a9d7a":"transparent",color:"#F0EAE0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Início (100%)</button>
+                <button onClick={()=>{setRegMeio(true); const s=centSugerido(true,regDescInd); setRegValor(s!=null?(s/100).toFixed(2):"");}} style={{flex:1,padding:"7px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:regMeio?"#6a9d7a":"transparent",color:"#F0EAE0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Meio ({percentualMeio}%)</button>
+              </div>
+              <label style={lbl}>Desconto individual (%) — vazio usa o global ({descontoGlobalPct}%)</label>
+              <input style={inp} value={regDescInd} onChange={e=>{setRegDescInd(e.target.value); const s=centSugerido(regMeio,e.target.value); setRegValor(s!=null?(s/100).toFixed(2):"");}} inputMode="numeric" placeholder={`${descontoGlobalPct}`}/>
+              <label style={lbl}>Valor recebido (R$) — sugerido, pode ajustar</label>
+              <input style={inp} value={regValor} onChange={e=>setRegValor(e.target.value)} inputMode="decimal"/>
+              <label style={lbl}>Observação (opcional)</label>
+              <input style={inp} value={regObs} onChange={e=>setRegObs(e.target.value)} placeholder="ex: PIX ref 1234"/>
+              <div style={{display:"flex",gap:8}}>
+                <Btn small color="#6a9d7a" onClick={()=>confirmar(a)} disabled={salvandoReg}>{salvandoReg?"Salvando…":"✓ Confirmar pagamento"}</Btn>
+                <Btn small color="#5E7569" onClick={()=>setRegistrando(null)}>Cancelar</Btn>
+              </div>
+            </div>
+          )}
+        </Card>
+      ))}
+
+      <SecTitle>📒 Livro-caixa</SecTitle>
+      {carregando && <Card><div style={{fontSize:12,color:"#7d9188"}}>Carregando…</div></Card>}
+      {pagamentos && pagamentos.length===0 && !carregando && <Card><div style={{fontSize:12,color:"#7d9188",textAlign:"center",padding:10}}>Nenhum pagamento registrado ainda.</div></Card>}
+      {(pagamentos||[]).map(p => {
+        const at = state.athletes.find(x=>x.id===p.atleta_id);
+        return (
+          <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"9px 12px",marginBottom:6,opacity:p.status==="estornado"?0.5:1}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:12,color:"#F0EAE0"}}>{at?nomeComApelido(at):"(atleta removido)"}</div>
+              <div style={{fontSize:10,color:"#7d9188"}}>{p.temporada_rotulo||""} · {p.percentual||100}%{p.status==="estornado"?" · ESTORNADO":""}{p.observacao?` · ${p.observacao}`:""}</div>
+            </div>
+            <div style={{fontSize:13,fontWeight:700,color:p.status==="estornado"?"#7d9188":"#6a9d7a",whiteSpace:"nowrap"}}>{fmtR(p.valor)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // ── ADMIN DASHBOARD ───────────────────────────────────────────────────────────

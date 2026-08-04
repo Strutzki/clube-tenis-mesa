@@ -497,6 +497,9 @@ const INIT = {
   valorTemporada: null,     // centavos; nulo até o admin definir
   descontoGlobalPct: 0,     // desconto global aplicado a todos
   percentualEntradaMeio: 80,// % pago por quem entra na Rodada 3
+  nomeCircuito: "Clube do Tênis de Mesa", // nome exibido (cabeçalho + mensagens)
+  dataInicioTemporada: null, // data de início da próxima temporada (define prazos de renovação)
+  maxAtletas: 20,            // teto de atletas por circuito
   temporadaAno: new Date().getFullYear(),
   mensagensEnviadas: [], // histórico de disparos de WhatsApp (log, não afeta ranking/rating)
   solicitacoesWo: [],    // pedidos de W.O. Justificado feitos pelo próprio atleta (Cap. 07)
@@ -988,8 +991,17 @@ function reducer(state, action) {
       return { ...state, autoValidarPlacar: !!action.payload?.ligado };
     }
 
+    case "DEFINIR_CONFIG_CIRCUITO": {
+      const { nome, dataInicio, maxAtletas } = action.payload || {};
+      return { ...state,
+        ...(nome !== undefined ? { nomeCircuito: nome || "Clube do Tênis de Mesa" } : {}),
+        ...(dataInicio !== undefined ? { dataInicioTemporada: dataInicio || null } : {}),
+        ...(maxAtletas !== undefined ? { maxAtletas: Number(maxAtletas) || 20 } : {}),
+      };
+    }
+
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, mensagensEnviadas, solicitacoesWo } = action.payload;
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, nomeCircuito, dataInicioTemporada, maxAtletas, mensagensEnviadas, solicitacoesWo } = action.payload;
       return {
         ...state, athletes, matches, keys, phase,
         rodadasPorTemporada: rodadasPorTemporada ?? state.rodadasPorTemporada,
@@ -998,6 +1010,9 @@ function reducer(state, action) {
         valorTemporada: valorTemporada !== undefined ? valorTemporada : state.valorTemporada,
         descontoGlobalPct: descontoGlobalPct ?? state.descontoGlobalPct,
         percentualEntradaMeio: percentualEntradaMeio ?? state.percentualEntradaMeio,
+        nomeCircuito: nomeCircuito ?? state.nomeCircuito,
+        dataInicioTemporada: dataInicioTemporada !== undefined ? dataInicioTemporada : state.dataInicioTemporada,
+        maxAtletas: maxAtletas ?? state.maxAtletas,
         temporadaNumero: temporadaNumero ?? state.temporadaNumero,
         temporadaAno: temporadaAno ?? state.temporadaAno,
         mensagensEnviadas: mensagensEnviadas ?? state.mensagensEnviadas,
@@ -2107,6 +2122,7 @@ function mensagemJaEnviada(mensagensEnviadas, atletaId, categoriaItem, matchId, 
 }
 
 function gerarMensagensCategoria(cat, state, telefones = {}) {
+  const nomeCircuito = state.nomeCircuito || "Clube do Tênis de Mesa";
   const ativos = state.athletes.filter(a => estaNoRanking(a, state.matches));
   const rodadaAtual = state.keys[0]?.currentRound || 1;
   const rodadasDoMes = calcularRodadasDoMes(state);
@@ -2135,7 +2151,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
         const rotuloMes = mesRef ? `de ${mesRef}` : "deste mês";
         return {
           atleta,
-          msg: `🏓 *Clube do Tênis de Mesa — ${tituloMes}*\n\nOlá ${nomeExibicao(atleta).split(" ")[0]}! Seus dois confrontos ${rotuloMes}:\n\n${linhasJogos}\n\n📅 1ª rodada: jogar e registrar entre os dias 1 e 15\n📅 2ª rodada: jogar e registrar entre os dias 1 e 25\n\nBons jogos! 🏆`,
+          msg: `🏓 *${nomeCircuito} — ${tituloMes}*\n\nOlá ${nomeExibicao(atleta).split(" ")[0]}! Seus dois confrontos ${rotuloMes}:\n\n${linhasJogos}\n\n📅 1ª rodada: jogar e registrar entre os dias 1 e 15\n📅 2ª rodada: jogar e registrar entre os dias 1 e 25\n\nBons jogos! 🏆`,
         };
       });
     }
@@ -2160,13 +2176,13 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
             atleta: p1,
             matchId: m.id,
             comunicado: m.resultadoComunicado || false,
-            msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}!\n\n${p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p1)}\n\n${fechamento}`,
+            msg: `🏓 *${nomeCircuito} — Resultado Confirmado*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}!\n\n${p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p1)}\n\n${fechamento}`,
           },
           {
             atleta: p2,
             matchId: m.id,
             comunicado: m.resultadoComunicado || false,
-            msg: `🏓 *Clube do Tênis de Mesa — Resultado Confirmado*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}!\n\n${!p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p2)}\n\n${fechamento}`,
+            msg: `🏓 *${nomeCircuito} — Resultado Confirmado*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}!\n\n${!p1venceu ? "🏆 Você venceu!" : "Você perdeu desta vez."}\n\n*${nomeExibicao(p1)}* ${m.score1} × ${m.score2} *${nomeExibicao(p2)}*\n\n${statusPontuacao(p2)}\n\n${fechamento}`,
           }
         ];
       }).filter(Boolean).flat();
@@ -2190,12 +2206,12 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
           {
             atleta: p1,
             matchId: m.id,
-            msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}! Sua partida contra *${nomeExibicao(p2)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
+            msg: `⏰ *${nomeCircuito} — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p1).split(" ")[0]}! Sua partida contra *${nomeExibicao(p2)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
           },
           {
             atleta: p2,
             matchId: m.id,
-            msg: `⏰ *Clube do Tênis de Mesa — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}! Sua partida contra *${nomeExibicao(p1)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
+            msg: `⏰ *${nomeCircuito} — Lembrete de Prazo*\n\nOlá ${nomeExibicao(p2).split(" ")[0]}! Sua partida contra *${nomeExibicao(p1)}* vence em *${diasRestantes === 0 ? "HOJE" : `${diasRestantes} dia(s)`}*!\n\nSe já jogaram, não esqueça de registrar o placar no app.\n\nPrazo: *${fmtDate(m.deadline)}*`,
           }
         ];
       }).filter(Boolean).flat();
@@ -2220,7 +2236,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
       }
       return emBacklog.map(a => ({
         atleta: a,
-        msg: `🏓 *Clube do Tênis de Mesa — Inscrição Aprovada!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Sua inscrição foi *aprovada*! 🎉\n\n${fraseEntrada}\n\nEnquanto isso, você já pode entrar no app, completar seu perfil e colocar sua foto. 📲\n\nQualquer dúvida, é só chamar. Bem-vindo(a) ao Clube! 🏆`,
+        msg: `🏓 *${nomeCircuito} — Inscrição Aprovada!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Sua inscrição foi *aprovada*! 🎉\n\n${fraseEntrada}\n\nEnquanto isso, você já pode entrar no app, completar seu perfil e colocar sua foto. 📲\n\nQualquer dúvida, é só chamar. Bem-vindo(a) ao Clube! 🏆`,
       }));
     }
 
@@ -2232,7 +2248,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
         .slice(0, 8);
       return top8.map((a, i) => ({
         atleta: a,
-        msg: `🏆 *Clube do Tênis de Mesa — Você está no Torneio Presencial!*\n\nParabéns ${nomeExibicao(a).split(" ")[0]}! 🎉\n\nVocê terminou a temporada em *${i+1}º lugar* e está classificado para o *Torneio Presencial de Encerramento*!\n\n📅 Data e local serão divulgados em breve pelo @clubedotenisdemesa.\n\nAguarde mais informações! 🏓`,
+        msg: `🏆 *${nomeCircuito} — Você está no Torneio Presencial!*\n\nParabéns ${nomeExibicao(a).split(" ")[0]}! 🎉\n\nVocê terminou a temporada em *${i+1}º lugar* e está classificado para o *Torneio Presencial de Encerramento*!\n\n📅 Data e local serão divulgados em breve pelo @clubedotenisdemesa.\n\nAguarde mais informações! 🏓`,
       }));
     }
 
@@ -2243,7 +2259,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
         .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
       return ativos.map(a => ({
         atleta: a,
-        msg: `🏆 *Clube do Tênis de Mesa — Ranking Atualizado*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Confira o ranking após a Rodada ${ultimaRodadaProcessada(state) || rodadaAtual}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | Rating: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
+        msg: `🏆 *${nomeCircuito} — Ranking Atualizado*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Confira o ranking após a Rodada ${ultimaRodadaProcessada(state) || rodadaAtual}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | Rating: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
       }));
     }
 
@@ -2318,6 +2334,7 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
   const LINK_GRUPO = "https://chat.whatsapp.com/DqgZGorS9QYKYNVP1PZ0Fw";
 
   function getMsgColetiva(tipo) {
+    const nomeCircuito = state.nomeCircuito || "Clube do Tênis de Mesa";
     const top = [...ativos]
       .sort(cmpRanking(state.matches))
       .slice(0, 10)
@@ -2345,11 +2362,11 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
 
     switch(tipo) {
       case "abertura":
-        return `🏓 *Clube do Tênis de Mesa — ${tituloMesColetiva}!*\n\nOlá galera! Os dois confrontos ${rotuloMesColetiva} já estão definidos:\n\n*🗓️ Rodada ${rodadaA} — jogar e registrar até dia 15:*\n${confrontosA.join("\n")}\n\n*🗓️ Rodada ${rodadaB} — jogar e registrar até dia 25:*\n${confrontosB.join("\n")}\n\nBons jogos! 🏆`;
+        return `🏓 *${nomeCircuito} — ${tituloMesColetiva}!*\n\nOlá galera! Os dois confrontos ${rotuloMesColetiva} já estão definidos:\n\n*🗓️ Rodada ${rodadaA} — jogar e registrar até dia 15:*\n${confrontosA.join("\n")}\n\n*🗓️ Rodada ${rodadaB} — jogar e registrar até dia 25:*\n${confrontosB.join("\n")}\n\nBons jogos! 🏆`;
       case "ranking":
-        return `🏆 *Clube do Tênis de Mesa — Ranking Rodada ${ultimaRodadaProcessada(state) || rodadaAtual}*\n\n${top.join("\n")}\n\nAcompanhe todos os detalhes no app e no @clubedotenisdemesa! 🏓`;
+        return `🏆 *${nomeCircuito} — Ranking Rodada ${ultimaRodadaProcessada(state) || rodadaAtual}*\n\n${top.join("\n")}\n\nAcompanhe todos os detalhes no app e no @clubedotenisdemesa! 🏓`;
       case "encerramento":
-        return `⚠️ *Clube do Tênis de Mesa — Prazo se Encerrando!*\n\nAtenção! O prazo da Rodada ${rodadaAtual} se encerra em breve.\n\nQuem ainda não jogou ou não registrou o placar, corram! Partidas não registradas serão anuladas.\n\n📲 Registre no app agora!`;
+        return `⚠️ *${nomeCircuito} — Prazo se Encerrando!*\n\nAtenção! O prazo da Rodada ${rodadaAtual} se encerra em breve.\n\nQuem ainda não jogou ou não registrou o placar, corram! Partidas não registradas serão anuladas.\n\n📲 Registre no app agora!`;
       default: return "";
     }
   }
@@ -3281,6 +3298,9 @@ export default function App() {
         valorTemporada: config?.[0]?.valor_temporada ?? null,
         descontoGlobalPct: config?.[0]?.desconto_global_pct || 0,
         percentualEntradaMeio: config?.[0]?.percentual_entrada_meio || 80,
+        nomeCircuito: config?.[0]?.nome_circuito || "Clube do Tênis de Mesa",
+        dataInicioTemporada: config?.[0]?.data_inicio_temporada || null,
+        maxAtletas: config?.[0]?.max_atletas || 20,
         solicitacoesWo: solicitacoesWoMapped,
       }});
       // Restaurar atleta completo da sessão após carregar do banco
@@ -3523,6 +3543,9 @@ export default function App() {
     else if (action.type === "DEFINIR_AUTO_VALIDAR") {
       await chamarAdminAction("DEFINIR_AUTO_VALIDAR", { ligado: action.payload.ligado });
     }
+    else if (action.type === "DEFINIR_CONFIG_CIRCUITO") {
+      await chamarAdminAction("DEFINIR_CONFIG_CIRCUITO", action.payload || {});
+    }
     else if (action.type === "APLICAR_WO") {
       await chamarAdminAction("APLICAR_WO", action.payload);
       await loadFromSupabase();
@@ -3649,7 +3672,7 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); }} />
+      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); }} />
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>
@@ -3670,14 +3693,14 @@ export default function App() {
 }
 
 // ── HEADER ───────────────────────────────────────────────────────────────────
-function Header({ isAdmin, isVisitante, athlete, onLogout }) {
+function Header({ isAdmin, isVisitante, athlete, onLogout, nomeCircuito }) {
   return (
     <div style={{background:T.telaFundo, padding:"12px 22px 16px", display:"flex", alignItems:"center", gap:12, borderBottom:`1px solid rgba(240,234,224,0.08)`}}>
       <span style={{position:"relative",display:"inline-flex",flexShrink:0,borderRadius:"50%",animation:"ctm-logoRing 3.6s ease-in-out infinite"}}>
         <img src={LOGO} alt="Logo" style={{width:40,height:40,borderRadius:"50%",display:"block",animation:"ctm-logoIn .9s cubic-bezier(.2,.7,.2,1) both"}}/>
       </span>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontFamily:T.serif,fontSize:18,lineHeight:1.05,color:T.offwhite}}>Clube do Tênis de Mesa</div>
+        <div style={{fontFamily:T.serif,fontSize:18,lineHeight:1.05,color:T.offwhite}}>{nomeCircuito || "Clube do Tênis de Mesa"}</div>
         <div style={{display:"flex",alignItems:"center",gap:6,marginTop:3}}>
           <span style={{width:7,height:7,borderRadius:"50%",background:T.terracota,flexShrink:0}}/>
           <span style={{fontFamily:T.mono,fontSize:10,letterSpacing:1.5,textTransform:"uppercase",color:"rgba(240,234,224,0.6)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
@@ -4848,6 +4871,7 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
 
 // ── ADMIN DASHBOARD ───────────────────────────────────────────────────────────
 function AdminDashboard({ state, setTab, dispatch }) {
+  const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
   const pendentes = state.athletes.filter(a => a.status === "pendente");
@@ -5078,6 +5102,14 @@ function AdminDashboard({ state, setTab, dispatch }) {
       {state.phase === "etapa" && (
         <NovaTemporadaPanel state={state} dispatch={dispatch} />
       )}
+
+      <Card style={{marginTop:8}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>⚙️ Nome do circuito</div>
+        <div style={{fontSize:11,color:"#7d9188",marginBottom:8}}>Aparece no cabeçalho do app e no título das mensagens de WhatsApp.</div>
+        <input value={nomeEdit} onChange={e=>setNomeEdit(e.target.value)}
+          style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:8,outline:"none",boxSizing:"border-box"}}/>
+        <Btn small color="#D85A30" onClick={()=>dispatch({type:"DEFINIR_CONFIG_CIRCUITO",payload:{nome:nomeEdit.trim()||"Clube do Tênis de Mesa"}})}>💾 Salvar nome</Btn>
+      </Card>
     </div>
   );
 }
@@ -5227,8 +5259,8 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
 
   const MsgBtn = ({ath}) => {
     const msg = ath.status==="reprovado"
-      ? `Olá ${ath.name.split(" ")[0]}, sua inscrição no Clube do Tênis de Mesa — inscrição não aprovada. Motivo: ${ath.motivo||"informações inconsistentes"}. Entre em contato para mais detalhes.`
-      : `Olá ${ath.name.split(" ")[0]}, sua inscrição no Clube do Tênis de Mesa — inscrição APROVADA! Rating inicial: ${ath.rating}. Bem-vindo(a)! 🏓`;
+      ? `Olá ${ath.name.split(" ")[0]}, sua inscrição no ${state.nomeCircuito || "Clube do Tênis de Mesa"} — inscrição não aprovada. Motivo: ${ath.motivo||"informações inconsistentes"}. Entre em contato para mais detalhes.`
+      : `Olá ${ath.name.split(" ")[0]}, sua inscrição no ${state.nomeCircuito || "Clube do Tênis de Mesa"} — inscrição APROVADA! Rating inicial: ${ath.rating}. Bem-vindo(a)! 🏓`;
     const telefone = telefones[ath.id];
     if (!telefone) return <Btn small color="#5E7569" onClick={()=>{}}>📲 carregando…</Btn>;
     return <a href={`https://wa.me/55${telefone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer" style={{textDecoration:"none"}}>

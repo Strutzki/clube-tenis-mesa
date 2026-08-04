@@ -4872,6 +4872,7 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
 // ── ADMIN DASHBOARD ───────────────────────────────────────────────────────────
 function AdminDashboard({ state, setTab, dispatch }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
+  const [maxEdit, setMaxEdit] = useState(String(state.maxAtletas || 20));
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
   const pendentes = state.athletes.filter(a => a.status === "pendente");
@@ -4953,7 +4954,7 @@ function AdminDashboard({ state, setTab, dispatch }) {
       <SecTitle>Visão Geral</SecTitle>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
         {[
-          {label:"Atletas no circuito",val:ativos.length,color:"#D85A30"},
+          {label:"Atletas no circuito",val:`${ativos.length}/${state.maxAtletas||20}`,color: ativos.length>=(state.maxAtletas||20)?"#c25a45":"#D85A30"},
           {label:"Backlog do circuito",val:backlogCount,color:"#9C6F3E"},
           {label:"Inscrições pendentes",val:pendentes.length,color:"#9C6F3E"},
           {label:"Partidas em aberto",val:roundMatches.length,color:"#c25a45"},
@@ -5104,11 +5105,15 @@ function AdminDashboard({ state, setTab, dispatch }) {
       )}
 
       <Card style={{marginTop:8}}>
-        <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>⚙️ Nome do circuito</div>
-        <div style={{fontSize:11,color:"#7d9188",marginBottom:8}}>Aparece no cabeçalho do app e no título das mensagens de WhatsApp.</div>
+        <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>⚙️ Configuração do circuito</div>
+        <div style={{fontSize:11,color:"#7d9188",marginBottom:8}}>O nome aparece no cabeçalho e nos títulos das mensagens. O teto limita quantos atletas entram no circuito por temporada.</div>
+        <label style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>Nome do circuito</label>
         <input value={nomeEdit} onChange={e=>setNomeEdit(e.target.value)}
           style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:8,outline:"none",boxSizing:"border-box"}}/>
-        <Btn small color="#D85A30" onClick={()=>dispatch({type:"DEFINIR_CONFIG_CIRCUITO",payload:{nome:nomeEdit.trim()||"Clube do Tênis de Mesa"}})}>💾 Salvar nome</Btn>
+        <label style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>Teto de atletas por circuito</label>
+        <input value={maxEdit} onChange={e=>setMaxEdit(e.target.value)} inputMode="numeric"
+          style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:8,outline:"none",boxSizing:"border-box"}}/>
+        <Btn small color="#D85A30" onClick={()=>dispatch({type:"DEFINIR_CONFIG_CIRCUITO",payload:{nome:nomeEdit.trim()||"Clube do Tênis de Mesa", maxAtletas: Math.max(2, parseInt(maxEdit)||20)}})}>💾 Salvar</Btn>
       </Card>
     </div>
   );

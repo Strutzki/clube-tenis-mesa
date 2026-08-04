@@ -325,7 +325,7 @@ function clearPinCache() {
   try { sessionStorage.removeItem(PIN_SESSAO_KEY); } catch(e) {}
 }
 
-// ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-9, Cap. 05) ──────
+// ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-10, Cap. 05) ──────
 // Tabela Básica de Cálculo do Rating do Manual Tênis de Mesa Brasil (item 1.7.2.4.5)
 // Valores por faixa de diferença de rating. Usados sempre com peso 1 (rodada
 // regular). O torneio presencial é só pódio/prêmios — NÃO afeta o rating.
@@ -519,7 +519,7 @@ function reducer(state, action) {
         status: "pendente", key: null,
         aceiteRegulamento: aceiteRegulamento || false,
         dataAceiteRegulamento: dataAceite || null,
-        versaoRegulamento: "v03-9",
+        versaoRegulamento: "v03-10",
         aceiteLGPD: aceiteLGPD || false,
         dataAceiteLGPD: dataAceite || null,
         inscritoEm: dataAceite || new Date().toISOString(),
@@ -1397,7 +1397,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
               ["🔴 W.O. Culposo","Confirmou e não foi: −15 pts + aviso. Adversário recebe +8 pts. 2 W.O.s culposos = suspensão da temporada."],
               ["🚫 Fraude","Registro de resultado falso = banimento permanente do Circuito."],
               ["🏆 Torneio Final","Top 8 do ranking ao final da temporada disputam torneio presencial. Prêmios: troféu, medalhas e certificados."],
-              ["💰 Mensalidade","Temporada 1 gratuita. A partir da T2: R$ 30/mês (R$ 90/temporada) ou R$ 81 à vista com desconto."],
+              ["💰 Valor","Valor por temporada, pago no início. Quem entra na 2ª etapa (Rodada 3) paga 80%. Valores e descontos divulgados a cada temporada."],
               ["⚖️ Atletas Federados CBTM","Verifique com sua federação e com o clube ao qual é filiado a conformidade com a Nota CBTM 183/2025 antes de participar."],
               ["📋 Disposições Gerais","Casos omissos decididos pelo administrador. O regulamento pode ser atualizado com aviso prévio."],
             ].map(([t,d]) => (
@@ -1406,7 +1406,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
                 <div style={{fontSize:11,color:"#9db3a8",lineHeight:1.6}}>{d}</div>
               </div>
             ))}
-            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>Regulamento completo disponível na tela inicial · v03-9</div>
+            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>Regulamento completo disponível na tela inicial · v03-10</div>
           </div>
         )}
 
@@ -1416,7 +1416,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
               {aceiteReg && <span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}
             </div>
             <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>
-              Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-9). Estou ciente do aviso sobre atletas federados pela CBTM.
+              Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-10). Estou ciente do aviso sobre atletas federados pela CBTM.
             </div>
           </div>
         )}
@@ -1453,7 +1453,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
         <div style={{background:"rgba(74,222,128,0.08)", border:"1px solid rgba(74,222,128,0.2)", borderRadius:10, padding:"12px 14px", marginBottom:16, textAlign:"left"}}>
           <div style={{fontSize:11, fontWeight:700, color:"#6a9d7a", marginBottom:8}}>✓ Registrado com sucesso</div>
           <div style={{fontSize:11, color:"#7d9188", lineHeight:1.8}}>
-            📋 Aceite do regulamento v03-9<br/>
+            📋 Aceite do regulamento v03-10<br/>
             🔒 Consentimento LGPD (Lei 13.709/2018)<br/>
             📅 Data/hora: {new Date().toLocaleString("pt-BR")}
           </div>
@@ -1468,7 +1468,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
 
 
 
-// ── REGULAMENTO VIEW (regulamento v03-9) ─────────────────────────────────────
+// ── REGULAMENTO VIEW (regulamento v03-10) ─────────────────────────────────────
 function RegulamentoView({ onBack }) {
   const [capAberto, setCapAberto] = useState(null);
 
@@ -1508,7 +1508,7 @@ function RegulamentoView({ onBack }) {
     { id:9,  tag:"Cap. 09", titulo:"Ranking & Publicação" },
     { id:10, tag:"Cap. 10", titulo:"Torneio Presencial de Encerramento" },
     { id:11, tag:"Cap. 11", titulo:"Como Participar" },
-    { id:12, tag:"Cap. 12", titulo:"Mensalidades, Inadimplência & Desistência" },
+    { id:12, tag:"Cap. 12", titulo:"Valor da Temporada, Pagamento & Desistência" },
     { id:13, tag:"Cap. 13", titulo:"Estrutura das Rodadas & Calendário Anual" },
     { id:14, tag:"Cap. 14", titulo:"Casos Omissos" },
   ];
@@ -1786,10 +1786,10 @@ function RegulamentoView({ onBack }) {
     if (id===11) return (
       <div>
         <Box cor="#D85A30" titulo="👨 Temporada Inaugural — Masculino Adulto (18+)">
-          <p style={s.p}>O Clube inicia com a categoria <span style={s.dest}>Masculino Adulto (18+)</span> como modalidade piloto. Qualquer nível de jogo é bem-vindo — federado ou não-federado. A participação é <span style={s.dest}>gratuita na Temporada 1</span>.</p>
+          <p style={s.p}>O Clube inicia com a categoria <span style={s.dest}>Masculino Adulto (18+)</span> como modalidade piloto. Qualquer nível de jogo é bem-vindo — federado ou não-federado.</p>
         </Box>
-        <Box cor="#6a9d7a" titulo="💰 Custo — Temporada 1">
-          <p style={s.p}>A Temporada 1 é <span style={s.dest}>gratuita</span>. O único custo previsto é a taxa individual do torneio presencial de encerramento — mas a participação no torneio <span style={s.dest}>não é obrigatória</span>. A estrutura de mensalidades entra em vigor a partir da Temporada 2.</p>
+        <Box cor="#6a9d7a" titulo="💰 Custo de Participação">
+          <p style={s.p}>A participação no circuito tem um <span style={s.dest}>valor por temporada</span>, pago no início. O valor vigente e eventuais descontos são divulgados antes da abertura das inscrições de cada temporada. O único custo adicional é a taxa individual do torneio presencial de encerramento — cuja participação <span style={s.dest}>não é obrigatória</span>.</p>
         </Box>
         <Box cor="#9C6F3E" titulo="🚪 Entrada no Meio da Temporada">
           <p style={s.p}>A inscrição padrão é feita antes do início de cada temporada. Entradas fora desse período seguem a regra abaixo.</p>
@@ -1801,12 +1801,12 @@ function RegulamentoView({ onBack }) {
         ]}/>
         <Box cor="#D85A30" titulo="📋 Como Funciona o Convite">
           <Ul items={[
-            "Gatilho: suspensão por inadimplência, abandono ou queda do mínimo operacional por +2 rodadas",
+            "Gatilho: suspensão por falta de pagamento, abandono ou queda do mínimo operacional por +2 rodadas",
             "Fila de espera: manifestar interesse a qualquer momento ao @clubedotenisdemesa",
             "Prioridade de entrada para o primeiro da fila — mediante avaliação e aprovação do administrador",
             "No app: ao aprovar o atleta como 'próxima etapa/temporada', a entrada é automática no próximo par permitido (fora do último terço) ou na virada de temporada",
             "Rating de entrada: 250 pts (não-federados) ou rating CBTM-Web (federados)",
-            "Mensalidade cobrada proporcionalmente a partir da Temporada 2",
+            "Valor da temporada: 100% na abertura; 80% para quem entra na 2ª etapa (Rodada 3)",
             "Elegível ao torneio presencial normalmente se atingir top 8",
           ]}/>
         </Box>
@@ -1814,9 +1814,8 @@ function RegulamentoView({ onBack }) {
     );
     if (id===12) return (
       <div>
-        <p style={s.p}>A Temporada 1 é totalmente gratuita. A partir da Temporada 2, será cobrada uma mensalidade para participação no circuito. Os planos e valores serão divulgados antes da abertura das inscrições da Temporada 2.</p>
-        <Box cor="#D85A30" titulo="💳 A partir da Temporada 2">
-          <p style={s.p}>Os valores e planos de mensalidade serão definidos e comunicados pelo administrador <span style={s.dest}>antes da abertura das inscrições da Temporada 2</span>.</p>
+        <p style={s.p}>A participação no circuito é paga <span style={s.dest}>por temporada, no início</span>. O valor e eventuais descontos são definidos e divulgados pelo Clube antes da abertura das inscrições. O pagamento é confirmado pelo administrador; <span style={s.dest}>enquanto não confirmado, o atleta não é incluído nos confrontos</span>. É um valor único por temporada — sem cobrança mensal nem parcelamento.</p>
+        <Box cor="#D85A30" titulo="💳 O que está incluído">
           <Ul items={[
             "✅ Participação em todas as rodadas da temporada",
             "✅ Confronto pareado pelo sistema a cada rodada",
@@ -1826,29 +1825,21 @@ function RegulamentoView({ onBack }) {
             "✅ Certificado digital para os 3 melhores da temporada",
           ]}/>
         </Box>
-        <Box cor="#9C6F3E" titulo="⚠️ Inadimplência — 3 Fases">
-          <Tbl headers={["Fase","Atraso","Consequência"]} rows={[
-            ["Aviso","Até 5 dias","Lembrete pessoal. Sem penalidade."],
-            ["Suspensão Parcial","6–15 dias","Confrontos congelados até regularizar."],
-            ["Suspensão Total","Acima de 15 dias","Removido da rodada. Confrontos = W.O."],
-          ]}/>
-          <Ul items={[
-            "Regularização: reativado na rodada seguinte (não na rodada em curso)",
-            "Reincidência: 2 suspensões totais na temporada = exclusão sem reembolso",
+        <Box cor="#9C6F3E" titulo="💵 Valor conforme o momento de entrada">
+          <Tbl headers={["Momento","Valor"]} rows={[
+            ["Abertura da temporada (Rodada 1)","100% do valor"],
+            ["Entrada na 2ª etapa (Rodada 3)","80% do valor"],
+            ["Último terço da temporada","Sem novas entradas (Cap. 11)"],
           ]}/>
         </Box>
-        <Box cor="#c25a45" titulo="🚪 Desistência">
-          <Tbl headers={["Momento","Aviso mínimo","Mensalidade devida","Rating"]} rows={[
-            ["Antes da próxima rodada","48h","Parcelas vencidas — sem reembolso restante","✅ Congelado"],
-            ["Durante rodada (com confronto)","Imediato","Parcelas vencidas + multa de 1 parcela","⚠️ W.O. no confronto"],
-            ["Abandono sem comunicação","—","Parcelas vencidas + multa + bloqueio 1 temporada","❌ −30 pts no rating"],
-          ]}/>
+        <Box cor="#c25a45" titulo="🔒 Falta de pagamento">
+          <p style={s.p}>Sem o pagamento confirmado, o atleta fica <span style={s.dest}>retido</span> — não é pareado nas rodadas — até regularizar. A confirmação é feita pelo administrador.</p>
         </Box>
-        <Box cor="#D85A30" titulo="↩️ Política de Reembolso">
+        <Box cor="#D85A30" titulo="↩️ Desistência & Reembolso">
           <Ul items={[
-            "Não há reembolso proporcional para meses parcialmente utilizados",
-            "Encerramento antecipado por força maior: quem pagou à vista é reembolsado proporcionalmente",
-            "Reembolsos processados em até 15 dias úteis via PIX",
+            "O valor da temporada não é reembolsável após o início dos confrontos",
+            "Encerramento antecipado por força maior: reembolso proporcional, em até 15 dias úteis via PIX",
+            "Abandono sem comunicação pode implicar penalidade de rating (−30 pts) e bloqueio de 1 temporada",
           ]}/>
         </Box>
       </div>
@@ -1901,7 +1892,7 @@ function RegulamentoView({ onBack }) {
           ]}/>
           <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A decisão do administrador em casos omissos é final. Situações recorrentes podem motivar a inclusão de uma nova regra em versão futura deste regulamento.</p>
         </Box>
-        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Circuito BH · Regulamento v03-9</div>
+        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Circuito BH · Regulamento v03-10</div>
       </div>
     );
     return null;
@@ -1917,7 +1908,7 @@ function RegulamentoView({ onBack }) {
         <div style={s.logoWrap}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
         <div style={{flex:1,marginLeft:10}}>
           <div style={{fontSize:14,fontWeight:800,color:"#fff"}}>Regulamento Oficial</div>
-          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · v03-9</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · v03-10</div>
         </div>
         <button style={s.backBtn} onClick={onBack}>← Voltar</button>
       </div>
@@ -5420,7 +5411,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
       {suspensos.length > 0 && <>
         <SecTitle>🚫 Suspensos ({suspensos.length})</SecTitle>
         <div style={{fontSize:11,color:"#7d9188",marginBottom:8,marginTop:-4}}>
-          Fora do circuito temporariamente (ex.: inadimplência — Cap. 12). Revise e ajuste o status quando o atleta regularizar.
+          Fora do circuito temporariamente. Revise e ajuste o status quando necessário.
         </div>
         {suspensos.map(a => (
           <Card key={a.id} style={{border:"1px solid rgba(194,90,69,0.2)"}}>

@@ -5004,6 +5004,29 @@ function AdminDashboard({ state, setTab, dispatch }) {
     }
   }
 
+  // Saúde de UMA rodada qualquer (usado pra mostrar as duas do par mensal).
+  const saudeDaRodada = (r) => {
+    const ps = state.matches.filter(m => m.round === r);
+    const total = ps.length;
+    const val = ps.filter(m => m.validated).length;
+    const pct = total > 0 ? Math.round((val / total) * 100) : 0;
+    const emRisco = ps.filter(m => {
+      const hasScore = m.p1Submitted || m.p2Submitted;
+      return deadlineStatus(hasScore ? m.scoreDeadline : m.deadline).urgent;
+    }).length;
+    const semSubIds = new Set();
+    ps.filter(m => !m.validated && !m.rejeitado).forEach(m => {
+      if (!m.p1Submitted) semSubIds.add(m.p1Id);
+      if (!m.p2Submitted) semSubIds.add(m.p2Id);
+    });
+    const semSub = [...semSubIds].map(id => state.athletes.find(a => a.id === id)).filter(Boolean);
+    const prazo = ps.map(m => m.deadline).filter(Boolean).sort()[0] || null;
+    return { r, total, val, pct, emRisco, semSub, prazo };
+  };
+  // Par mensal atual = as duas rodadas mais altas já geradas (ex.: 3 e 4).
+  const parRodadas = [maxRodadaTemporada - 1, maxRodadaTemporada]
+    .filter(r => r >= 1 && state.matches.some(m => m.round === r));
+
   return (
     <div>
       <SecTitle>Visão Geral</SecTitle>
@@ -5079,33 +5102,41 @@ function AdminDashboard({ state, setTab, dispatch }) {
       )}
 
 
-      {state.phase === "etapa" && currentRound > 0 && (
-        <Card style={{marginBottom:16}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:10}}>💊 Saúde da Rodada {currentRound}</div>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-            <div style={{flex:1,height:8,borderRadius:4,background:"#1C2B27",overflow:"hidden"}}>
-              <div style={{width:`${pctValidado}%`,height:"100%",background: pctValidado===100?"#6a9d7a":"#D85A30",borderRadius:4}} />
+      {state.phase === "etapa" && parRodadas.map((r, i) => {
+        const h = saudeDaRodada(r);
+        const fmtP = h.prazo ? new Date(h.prazo+"T00:00:00").toLocaleDateString("pt-BR") : null;
+        const vigente = i === 0; // a de baixo do par tem o prazo mais próximo
+        return (
+          <Card key={r} style={{marginBottom:12, border: vigente ? "1px solid rgba(216,90,48,0.28)" : "1px solid rgba(255,255,255,0.06)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:6}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>💊 Saúde da Rodada {r}{vigente && <span style={{fontSize:10,color:"#D85A30",marginLeft:6}}>· vigente</span>}</div>
+              {fmtP && <div style={{fontSize:11,color:"#7d9188"}}>prazo {fmtP}</div>}
             </div>
-            <div style={{fontSize:12,fontWeight:700,color: pctValidado===100?"#6a9d7a":"#D85A30",minWidth:40,textAlign:"right"}}>{pctValidado}%</div>
-          </div>
-          <div style={{fontSize:11,color:"#9db3a8",marginBottom:8}}>
-            {partidasRodadaAtual.filter(m=>m.validated).length} de {partidasRodadaAtual.length} partidas validadas
-          </div>
-          {partidasEmRisco.length > 0 && (
-            <div style={{fontSize:12,color:"#c25a45",marginTop:6}}>
-              🔥 {partidasEmRisco.length} partida(s) em risco de vencer o prazo
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+              <div style={{flex:1,height:8,borderRadius:4,background:"#1C2B27",overflow:"hidden"}}>
+                <div style={{width:`${h.pct}%`,height:"100%",background: h.pct===100?"#6a9d7a":"#D85A30",borderRadius:4}} />
+              </div>
+              <div style={{fontSize:12,fontWeight:700,color: h.pct===100?"#6a9d7a":"#D85A30",minWidth:40,textAlign:"right"}}>{h.pct}%</div>
             </div>
-          )}
-          {atletasSemSubmeter.length > 0 && (
-            <div style={{fontSize:12,color:"#9C6F3E",marginTop:6}}>
-              ⏳ {atletasSemSubmeter.length} atleta(s) ainda não submeteram placar: {atletasSemSubmeter.map(a=>nomeExibicao(a).split(" ")[0]).join(", ")}
+            <div style={{fontSize:11,color:"#9db3a8",marginBottom:8}}>
+              {h.val} de {h.total} partidas validadas
             </div>
-          )}
-          {partidasEmRisco.length === 0 && atletasSemSubmeter.length === 0 && (
-            <div style={{fontSize:12,color:"#6a9d7a",marginTop:6}}>✅ Nenhum ponto de atenção no momento</div>
-          )}
-        </Card>
-      )}
+            {h.emRisco > 0 && (
+              <div style={{fontSize:12,color:"#c25a45",marginTop:6}}>
+                🔥 {h.emRisco} partida(s) em risco de vencer o prazo
+              </div>
+            )}
+            {h.semSub.length > 0 && (
+              <div style={{fontSize:12,color:"#9C6F3E",marginTop:6}}>
+                ⏳ {h.semSub.length} atleta(s) ainda não submeteram placar: {h.semSub.map(a=>nomeExibicao(a).split(" ")[0]).join(", ")}
+              </div>
+            )}
+            {h.emRisco === 0 && h.semSub.length === 0 && (
+              <div style={{fontSize:12,color:"#6a9d7a",marginTop:6}}>✅ Nenhum ponto de atenção no momento</div>
+            )}
+          </Card>
+        );
+      })}
 
       {state.phase === "inscricoes" && (
         <Card>

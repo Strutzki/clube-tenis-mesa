@@ -135,7 +135,7 @@ function mesDoPrazo(deadline) {
 
 const db = {
   // Atletas
-  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,exclusao_solicitada_em,pagamento_confirmado,quer_renovar,renovacao_em,desconto_pct,isento"),
+  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,exclusao_solicitada_em,pagamento_confirmado,quer_renovar,renovacao_em"),
   insertAtleta: (data) => supaFetch("atletas", { method:"POST", body: JSON.stringify(data), prefer: "return=minimal" }),
   updateAtleta: (id, data) => supaFetch(`atletas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data), prefer: "return=minimal" }),
 
@@ -238,8 +238,6 @@ function mapAtletaFromDb(a) {
     pagamentoConfirmado: a.pagamento_confirmado || false,
     querRenovar: a.quer_renovar || false,
     renovacaoEm: a.renovacao_em || null,
-    descontoPct: a.desconto_pct ?? null,
-    isento: a.isento || false,
     ultimaRecusaCircuitoEm: a.ultima_recusa_circuito_em || null,
     foto: a.foto_url || null,
     estilo: a.estilo_jogo || "Clássico",
@@ -270,6 +268,26 @@ async function buscarAtletaPorTelefonePublico(telefone) {
   const data = await res.json();
   const row = Array.isArray(data) ? data[0] : null;
   return row ? mapAtletaFromDb(row) : null;
+}
+
+// Preço da temporada do PRÓPRIO atleta, via função SECURITY DEFINER — assim o
+// desconto/isenção individual não precisa trafegar na lista pública de atletas
+// (dado financeiro individual fica fora do broadcast). Devolve { financeiro_ativo,
+// isento, desconto_pct, valor_base_cent, preco_final_cent } ou null.
+async function buscarPrecoTemporada(id) {
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/rpc/preco_temporada_atleta`, {
+      method: "POST",
+      headers: {
+        "apikey": SUPA_KEY,
+        "Authorization": `Bearer ${SUPA_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_id: id }),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
 }
 
 // Login do atleta por telefone + PIN (Edge Function login-atleta). Devolve
@@ -5249,17 +5267,27 @@ function RenovacaoAdminPanel({ state, dispatch }) {
 // Card de renovação do ATLETA (fase de inscrições): mostra valor/desconto e o
 // botão de sinalizar intenção. Vale para o circuito atual e o backlog aprovado.
 function RenovacaoCard({ state, dispatch, athlete }) {
-  if (state.phase !== "inscricoes") return null;
-  if (!athlete || athlete.status !== "ativo") return null;
+  const eu = state.athletes.find(a => a.id === athlete?.id) || null;
+  const [preco, setPreco] = useState(null);
+  const inscricoes = state.phase === "inscricoes";
+  const elegivel = inscricoes && eu && eu.status === "ativo";
+  useEffect(() => {
+    let vivo = true;
+    if (elegivel && state.financeiroAtivo && eu?.id) {
+      buscarPrecoTemporada(eu.id).then(p => { if (vivo) setPreco(p); });
+    } else {
+      setPreco(null);
+    }
+    return () => { vivo = false; };
+  }, [elegivel, state.financeiroAtivo, eu?.id]);
+  if (!elegivel) return null;
   const fmt = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
-  const valor = state.valorTemporada;
   let precoTxt = null;
-  if (state.financeiroAtivo && valor != null) {
-    if (athlete.isento) precoTxt = "Isento";
+  if (state.financeiroAtivo && preco && preco.valor_base_cent != null) {
+    if (preco.isento) precoTxt = "Isento";
     else {
-      const d = athlete.descontoPct != null ? athlete.descontoPct : (state.descontoGlobalPct||0);
-      const preco = Math.round(valor*(1-(d||0)/100));
-      precoTxt = fmt(preco) + (d>0 ? ` (com ${d}% de desconto)` : "");
+      const d = preco.desconto_pct || 0;
+      precoTxt = fmt(preco.preco_final_cent) + (d > 0 ? ` (com ${d}% de desconto)` : "");
     }
   }
   const nomeCirc = state.nomeCircuito || "Clube do Tênis de Mesa";
@@ -5272,17 +5300,17 @@ function RenovacaoCard({ state, dispatch, athlete }) {
       <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>🎟️ Inscrições abertas — {nomeCirc}</div>
       {precoTxt && <div style={{fontSize:13,color:"#c9d4ce",marginBottom:4}}>Sua temporada: <b style={{color:"#F0EAE0"}}>{precoTxt}</b></div>}
       {inicioTxt && <div style={{fontSize:11,color:"#9db3a8",marginBottom:8}}>Início previsto: {inicioTxt}</div>}
-      {athlete.pagamentoConfirmado ? (
+      {eu.pagamentoConfirmado ? (
         <div style={{fontSize:12,color:"#6a9d7a",fontWeight:600}}>✅ Pagamento confirmado — sua vaga está garantida.</div>
-      ) : athlete.querRenovar ? (
+      ) : eu.querRenovar ? (
         <>
           <div style={{fontSize:12,color:"#6a9d7a",fontWeight:600,marginBottom:8}}>✅ Renovação sinalizada — combine o pagamento com o admin para garantir a vaga.</div>
-          <Btn small color="#5E7569" onClick={()=>dispatch({type:"RENOVAR",payload:{athleteId:athlete.id,quer:false}})}>Desistir da renovação</Btn>
+          <Btn small color="#5E7569" onClick={()=>dispatch({type:"RENOVAR",payload:{athleteId:eu.id,quer:false}})}>Desistir da renovação</Btn>
         </>
       ) : (
         <>
           <div style={{fontSize:12,color:"#9db3a8",marginBottom:8,lineHeight:1.5}}>Quer jogar a próxima temporada? Confirme sua intenção — o pagamento é combinado com o admin.</div>
-          <Btn full color="#6a9d7a" onClick={()=>dispatch({type:"RENOVAR",payload:{athleteId:athlete.id,quer:true}})}>Quero renovar</Btn>
+          <Btn full color="#6a9d7a" onClick={()=>dispatch({type:"RENOVAR",payload:{athleteId:eu.id,quer:true}})}>Quero renovar</Btn>
         </>
       )}
     </Card>

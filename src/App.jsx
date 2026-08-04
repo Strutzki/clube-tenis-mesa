@@ -4730,9 +4730,11 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
   }
 
   const atletas = [...state.athletes.filter(a => a.status === "ativo")]
-    .sort((a,b)=> (a.pagamentoConfirmado?1:0)-(b.pagamentoConfirmado?1:0) || (a.name||"").localeCompare(b.name||""));
-  const pagosN = atletas.filter(a => a.pagamentoConfirmado).length;
-  const retidosN = atletas.length - pagosN;
+    .sort((a,b)=> (a.pendenteCircuito?1:0)-(b.pendenteCircuito?1:0) || (a.pagamentoConfirmado?1:0)-(b.pagamentoConfirmado?1:0) || (a.name||"").localeCompare(b.name||""));
+  // Só quem está NO circuito paga esta temporada; o backlog entra na próxima (não conta aqui).
+  const noCircuito = atletas.filter(a => !a.pendenteCircuito);
+  const pagosN = noCircuito.filter(a => a.pagamentoConfirmado).length;
+  const retidosN = noCircuito.filter(a => !a.pagamentoConfirmado).length;
   const totalArrecadado = (pagamentos||[]).filter(p=>p.status==="confirmado").reduce((s,p)=>s+(p.valor||0),0);
   const inp = {background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:8,outline:"none",boxSizing:"border-box"};
   const lbl = {fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4,marginTop:6};
@@ -4775,13 +4777,15 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
             <div style={{minWidth:0}}>
               <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}{a.pendenteCircuito ? <span style={{fontSize:10,color:"#9C6F3E"}}> · backlog</span> : null}</div>
-              <div style={{fontSize:11,color:a.pagamentoConfirmado?"#6a9d7a":"#D85A30"}}>{a.pagamentoConfirmado ? "✅ Pagamento confirmado" : "🔒 Retido — sem pagamento"}</div>
+              <div style={{fontSize:11,color:a.pagamentoConfirmado?"#6a9d7a":(a.pendenteCircuito?"#9C6F3E":"#D85A30")}}>{a.pagamentoConfirmado ? "✅ Pagamento confirmado" : (a.pendenteCircuito ? "⏳ Entra na próxima temporada — cobrar na virada" : "🔒 Retido — sem pagamento")}</div>
             </div>
             {a.pagamentoConfirmado
               ? (estornarConf===a.id
                   ? <div style={{display:"flex",gap:6}}><Btn small color="#c25a45" onClick={()=>{const p=(pagamentos||[]).find(x=>x.atleta_id===a.id && x.status==="confirmado"); if(p) estornar(p.id); else setEstornarConf(null);}}>Confirmar</Btn><Btn small color="#5E7569" onClick={()=>setEstornarConf(null)}>Não</Btn></div>
                   : <Btn small color="#5E7569" onClick={()=>setEstornarConf(a.id)}>↩️ Estornar</Btn>)
-              : <Btn small color="#6a9d7a" onClick={()=>abrir(a)} disabled={valorTemporada==null}>💵 Registrar</Btn>}
+              : (a.pendenteCircuito
+                  ? <span style={{fontSize:10,color:"#7d9188",whiteSpace:"nowrap"}}>na virada</span>
+                  : <Btn small color="#6a9d7a" onClick={()=>abrir(a)} disabled={valorTemporada==null}>💵 Registrar</Btn>)}
           </div>
           {registrando===a.id && (
             <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>

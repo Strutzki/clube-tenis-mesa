@@ -4662,6 +4662,7 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
   const [regObs, setRegObs] = useState("");
   const [salvandoReg, setSalvandoReg] = useState(false);
   const [estornarConf, setEstornarConf] = useState(null);
+  const [editPagId, setEditPagId] = useState(null);
 
   const financeiroAtivo = !!state.financeiroAtivo;
   const valorTemporada = state.valorTemporada;
@@ -4706,19 +4707,37 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
   }
 
   function abrir(a) {
-    setRegistrando(a.id); setRegMeio(false); setRegDescInd("");
+    setRegistrando(a.id); setEditPagId(null); setRegMeio(false); setRegDescInd("");
     const s = centSugerido(false, ""); setRegValor(s!=null ? (s/100).toFixed(2) : ""); setRegObs("");
+  }
+  function abrirEditar(a) {
+    const p = (pagamentos||[]).find(x=>x.atleta_id===a.id && x.status==="confirmado");
+    if (!p) { abrir(a); return; }
+    setRegistrando(a.id); setEditPagId(p.id);
+    setRegMeio((p.percentual||100) !== 100);
+    setRegDescInd(p.desconto_pct_aplicado!=null ? String(p.desconto_pct_aplicado) : "");
+    setRegValor(p.valor!=null ? (p.valor/100).toFixed(2) : "");
+    setRegObs(p.observacao || "");
   }
   async function confirmar(a) {
     setSalvandoReg(true); setErro("");
     try {
-      await chamarAdminAction("REGISTRAR_PAGAMENTO", {
-        atletaId: a.id, temporadaRotulo: rotuloTemp,
-        valor: reaisParaCent(regValor), percentual: regMeio ? percentualMeio : 100,
-        descontoPctAplicado: regDescInd==="" ? descontoGlobalPct : Number(regDescInd)||0,
-        metodo: "pix", observacao: regObs || null,
-      });
-      setRegistrando(null);
+      if (editPagId) {
+        await chamarAdminAction("EDITAR_PAGAMENTO", {
+          id: editPagId,
+          valor: reaisParaCent(regValor), percentual: regMeio ? percentualMeio : 100,
+          descontoPctAplicado: regDescInd==="" ? descontoGlobalPct : Number(regDescInd)||0,
+          observacao: regObs || null,
+        });
+      } else {
+        await chamarAdminAction("REGISTRAR_PAGAMENTO", {
+          atletaId: a.id, temporadaRotulo: rotuloTemp,
+          valor: reaisParaCent(regValor), percentual: regMeio ? percentualMeio : 100,
+          descontoPctAplicado: regDescInd==="" ? descontoGlobalPct : Number(regDescInd)||0,
+          metodo: "pix", observacao: regObs || null,
+        });
+      }
+      setRegistrando(null); setEditPagId(null);
       await loadFromSupabase(); await carregarPagamentos();
     } catch(e) { setErro(e.message); }
     finally { setSalvandoReg(false); }
@@ -4782,7 +4801,7 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
             {a.pagamentoConfirmado
               ? (estornarConf===a.id
                   ? <div style={{display:"flex",gap:6}}><Btn small color="#c25a45" onClick={()=>{const p=(pagamentos||[]).find(x=>x.atleta_id===a.id && x.status==="confirmado"); if(p) estornar(p.id); else setEstornarConf(null);}}>Confirmar</Btn><Btn small color="#5E7569" onClick={()=>setEstornarConf(null)}>Não</Btn></div>
-                  : <Btn small color="#5E7569" onClick={()=>setEstornarConf(a.id)}>↩️ Estornar</Btn>)
+                  : <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}><Btn small color="#9C6F3E" onClick={()=>abrirEditar(a)}>✏️ Editar</Btn><Btn small color="#5E7569" onClick={()=>setEstornarConf(a.id)}>↩️ Estornar</Btn></div>)
               : (a.pendenteCircuito
                   ? <span style={{fontSize:10,color:"#7d9188",whiteSpace:"nowrap"}}>na virada</span>
                   : <Btn small color="#6a9d7a" onClick={()=>abrir(a)} disabled={valorTemporada==null}>💵 Registrar</Btn>)}
@@ -4800,8 +4819,8 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
               <label style={lbl}>Observação (opcional)</label>
               <input style={inp} value={regObs} onChange={e=>setRegObs(e.target.value)} placeholder="ex: PIX ref 1234"/>
               <div style={{display:"flex",gap:8}}>
-                <Btn small color="#6a9d7a" onClick={()=>confirmar(a)} disabled={salvandoReg}>{salvandoReg?"Salvando…":"✓ Confirmar pagamento"}</Btn>
-                <Btn small color="#5E7569" onClick={()=>setRegistrando(null)}>Cancelar</Btn>
+                <Btn small color="#6a9d7a" onClick={()=>confirmar(a)} disabled={salvandoReg}>{salvandoReg?"Salvando…":(editPagId?"✓ Salvar alterações":"✓ Confirmar pagamento")}</Btn>
+                <Btn small color="#5E7569" onClick={()=>{setRegistrando(null); setEditPagId(null);}}>Cancelar</Btn>
               </div>
             </div>
           )}

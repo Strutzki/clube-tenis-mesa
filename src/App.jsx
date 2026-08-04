@@ -2029,7 +2029,7 @@ function AdminHistorico({ state }) {
                 <Card key={m.id} style={{marginBottom:8,border:"1px solid rgba(74,222,128,0.1)"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                     <Badge label={`Rodada ${m.round}`} color="#9C6F3E"/>
-                    {m.validadoPorAdmin && <Badge label="✓ Admin aprovou" color="#6a9d7a"/>}
+                    {m.validated && <Badge label={m.validadoPorAdmin ? "✓ Admin aprovou" : (m.validadoAutomatico ? "⚡ Auto-validado" : "✓ Validado")} color="#6a9d7a"/>}
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
                     <div style={{flex:1}}>

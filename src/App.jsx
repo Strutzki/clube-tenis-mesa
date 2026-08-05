@@ -135,7 +135,7 @@ function mesDoPrazo(deadline) {
 
 const db = {
   // Atletas
-  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,exclusao_solicitada_em,pagamento_confirmado,quer_renovar,renovacao_em"),
+  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,exclusao_solicitada_em,pagamento_confirmado,quer_renovar,renovacao_em,pagamento_proxima_confirmado"),
   insertAtleta: (data) => supaFetch("atletas", { method:"POST", body: JSON.stringify(data), prefer: "return=minimal" }),
   updateAtleta: (id, data) => supaFetch(`atletas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data), prefer: "return=minimal" }),
 
@@ -238,6 +238,7 @@ function mapAtletaFromDb(a) {
     pagamentoConfirmado: a.pagamento_confirmado || false,
     querRenovar: a.quer_renovar || false,
     renovacaoEm: a.renovacao_em || null,
+    pagamentoProximaConfirmado: a.pagamento_proxima_confirmado || false,
     ultimaRecusaCircuitoEm: a.ultima_recusa_circuito_em || null,
     foto: a.foto_url || null,
     estilo: a.estilo_jogo || "Clássico",
@@ -522,6 +523,10 @@ const INIT = {
   nomeCircuito: "Clube do Tênis de Mesa", // nome exibido (cabeçalho + mensagens)
   dataInicioTemporada: null, // data de início da próxima temporada (define prazos de renovação)
   maxAtletas: 20,            // teto de atletas por circuito
+  proximaAberta: false,      // pré-abertura da próxima temporada (renovação/pagamento) sem encerrar a atual
+  proximaNome: null,         // nome da próxima temporada (definido na pré-abertura)
+  proximaDataInicio: null,   // data de início da próxima temporada
+  proximaRotulo: null,       // rótulo da próxima temporada (ex.: "2/2026") — usado nos pagamentos
   temporadaAno: new Date().getFullYear(),
   mensagensEnviadas: [], // histórico de disparos de WhatsApp (log, não afeta ranking/rating)
   solicitacoesWo: [],    // pedidos de W.O. Justificado feitos pelo próprio atleta (Cap. 07)
@@ -680,6 +685,24 @@ function reducer(state, action) {
         nomeCircuito: (typeof pNova.nome === "string" && pNova.nome.trim()) ? pNova.nome.trim() : state.nomeCircuito,
         dataInicioTemporada: pNova.dataInicio !== undefined ? (pNova.dataInicio || null) : state.dataInicioTemporada,
       };
+    }
+
+    case "ABRIR_PROXIMA_TEMPORADA": {
+      // Pré-abertura da próxima temporada (não-destrutivo): abre renovação/pagamento
+      // da próxima sem encerrar a atual. O rótulo segue a regra de 3 temporadas/ano.
+      const p = action.payload || {};
+      const num = state.temporadaNumero || 1;
+      const ano = state.temporadaAno || new Date().getFullYear();
+      const proxNum = num >= 3 ? 1 : num + 1;
+      const proxAno = num >= 3 ? ano + 1 : ano;
+      return { ...state, proximaAberta: true,
+        proximaNome: (typeof p.nome === "string" && p.nome.trim()) ? p.nome.trim() : null,
+        proximaDataInicio: p.dataInicio || null,
+        proximaRotulo: `${proxNum}/${proxAno}` };
+    }
+
+    case "CANCELAR_PROXIMA": {
+      return { ...state, proximaAberta: false, proximaNome: null, proximaDataInicio: null, proximaRotulo: null };
     }
 
     case "RENOVAR": {
@@ -1044,9 +1067,13 @@ function reducer(state, action) {
     }
 
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, nomeCircuito, dataInicioTemporada, maxAtletas, mensagensEnviadas, solicitacoesWo } = action.payload;
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, nomeCircuito, dataInicioTemporada, maxAtletas, proximaAberta, proximaNome, proximaDataInicio, proximaRotulo, mensagensEnviadas, solicitacoesWo } = action.payload;
       return {
         ...state, athletes, matches, keys, phase,
+        proximaAberta: proximaAberta ?? state.proximaAberta,
+        proximaNome: proximaNome !== undefined ? proximaNome : state.proximaNome,
+        proximaDataInicio: proximaDataInicio !== undefined ? proximaDataInicio : state.proximaDataInicio,
+        proximaRotulo: proximaRotulo !== undefined ? proximaRotulo : state.proximaRotulo,
         rodadasPorTemporada: rodadasPorTemporada ?? state.rodadasPorTemporada,
         autoValidarPlacar: autoValidarPlacar ?? state.autoValidarPlacar,
         financeiroAtivo: financeiroAtivo ?? state.financeiroAtivo,
@@ -3344,6 +3371,10 @@ export default function App() {
         nomeCircuito: config?.[0]?.nome_circuito || "Clube do Tênis de Mesa",
         dataInicioTemporada: config?.[0]?.data_inicio_temporada || null,
         maxAtletas: config?.[0]?.max_atletas || 20,
+        proximaAberta: config?.[0]?.proxima_aberta || false,
+        proximaNome: config?.[0]?.proxima_nome || null,
+        proximaDataInicio: config?.[0]?.proxima_data_inicio || null,
+        proximaRotulo: config?.[0]?.proxima_rotulo || null,
         solicitacoesWo: solicitacoesWoMapped,
       }});
       // Restaurar atleta completo da sessão após carregar do banco
@@ -3651,6 +3682,14 @@ export default function App() {
     }
     else if (action.type === "LIBERAR_NAO_RENOVANTES") {
       await chamarAdminAction("LIBERAR_NAO_RENOVANTES", {});
+      await loadFromSupabase();
+    }
+    else if (action.type === "ABRIR_PROXIMA_TEMPORADA") {
+      await chamarAdminAction("ABRIR_PROXIMA_TEMPORADA", { nome: action.payload?.nome, dataInicio: action.payload?.dataInicio });
+      await loadFromSupabase();
+    }
+    else if (action.type === "CANCELAR_PROXIMA") {
+      await chamarAdminAction("CANCELAR_PROXIMA", {});
       await loadFromSupabase();
     }
     else if (action.type === "RENOVAR") {
@@ -4741,12 +4780,17 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
   const [salvandoReg, setSalvandoReg] = useState(false);
   const [estornarConf, setEstornarConf] = useState(null);
   const [editPagId, setEditPagId] = useState(null);
+  const [alvoSel, setAlvoSel] = useState("proxima"); // alvo do registro quando a próxima está aberta
 
   const financeiroAtivo = !!state.financeiroAtivo;
   const valorTemporada = state.valorTemporada;
   const descontoGlobalPct = state.descontoGlobalPct || 0;
   const percentualMeio = state.percentualEntradaMeio || 80;
   const rotuloTemp = `${state.temporadaNumero}/${state.temporadaAno}`;
+  // Alvo do pagamento: "proxima" só faz sentido com a pré-abertura ligada.
+  const alvo = state.proximaAberta ? alvoSel : "atual";
+  const pagoDe = a => alvo === "proxima" ? a.pagamentoProximaConfirmado : a.pagamentoConfirmado;
+  const rotuloAlvo = alvo === "proxima" ? (state.proximaRotulo || rotuloTemp) : rotuloTemp;
 
   async function carregarPagamentos() {
     setCarregando(true); setErro("");
@@ -4789,7 +4833,7 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
     const s = centSugerido(false, ""); setRegValor(s!=null ? (s/100).toFixed(2) : ""); setRegObs("");
   }
   function abrirEditar(a) {
-    const p = (pagamentos||[]).find(x=>x.atleta_id===a.id && x.status==="confirmado");
+    const p = (pagamentos||[]).find(x=>x.atleta_id===a.id && x.status==="confirmado" && x.temporada_rotulo===rotuloAlvo);
     if (!p) { abrir(a); return; }
     setRegistrando(a.id); setEditPagId(p.id);
     setRegMeio((p.percentual||100) !== 100);
@@ -4809,7 +4853,7 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
         });
       } else {
         await chamarAdminAction("REGISTRAR_PAGAMENTO", {
-          atletaId: a.id, temporadaRotulo: rotuloTemp,
+          atletaId: a.id, temporadaRotulo: rotuloAlvo, alvo,
           valor: reaisParaCent(regValor), percentual: regMeio ? percentualMeio : 100,
           descontoPctAplicado: regDescInd==="" ? descontoGlobalPct : Number(regDescInd)||0,
           metodo: "pix", observacao: regObs || null,
@@ -4827,18 +4871,22 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
   }
 
   const atletas = [...state.athletes.filter(a => a.status === "ativo")]
-    .sort((a,b)=> (a.pendenteCircuito?1:0)-(b.pendenteCircuito?1:0) || (a.pagamentoConfirmado?1:0)-(b.pagamentoConfirmado?1:0) || (a.name||"").localeCompare(b.name||""));
-  // Só quem está NO circuito paga esta temporada; o backlog entra na próxima (não conta aqui).
+    .sort((a,b)=> (a.pendenteCircuito?1:0)-(b.pendenteCircuito?1:0) || (pagoDe(a)?1:0)-(pagoDe(b)?1:0) || (a.name||"").localeCompare(b.name||""));
   const noCircuito = atletas.filter(a => !a.pendenteCircuito);
-  const pagosN = noCircuito.filter(a => a.pagamentoConfirmado).length;
-  const retidosN = noCircuito.filter(a => !a.pagamentoConfirmado).length;
+  // Trava da temporada ATUAL — sempre pagamento_confirmado (não muda com o alvo).
+  const pagosTravaN = noCircuito.filter(a => a.pagamentoConfirmado).length;
+  const retidosTravaN = noCircuito.filter(a => !a.pagamentoConfirmado).length;
+  // Base do alvo selecionado: na PRÓXIMA o backlog também paga (é entrante da nova).
+  const baseAlvo = alvo === "proxima" ? atletas : noCircuito;
+  const pagosN = baseAlvo.filter(a => pagoDe(a)).length;
+  const retidosN = baseAlvo.filter(a => !pagoDe(a)).length;
   const totalArrecadado = (pagamentos||[]).filter(p=>p.status==="confirmado").reduce((s,p)=>s+(p.valor||0),0);
   const inp = {background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:8,outline:"none",boxSizing:"border-box"};
   const lbl = {fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4,marginTop:6};
 
   return (
     <div>
-      <SecTitle>💰 Financeiro — Temporada {rotuloTemp}</SecTitle>
+      <SecTitle>💰 Financeiro — Temporada {rotuloAlvo}{alvo==="proxima" ? " (próxima)" : ""}</SecTitle>
       {erro && <Card style={{border:"1px solid rgba(194,90,69,0.4)"}}><div style={{fontSize:12,color:"#c25a45"}}>⚠️ {erro}</div></Card>}
 
       <Card style={{border:`1px solid ${financeiroAtivo?"rgba(106,157,122,0.4)":"rgba(255,255,255,0.06)"}`}}>
@@ -4849,7 +4897,7 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
             {financeiroAtivo ? "✓ Financeiro LIGADO" : "Financeiro desligado"}
           </button>
         </div>
-        {financeiroAtivo && <div style={{fontSize:11,color:"#D85A30",marginBottom:8,lineHeight:1.5}}>⚠️ Trava ativa: só é pareado quem tem pagamento confirmado. Hoje {pagosN} pago(s), {retidosN} retido(s).</div>}
+        {financeiroAtivo && <div style={{fontSize:11,color:"#D85A30",marginBottom:8,lineHeight:1.5}}>⚠️ Trava ativa: só é pareado quem tem pagamento confirmado na temporada atual. Hoje {pagosTravaN} pago(s), {retidosTravaN} retido(s).</div>}
         <label style={lbl}>Valor da temporada (R$)</label>
         <input style={inp} value={valorReais} onChange={e=>setValorReais(e.target.value)} placeholder="ex: 90,00" inputMode="decimal"/>
         <div style={{display:"flex",gap:8}}>
@@ -4858,6 +4906,17 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
         </div>
         <Btn onClick={()=>salvarConfig(null)} color="#D85A30" full small disabled={salvandoCfg}>{salvandoCfg?"Salvando…":"💾 Salvar configuração"}</Btn>
       </Card>
+
+      {state.proximaAberta && (
+        <Card style={{border:"1px solid rgba(167,139,250,0.28)"}}>
+          <div style={{fontSize:11,color:"#9db3a8",marginBottom:8}}>Registrando pagamento para:</div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setAlvoSel("atual")} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:alvo==="atual"?"#6a9d7a":"transparent",color:"#F0EAE0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Atual ({rotuloTemp})</button>
+            <button onClick={()=>setAlvoSel("proxima")} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:alvo==="proxima"?"#8b5cf6":"transparent",color:"#F0EAE0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Próxima ({state.proximaRotulo||"—"})</button>
+          </div>
+          {alvo==="proxima" && <div style={{fontSize:10,color:"#7d9188",marginTop:8,lineHeight:1.5}}>Pagamentos da próxima não afetam a trava da temporada atual — entram como pagos ao virar a temporada. O backlog também pode pagar aqui.</div>}
+        </Card>
+      )}
 
       <Card>
         <div style={{display:"flex",justifyContent:"space-around",textAlign:"center",gap:8}}>
@@ -4870,17 +4929,17 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
       <SecTitle>Pagamentos por atleta</SecTitle>
       {valorTemporada==null && <Card><div style={{fontSize:12,color:"#9C6F3E"}}>Defina o valor da temporada acima para ver os valores sugeridos.</div></Card>}
       {atletas.map(a => (
-        <Card key={a.id} style={{border:a.pagamentoConfirmado?"1px solid rgba(106,157,122,0.25)":"1px solid rgba(216,90,48,0.2)"}}>
+        <Card key={a.id} style={{border:pagoDe(a)?"1px solid rgba(106,157,122,0.25)":"1px solid rgba(216,90,48,0.2)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
             <div style={{minWidth:0}}>
               <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}{a.pendenteCircuito ? <span style={{fontSize:10,color:"#9C6F3E"}}> · backlog</span> : null}</div>
-              <div style={{fontSize:11,color:a.pagamentoConfirmado?"#6a9d7a":(a.pendenteCircuito?"#9C6F3E":"#D85A30")}}>{a.pagamentoConfirmado ? "✅ Pagamento confirmado" : (a.pendenteCircuito ? "⏳ Entra na próxima temporada — cobrar na virada" : "🔒 Retido — sem pagamento")}</div>
+              <div style={{fontSize:11,color:pagoDe(a)?"#6a9d7a":((a.pendenteCircuito && alvo==="atual")?"#9C6F3E":"#D85A30")}}>{pagoDe(a) ? "✅ Pagamento confirmado" : ((a.pendenteCircuito && alvo==="atual") ? "⏳ Entra na próxima temporada — cobrar na virada" : "🔒 Sem pagamento")}</div>
             </div>
-            {a.pagamentoConfirmado
+            {pagoDe(a)
               ? (estornarConf===a.id
-                  ? <div style={{display:"flex",gap:6}}><Btn small color="#c25a45" onClick={()=>{const p=(pagamentos||[]).find(x=>x.atleta_id===a.id && x.status==="confirmado"); if(p) estornar(p.id); else setEstornarConf(null);}}>Confirmar</Btn><Btn small color="#5E7569" onClick={()=>setEstornarConf(null)}>Não</Btn></div>
+                  ? <div style={{display:"flex",gap:6}}><Btn small color="#c25a45" onClick={()=>{const p=(pagamentos||[]).find(x=>x.atleta_id===a.id && x.status==="confirmado" && x.temporada_rotulo===rotuloAlvo); if(p) estornar(p.id); else setEstornarConf(null);}}>Confirmar</Btn><Btn small color="#5E7569" onClick={()=>setEstornarConf(null)}>Não</Btn></div>
                   : <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}><Btn small color="#9C6F3E" onClick={()=>abrirEditar(a)}>✏️ Editar</Btn><Btn small color="#5E7569" onClick={()=>setEstornarConf(a.id)}>↩️ Estornar</Btn></div>)
-              : (a.pendenteCircuito
+              : ((a.pendenteCircuito && alvo==="atual")
                   ? <span style={{fontSize:10,color:"#7d9188",whiteSpace:"nowrap"}}>na virada</span>
                   : <Btn small color="#6a9d7a" onClick={()=>abrir(a)} disabled={valorTemporada==null}>💵 Registrar</Btn>)}
           </div>
@@ -5147,7 +5206,7 @@ function AdminDashboard({ state, setTab, dispatch }) {
         </Card>
       )}
 
-      {state.phase === "inscricoes" && (
+      {(state.phase === "inscricoes" || state.proximaAberta) && (
         <RenovacaoAdminPanel state={state} dispatch={dispatch} />
       )}
 
@@ -5190,7 +5249,10 @@ function AdminDashboard({ state, setTab, dispatch }) {
         </Card>
       )}
 
-      {state.phase === "etapa" && (
+      {state.phase === "etapa" && !state.proximaAberta && (
+        <AbrirProximaPanel state={state} dispatch={dispatch} />
+      )}
+      {state.phase === "etapa" && state.proximaAberta && (
         <NovaTemporadaPanel state={state} dispatch={dispatch} />
       )}
 
@@ -5209,37 +5271,78 @@ function AdminDashboard({ state, setTab, dispatch }) {
   );
 }
 
-function NovaTemporadaPanel({ state, dispatch }) {
-  const [confirmando, setConfirmando] = useState(false);
+// Passo 1 (não-destrutivo): abrir a pré-inscrição da próxima temporada enquanto a
+// atual ainda roda. Só define nome + data e liga o interruptor proxima_aberta.
+function AbrirProximaPanel({ state, dispatch }) {
+  const [abrindo, setAbrindo] = useState(false);
   const [nomeNova, setNomeNova] = useState(state.nomeCircuito || "Clube do Tênis de Mesa");
-  const [dataNova, setDataNova] = useState(state.dataInicioTemporada || "");
-  const ativos = state.athletes.filter(a => a.status === "ativo");
+  const [dataNova, setDataNova] = useState("");
   const inpN = {width:"100%",padding:"9px 11px",borderRadius:9,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(0,0,0,0.18)",color:"#F0EAE0",fontSize:13,boxSizing:"border-box"};
   const lblN = {fontSize:11,color:"#9db3a8",display:"block",marginBottom:4,marginTop:12};
   return (
-    <Card style={{border:"1px solid rgba(216,90,48,0.25)",marginTop:8}}>
-      <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>🔄 Gerar próxima temporada</div>
+    <Card style={{border:"1px solid rgba(106,157,122,0.25)",marginTop:8}}>
+      <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>📅 Próxima temporada</div>
       <div style={{fontSize:11,color:"#9db3a8",marginBottom:10,lineHeight:1.5}}>
-        Define o nome e a data de início da próxima temporada, zera o saldo de pontos, vitórias e derrotas de todos os atletas. O <b>rating é preservado</b> (nunca zera) e o histórico total é mantido. As partidas e chaves atuais são removidas e o circuito volta para inscrições, abrindo a janela de renovação.
+        Abra as inscrições, renovação e pagamento da próxima temporada <b>sem encerrar a atual</b>. Os jogos e o ranking correntes continuam intactos — a virada é um passo separado, depois.
       </div>
-      <Btn onClick={()=>setConfirmando(true)} color="#D85A30">Gerar próxima temporada…</Btn>
+      <Btn onClick={()=>setAbrindo(true)} color="#6a9d7a">Abrir inscrições da próxima temporada…</Btn>
+
+      {abrindo && (
+        <div onClick={()=>setAbrindo(false)}
+          style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:T.verdeCard,borderRadius:16,padding:22,maxWidth:380,width:"100%",border:"1px solid rgba(106,157,122,0.4)",boxShadow:"0 20px 50px rgba(0,0,0,0.5)"}}>
+            <div style={{fontSize:17,fontWeight:700,color:"#F0EAE0",marginBottom:12}}>📅 Abrir próxima temporada</div>
+            <label style={lblN}>Nome do circuito (cabeçalho + mensagens da próxima)</label>
+            <input style={inpN} value={nomeNova} onChange={e=>setNomeNova(e.target.value)} placeholder="Clube do Tênis de Mesa"/>
+            <label style={lblN}>Data de início da próxima temporada</label>
+            <input type="date" style={inpN} value={dataNova} onChange={e=>setDataNova(e.target.value)}/>
+            <div style={{fontSize:11,color:"#9db3a8",marginTop:10,marginBottom:16,lineHeight:1.5}}>
+              A janela de renovação prioritária abre 7 dias antes dessa data. <b style={{color:"#6a9d7a"}}>Nada da temporada atual é apagado</b> — isso só abre a próxima.
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <Btn onClick={()=>{dispatch({type:"ABRIR_PROXIMA_TEMPORADA",payload:{nome:nomeNova,dataInicio:dataNova||null}});setAbrindo(false);}} color="#6a9d7a" full>Abrir próxima temporada</Btn>
+              <Btn onClick={()=>setAbrindo(false)} color="#5E7569" full>Cancelar</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// Passo 2 (destrutivo): virar para a próxima temporada. Só aparece com a pré-abertura
+// ligada. Usa o nome/data já definidos, arquiva as partidas e carrega os pagamentos.
+function NovaTemporadaPanel({ state, dispatch }) {
+  const [confirmando, setConfirmando] = useState(false);
+  const ativos = state.athletes.filter(a => a.status === "ativo");
+  const nome = state.proximaNome || state.nomeCircuito || "Clube do Tênis de Mesa";
+  const dataTxt = state.proximaDataInicio ? new Date(state.proximaDataInicio+"T00:00:00").toLocaleDateString("pt-BR") : "não definida";
+  return (
+    <Card style={{border:"1px solid rgba(216,90,48,0.25)",marginTop:8}}>
+      <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>🔄 Virar para a próxima temporada</div>
+      <div style={{fontSize:11,color:"#6a9d7a",marginBottom:8,lineHeight:1.5}}>
+        Pré-abertura ativa — <b>{nome}</b> ({state.proximaRotulo || "—"}), início {dataTxt}. Inscrições e pagamentos da próxima já estão abertos.
+      </div>
+      <div style={{fontSize:11,color:"#9db3a8",marginBottom:10,lineHeight:1.5}}>
+        Virar encerra a temporada atual: arquiva o ranking e as partidas no histórico permanente, zera stats, carrega os pagamentos da próxima e abre as inscrições da nova. O <b>rating é preservado</b>.
+      </div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        <Btn onClick={()=>setConfirmando(true)} color="#D85A30">Virar para a próxima temporada…</Btn>
+        <Btn onClick={()=>{ if(confirm("Cancelar a pré-abertura da próxima temporada? A janela fecha; renovações e pagamentos já registrados ficam guardados.")) dispatch({type:"CANCELAR_PROXIMA"}); }} color="#5E7569">Cancelar pré-abertura</Btn>
+      </div>
 
       {confirmando && (
         <div onClick={()=>setConfirmando(false)}
           style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div onClick={e=>e.stopPropagation()}
             style={{background:T.verdeCard,borderRadius:16,padding:22,maxWidth:380,width:"100%",border:"1px solid rgba(216,90,48,0.45)",boxShadow:"0 20px 50px rgba(0,0,0,0.5)"}}>
-            <div style={{fontSize:17,fontWeight:700,color:"#F0EAE0",marginBottom:12}}>⚠️ Gerar próxima temporada?</div>
-            <label style={lblN}>Nome do circuito (cabeçalho + mensagens)</label>
-            <input style={inpN} value={nomeNova} onChange={e=>setNomeNova(e.target.value)} placeholder="Clube do Tênis de Mesa"/>
-            <label style={lblN}>Data de início da próxima temporada</label>
-            <input type="date" style={inpN} value={dataNova} onChange={e=>setDataNova(e.target.value)}/>
-            <div style={{fontSize:10,color:"#7d9188",marginTop:6,marginBottom:14}}>A janela de renovação prioritária abre 7 dias antes dessa data.</div>
+            <div style={{fontSize:17,fontWeight:700,color:"#F0EAE0",marginBottom:12}}>⚠️ Virar para {nome}?</div>
             <div style={{fontSize:13,color:"#c9d4ce",marginBottom:18,lineHeight:1.6}}>
-              Isto <b style={{color:"#e79b8c"}}>zera pontos, vitórias e derrotas</b> de <b>{ativos.length} atleta(s)</b> e remove todas as partidas e chaves da temporada atual. O rating é preservado. <b style={{color:"#e79b8c"}}>Esta ação não pode ser desfeita.</b>
+              Isto <b style={{color:"#e79b8c"}}>zera pontos, vitórias e derrotas</b> de <b>{ativos.length} atleta(s)</b>, <b>arquiva</b> e remove as partidas da temporada atual, e <b>carrega os pagamentos da próxima</b>. O rating é preservado. <b style={{color:"#e79b8c"}}>Esta ação não pode ser desfeita.</b>
             </div>
             <div style={{display:"flex",gap:10}}>
-              <Btn onClick={()=>{dispatch({type:"NOVA_TEMPORADA",payload:{nome:nomeNova,dataInicio:dataNova||null}});setConfirmando(false);}} color="#c25a45" full>Sim, gerar temporada</Btn>
+              <Btn onClick={()=>{dispatch({type:"NOVA_TEMPORADA",payload:{}});setConfirmando(false);}} color="#c25a45" full>Sim, virar temporada</Btn>
               <Btn onClick={()=>setConfirmando(false)} color="#5E7569" full>Cancelar</Btn>
             </div>
           </div>
@@ -5252,11 +5355,14 @@ function NovaTemporadaPanel({ state, dispatch }) {
 // Painel de renovação do admin (fase de inscrições): quem sinalizou, prazo dos
 // 7 dias e o botão de liberar as vagas dos não-renovantes (só depois do prazo).
 function RenovacaoAdminPanel({ state, dispatch }) {
+  // Na pré-abertura (temporada atual ainda rolando), o pagamento relevante é o da
+  // PRÓXIMA; depois da virada (fase inscrições) é o pagamento normal da temporada.
+  const pago = a => state.proximaAberta ? a.pagamentoProximaConfirmado : a.pagamentoConfirmado;
   const circuito = state.athletes.filter(a => a.status==="ativo" && !a.pendenteCircuito);
-  const renovaram = circuito.filter(a => a.querRenovar || a.pagamentoConfirmado);
-  const naoRenov = circuito.filter(a => !a.querRenovar && !a.pagamentoConfirmado);
-  const pagos = circuito.filter(a => a.pagamentoConfirmado);
-  const dataIni = state.dataInicioTemporada;
+  const renovaram = circuito.filter(a => a.querRenovar || pago(a));
+  const naoRenov = circuito.filter(a => !a.querRenovar && !pago(a));
+  const pagos = circuito.filter(a => pago(a));
+  const dataIni = state.proximaAberta ? state.proximaDataInicio : state.dataInicioTemporada;
   let prazoTxt = null, prazoPassou = false;
   if (dataIni) {
     const prazo = new Date(dataIni+"T00:00:00"); prazo.setDate(prazo.getDate()-7);
@@ -5300,7 +5406,7 @@ function RenovacaoAdminPanel({ state, dispatch }) {
 function RenovacaoCard({ state, dispatch, athlete }) {
   const eu = state.athletes.find(a => a.id === athlete?.id) || null;
   const [preco, setPreco] = useState(null);
-  const inscricoes = state.phase === "inscricoes";
+  const inscricoes = state.phase === "inscricoes" || state.proximaAberta;
   const elegivel = inscricoes && eu && eu.status === "ativo";
   useEffect(() => {
     let vivo = true;
@@ -5321,17 +5427,19 @@ function RenovacaoCard({ state, dispatch, athlete }) {
       precoTxt = fmt(preco.preco_final_cent) + (d > 0 ? ` (com ${d}% de desconto)` : "");
     }
   }
-  const nomeCirc = state.nomeCircuito || "Clube do Tênis de Mesa";
+  const nomeCirc = (state.proximaAberta ? state.proximaNome : null) || state.nomeCircuito || "Clube do Tênis de Mesa";
+  const dataIni = state.proximaAberta ? state.proximaDataInicio : state.dataInicioTemporada;
   let inicioTxt = null;
-  if (state.dataInicioTemporada) {
-    inicioTxt = new Date(state.dataInicioTemporada+"T00:00:00").toLocaleDateString("pt-BR");
+  if (dataIni) {
+    inicioTxt = new Date(dataIni+"T00:00:00").toLocaleDateString("pt-BR");
   }
+  const pagoEfetivo = state.proximaAberta ? eu.pagamentoProximaConfirmado : eu.pagamentoConfirmado;
   return (
     <Card style={{marginBottom:12,border:"1px solid rgba(106,157,122,0.35)"}}>
       <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>🎟️ Inscrições abertas — {nomeCirc}</div>
       {precoTxt && <div style={{fontSize:13,color:"#c9d4ce",marginBottom:4}}>Sua temporada: <b style={{color:"#F0EAE0"}}>{precoTxt}</b></div>}
       {inicioTxt && <div style={{fontSize:11,color:"#9db3a8",marginBottom:8}}>Início previsto: {inicioTxt}</div>}
-      {eu.pagamentoConfirmado ? (
+      {pagoEfetivo ? (
         <div style={{fontSize:12,color:"#6a9d7a",fontWeight:600}}>✅ Pagamento confirmado — sua vaga está garantida.</div>
       ) : eu.querRenovar ? (
         <>

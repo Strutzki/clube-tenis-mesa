@@ -5741,7 +5741,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
               <Btn small color="#5E7569" onClick={()=>abrirEditar(a)}>✏️</Btn>
             </div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              <Btn small color="#6a9d7a" disabled={!podeIncluirBacklog(a)} onClick={()=>incluirCircuito(a.id)}>✅ Incluir agora (antecipar)</Btn>
+              {podeIncluirBacklog(a) && <Btn small color="#6a9d7a" onClick={()=>incluirCircuito(a.id)}>✅ Incluir agora (antecipar)</Btn>}
               <Btn small color="#9C6F3E" onClick={()=>recusarCircuito(a.id)}>↩️ Recusar por ora</Btn>
               <Btn small color="#5E7569" onClick={()=>arquivarAtleta(a.id)}>🗄️ Arquivar</Btn>
             </div>

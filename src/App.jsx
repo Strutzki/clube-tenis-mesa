@@ -5741,6 +5741,10 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
                 <div style={{display:"flex",gap:4,marginTop:3}}>
                   {a.aceiteRegulamento && <span style={{fontSize:9,background:"rgba(74,222,128,0.15)",color:"#6a9d7a",padding:"1px 6px",borderRadius:8,fontWeight:700}}>📋 Reg. aceito</span>}
                   {a.aceiteLGPD && <span style={{fontSize:9,background:"rgba(77,163,255,0.15)",color:"#D85A30",padding:"1px 6px",borderRadius:8,fontWeight:700}}>🔒 LGPD</span>}
+                  {state.financeiroAtivo && (a.pagamentoConfirmado
+                    ? <span style={{fontSize:9,background:"rgba(106,157,122,0.18)",color:"#6a9d7a",padding:"1px 6px",borderRadius:8,fontWeight:700}}>💵 Pago</span>
+                    : <span style={{fontSize:9,background:"rgba(216,90,48,0.15)",color:"#D85A30",padding:"1px 6px",borderRadius:8,fontWeight:700}}>💵 Sem pgto</span>)}
+                  {state.proximaAberta && a.pagamentoProximaConfirmado && <span style={{fontSize:9,background:"rgba(139,92,246,0.18)",color:"#a78bfa",padding:"1px 6px",borderRadius:8,fontWeight:700}}>💵 Próxima paga</span>}
                 </div>
               </div>
               <div style={{display:"flex",gap:6,flexShrink:0}}>

@@ -2158,6 +2158,8 @@ const CATEGORIAS_MENSAGEM = [
   {id:"backlog",    icon:"🆕", label:"Inscrição Aprovada",    desc:"Avisa quem foi aceito e entra na próxima rodada"},
   {id:"ranking",    icon:"🏆", label:"Ranking para Todos",    desc:"Envia ranking atualizado para cada atleta"},
   {id:"torneio",    icon:"🎯", label:"Convocação Torneio",    desc:"Notifica os Top 8 classificados"},
+  {id:"renovacao",  icon:"🎟️", label:"Convite de Renovação",  desc:"Convida os atletas a renovar (só com a próxima temporada aberta)"},
+  {id:"lembrete_renovacao", icon:"🔔", label:"Lembrete de Renovação", desc:"Empurrão nos últimos 3 dias do prazo de prioridade"},
 ];
 
 // Temporada completa = todas as rodadas configuradas já jogadas E processadas.
@@ -2341,6 +2343,43 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
       }));
     }
 
+    case "renovacao": {
+      // Convite de renovação — só quando a próxima temporada está aberta (pré-abertura).
+      // Vai para todo atleta ativo (circuito + backlog aprovado) que ainda não pagou a
+      // próxima. NÃO cita o valor individual (blindado) — aponta pro app, onde o card
+      // mostra o valor certo do atleta.
+      if (!state.proximaAberta) return [];
+      const rotulo = state.proximaRotulo ? `Temporada ${state.proximaRotulo}` : "próxima temporada";
+      let prazoTxt = "";
+      if (state.proximaDataInicio) {
+        const prazo = new Date(state.proximaDataInicio + "T00:00:00");
+        prazo.setDate(prazo.getDate() - 7);
+        prazoTxt = ` — confirme até *${fmtDate(prazo.toISOString().slice(0,10))}*`;
+      }
+      const elegiveis = state.athletes.filter(a => a.status === "ativo" && !a.pagamentoProximaConfirmado);
+      return elegiveis.map(a => ({
+        atleta: a,
+        msg: `🏓 *${nomeCircuito} — Inscrições abertas!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! A *${rotulo}* está chegando e as inscrições já abriram. 🎉\n\nComo você já é do circuito, tem *prioridade de renovação*${prazoTxt}. Confira seu valor e garanta sua vaga no app — é só tocar em *Quero renovar*. Depois a gente acerta o PIX.\n\n*Vem pro Clube!* 🏓`,
+      }));
+    }
+
+    case "lembrete_renovacao": {
+      // Empurrão nos últimos 3 dias da janela de prioridade, só pra quem não
+      // sinalizou renovação nem pagou a próxima.
+      if (!state.proximaAberta || !state.proximaDataInicio) return [];
+      const prazo = new Date(state.proximaDataInicio + "T00:00:00");
+      prazo.setDate(prazo.getDate() - 7);
+      const diasAteEnc = (prazo - new Date()) / (1000*60*60*24);
+      if (diasAteEnc > 3 || diasAteEnc < 0) return [];
+      const rotulo = state.proximaRotulo ? `Temporada ${state.proximaRotulo}` : "próxima temporada";
+      const prazoStr = fmtDate(prazo.toISOString().slice(0,10));
+      const naoRenov = state.athletes.filter(a => a.status === "ativo" && !a.querRenovar && !a.pagamentoProximaConfirmado);
+      return naoRenov.map(a => ({
+        atleta: a,
+        msg: `⏰ *${nomeCircuito} — Renovação terminando*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! O prazo de prioridade pra renovar sua vaga na *${rotulo}* vai até *${prazoStr}*.\n\nDepois dele, as vagas não confirmadas abrem pra fila de espera — não quero te deixar de fora. 🏓\n\nPra garantir, é rapidinho: abre o app e toca em *Quero renovar*.\n\n*Vem pro Clube!* 🏓`,
+      }));
+    }
+
     default: return [];
   }
 }
@@ -2353,7 +2392,7 @@ function todasMensagensPendentes(state, telefones = {}) {
   // Prioridade de disparo: primeiro o mais imediato (resultado de jogo recém-validado
   // e lembrete de prazo), depois confrontos, e por fim os informativos. Assim o que
   // é urgente não fica no fim da fila "despachar tudo".
-  const ORDEM_DISPARO = ["resultados", "lembretes", "confrontos", "backlog", "ranking", "torneio"];
+  const ORDEM_DISPARO = ["resultados", "lembretes", "lembrete_renovacao", "confrontos", "renovacao", "backlog", "ranking", "torneio"];
   const cats = ORDEM_DISPARO
     .map(id => CATEGORIAS_MENSAGEM.find(c => c.id === id))
     .filter(Boolean);
@@ -2457,9 +2496,11 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
   const mensagensTodas = getMensagens(categoria).map(m => ({
     ...m, categoria, categoriaLabel: CATEGORIAS_MENSAGEM.find(c=>c.id===categoria)?.label||categoria,
   }));
-  const categorias = temporadaCompletaCheck(state)
-    ? CATEGORIAS_MENSAGEM
-    : CATEGORIAS_MENSAGEM.filter(c => c.id !== "torneio");
+  const categorias = CATEGORIAS_MENSAGEM.filter(c => {
+    if (c.id === "torneio") return temporadaCompletaCheck(state);
+    if (c.id === "renovacao" || c.id === "lembrete_renovacao") return state.proximaAberta;
+    return true;
+  });
 
   // "Já enviada" = existe registro no histórico pra esse atleta+categoria depois
   // do início do par mensal atual. Assim, ao virar o mês (nova rodada), a fila de

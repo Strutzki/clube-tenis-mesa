@@ -5551,6 +5551,17 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
   function arquivarAtleta(id) {
     dispatch({type:"ARQUIVAR_ATLETA",payload:{id}});
   }
+  // Trava do "Incluir agora (antecipar)": espelha as regras da entrada automática —
+  // bloqueado quando o próximo ponto de entrada cai no último terço (Cap. 11) e,
+  // com o financeiro ligado, quando o atleta ainda não pagou a temporada.
+  const _maxRodadas = state.rodadasPorTemporada || 6;
+  const _inicioUltimoTerco = _maxRodadas - Math.ceil(_maxRodadas/3) + 1;
+  const _maxRound = Math.max(0, ...state.matches.map(m => m.round || 0));
+  const _entradaPermitida = state.phase !== "etapa" || (_maxRound + 1) < _inicioUltimoTerco;
+  const podeIncluirBacklog = (a) => _entradaPermitida && (!state.financeiroAtivo || a.pagamentoConfirmado);
+  const motivoBloqueioInclusao = (a) => !_entradaPermitida
+    ? "Entrada suspensa no último terço (Cap. 11)"
+    : (state.financeiroAtivo && !a.pagamentoConfirmado ? "Registre o pagamento da temporada antes de incluir" : "");
   function abrirEditar(a) {
     setSelected(a);
     setEditNome(a.name);
@@ -5730,10 +5741,11 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
               <Btn small color="#5E7569" onClick={()=>abrirEditar(a)}>✏️</Btn>
             </div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              <Btn small color="#6a9d7a" onClick={()=>incluirCircuito(a.id)}>✅ Incluir agora (antecipar)</Btn>
+              <Btn small color="#6a9d7a" disabled={!podeIncluirBacklog(a)} onClick={()=>incluirCircuito(a.id)}>✅ Incluir agora (antecipar)</Btn>
               <Btn small color="#9C6F3E" onClick={()=>recusarCircuito(a.id)}>↩️ Recusar por ora</Btn>
               <Btn small color="#5E7569" onClick={()=>arquivarAtleta(a.id)}>🗄️ Arquivar</Btn>
             </div>
+            {!podeIncluirBacklog(a) && <div style={{fontSize:10,color:"#9C6F3E",marginTop:6}}>⛔ {motivoBloqueioInclusao(a)}</div>}
           </Card>
         ))}
       </>}

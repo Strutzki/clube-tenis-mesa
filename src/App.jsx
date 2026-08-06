@@ -4919,7 +4919,7 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
   const [salvandoReg, setSalvandoReg] = useState(false);
   const [estornarConf, setEstornarConf] = useState(null);
   const [editPagId, setEditPagId] = useState(null);
-  const [alvoSel, setAlvoSel] = useState("proxima"); // alvo do registro quando a próxima está aberta
+  const [alvoSel, setAlvoSel] = useState("atual"); // alvo do registro; começa na temporada em andamento
 
   const financeiroAtivo = !!state.financeiroAtivo;
   const valorTemporada = state.valorTemporada;
@@ -5025,7 +5025,7 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
 
   return (
     <div>
-      <SecTitle>💰 Financeiro — Temporada {rotuloAlvo}{alvo==="proxima" ? " (próxima)" : ""}</SecTitle>
+      <SecTitle>💰 Financeiro — Temporada {rotuloAlvo}{alvo==="proxima" ? " (próxima)" : (state.proximaAberta ? " (em andamento)" : "")}</SecTitle>
       {erro && <Card style={{border:"1px solid rgba(194,90,69,0.4)"}}><div style={{fontSize:12,color:"#c25a45"}}>⚠️ {erro}</div></Card>}
 
       <Card style={{border:`1px solid ${financeiroAtivo?"rgba(106,157,122,0.4)":"rgba(255,255,255,0.06)"}`}}>
@@ -5072,7 +5072,7 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
             <div style={{minWidth:0}}>
               <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}{a.pendenteCircuito ? <span style={{fontSize:10,color:"#9C6F3E"}}> · backlog</span> : null}</div>
-              <div style={{fontSize:11,color:pagoDe(a)?"#6a9d7a":((a.pendenteCircuito && alvo==="atual")?"#9C6F3E":"#D85A30")}}>{pagoDe(a) ? "✅ Pagamento confirmado" : ((a.pendenteCircuito && alvo==="atual") ? "⏳ Entra na próxima temporada — cobrar na virada" : "🔒 Sem pagamento")}</div>
+              <div style={{fontSize:11,color: pagoDe(a) ? "#6a9d7a" : (alvo==="proxima" ? (a.querRenovar ? "#9C6F3E" : "#7d9188") : (a.pendenteCircuito ? "#9C6F3E" : "#D85A30"))}}>{pagoDe(a) ? "✅ Pagamento confirmado" : (alvo==="proxima" ? (a.querRenovar ? "🔄 Renovou — falta pagar" : "⏳ Sem resposta ainda") : (a.pendenteCircuito ? "⏳ Entra na próxima temporada — cobrar na virada" : "🔒 Sem pagamento"))}</div>
             </div>
             {pagoDe(a)
               ? (estornarConf===a.id

@@ -141,6 +141,7 @@ const db = {
 
   // Partidas
   getPartidas: () => supaFetch("partidas?order=rodada.asc,criado_em.asc"),
+  getHistorico: () => supaFetch("partidas_historico?order=temporada_rotulo.desc,rodada.asc"),
   insertPartida: (data) => supaFetch("partidas", { method:"POST", body: JSON.stringify(data) }),
   updatePartida: (id, data) => supaFetch(`partidas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data) }),
   deleteAllPartidas: () => supaFetch("partidas?id=neq.__none__", { method:"DELETE" }),
@@ -2033,6 +2034,14 @@ function RegulamentoView({ onBack }) {
 function AdminHistorico({ state }) {
   const [filtroRodada, setFiltroRodada] = useState("todas");
   const [filtroAtleta, setFiltroAtleta] = useState("");
+  const [arquivo, setArquivo] = useState(null);       // partidas de temporadas passadas (carregado sob demanda)
+  const [carregandoArq, setCarregandoArq] = useState(false);
+  async function carregarArquivo() {
+    setCarregandoArq(true);
+    try { const rows = await db.getHistorico(); setArquivo(Array.isArray(rows) ? rows : []); }
+    catch { setArquivo([]); }
+    finally { setCarregandoArq(false); }
+  }
 
   const validadas = state.matches.filter(m => m.validated);
   const rodadas = [...new Set(validadas.map(m => m.round))].sort((a,b) => a-b);
@@ -2140,6 +2149,55 @@ function AdminHistorico({ state }) {
           </div>
         );
       })}
+
+      <SecTitle>🗂️ Temporadas anteriores</SecTitle>
+      {!arquivo && (
+        <Card>
+          <div style={{fontSize:12,color:"#9db3a8",marginBottom:10,lineHeight:1.5}}>Partidas de temporadas já encerradas, guardadas no arquivo a cada virada. Carregue para consultar — o filtro de atleta acima também vale aqui.</div>
+          <Btn small color="#9C6F3E" onClick={carregarArquivo} disabled={carregandoArq}>{carregandoArq ? "Carregando…" : "📂 Carregar arquivo de temporadas"}</Btn>
+        </Card>
+      )}
+      {arquivo && arquivo.length === 0 && (
+        <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:16}}>Nenhuma temporada arquivada ainda. O arquivo é preenchido automaticamente a cada virada de temporada.</div></Card>
+      )}
+      {arquivo && arquivo.length > 0 && (() => {
+        const busca = filtroAtleta.trim().toLowerCase();
+        const nomeDe = id => state.athletes.find(a => a.id === id)?.name || "atleta arquivado";
+        const jogadas = arquivo.filter(r => r.validado && !r.rejeitado && r.placar1 != null);
+        const porTemp = {};
+        jogadas.forEach(r => { const k = r.temporada_rotulo || "—"; (porTemp[k] = porTemp[k] || []).push(r); });
+        const temporadas = Object.keys(porTemp).sort().reverse();
+        const blocos = temporadas.map(temp => {
+          const linhas = porTemp[temp].filter(r => {
+            if (!busca) return true;
+            return nomeDe(r.atleta1_id).toLowerCase().includes(busca) || nomeDe(r.atleta2_id).toLowerCase().includes(busca);
+          }).sort((a,b) => (a.rodada||0)-(b.rodada||0));
+          if (linhas.length === 0) return null;
+          return (
+            <div key={temp} style={{marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0 6px",fontSize:11,fontWeight:700,color:"#9C6F3E",textTransform:"uppercase",letterSpacing:1}}>
+                <div style={{flex:1,height:1,background:"rgba(167,139,250,0.2)"}}/>
+                🗂️ Temporada {temp} · {linhas.length} jogo(s)
+                <div style={{flex:1,height:1,background:"rgba(167,139,250,0.2)"}}/>
+              </div>
+              {linhas.map((r,i) => {
+                const v1 = (r.placar1||0) > (r.placar2||0);
+                return (
+                  <Card key={r.id||i} style={{marginBottom:6}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <div style={{flex:1,fontSize:13,fontWeight:700,color:v1?"#6a9d7a":"#F0EAE0"}}>{v1?"🏆 ":""}{nomeDe(r.atleta1_id)}</div>
+                      <div style={{background:"#1C2B27",borderRadius:8,padding:"5px 12px",fontSize:16,fontWeight:800,color:"#fff",letterSpacing:1}}>{r.placar1} × {r.placar2}</div>
+                      <div style={{flex:1,textAlign:"right",fontSize:13,fontWeight:700,color:!v1?"#6a9d7a":"#F0EAE0"}}>{!v1?"🏆 ":""}{nomeDe(r.atleta2_id)}</div>
+                    </div>
+                    <div style={{fontSize:9,color:"#4a5d56",marginTop:4}}>Rodada {r.rodada}</div>
+                  </Card>
+                );
+              })}
+            </div>
+          );
+        }).filter(Boolean);
+        return blocos.length > 0 ? blocos : <Card><div style={{fontSize:12,color:"#7d9188",textAlign:"center",padding:12}}>Nenhuma partida arquivada para esse filtro.</div></Card>;
+      })()}
     </div>
   );
 }

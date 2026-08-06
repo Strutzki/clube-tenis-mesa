@@ -4920,6 +4920,8 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
   const [estornarConf, setEstornarConf] = useState(null);
   const [editPagId, setEditPagId] = useState(null);
   const [alvoSel, setAlvoSel] = useState("atual"); // alvo do registro; começa na temporada em andamento
+  const [cheioReais, setCheioReais] = useState("");
+  const [descReais, setDescReais] = useState("");
 
   const financeiroAtivo = !!state.financeiroAtivo;
   const valorTemporada = state.valorTemporada;
@@ -4943,10 +4945,15 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
     setDescGlobal(String(descontoGlobalPct));
     setPctMeio(String(percentualMeio));
   }, [valorTemporada, descontoGlobalPct, percentualMeio]);
+  useEffect(() => {
+    setCheioReais(state.proximaValorCheio != null ? (state.proximaValorCheio/100).toFixed(2) : "");
+    setDescReais(state.proximaValorDesconto != null ? (state.proximaValorDesconto/100).toFixed(2) : "");
+  }, [state.proximaValorCheio, state.proximaValorDesconto]);
 
   const reaisParaCent = v => v.trim()==="" ? null : Math.round(parseFloat(v.replace(",","."))*100);
   const fmtR = c => c==null ? "—" : `R$ ${(c/100).toFixed(2).replace(".",",")}`;
   function centSugerido(meio, descPct) {
+    if (alvo === "proxima") return state.proximaValorDesconto ?? null; // próxima: valor uniforme já com desconto
     if (valorTemporada == null) return null;
     const base = valorTemporada * (meio ? percentualMeio : 100) / 100;
     const d = (descPct===""||descPct==null) ? descontoGlobalPct : Number(descPct);
@@ -4956,12 +4963,13 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
   async function salvarConfig(novoAtivo) {
     setSalvandoCfg(true); setErro("");
     try {
-      await chamarAdminAction("DEFINIR_FINANCEIRO", {
-        ativo: novoAtivo != null ? novoAtivo : financeiroAtivo,
-        valorTemporada: reaisParaCent(valorReais),
-        descontoGlobalPct: Number(descGlobal)||0,
-        percentualMeio: Number(pctMeio)||80,
-      });
+      if (novoAtivo != null) {
+        await chamarAdminAction("DEFINIR_FINANCEIRO", { ativo: novoAtivo });
+      } else if (alvo === "proxima") {
+        await chamarAdminAction("DEFINIR_FINANCEIRO", { proximaValorCheio: reaisParaCent(cheioReais), proximaValorDesconto: reaisParaCent(descReais) });
+      } else {
+        await chamarAdminAction("DEFINIR_FINANCEIRO", { valorTemporada: reaisParaCent(valorReais), descontoGlobalPct: Number(descGlobal)||0, percentualMeio: Number(pctMeio)||80 });
+      }
       await loadFromSupabase();
     } catch(e) { setErro(e.message); }
     finally { setSalvandoCfg(false); }
@@ -5015,8 +5023,12 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
   // Trava da temporada ATUAL — sempre pagamento_confirmado (não muda com o alvo).
   const pagosTravaN = noCircuito.filter(a => a.pagamentoConfirmado).length;
   const retidosTravaN = noCircuito.filter(a => !a.pagamentoConfirmado).length;
-  // Base do alvo selecionado: na PRÓXIMA o backlog também paga (é entrante da nova).
-  const baseAlvo = alvo === "proxima" ? atletas : noCircuito;
+  // Na PRÓXIMA, só entram na lista quem sinalizou renovação, foi aprovado (backlog/nova
+  // inscrição) ou já pagou a próxima — não o circuito todo (não se sabe quem vai jogar).
+  const listaAtletas = alvo === "proxima"
+    ? atletas.filter(a => a.querRenovar || a.pendenteCircuito || a.pagamentoProximaConfirmado)
+    : atletas;
+  const baseAlvo = alvo === "proxima" ? listaAtletas : noCircuito;
   const pagosN = baseAlvo.filter(a => pagoDe(a)).length;
   const retidosN = baseAlvo.filter(a => !pagoDe(a)).length;
   const totalArrecadado = (pagamentos||[]).filter(p=>p.status==="confirmado").reduce((s,p)=>s+(p.valor||0),0);
@@ -5037,12 +5049,24 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
           </button>
         </div>
         {financeiroAtivo && <div style={{fontSize:11,color:"#D85A30",marginBottom:8,lineHeight:1.5}}>⚠️ Trava ativa: só é pareado quem tem pagamento confirmado na temporada atual. Hoje {pagosTravaN} pago(s), {retidosTravaN} retido(s).</div>}
-        <label style={lbl}>Valor da temporada (R$)</label>
-        <input style={inp} value={valorReais} onChange={e=>setValorReais(e.target.value)} placeholder="ex: 90,00" inputMode="decimal"/>
-        <div style={{display:"flex",gap:8}}>
-          <div style={{flex:1}}><label style={lbl}>Desconto global (%)</label><input style={inp} value={descGlobal} onChange={e=>setDescGlobal(e.target.value)} inputMode="numeric"/></div>
-          <div style={{flex:1}}><label style={lbl}>Entrada meio (%)</label><input style={inp} value={pctMeio} onChange={e=>setPctMeio(e.target.value)} inputMode="numeric"/></div>
-        </div>
+        <div style={{fontSize:10,color:"#7d9188",marginBottom:6}}>Valores da temporada <b style={{color:"#9db3a8"}}>{alvo==="proxima" ? `próxima (${state.proximaRotulo||"—"})` : `atual (${rotuloTemp})`}</b></div>
+        {alvo === "proxima" ? (
+          <>
+            <label style={lbl}>Valor cheio da próxima (R$)</label>
+            <input style={inp} value={cheioReais} onChange={e=>setCheioReais(e.target.value)} placeholder="ex: 100,00" inputMode="decimal"/>
+            <label style={lbl}>Valor com desconto — renovação (R$)</label>
+            <input style={inp} value={descReais} onChange={e=>setDescReais(e.target.value)} placeholder="ex: 80,00" inputMode="decimal"/>
+          </>
+        ) : (
+          <>
+            <label style={lbl}>Valor da temporada (R$)</label>
+            <input style={inp} value={valorReais} onChange={e=>setValorReais(e.target.value)} placeholder="ex: 90,00" inputMode="decimal"/>
+            <div style={{display:"flex",gap:8}}>
+              <div style={{flex:1}}><label style={lbl}>Desconto global (%)</label><input style={inp} value={descGlobal} onChange={e=>setDescGlobal(e.target.value)} inputMode="numeric"/></div>
+              <div style={{flex:1}}><label style={lbl}>Entrada meio (%)</label><input style={inp} value={pctMeio} onChange={e=>setPctMeio(e.target.value)} inputMode="numeric"/></div>
+            </div>
+          </>
+        )}
         <Btn onClick={()=>salvarConfig(null)} color="#D85A30" full small disabled={salvandoCfg}>{salvandoCfg?"Salvando…":"💾 Salvar configuração"}</Btn>
       </Card>
 
@@ -5067,7 +5091,8 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
 
       <SecTitle>Pagamentos por atleta</SecTitle>
       {valorTemporada==null && <Card><div style={{fontSize:12,color:"#9C6F3E"}}>Defina o valor da temporada acima para ver os valores sugeridos.</div></Card>}
-      {atletas.map(a => (
+      {alvo==="proxima" && listaAtletas.length===0 && <Card><div style={{fontSize:12,color:"#7d9188",textAlign:"center",padding:12}}>Ninguém sinalizou renovação nem foi aprovado para a próxima ainda.</div></Card>}
+      {listaAtletas.map(a => (
         <Card key={a.id} style={{border:pagoDe(a)?"1px solid rgba(106,157,122,0.25)":"1px solid rgba(216,90,48,0.2)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
             <div style={{minWidth:0}}>

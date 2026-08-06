@@ -528,6 +528,9 @@ const INIT = {
   proximaNome: null,         // nome da próxima temporada (definido na pré-abertura)
   proximaDataInicio: null,   // data de início da próxima temporada
   proximaRotulo: null,       // rótulo da próxima temporada (ex.: "2/2026") — usado nos pagamentos
+  proximaValorCheio: null,   // centavos — valor cheio da próxima temporada
+  proximaValorDesconto: null,// centavos — valor com desconto (renovação)
+  pixChave: null,            // chave PIX do clube (persistente entre temporadas)
   temporadaAno: new Date().getFullYear(),
   mensagensEnviadas: [], // histórico de disparos de WhatsApp (log, não afeta ranking/rating)
   solicitacoesWo: [],    // pedidos de W.O. Justificado feitos pelo próprio atleta (Cap. 07)
@@ -699,11 +702,14 @@ function reducer(state, action) {
       return { ...state, proximaAberta: true,
         proximaNome: (typeof p.nome === "string" && p.nome.trim()) ? p.nome.trim() : null,
         proximaDataInicio: p.dataInicio || null,
-        proximaRotulo: `${proxNum}/${proxAno}` };
+        proximaRotulo: `${proxNum}/${proxAno}`,
+        proximaValorCheio: p.valorCheio != null ? p.valorCheio : null,
+        proximaValorDesconto: p.valorDesconto != null ? p.valorDesconto : null,
+        pixChave: p.pixChave !== undefined ? (p.pixChave || null) : state.pixChave };
     }
 
     case "CANCELAR_PROXIMA": {
-      return { ...state, proximaAberta: false, proximaNome: null, proximaDataInicio: null, proximaRotulo: null };
+      return { ...state, proximaAberta: false, proximaNome: null, proximaDataInicio: null, proximaRotulo: null, proximaValorCheio: null, proximaValorDesconto: null };
     }
 
     case "RENOVAR": {
@@ -1068,13 +1074,16 @@ function reducer(state, action) {
     }
 
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, nomeCircuito, dataInicioTemporada, maxAtletas, proximaAberta, proximaNome, proximaDataInicio, proximaRotulo, mensagensEnviadas, solicitacoesWo } = action.payload;
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, nomeCircuito, dataInicioTemporada, maxAtletas, proximaAberta, proximaNome, proximaDataInicio, proximaRotulo, proximaValorCheio, proximaValorDesconto, pixChave, mensagensEnviadas, solicitacoesWo } = action.payload;
       return {
         ...state, athletes, matches, keys, phase,
         proximaAberta: proximaAberta ?? state.proximaAberta,
         proximaNome: proximaNome !== undefined ? proximaNome : state.proximaNome,
         proximaDataInicio: proximaDataInicio !== undefined ? proximaDataInicio : state.proximaDataInicio,
         proximaRotulo: proximaRotulo !== undefined ? proximaRotulo : state.proximaRotulo,
+        proximaValorCheio: proximaValorCheio !== undefined ? proximaValorCheio : state.proximaValorCheio,
+        proximaValorDesconto: proximaValorDesconto !== undefined ? proximaValorDesconto : state.proximaValorDesconto,
+        pixChave: pixChave !== undefined ? pixChave : state.pixChave,
         rodadasPorTemporada: rodadasPorTemporada ?? state.rodadasPorTemporada,
         autoValidarPlacar: autoValidarPlacar ?? state.autoValidarPlacar,
         financeiroAtivo: financeiroAtivo ?? state.financeiroAtivo,
@@ -2414,10 +2423,20 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
         prazo.setDate(prazo.getDate() - 7);
         prazoTxt = ` — confirme até *${fmtDate(prazo.toISOString().slice(0,10))}*`;
       }
+      const fmtR = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
+      const cheioC = state.proximaValorCheio, finalC = state.proximaValorDesconto;
+      const pctOff = (cheioC && finalC != null && cheioC > 0) ? Math.round((1 - finalC/cheioC)*100) : 0;
+      let valorLinha = "";
+      if (finalC != null) {
+        valorLinha = (cheioC && pctOff > 0)
+          ? `\n\n💵 De ${fmtR(cheioC)} por *${fmtR(finalC)}* (${pctOff}% de desconto de renovação).`
+          : `\n\n💵 Valor: *${fmtR(finalC)}*.`;
+      }
+      const pixLinha = state.pixChave ? `\n🔑 PIX: *${state.pixChave}*` : "";
       const elegiveis = state.athletes.filter(a => a.status === "ativo" && !a.pagamentoProximaConfirmado);
       return elegiveis.map(a => ({
         atleta: a,
-        msg: `🏓 *${nomeCircuito} — Inscrições abertas!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! A *${rotulo}* está chegando e as inscrições já abriram. 🎉\n\nComo você já é do circuito, tem *prioridade de renovação*${prazoTxt}. Confira seu valor e garanta sua vaga no app — é só tocar em *Quero renovar*. Depois a gente acerta o PIX.\n\n*Vem pro Clube!* 🏓`,
+        msg: `🏓 *${nomeCircuito} — Inscrições abertas!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! A *${rotulo}* está chegando e as inscrições já abriram. 🎉\n\nComo você já é do circuito, tem *prioridade de renovação*${prazoTxt}.${valorLinha}${pixLinha}\n\nGaranta sua vaga: abra o app e toque em *Quero renovar*.\n\n*Vem pro Clube!* 🏓`,
       }));
     }
 
@@ -2431,10 +2450,20 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
       if (diasAteEnc > 3 || diasAteEnc < 0) return [];
       const rotulo = state.proximaRotulo ? `Temporada ${state.proximaRotulo}` : "próxima temporada";
       const prazoStr = fmtDate(prazo.toISOString().slice(0,10));
+      const fmtR = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
+      const cheioC = state.proximaValorCheio, finalC = state.proximaValorDesconto;
+      const pctOff = (cheioC && finalC != null && cheioC > 0) ? Math.round((1 - finalC/cheioC)*100) : 0;
+      let valorLinha = "";
+      if (finalC != null) {
+        valorLinha = (cheioC && pctOff > 0)
+          ? `\n\n💵 De ${fmtR(cheioC)} por *${fmtR(finalC)}* (${pctOff}% off).`
+          : `\n\n💵 Valor: *${fmtR(finalC)}*.`;
+      }
+      const pixLinha = state.pixChave ? `\n🔑 PIX: *${state.pixChave}*` : "";
       const naoRenov = state.athletes.filter(a => a.status === "ativo" && !a.querRenovar && !a.pagamentoProximaConfirmado);
       return naoRenov.map(a => ({
         atleta: a,
-        msg: `⏰ *${nomeCircuito} — Renovação terminando*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! O prazo de prioridade pra renovar sua vaga na *${rotulo}* vai até *${prazoStr}*.\n\nDepois dele, as vagas não confirmadas abrem pra fila de espera — não quero te deixar de fora. 🏓\n\nPra garantir, é rapidinho: abre o app e toca em *Quero renovar*.\n\n*Vem pro Clube!* 🏓`,
+        msg: `⏰ *${nomeCircuito} — Renovação terminando*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! O prazo de prioridade pra renovar sua vaga na *${rotulo}* vai até *${prazoStr}*.\n\nDepois dele, as vagas não confirmadas abrem pra fila de espera — não quero te deixar de fora. 🏓${valorLinha}${pixLinha}\n\nPra garantir, é rapidinho: abre o app e toca em *Quero renovar*.\n\n*Vem pro Clube!* 🏓`,
       }));
     }
 
@@ -3482,6 +3511,9 @@ export default function App() {
         proximaNome: config?.[0]?.proxima_nome || null,
         proximaDataInicio: config?.[0]?.proxima_data_inicio || null,
         proximaRotulo: config?.[0]?.proxima_rotulo || null,
+        proximaValorCheio: config?.[0]?.proxima_valor_cheio ?? null,
+        proximaValorDesconto: config?.[0]?.proxima_valor_desconto ?? null,
+        pixChave: config?.[0]?.pix_chave || null,
         solicitacoesWo: solicitacoesWoMapped,
       }});
       // Restaurar atleta completo da sessão após carregar do banco
@@ -3792,7 +3824,7 @@ export default function App() {
       await loadFromSupabase();
     }
     else if (action.type === "ABRIR_PROXIMA_TEMPORADA") {
-      await chamarAdminAction("ABRIR_PROXIMA_TEMPORADA", { nome: action.payload?.nome, dataInicio: action.payload?.dataInicio });
+      await chamarAdminAction("ABRIR_PROXIMA_TEMPORADA", { nome: action.payload?.nome, dataInicio: action.payload?.dataInicio, valorCheio: action.payload?.valorCheio, valorDesconto: action.payload?.valorDesconto, pixChave: action.payload?.pixChave });
       await loadFromSupabase();
     }
     else if (action.type === "CANCELAR_PROXIMA") {
@@ -5380,8 +5412,17 @@ function AbrirProximaPanel({ state, dispatch }) {
   const [abrindo, setAbrindo] = useState(false);
   const [nomeNova, setNomeNova] = useState(state.nomeCircuito || "Clube do Tênis de Mesa");
   const [dataNova, setDataNova] = useState("");
+  const [cheio, setCheio] = useState("");
+  const [desc, setDesc] = useState("");
+  const [pix, setPix] = useState(state.pixChave || "");
+  const [copiado, setCopiado] = useState(false);
   const inpN = {width:"100%",padding:"9px 11px",borderRadius:9,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(0,0,0,0.18)",color:"#F0EAE0",fontSize:13,boxSizing:"border-box"};
   const lblN = {fontSize:11,color:"#9db3a8",display:"block",marginBottom:4,marginTop:12};
+  const reaisParaCent = v => { const n = parseFloat(String(v).replace(",",".")); return isNaN(n) ? null : Math.round(n*100); };
+  const cheioC = reaisParaCent(cheio);
+  const descC = reaisParaCent(desc);
+  const pctOff = (cheioC && descC != null && cheioC > 0) ? Math.round((1 - descC/cheioC)*100) : null;
+  const copiarPix = () => { try { navigator.clipboard.writeText((pix||"").trim()); setCopiado(true); setTimeout(()=>setCopiado(false), 1500); } catch(e){} };
   return (
     <Card style={{border:"1px solid rgba(106,157,122,0.25)",marginTop:8}}>
       <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>📅 Próxima temporada</div>
@@ -5392,19 +5433,29 @@ function AbrirProximaPanel({ state, dispatch }) {
 
       {abrindo && (
         <div onClick={()=>setAbrindo(false)}
-          style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,overflowY:"auto"}}>
           <div onClick={e=>e.stopPropagation()}
-            style={{background:T.verdeCard,borderRadius:16,padding:22,maxWidth:380,width:"100%",border:"1px solid rgba(106,157,122,0.4)",boxShadow:"0 20px 50px rgba(0,0,0,0.5)"}}>
+            style={{background:T.verdeCard,borderRadius:16,padding:22,maxWidth:380,width:"100%",border:"1px solid rgba(106,157,122,0.4)",boxShadow:"0 20px 50px rgba(0,0,0,0.5)",maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{fontSize:17,fontWeight:700,color:"#F0EAE0",marginBottom:12}}>📅 Abrir próxima temporada</div>
             <label style={lblN}>Nome do circuito (cabeçalho + mensagens da próxima)</label>
             <input style={inpN} value={nomeNova} onChange={e=>setNomeNova(e.target.value)} placeholder="Clube do Tênis de Mesa"/>
             <label style={lblN}>Data de início da próxima temporada</label>
             <input type="date" style={inpN} value={dataNova} onChange={e=>setDataNova(e.target.value)}/>
-            <div style={{fontSize:11,color:"#9db3a8",marginTop:10,marginBottom:16,lineHeight:1.5}}>
-              A janela de renovação prioritária abre 7 dias antes dessa data. <b style={{color:"#6a9d7a"}}>Nada da temporada atual é apagado</b> — isso só abre a próxima.
+            <label style={lblN}>Valor cheio (R$)</label>
+            <input style={inpN} value={cheio} onChange={e=>setCheio(e.target.value)} placeholder="ex: 100,00" inputMode="decimal"/>
+            <label style={lblN}>Valor com desconto — renovação (R$)</label>
+            <input style={inpN} value={desc} onChange={e=>setDesc(e.target.value)} placeholder="ex: 80,00" inputMode="decimal"/>
+            {pctOff != null && <div style={{fontSize:11,color:"#6a9d7a",marginTop:6}}>Desconto de {pctOff}%</div>}
+            <label style={lblN}>Chave PIX (fica salva pro clube)</label>
+            <div style={{display:"flex",gap:6}}>
+              <input style={{...inpN,flex:1}} value={pix} onChange={e=>setPix(e.target.value)} placeholder="chave PIX do clube"/>
+              <button onClick={copiarPix} title="Copiar chave PIX" style={{flexShrink:0,padding:"9px 12px",borderRadius:9,border:"1px solid rgba(255,255,255,0.14)",background:copiado?"#6a9d7a":"rgba(0,0,0,0.18)",color:"#F0EAE0",cursor:"pointer",fontSize:13}}>{copiado?"✓":"📋"}</button>
+            </div>
+            <div style={{fontSize:11,color:"#9db3a8",marginTop:12,marginBottom:16,lineHeight:1.5}}>
+              A janela de renovação prioritária abre 7 dias antes da data. <b style={{color:"#6a9d7a"}}>Nada da temporada atual é apagado</b> — isso só abre a próxima.
             </div>
             <div style={{display:"flex",gap:10}}>
-              <Btn onClick={()=>{dispatch({type:"ABRIR_PROXIMA_TEMPORADA",payload:{nome:nomeNova,dataInicio:dataNova||null}});setAbrindo(false);}} color="#6a9d7a" full>Abrir próxima temporada</Btn>
+              <Btn onClick={()=>{dispatch({type:"ABRIR_PROXIMA_TEMPORADA",payload:{nome:nomeNova,dataInicio:dataNova||null,valorCheio:cheioC,valorDesconto:descC,pixChave:(pix||"").trim()}});setAbrindo(false);}} color="#6a9d7a" full>Abrir próxima temporada</Btn>
               <Btn onClick={()=>setAbrindo(false)} color="#5E7569" full>Cancelar</Btn>
             </div>
           </div>
@@ -5509,39 +5560,49 @@ function RenovacaoAdminPanel({ state, dispatch }) {
 function RenovacaoCard({ state, dispatch, athlete }) {
   const eu = state.athletes.find(a => a.id === athlete?.id) || null;
   const [preco, setPreco] = useState(null);
-  const inscricoes = state.phase === "inscricoes" || state.proximaAberta;
+  const [copiado, setCopiado] = useState(false);
+  const naProxima = state.proximaAberta;
+  const inscricoes = state.phase === "inscricoes" || naProxima;
   const elegivel = inscricoes && eu && eu.status === "ativo";
   useEffect(() => {
     let vivo = true;
-    if (elegivel && state.financeiroAtivo && eu?.id) {
+    // Fora da pré-abertura (fase inscrições pós-virada) busca o preço individual.
+    if (elegivel && !naProxima && state.financeiroAtivo && eu?.id) {
       buscarPrecoTemporada(eu.id).then(p => { if (vivo) setPreco(p); });
-    } else {
-      setPreco(null);
-    }
+    } else { setPreco(null); }
     return () => { vivo = false; };
-  }, [elegivel, state.financeiroAtivo, eu?.id]);
+  }, [elegivel, naProxima, state.financeiroAtivo, eu?.id]);
   if (!elegivel) return null;
   const fmt = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
-  let precoTxt = null;
-  if (state.financeiroAtivo && preco && preco.valor_base_cent != null) {
-    if (preco.isento) precoTxt = "Isento";
-    else {
-      const d = preco.desconto_pct || 0;
-      precoTxt = fmt(preco.preco_final_cent) + (d > 0 ? ` (com ${d}% de desconto)` : "");
-    }
-  }
-  const nomeCirc = (state.proximaAberta ? state.proximaNome : null) || state.nomeCircuito || "Clube do Tênis de Mesa";
-  const dataIni = state.proximaAberta ? state.proximaDataInicio : state.dataInicioTemporada;
+  // Valores: na pré-abertura são uniformes (cheio → desconto); pós-virada, individuais (RPC).
+  const cheioC = naProxima ? state.proximaValorCheio : (preco ? preco.valor_base_cent : null);
+  const finalC = naProxima ? state.proximaValorDesconto : (preco ? preco.preco_final_cent : null);
+  const isentoInd = !naProxima && preco && preco.isento;
+  const pctOff = (cheioC && finalC != null && cheioC > 0) ? Math.round((1 - finalC/cheioC)*100) : 0;
+  const nomeCirc = (naProxima ? state.proximaNome : null) || state.nomeCircuito || "Clube do Tênis de Mesa";
+  const dataIni = naProxima ? state.proximaDataInicio : state.dataInicioTemporada;
   let inicioTxt = null;
   if (dataIni) {
     inicioTxt = new Date(dataIni+"T00:00:00").toLocaleDateString("pt-BR");
   }
-  const pagoEfetivo = state.proximaAberta ? eu.pagamentoProximaConfirmado : eu.pagamentoConfirmado;
+  const pagoEfetivo = naProxima ? eu.pagamentoProximaConfirmado : eu.pagamentoConfirmado;
+  const pix = state.pixChave || "";
+  const copiarPix = () => { try { navigator.clipboard.writeText(pix.trim()); setCopiado(true); setTimeout(()=>setCopiado(false),1500); } catch(e){} };
   return (
     <Card style={{marginBottom:12,border:"1px solid rgba(106,157,122,0.35)"}}>
       <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>🎟️ Inscrições abertas — {nomeCirc}</div>
-      {precoTxt && <div style={{fontSize:13,color:"#c9d4ce",marginBottom:4}}>Sua temporada: <b style={{color:"#F0EAE0"}}>{precoTxt}</b></div>}
+      {isentoInd ? (
+        <div style={{fontSize:13,color:"#c9d4ce",marginBottom:4}}>Sua temporada: <b style={{color:"#6a9d7a"}}>Isento</b></div>
+      ) : finalC != null ? (
+        <div style={{fontSize:13,color:"#c9d4ce",marginBottom:4}}>Sua temporada: {cheioC && pctOff>0 ? <span style={{textDecoration:"line-through",color:"#7d9188",marginRight:6}}>{fmt(cheioC)}</span> : null}<b style={{color:"#F0EAE0"}}>{fmt(finalC)}</b>{pctOff>0 ? <span style={{color:"#6a9d7a"}}> ({pctOff}% off)</span> : null}</div>
+      ) : null}
       {inicioTxt && <div style={{fontSize:11,color:"#9db3a8",marginBottom:8}}>Início previsto: {inicioTxt}</div>}
+      {!pagoEfetivo && pix && !isentoInd && (
+        <div style={{display:"flex",alignItems:"center",gap:8,background:"rgba(0,0,0,0.18)",borderRadius:9,padding:"7px 10px",marginBottom:8}}>
+          <div style={{flex:1,minWidth:0,fontSize:12,color:"#c9d4ce",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>PIX: <b style={{color:"#F0EAE0"}}>{pix}</b></div>
+          <button onClick={copiarPix} style={{flexShrink:0,padding:"6px 10px",borderRadius:8,border:"1px solid rgba(255,255,255,0.14)",background:copiado?"#6a9d7a":"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:11,fontWeight:700}}>{copiado?"✓ copiado":"📋 copiar"}</button>
+        </div>
+      )}
       {pagoEfetivo ? (
         <div style={{fontSize:12,color:"#6a9d7a",fontWeight:600}}>✅ Pagamento confirmado — sua vaga está garantida.</div>
       ) : eu.querRenovar ? (

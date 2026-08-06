@@ -2436,7 +2436,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
       const elegiveis = state.athletes.filter(a => a.status === "ativo" && !a.pagamentoProximaConfirmado);
       return elegiveis.map(a => ({
         atleta: a,
-        msg: `🏓 *${nomeCircuito} — Inscrições abertas!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! A *${rotulo}* está chegando e as inscrições já abriram. 🎉\n\nComo você já é do circuito, tem *prioridade de renovação*${prazoTxt}.${valorLinha}${pixLinha}\n\nGaranta sua vaga: abra o app e toque em *Quero renovar*.\n\n*Vem pro Clube!* 🏓`,
+        msg: `🏓 *${state.proximaNome || nomeCircuito} — Inscrições abertas!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! A *${rotulo}* está chegando e as inscrições já abriram. 🎉\n\nComo você já é do circuito, tem *prioridade de renovação*${prazoTxt}.${valorLinha}${pixLinha}\n\nGaranta sua vaga: abra o app e toque em *Quero renovar*.\n\n*Vem pro Clube!* 🏓`,
       }));
     }
 
@@ -2463,7 +2463,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
       const naoRenov = state.athletes.filter(a => a.status === "ativo" && !a.querRenovar && !a.pagamentoProximaConfirmado);
       return naoRenov.map(a => ({
         atleta: a,
-        msg: `⏰ *${nomeCircuito} — Renovação terminando*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! O prazo de prioridade pra renovar sua vaga na *${rotulo}* vai até *${prazoStr}*.\n\nDepois dele, as vagas não confirmadas abrem pra fila de espera — não quero te deixar de fora. 🏓${valorLinha}${pixLinha}\n\nPra garantir, é rapidinho: abre o app e toca em *Quero renovar*.\n\n*Vem pro Clube!* 🏓`,
+        msg: `⏰ *${state.proximaNome || nomeCircuito} — Renovação terminando*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! O prazo de prioridade pra renovar sua vaga na *${rotulo}* vai até *${prazoStr}*.\n\nDepois dele, as vagas não confirmadas abrem pra fila de espera — não quero te deixar de fora. 🏓${valorLinha}${pixLinha}\n\nPra garantir, é rapidinho: abre o app e toca em *Quero renovar*.\n\n*Vem pro Clube!* 🏓`,
       }));
     }
 

@@ -9,6 +9,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 const ALLOWED_ORIGINS = [
   "https://clubedotenisdemesabh.com.br",
   "https://www.clubedotenisdemesabh.com.br",
+  "https://clube-tenis-mesa.vercel.app",
 ];
 
 const JANELA_MINUTOS = 15;
@@ -76,6 +77,28 @@ function jaSeEnfrentaram(idA: string, idB: string, historico: Set<string>): bool
   return historico.has(`${a}|${b}`);
 }
 
+function confrontoDiretoDB(aId: string, bId: string, partidas: any[]): number {
+  let av = 0, bv = 0;
+  for (const m of partidas) {
+    if (m.rejeitado || !m.validado) continue;
+    if (m.placar1 == null || m.placar2 == null) continue;
+    if (!((m.atleta1_id === aId && m.atleta2_id === bId) || (m.atleta1_id === bId && m.atleta2_id === aId))) continue;
+    const venc = m.placar1 > m.placar2 ? m.atleta1_id : m.atleta2_id;
+    if (venc === aId) av++; else if (venc === bId) bv++;
+  }
+  return av - bv;
+}
+
+function cmpRankingDB(partidas: any[]) {
+  return (a: any, b: any) => {
+    if ((b.saldo_temp || 0) !== (a.saldo_temp || 0)) return (b.saldo_temp || 0) - (a.saldo_temp || 0);
+    if ((b.vitorias || 0) !== (a.vitorias || 0)) return (b.vitorias || 0) - (a.vitorias || 0);
+    const h2h = confrontoDiretoDB(a.id, b.id, partidas);
+    if (h2h !== 0) return -h2h;
+    return (b.rating || 0) - (a.rating || 0);
+  };
+}
+
 function parearRodada(athletes: any[], historico: Set<string>): { pares: { p1: string; p2: string }[]; bye: string | null } {
   const sorted = [...athletes].sort((a, b) => (b.rating || 250) - (a.rating || 250));
 
@@ -87,54 +110,38 @@ function parearRodada(athletes: any[], historico: Set<string>): { pares: { p1: s
   }
 
   const n = jogadores.length;
-  const usados = new Array(n).fill(false);
+  const PENAL_REPETICAO = 1e7;
 
   function custo(i: number, j: number) {
-    return Math.abs((jogadores[i].rating || 250) - (jogadores[j].rating || 250));
+    const repetido = jaSeEnfrentaram(jogadores[i].id, jogadores[j].id, historico) ? PENAL_REPETICAO : 0;
+    return repetido + Math.abs((jogadores[i].rating || 250) - (jogadores[j].rating || 250));
   }
 
-  function resolver(pares: { p1: string; p2: string }[]): { p1: string; p2: string }[] | null {
-    const i = usados.findIndex((u) => !u);
-    if (i === -1) return pares;
+  const usados = new Array(n).fill(false);
+  let melhorPares: { p1: string; p2: string }[] | null = null;
+  let melhorCusto = Infinity;
 
+  function resolver(pares: { p1: string; p2: string }[], custoAcc: number) {
+    if (custoAcc >= melhorCusto) return;
+    const i = usados.findIndex((u) => !u);
+    if (i === -1) { melhorCusto = custoAcc; melhorPares = pares; return; }
     usados[i] = true;
     const candidatos: { j: number; c: number }[] = [];
     for (let j = 0; j < n; j++) {
       if (j === i || usados[j]) continue;
-      if (jaSeEnfrentaram(jogadores[i].id, jogadores[j].id, historico)) continue;
       candidatos.push({ j, c: custo(i, j) });
     }
     candidatos.sort((a, b) => a.c - b.c);
-
-    for (const { j } of candidatos) {
+    for (const { j, c } of candidatos) {
       usados[j] = true;
-      const res = resolver([...pares, { p1: jogadores[i].id, p2: jogadores[j].id }]);
-      if (res) return res;
+      resolver([...pares, { p1: jogadores[i].id, p2: jogadores[j].id }], custoAcc + c);
       usados[j] = false;
     }
     usados[i] = false;
-    return null;
   }
+  resolver([], 0);
 
-  let pares = resolver([]);
-
-  if (!pares) {
-    pares = [];
-    const u2 = new Array(n).fill(false);
-    for (let i = 0; i < n; i++) {
-      if (u2[i]) continue;
-      u2[i] = true;
-      let best = -1, bestC = Infinity;
-      for (let j = i + 1; j < n; j++) {
-        if (u2[j]) continue;
-        const c = custo(i, j);
-        if (c < bestC) { bestC = c; best = j; }
-      }
-      if (best >= 0) { u2[best] = true; pares.push({ p1: jogadores[i].id, p2: jogadores[best].id }); }
-    }
-  }
-
-  return { pares, bye: byeId };
+  return { pares: melhorPares || [], bye: byeId };
 }
 
 function gerarPareamentoPorRating(athletes: any[], matchesTemporada: any[] = []) {
@@ -151,21 +158,40 @@ function gerarPareamentoPorRating(athletes: any[], matchesTemporada: any[] = [])
   return { rodada1: r1.pares, bye1: r1.bye, rodada2: r2.pares, bye2: r2.bye };
 }
 
-function calcularPrazos() {
-  const hoje = new Date();
-  const ano = hoje.getFullYear(), mes = hoje.getMonth();
-  const prazoA = new Date(ano, mes, 15);
-  const prazoB = new Date(ano, mes, 25);
-  if (prazoA < hoje) prazoA.setMonth(prazoA.getMonth() + 1);
-  if (prazoB < hoje) prazoB.setMonth(prazoB.getMonth() + 1);
+function calcularPrazos(mesRef?: Date) {
+  let ref: Date;
+  if (mesRef) {
+    ref = mesRef;
+  } else {
+    const hoje = new Date();
+    ref = (hoje.getDate() > 25) ? new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1) : hoje;
+  }
+  const prazoA = new Date(ref.getFullYear(), ref.getMonth(), 15);
+  const prazoB = new Date(ref.getFullYear(), ref.getMonth(), 25);
   return { prazoA: prazoA.toISOString().split("T")[0], prazoB: prazoB.toISOString().split("T")[0] };
 }
 
+// Promove o backlog respeitando o TETO (max_atletas). Entra por ordem de chegada
+// (inscrito_em) só até preencher as vagas; o excedente segue na fila. Quando o
+// financeiro está ligado, só promove quem já teve o pagamento confirmado — assim
+// vaga contada = vaga de quem vai jogar. Retorna quantos entraram.
+async function promoverBacklog(): Promise<number> {
+  const { data: cfg } = await supabase.from("configuracao").select("max_atletas,financeiro_ativo").eq("id", 1).single();
+  const max = cfg?.max_atletas || 20;
+  const { count: nCirc } = await supabase.from("atletas").select("*", { count: "exact", head: true }).eq("status", "ativo").eq("pendente_circuito", false);
+  const vagas = Math.max(0, max - (nCirc || 0));
+  if (vagas <= 0) return 0;
+  let q = supabase.from("atletas").select("id").eq("status", "ativo").eq("pendente_circuito", true);
+  if (cfg?.financeiro_ativo) q = q.eq("pagamento_confirmado", true);
+  const { data: fila } = await q.order("inscrito_em", { ascending: true }).limit(vagas);
+  const ids = (fila || []).map((a: any) => a.id);
+  if (!ids.length) return 0;
+  const { error } = await supabase.from("atletas").update({ pendente_circuito: false }).in("id", ids);
+  if (error) throw error;
+  return ids.length;
+}
+
 Deno.serve(async (req) => {
-  // CORS por requisição: só ecoa a origem de volta se ela estiver na lista
-  // permitida — o navegador do visitante é quem realmente faz a checagem
-  // (se a origem não bater, o navegador bloqueia a leitura da resposta,
-  // mesmo que o servidor responda 200).
   const origin = req.headers.get("Origin") || "";
   const CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
@@ -221,33 +247,32 @@ Deno.serve(async (req) => {
         }
 
         const { data: partidasRodadaAnterior } = await supabase
-          .from("partidas")
-          .select("id")
-          .eq("rodada", round - 1)
-          .eq("validado", true)
-          .eq("calculado", false)
-          .eq("rejeitado", false);
+          .from("partidas").select("id").eq("rodada", round - 1).eq("validado", true).eq("calculado", false).eq("rejeitado", false);
+        const { data: woRodadaAnterior } = await supabase
+          .from("partidas").select("id").eq("rodada", round - 1).in("wo_tipo", ["culposo", "a_favor"]).eq("calculado", false).eq("rejeitado", false);
 
-        if (round % 2 === 0 && (partidasRodadaAnterior?.length ?? 0) > 0) {
+        if (round % 2 === 0 && (((partidasRodadaAnterior?.length ?? 0) + (woRodadaAnterior?.length ?? 0)) > 0)) {
           return jsonResponse({ sucesso: false, erro: "A rodada anterior ainda tem resultados sem calcular." }, 409);
         }
 
         const { data: pendentes, error: errPend } = await supabase
-          .from("partidas")
-          .select("*")
-          .eq("rodada", round)
-          .eq("validado", true)
-          .eq("calculado", false)
-          .eq("rejeitado", false)
-          .order("admin_aprovado_em", { ascending: true });
+          .from("partidas").select("*").eq("rodada", round).eq("validado", true).eq("calculado", false).eq("rejeitado", false).order("admin_aprovado_em", { ascending: true });
         if (errPend) throw errPend;
-        if (!pendentes || pendentes.length === 0) {
+
+        const { data: wosRaw, error: errWo } = await supabase
+          .from("partidas").select("*").eq("rodada", round).in("wo_tipo", ["culposo", "a_favor"]).eq("calculado", false).eq("rejeitado", false);
+        if (errWo) throw errWo;
+        const wos = wosRaw || [];
+        const listaPend = pendentes || [];
+        if (listaPend.length === 0 && wos.length === 0) {
           return jsonResponse({ sucesso: true, dados: { processadas: 0 } });
         }
 
-        const idsAtletas = [...new Set(pendentes.flatMap(m => [m.atleta1_id, m.atleta2_id]))];
-        const { data: atletasData, error: errAtl } = await supabase
-          .from("atletas").select("*").in("id", idsAtletas);
+        const idsAtletas = [...new Set([
+          ...listaPend.flatMap((m: any) => [m.atleta1_id, m.atleta2_id]),
+          ...wos.flatMap((m: any) => [m.atleta1_id, m.atleta2_id]),
+        ])];
+        const { data: atletasData, error: errAtl } = await supabase.from("atletas").select("*").in("id", idsAtletas);
         if (errAtl) throw errAtl;
 
         const athletesMap: Record<string, any> = {};
@@ -284,24 +309,41 @@ Deno.serve(async (req) => {
           infoPorPartida[match.id] = { favorito_id: favoritoId, diferenca_rating_momento: diferencaRatingMomento };
         }
 
-        const { data: todosAtivos, error: errTodos } = await supabase
-          .from("atletas").select("*").eq("status", "ativo").eq("pendente_circuito", false);
-        if (errTodos) throw errTodos;
+        for (const w of wos) {
+          const dataWo = w.admin_aprovado_em || new Date().toISOString();
+          const benef = w.wo_beneficiario_id ? athletesMap[w.wo_beneficiario_id] : null;
+          if (benef) {
+            const nr = benef.rating + 8;
+            athletesMap[w.wo_beneficiario_id] = {
+              ...benef, rating: nr, saldo_temp: (benef.saldo_temp || 0) + 8,
+              vitorias: (benef.vitorias || 0) + 1,
+              rating_pico: Math.max(benef.rating_pico || benef.rating, nr),
+              rating_historico: [...(benef.rating_historico || []), { data: dataWo, rating: nr }].slice(-30),
+            };
+          }
+          const falt = (w.wo_tipo === "culposo" && w.wo_faltoso_id) ? athletesMap[w.wo_faltoso_id] : null;
+          if (falt) {
+            const nr = falt.rating - 15;
+            athletesMap[w.wo_faltoso_id] = {
+              ...falt, rating: nr, saldo_temp: (falt.saldo_temp || 0) - 15,
+              derrotas: (falt.derrotas || 0) + 1,
+              rating_historico: [...(falt.rating_historico || []), { data: dataWo, rating: nr }].slice(-30),
+            };
+          }
+        }
 
+        const { data: todosAtivos, error: errTodos } = await supabase.from("atletas").select("*").eq("status", "ativo").eq("pendente_circuito", false);
+        if (errTodos) throw errTodos;
         todosAtivos!.forEach(a => { if (!athletesMap[a.id]) athletesMap[a.id] = { ...a }; });
 
-        // "Estar no ranking" exige, além de fora do backlog, já ter recebido
-        // pelo menos uma partida na temporada — senão quem é incluído no meio
-        // do mês aparece no ranking antes da hora (mesmo bug relatado em 11/07).
-        const { data: partidasTemporada, error: errPartidasTmp } = await supabase
-          .from("partidas").select("atleta1_id,atleta2_id");
+        const { data: partidasTemporada, error: errPartidasTmp } = await supabase.from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado");
         if (errPartidasTmp) throw errPartidasTmp;
         const idsComPartida = new Set<string>();
-        (partidasTemporada ?? []).forEach((m: any) => { idsComPartida.add(m.atleta1_id); idsComPartida.add(m.atleta2_id); });
+        (partidasTemporada ?? []).forEach((m: any) => { if (m.validado && !m.rejeitado) { idsComPartida.add(m.atleta1_id); idsComPartida.add(m.atleta2_id); } });
 
         const rankingAtual = Object.values(athletesMap)
           .filter((a: any) => a.status === "ativo" && !a.pendente_circuito && idsComPartida.has(a.id))
-          .sort((a: any, b: any) => (b.saldo_temp || 0) - (a.saldo_temp || 0));
+          .sort(cmpRankingDB(partidasTemporada ?? []));
 
         const dataSnapshot = new Date().toISOString();
         rankingAtual.forEach((a: any, i: number) => {
@@ -313,6 +355,7 @@ Deno.serve(async (req) => {
 
         const idsAlterados = new Set<string>();
         pendentes.forEach(m => { idsAlterados.add(m.atleta1_id); idsAlterados.add(m.atleta2_id); });
+        wos.forEach((m: any) => { idsAlterados.add(m.atleta1_id); idsAlterados.add(m.atleta2_id); });
         rankingAtual.forEach((a: any) => idsAlterados.add(a.id));
 
         for (const id of idsAlterados) {
@@ -334,16 +377,20 @@ Deno.serve(async (req) => {
           }).eq("id", m.id);
           if (error) throw error;
         }
+        for (const w of wos) {
+          const { error } = await supabase.from("partidas").update({ calculado: true }).eq("id", w.id);
+          if (error) throw error;
+        }
 
-        return jsonResponse({ sucesso: true, dados: { processadas: pendentes.length } });
+        return jsonResponse({ sucesso: true, dados: { processadas: pendentes.length + wos.length } });
       }
 
       case "EDITAR_ATLETA": {
-        const { id, nome, telefone, apelido, rating, status } = payload || {};
+        const { id, nome, telefone, apelido, rating, status, pendenteCircuito } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
-        const { error } = await supabase.from("atletas").update({
-          nome, telefone, apelido: apelido || null, rating, status,
-        }).eq("id", id);
+        const upd: Record<string, unknown> = { nome, telefone, apelido: apelido || null, rating, status };
+        if (typeof pendenteCircuito === "boolean") upd.pendente_circuito = pendenteCircuito;
+        const { error } = await supabase.from("atletas").update(upd).eq("id", id);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
       }
@@ -351,6 +398,12 @@ Deno.serve(async (req) => {
       case "INCLUIR_NO_CIRCUITO": {
         const { id } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
+        const { data: cfg } = await supabase.from("configuracao").select("max_atletas").eq("id", 1).single();
+        const max = cfg?.max_atletas || 20;
+        const { count: nCirc } = await supabase.from("atletas").select("*", { count: "exact", head: true }).eq("status", "ativo").eq("pendente_circuito", false);
+        if ((nCirc || 0) >= max) {
+          return jsonResponse({ sucesso: false, erro: `Circuito cheio (${nCirc}/${max}). Abra uma vaga antes de incluir.` }, 409);
+        }
         const { error } = await supabase.from("atletas").update({ pendente_circuito: false }).eq("id", id);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
@@ -359,8 +412,7 @@ Deno.serve(async (req) => {
       case "RECUSAR_CIRCUITO": {
         const { id } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
-        const { error } = await supabase.from("atletas")
-          .update({ ultima_recusa_circuito_em: new Date().toISOString() }).eq("id", id);
+        const { error } = await supabase.from("atletas").update({ ultima_recusa_circuito_em: new Date().toISOString() }).eq("id", id);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
       }
@@ -368,8 +420,7 @@ Deno.serve(async (req) => {
       case "ARQUIVAR_ATLETA": {
         const { id } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
-        const { error } = await supabase.from("atletas")
-          .update({ status: "arquivado", pendente_circuito: false }).eq("id", id);
+        const { error } = await supabase.from("atletas").update({ status: "arquivado", pendente_circuito: false }).eq("id", id);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
       }
@@ -377,31 +428,22 @@ Deno.serve(async (req) => {
       case "VALIDATE_RESULT": {
         const { matchId, approved, motivo } = payload || {};
         if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
-        if (typeof approved !== "boolean") {
-          return jsonResponse({ sucesso: false, erro: "approved (boolean) é obrigatório" }, 400);
-        }
+        if (typeof approved !== "boolean") return jsonResponse({ sucesso: false, erro: "approved (boolean) é obrigatório" }, 400);
 
         if (approved) {
-          const { data: match, error: errMatch } = await supabase
-            .from("partidas").select("p1_placar1,p1_placar2,p2_placar1,p2_placar2").eq("id", matchId).single();
+          const { data: match, error: errMatch } = await supabase.from("partidas").select("p1_placar1,p1_placar2,p2_placar1,p2_placar2").eq("id", matchId).single();
           if (errMatch) throw errMatch;
           if (!match) return jsonResponse({ sucesso: false, erro: "Partida não encontrada" }, 404);
-
           const consistente = match.p1_placar1 === match.p2_placar1 && match.p1_placar2 === match.p2_placar2;
-          if (!consistente) {
-            return jsonResponse({ sucesso: false, erro: "Placares divergentes entre os dois atletas — verifique antes de aprovar." }, 409);
-          }
-
+          if (!consistente) return jsonResponse({ sucesso: false, erro: "Placares divergentes entre os dois atletas — verifique antes de aprovar." }, 409);
           const now = new Date().toISOString();
           const { error } = await supabase.from("partidas").update({
             placar1: match.p1_placar1, placar2: match.p1_placar2,
-            validado: true, validado_por_admin: true, admin_aprovado_em: now,
-            calculado: false,
+            validado: true, validado_por_admin: true, admin_aprovado_em: now, calculado: false,
           }).eq("id", matchId);
           if (error) throw error;
         } else {
-          const { error } = await supabase.from("partidas")
-            .update({ rejeitado: true, motivo_rejeicao: motivo }).eq("id", matchId);
+          const { error } = await supabase.from("partidas").update({ rejeitado: true, motivo_rejeicao: motivo }).eq("id", matchId);
           if (error) throw error;
         }
         return jsonResponse({ sucesso: true });
@@ -410,27 +452,26 @@ Deno.serve(async (req) => {
       case "ADMIN_IMPUTAR_RESULTADO": {
         const { matchId, score1, score2 } = payload || {};
         if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
-        if (typeof score1 !== "number" || typeof score2 !== "number") {
-          return jsonResponse({ sucesso: false, erro: "score1 e score2 (números) são obrigatórios" }, 400);
-        }
+        if (typeof score1 !== "number" || typeof score2 !== "number") return jsonResponse({ sucesso: false, erro: "score1 e score2 (números) são obrigatórios" }, 400);
         const now = new Date().toISOString();
         const { error } = await supabase.from("partidas").update({
           placar1: score1, placar2: score2,
-          validado: true, validado_por_admin: true, admin_aprovado_em: now,
-          calculado: false, imputado_pelo_admin: true,
+          validado: true, validado_por_admin: true, admin_aprovado_em: now, calculado: false, imputado_pelo_admin: true,
         }).eq("id", matchId);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
       }
 
       case "INICIAR_ETAPA": {
-        const { data: config } = await supabase.from("configuracao").select("fase").eq("id", 1).single();
+        const { data: config } = await supabase.from("configuracao").select("fase,financeiro_ativo").eq("id", 1).single();
         if (config?.fase === "etapa") {
           return jsonResponse({ sucesso: false, erro: "A etapa já está em andamento. Use AVANCAR_RODADA para o próximo par mensal." }, 409);
         }
+        await promoverBacklog();
 
-        const { data: ativos, error: errAtivos } = await supabase
-          .from("atletas").select("*").eq("status", "ativo").eq("pendente_circuito", false);
+        let qAtivos = supabase.from("atletas").select("*").eq("status", "ativo").eq("pendente_circuito", false);
+        if (config?.financeiro_ativo) qAtivos = qAtivos.eq("pagamento_confirmado", true);
+        const { data: ativos, error: errAtivos } = await qAtivos;
         if (errAtivos) throw errAtivos;
         if (!ativos || ativos.length < 8) {
           return jsonResponse({ sucesso: false, erro: `Mínimo de 8 atletas ativos para iniciar a etapa (atual: ${ativos?.length ?? 0}).` }, 400);
@@ -438,89 +479,83 @@ Deno.serve(async (req) => {
 
         const { prazoA, prazoB } = calcularPrazos();
         const keyId = "key_1";
-
         const { error: errConfig } = await supabase.from("configuracao").update({ fase: "etapa" }).eq("id", 1);
         if (errConfig) throw errConfig;
-
         await supabase.from("chaves").insert({ id: keyId, nome: "Chave Única", rodada_atual: 1 });
-
         for (const a of ativos) {
           const { error } = await supabase.from("atletas").update({ chave: keyId }).eq("id", a.id);
           if (error) throw error;
         }
-
         const { rodada1, rodada2 } = gerarPareamentoPorRating(ativos, []);
-
         for (const pair of rodada1) {
           const mid = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          const { error } = await supabase.from("partidas").insert({
-            id: mid, chave_id: keyId, rodada: 1, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoA,
-          });
+          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: 1, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoA });
           if (error) throw error;
         }
         for (const pair of rodada2) {
           const mid = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          const { error } = await supabase.from("partidas").insert({
-            id: mid, chave_id: keyId, rodada: 2, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoB,
-          });
+          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: 2, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoB });
           if (error) throw error;
         }
-
         return jsonResponse({ sucesso: true, dados: { atletas: ativos.length, partidas: rodada1.length + rodada2.length } });
       }
 
       case "AVANCAR_RODADA": {
-        const { data: ativos, error: errAtivos } = await supabase
-          .from("atletas").select("*").eq("status", "ativo").eq("pendente_circuito", false);
-        if (errAtivos) throw errAtivos;
-        if (!ativos || ativos.length < 8) {
-          return jsonResponse({ sucesso: false, erro: `Mínimo de 8 atletas ativos para avançar a rodada (atual: ${ativos?.length ?? 0}).` }, 400);
-        }
-
-        const { data: todasPartidas, error: errPartidas } = await supabase
-          .from("partidas").select("atleta1_id,atleta2_id,rodada");
+        const { data: todasPartidas, error: errPartidas } = await supabase.from("partidas").select("atleta1_id,atleta2_id,rodada,prazo");
         if (errPartidas) throw errPartidas;
-
         const roundBase = (todasPartidas ?? []).reduce((max: number, m: any) => Math.max(max, m.rodada || 0), 0);
+        const { data: cfgRod } = await supabase.from("configuracao").select("rodadas_por_temporada,financeiro_ativo").eq("id", 1).single();
+        const maxRodadas = cfgRod?.rodadas_por_temporada || 6;
+        if (roundBase >= maxRodadas) {
+          return jsonResponse({ sucesso: false, erro: `A temporada já tem as ${maxRodadas} rodadas configuradas. Inicie uma nova temporada.` }, 409);
+        }
+        const rA = roundBase + 1, rB = roundBase + 2;
+        const inicioUltimoTerco = maxRodadas - Math.ceil(maxRodadas / 3) + 1;
+        const permiteEntrada = rA < inicioUltimoTerco;
+        if (permiteEntrada) {
+          await promoverBacklog();
+        }
+        let qAtivos = supabase.from("atletas").select("*").eq("status", "ativo").eq("pendente_circuito", false);
+        if (cfgRod?.financeiro_ativo) qAtivos = qAtivos.eq("pagamento_confirmado", true);
+        const { data: ativos, error: errAtivos } = await qAtivos;
+        if (errAtivos) throw errAtivos;
+        if (!ativos || ativos.length < 2) {
+          return jsonResponse({ sucesso: false, erro: `São necessários ao menos 2 atletas ativos para gerar uma rodada (atual: ${ativos?.length ?? 0}).` }, 400);
+        }
         const { data: chaveAtual } = await supabase.from("chaves").select("id").limit(1).single();
         const keyId = chaveAtual?.id || "key_1";
-
-        const { prazoA, prazoB } = calcularPrazos();
+        const parIndex = Math.floor(rB / 2) - 1;
+        const prazoR1Existente = (todasPartidas ?? []).filter((m: any) => m.rodada === 1 && m.prazo).map((m: any) => m.prazo).sort()[0];
+        let mesRef: Date | undefined;
+        if (prazoR1Existente) {
+          const d1 = new Date(prazoR1Existente + "T12:00:00");
+          mesRef = new Date(d1.getFullYear(), d1.getMonth() + parIndex, 1);
+        }
+        const { prazoA, prazoB } = calcularPrazos(mesRef);
         const { rodada1, rodada2 } = gerarPareamentoPorRating(ativos, todasPartidas ?? []);
-        const rA = roundBase + 1, rB = roundBase + 2;
-
         await supabase.from("chaves").update({ rodada_atual: rB }).eq("id", keyId);
-
         for (const pair of rodada1) {
           const mid = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          const { error } = await supabase.from("partidas").insert({
-            id: mid, chave_id: keyId, rodada: rA, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoA,
-          });
+          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: rA, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoA });
           if (error) throw error;
         }
         for (const pair of rodada2) {
           const mid = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          const { error } = await supabase.from("partidas").insert({
-            id: mid, chave_id: keyId, rodada: rB, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoB,
-          });
+          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: rB, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoB });
           if (error) throw error;
         }
-
         return jsonResponse({ sucesso: true, dados: { rodadas: [rA, rB], partidas: rodada1.length + rodada2.length } });
       }
 
       case "DESFAZER_VALIDACAO": {
         const { matchId } = payload || {};
         if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
-        const { data: match, error: errMatch } = await supabase
-          .from("partidas").select("calculado").eq("id", matchId).single();
+        const { data: match, error: errMatch } = await supabase.from("partidas").select("calculado").eq("id", matchId).single();
         if (errMatch) throw errMatch;
-        if (match?.calculado) {
-          return jsonResponse({ sucesso: false, erro: "Não é possível desfazer: o resultado já foi calculado no rating." }, 409);
-        }
+        if (match?.calculado) return jsonResponse({ sucesso: false, erro: "Não é possível desfazer: o resultado já foi calculado no rating." }, 409);
         const { error } = await supabase.from("partidas").update({
           validado: false, validado_por_admin: false, admin_aprovado_em: null,
-          placar1: null, placar2: null, imputado_pelo_admin: false,
+          placar1: null, placar2: null, imputado_pelo_admin: false, validado_automatico: false,
         }).eq("id", matchId);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
@@ -529,8 +564,7 @@ Deno.serve(async (req) => {
       case "MARCAR_RESULTADO_COMUNICADO": {
         const { matchId, comunicado } = payload || {};
         if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
-        const { error } = await supabase.from("partidas")
-          .update({ resultado_comunicado: comunicado }).eq("id", matchId);
+        const { error } = await supabase.from("partidas").update({ resultado_comunicado: comunicado }).eq("id", matchId);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
       }
@@ -539,12 +573,8 @@ Deno.serve(async (req) => {
         const { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm, matchId } = payload || {};
         try {
           const { error } = await supabase.from("mensagens_enviadas").insert({
-            id,
-            atleta_id: athleteId || null,
-            atleta_nome: athleteName || null,
-            categoria, categoria_label: categoriaLabel,
-            texto, enviado_em: enviadoEm,
-            match_id: matchId || null,
+            id, atleta_id: athleteId || null, atleta_nome: athleteName || null,
+            categoria, categoria_label: categoriaLabel, texto, enviado_em: enviadoEm, match_id: matchId || null,
           });
           if (error) throw error;
         } catch (e) {
@@ -554,62 +584,69 @@ Deno.serve(async (req) => {
       }
 
       case "RESPONDER_WO": {
-        // Decide uma solicitação de W.O. Justificado. Aprovado = mesmo efeito de
-        // VALIDATE_RESULT(approved:false): anula a partida, ninguém pontua.
         const { id, matchId, aprovado, motivoRecusa, justificativa } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
-        if (typeof aprovado !== "boolean") {
-          return jsonResponse({ sucesso: false, erro: "aprovado (boolean) é obrigatório" }, 400);
-        }
+        if (typeof aprovado !== "boolean") return jsonResponse({ sucesso: false, erro: "aprovado (boolean) é obrigatório" }, 400);
         const now = new Date().toISOString();
         const { error: errSol } = await supabase.from("solicitacoes_wo").update({
-          status: aprovado ? "aprovado" : "recusado",
-          respondido_em: now,
-          motivo_recusa: motivoRecusa || null,
+          status: aprovado ? "aprovado" : "recusado", respondido_em: now, motivo_recusa: motivoRecusa || null,
         }).eq("id", id);
         if (errSol) throw errSol;
-
         if (aprovado) {
           if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório quando aprovado" }, 400);
           const { error: errMatch } = await supabase.from("partidas").update({
-            rejeitado: true,
-            motivo_rejeicao: `W.O. Justificado — ${justificativa || ""}`.trim(),
+            rejeitado: true, motivo_rejeicao: `W.O. Justificado — ${justificativa || ""}`.trim(),
           }).eq("id", matchId);
           if (errMatch) throw errMatch;
         }
         return jsonResponse({ sucesso: true });
       }
 
-      case "NOVA_TEMPORADA": {
-        // Zera a temporada: saldo/vitórias/derrotas de todo mundo, arquiva a
-        // posição final no histórico, apaga partidas/chaves, avança o contador
-        // (3 temporadas por ano — Cap. 13).
-        const { data: ativos, error: errAtivos } = await supabase
-          .from("atletas").select("*").eq("status", "ativo");
-        if (errAtivos) throw errAtivos;
+      case "ABRIR_PROXIMA_TEMPORADA": {
+        const p = payload || {};
+        const { data: cfg } = await supabase.from("configuracao").select("temporada_numero,temporada_ano").eq("id", 1).single();
+        const num = cfg?.temporada_numero || 1;
+        const ano = cfg?.temporada_ano || new Date().getFullYear();
+        const proxNum = num >= 3 ? 1 : num + 1;
+        const proxAno = num >= 3 ? ano + 1 : ano;
+        const upd: Record<string, unknown> = {
+          proxima_aberta: true,
+          proxima_nome: (typeof p.nome === "string" && p.nome.trim()) ? p.nome.trim() : null,
+          proxima_data_inicio: p.dataInicio || null,
+          proxima_rotulo: `${proxNum}/${proxAno}`,
+          proxima_valor_cheio: p.valorCheio != null ? Math.max(0, Math.round(Number(p.valorCheio))) : null,
+          proxima_valor_desconto: p.valorDesconto != null ? Math.max(0, Math.round(Number(p.valorDesconto))) : null,
+        };
+        if (p.pixChave !== undefined) upd.pix_chave = (typeof p.pixChave === "string" && p.pixChave.trim()) ? p.pixChave.trim() : null;
+        const { error } = await supabase.from("configuracao").update(upd).eq("id", 1);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true, dados: { rotulo: upd.proxima_rotulo } });
+      }
 
-        const { data: config, error: errConfigGet } = await supabase
-          .from("configuracao").select("temporada_numero,temporada_ano").eq("id", 1).single();
+      case "CANCELAR_PROXIMA": {
+        const { error } = await supabase.from("configuracao").update({
+          proxima_aberta: false, proxima_nome: null, proxima_data_inicio: null, proxima_rotulo: null,
+          proxima_valor_cheio: null, proxima_valor_desconto: null,
+        }).eq("id", 1);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
+      case "NOVA_TEMPORADA": {
+        const { data: ativos, error: errAtivos } = await supabase.from("atletas").select("*").eq("status", "ativo");
+        if (errAtivos) throw errAtivos;
+        const { data: config, error: errConfigGet } = await supabase.from("configuracao").select("temporada_numero,temporada_ano,proxima_aberta,proxima_nome,proxima_data_inicio,proxima_rotulo,proxima_valor_cheio,proxima_valor_desconto").eq("id", 1).single();
         if (errConfigGet) throw errConfigGet;
         const temporadaNumero = config?.temporada_numero || 1;
         const temporadaAno = config?.temporada_ano || new Date().getFullYear();
         const rotuloTemporada = `${temporadaNumero}/${temporadaAno}`;
-
-        // Mesma regra do ranking normal: só entra na posição final quem
-        // recebeu partida de verdade nessa temporada (consultamos antes de
-        // apagar as partidas, mais abaixo).
-        const { data: partidasTemporada, error: errPartidasTmp } = await supabase
-          .from("partidas").select("atleta1_id,atleta2_id");
+        const { data: partidasTemporada, error: errPartidasTmp } = await supabase.from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado");
         if (errPartidasTmp) throw errPartidasTmp;
         const idsComPartida = new Set<string>();
-        (partidasTemporada ?? []).forEach((m: any) => { idsComPartida.add(m.atleta1_id); idsComPartida.add(m.atleta2_id); });
-
-        const rankingFinal = (ativos ?? [])
-          .filter((a: any) => !a.pendente_circuito && idsComPartida.has(a.id))
-          .sort((a: any, b: any) => (b.saldo_temp || 0) - (a.saldo_temp || 0));
+        (partidasTemporada ?? []).forEach((m: any) => { if (m.validado && !m.rejeitado) { idsComPartida.add(m.atleta1_id); idsComPartida.add(m.atleta2_id); } });
+        const rankingFinal = (ativos ?? []).filter((a: any) => !a.pendente_circuito && idsComPartida.has(a.id)).sort(cmpRankingDB(partidasTemporada ?? []));
         const posicaoFinal: Record<string, number> = {};
         rankingFinal.forEach((a: any, i: number) => { posicaoFinal[a.id] = i + 1; });
-
         for (const a of ativos ?? []) {
           const historicoAtualizado = posicaoFinal[a.id]
             ? [{ temporada: rotuloTemporada, pos: posicaoFinal[a.id] }, ...(a.historico || [])]
@@ -618,29 +655,206 @@ Deno.serve(async (req) => {
             vitorias_total: (a.vitorias_total || 0) + (a.vitorias || 0),
             derrotas_total: (a.derrotas_total || 0) + (a.derrotas || 0),
             saldo_temp: 0, vitorias: 0, derrotas: 0, chave: null,
+            wo_culposos_temporada: 0,
+            pagamento_confirmado: a.pagamento_proxima_confirmado || false,
+            pagamento_proxima_confirmado: false,
+            quer_renovar: false, renovacao_em: null,
             historico: historicoAtualizado,
           }).eq("id", a.id);
           if (error) throw error;
         }
-
+        const { error: errArq } = await supabase.rpc("arquivar_partidas_temporada", { p_rotulo: rotuloTemporada });
+        if (errArq) throw errArq;
         await supabase.from("partidas").delete().neq("id", "__none__");
         await supabase.from("chaves").delete().neq("id", "__none__");
-
         const proximoNumero = temporadaNumero >= 3 ? 1 : temporadaNumero + 1;
         const proximoAno = temporadaNumero >= 3 ? temporadaAno + 1 : temporadaAno;
-        const { error: errConfig } = await supabase.from("configuracao").update({
+        const updConfig: Record<string, unknown> = {
           fase: "inscricoes", temporada_numero: proximoNumero, temporada_ano: proximoAno,
-        }).eq("id", 1);
+          proxima_aberta: false, proxima_nome: null, proxima_data_inicio: null, proxima_rotulo: null,
+          proxima_valor_cheio: null, proxima_valor_desconto: null,
+        };
+        const pNova = payload || {};
+        if (config?.proxima_aberta) {
+          if (config.proxima_nome) updConfig.nome_circuito = config.proxima_nome;
+          updConfig.data_inicio_temporada = config.proxima_data_inicio || null;
+          // Carrega o valor anunciado da próxima como valor oficial da nova temporada:
+          // valor cheio -> valor_temporada, e o % de desconto de renovação -> desconto global.
+          if (config.proxima_valor_cheio != null) {
+            updConfig.valor_temporada = config.proxima_valor_cheio;
+            updConfig.desconto_global_pct = (config.proxima_valor_desconto != null && config.proxima_valor_cheio > 0)
+              ? Math.max(0, Math.min(100, Math.round((1 - config.proxima_valor_desconto / config.proxima_valor_cheio) * 100)))
+              : 0;
+          }
+        } else {
+          if (typeof pNova.nome === "string" && pNova.nome.trim()) updConfig.nome_circuito = pNova.nome.trim();
+          if (pNova.dataInicio !== undefined) updConfig.data_inicio_temporada = pNova.dataInicio || null;
+        }
+        const { error: errConfig } = await supabase.from("configuracao").update(updConfig).eq("id", 1);
         if (errConfig) throw errConfig;
+        return jsonResponse({ sucesso: true, dados: { temporadaNumero: proximoNumero, temporadaAno: proximoAno, arquivadas: rotuloTemporada } });
+      }
 
-        return jsonResponse({ sucesso: true, dados: { temporadaNumero: proximoNumero, temporadaAno: proximoAno } });
+      case "APLICAR_WO": {
+        const { matchId, tipo, faltosoId, beneficiarioId } = payload || {};
+        if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
+        if (!["justificado", "culposo", "a_favor"].includes(tipo)) return jsonResponse({ sucesso: false, erro: "tipo deve ser 'justificado', 'culposo' ou 'a_favor'" }, 400);
+        if (tipo === "justificado") {
+          const { error } = await supabase.from("partidas").update({ rejeitado: true, motivo_rejeicao: "W.O. Justificado" }).eq("id", matchId);
+          if (error) throw error;
+          return jsonResponse({ sucesso: true });
+        }
+        if (!beneficiarioId) return jsonResponse({ sucesso: false, erro: "beneficiarioId é obrigatório" }, 400);
+        if (tipo === "culposo" && !faltosoId) return jsonResponse({ sucesso: false, erro: "faltosoId é obrigatório no culposo" }, 400);
+        const now = new Date().toISOString();
+        const { error } = await supabase.from("partidas").update({
+          wo_tipo: tipo, wo_faltoso_id: tipo === "culposo" ? faltosoId : null, wo_beneficiario_id: beneficiarioId,
+          admin_aprovado_em: now, calculado: false,
+        }).eq("id", matchId);
+        if (error) throw error;
+        if (tipo === "culposo" && faltosoId) {
+          const { data: atl } = await supabase.from("atletas").select("wo_culposos_temporada").eq("id", faltosoId).single();
+          const novo = ((atl?.wo_culposos_temporada) || 0) + 1;
+          const { error: e2 } = await supabase.from("atletas").update({ wo_culposos_temporada: novo }).eq("id", faltosoId);
+          if (e2) throw e2;
+        }
+        return jsonResponse({ sucesso: true });
+      }
+
+      case "MARCAR_WO_NOTIFICADO": {
+        const { id, quem } = payload || {};
+        if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
+        if (quem !== "solicitante" && quem !== "adversario") return jsonResponse({ sucesso: false, erro: "quem deve ser 'solicitante' ou 'adversario'" }, 400);
+        const campo = quem === "solicitante" ? "notificado_solicitante" : "notificado_adversario";
+        const { error } = await supabase.from("solicitacoes_wo").update({ [campo]: true }).eq("id", id);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
+      case "DEFINIR_RODADAS": {
+        const { rodadas } = payload || {};
+        if (typeof rodadas !== "number" || rodadas < 2 || rodadas % 2 !== 0) return jsonResponse({ sucesso: false, erro: "rodadas deve ser um número par >= 2" }, 400);
+        const { error } = await supabase.from("configuracao").update({ rodadas_por_temporada: rodadas }).eq("id", 1);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
+      case "DEFINIR_AUTO_VALIDAR": {
+        const { ligado } = payload || {};
+        if (typeof ligado !== "boolean") return jsonResponse({ sucesso: false, erro: "ligado (boolean) é obrigatório" }, 400);
+        const { error } = await supabase.from("configuracao").update({ auto_validar_placar: ligado }).eq("id", 1);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
+      case "DEFINIR_CONFIG_CIRCUITO": {
+        const p = payload || {};
+        const upd: Record<string, unknown> = {};
+        if (typeof p.nome === "string") upd.nome_circuito = p.nome.trim() || "Clube do Tênis de Mesa";
+        if (p.dataInicio !== undefined) upd.data_inicio_temporada = p.dataInicio || null;
+        if (p.maxAtletas !== undefined) upd.max_atletas = Math.max(2, Math.round(Number(p.maxAtletas) || 20));
+        if (p.pixChave !== undefined) upd.pix_chave = (typeof p.pixChave === "string" && p.pixChave.trim()) ? p.pixChave.trim() : null;
+        if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
+        const { error } = await supabase.from("configuracao").update(upd).eq("id", 1);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
+      case "DEFINIR_FINANCEIRO": {
+        const p = payload || {};
+        const upd: Record<string, unknown> = {};
+        if (typeof p.ativo === "boolean") upd.financeiro_ativo = p.ativo;
+        if (p.valorTemporada !== undefined) upd.valor_temporada = (p.valorTemporada === null ? null : Math.max(0, Math.round(Number(p.valorTemporada))));
+        if (p.descontoGlobalPct !== undefined) upd.desconto_global_pct = Math.min(100, Math.max(0, Math.round(Number(p.descontoGlobalPct) || 0)));
+        if (p.percentualMeio !== undefined) upd.percentual_entrada_meio = Math.min(100, Math.max(0, Math.round(Number(p.percentualMeio) || 80)));
+        if (p.proximaValorCheio !== undefined) upd.proxima_valor_cheio = (p.proximaValorCheio === null ? null : Math.max(0, Math.round(Number(p.proximaValorCheio))));
+        if (p.proximaValorDesconto !== undefined) upd.proxima_valor_desconto = (p.proximaValorDesconto === null ? null : Math.max(0, Math.round(Number(p.proximaValorDesconto))));
+        if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
+        const { error } = await supabase.from("configuracao").update(upd).eq("id", 1);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
+      case "DEFINIR_DESCONTO_ATLETA": {
+        const { atletaId, descontoPct, isento } = payload || {};
+        if (!atletaId) return jsonResponse({ sucesso: false, erro: "atletaId é obrigatório" }, 400);
+        const upd: Record<string, unknown> = {};
+        if (descontoPct !== undefined) upd.desconto_pct = (descontoPct === null ? null : Math.min(100, Math.max(0, Math.round(Number(descontoPct) || 0))));
+        if (typeof isento === "boolean") upd.isento = isento;
+        if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
+        const { error } = await supabase.from("atletas").update(upd).eq("id", atletaId);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
+      case "REGISTRAR_PAGAMENTO": {
+        const p = payload || {};
+        if (!p.atletaId) return jsonResponse({ sucesso: false, erro: "atletaId é obrigatório" }, 400);
+        const alvo = (p.alvo === "proxima") ? "proxima" : "atual";
+        const id = p.id || `pag_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const now = new Date().toISOString();
+        const { error: errIns } = await supabase.from("pagamentos").insert({
+          id, atleta_id: p.atletaId, temporada_rotulo: p.temporadaRotulo || null,
+          valor: p.valor != null ? Math.max(0, Math.round(Number(p.valor))) : null,
+          percentual: p.percentual != null ? Math.round(Number(p.percentual)) : null,
+          desconto_pct_aplicado: p.descontoPctAplicado != null ? Math.round(Number(p.descontoPctAplicado)) : null,
+          isento: !!p.isento, status: "confirmado", metodo: p.metodo || "pix",
+          comprovante_url: p.comprovanteUrl || null, observacao: p.observacao || null,
+          confirmado_em: now, criado_em: now,
+        });
+        if (errIns) throw errIns;
+        const flagCol = alvo === "proxima" ? { pagamento_proxima_confirmado: true } : { pagamento_confirmado: true };
+        const { error: errFlag } = await supabase.from("atletas").update(flagCol).eq("id", p.atletaId);
+        if (errFlag) throw errFlag;
+        return jsonResponse({ sucesso: true, dados: { id, alvo } });
+      }
+
+      case "ESTORNAR_PAGAMENTO": {
+        const { id } = payload || {};
+        if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
+        const { data: pag, error: errGet } = await supabase.from("pagamentos").select("atleta_id,temporada_rotulo").eq("id", id).single();
+        if (errGet) throw errGet;
+        if (!pag) return jsonResponse({ sucesso: false, erro: "Pagamento não encontrado." }, 404);
+        const { error: errUpd } = await supabase.from("pagamentos").update({ status: "estornado" }).eq("id", id);
+        if (errUpd) throw errUpd;
+        if (pag.atleta_id) {
+          const { data: cfg } = await supabase.from("configuracao").select("proxima_rotulo").eq("id", 1).single();
+          const ehProxima = !!(pag.temporada_rotulo && cfg?.proxima_rotulo && pag.temporada_rotulo === cfg.proxima_rotulo);
+          const flagCol = ehProxima ? { pagamento_proxima_confirmado: false } : { pagamento_confirmado: false };
+          await supabase.from("atletas").update(flagCol).eq("id", pag.atleta_id);
+        }
+        return jsonResponse({ sucesso: true });
+      }
+
+      case "LISTAR_PAGAMENTOS": {
+        const { data, error } = await supabase.from("pagamentos").select("*").order("criado_em", { ascending: false }).limit(500);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true, dados: data });
+      }
+
+      case "EDITAR_PAGAMENTO": {
+        const p = payload || {};
+        if (!p.id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
+        const upd: Record<string, unknown> = {};
+        if (p.valor !== undefined) upd.valor = p.valor != null ? Math.max(0, Math.round(Number(p.valor))) : null;
+        if (p.percentual !== undefined) upd.percentual = p.percentual != null ? Math.round(Number(p.percentual)) : null;
+        if (p.descontoPctAplicado !== undefined) upd.desconto_pct_aplicado = p.descontoPctAplicado != null ? Math.round(Number(p.descontoPctAplicado)) : null;
+        if (p.metodo !== undefined) upd.metodo = p.metodo || "pix";
+        if (p.observacao !== undefined) upd.observacao = p.observacao || null;
+        if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
+        const { error } = await supabase.from("pagamentos").update(upd).eq("id", p.id);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
       }
 
       case "LISTAR_TELEFONES": {
-        // Único jeito de obter telefone de mais de um atleta de uma vez —
-        // exige PIN. Devolve {id, telefone} de todo mundo (qualquer status),
-        // pro admin cruzar com a lista já carregada sem telefone.
         const { data, error } = await supabase.from("atletas").select("id, telefone");
+        if (error) throw error;
+        return jsonResponse({ sucesso: true, dados: data });
+      }
+
+      case "LISTAR_MENSAGENS": {
+        const { data, error } = await supabase.from("mensagens_enviadas").select("*").order("enviado_em", { ascending: false }).limit(200);
         if (error) throw error;
         return jsonResponse({ sucesso: true, dados: data });
       }

@@ -1295,6 +1295,8 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
 // ── FORMULÁRIO DE INSCRIÇÃO (público) ────────────────────────────────────────
 function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
   const [step, setStep] = useState(1); // 1=dados, 2=lgpd, 3=regulamento, 4=sucesso
+  const [enviando, setEnviando] = useState(false);
+  const [erroSubmit, setErroSubmit] = useState("");
   const [name, setName] = useState(""), [phone, setPhone] = useState("");
   const [apelido, setApelido] = useState("");
   const [fed, setFed] = useState("nao"), [rating, setRating] = useState("");
@@ -1516,21 +1518,40 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
           </div>
         )}
 
-        <button style={s.btn(!aceiteReg||!lerReg)} disabled={!aceiteReg||!lerReg} onClick={()=>{
+        {erroSubmit && (
+          <div style={{fontSize:12, color:"#f8c4b4", background:"rgba(220,90,48,0.12)", border:"1px solid rgba(220,90,48,0.35)", borderRadius:8, padding:"9px 11px", marginBottom:10, textAlign:"center", lineHeight:1.5}}>
+            {erroSubmit}
+          </div>
+        )}
+        <button style={s.btn(!aceiteReg||!lerReg||enviando)} disabled={!aceiteReg||!lerReg||enviando} onClick={async ()=>{
+          if (enviando) return;
+          setErroSubmit(""); setEnviando(true);
           const agora = new Date().toISOString();
-          if (onSubmit) onSubmit({
-            name: name.trim(),
-            phone: phone.trim(),
-            apelido: apelido.trim() || null,
-            federated: fed==="sim",
-            rating: fed==="sim" && rating ? parseInt(rating) : (fed==="sim" ? null : 250),
-            aceiteRegulamento: true,
-            aceiteLGPD: true,
-            dataAceite: agora,
-          });
+          let r;
+          try {
+            r = onSubmit ? await onSubmit({
+              name: name.trim(),
+              phone: phone.trim(),
+              apelido: apelido.trim() || null,
+              federated: fed==="sim",
+              rating: fed==="sim" && rating ? parseInt(rating) : (fed==="sim" ? null : 250),
+              aceiteRegulamento: true,
+              aceiteLGPD: true,
+              dataAceite: agora,
+            }) : { ok: true };
+          } catch(e) { r = { ok: false, erro: e?.message }; }
+          setEnviando(false);
+          if (r && r.ok === false) {
+            setErroSubmit(
+              String(r.erro||"").includes("telefone_duplicado")
+                ? "Este telefone já está cadastrado. Se for você, volte e use “Sou atleta” para entrar."
+                : "Não foi possível enviar sua inscrição. Verifique sua conexão e tente de novo."
+            );
+            return; // permanece no passo 3
+          }
           setStep(4);
         }}>
-          ✅ Confirmar inscrição
+          {enviando ? "Enviando…" : "✅ Confirmar inscrição"}
         </button>
       </div>
     </div>
@@ -3666,10 +3687,11 @@ export default function App() {
 
   async function dispatchAndSync(action) {
     dispatch(action);
-    try { await syncToSupabase(action, state); }
+    try { const r = await syncToSupabase(action, state); return r ?? { ok: true }; }
     catch(e) {
       console.error(`[sync falhou] ${action.type}:`, e);
       setDbMsg(`Erro ao salvar (${action.type}): ${e.message}`);
+      return { ok: false, erro: e.message };
     }
   }
 
@@ -3681,8 +3703,7 @@ export default function App() {
       const telefoneFormatado = p.phone.replace(/\D/g, "");
       const existente = await buscarAtletaPorTelefonePublico(telefoneFormatado);
       if (existente) {
-        setDbMsg("telefone_duplicado");
-        return;
+        return { ok: false, erro: "telefone_duplicado" };
       }
       try {
         // Escrita via Edge Function (athlete-action): o servidor força status
@@ -3698,12 +3719,12 @@ export default function App() {
         // Rede de segurança: telefone duplicado (retornado pela função ou pela
         // trava de unicidade do banco), inclusive em inscrições simultâneas.
         if (String(e.message||"").includes("telefone_duplicado") || String(e.message||"").includes("atletas_telefone_unique") || String(e.message||"").includes("duplicate key")) {
-          setDbMsg("telefone_duplicado");
-          return;
+          return { ok: false, erro: "telefone_duplicado" };
         }
         throw e;
       }
       await loadFromSupabase();
+      return { ok: true };
     }
     else if (action.type === "INSCRICAO_VALIDAR") {
       const {id,rating,approved,motivo} = action.payload;

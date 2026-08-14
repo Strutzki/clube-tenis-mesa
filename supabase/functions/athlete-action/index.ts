@@ -9,6 +9,44 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+// --- Multi-circuito (Fase 4A) --------------------------------------------
+// circuito_id do circuito de producao (BH). Memoizado por instancia.
+// Enquanto o app nao envia payload.circuitoId, tudo resolve para BH -> comportamento identico.
+let _bhId: string | null = null;
+async function bhId(): Promise<string> {
+  if (_bhId) return _bhId;
+  const { data, error } = await supabase.from("circuitos").select("id").eq("slug", "bh").single();
+  if (error) throw error;
+  _bhId = data!.id as string;
+  return _bhId;
+}
+
+// --- Dual-write (Fase 4B) -------------------------------------------------
+// Espelho BEST-EFFORT em circuito_atletas: se falhar, apenas loga (o BH segue via atletas).
+const SEASONAL_COLS = new Set([
+  "status","motivo_reprovacao","pendente_circuito","ultima_recusa_circuito_em","chave",
+  "saldo_temp","vitorias","derrotas","vitorias_total","derrotas_total","wo_culposos_temporada",
+  "aceite_regulamento","data_aceite_regulamento","versao_regulamento",
+  "pagamento_confirmado","pagamento_proxima_confirmado","desconto_pct","isento",
+  "quer_renovar","renovacao_em","historico","posicao_historico",
+]);
+function seasonalOnly(obj: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k in obj) if (SEASONAL_COLS.has(k)) out[k] = obj[k];
+  return out;
+}
+async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+  try {
+    const dados = seasonalOnly(campos);
+    if (Object.keys(dados).length === 0 && Object.keys(extra).length === 0) return;
+    const { error } = await supabase.from("circuito_atletas")
+      .upsert({ circuito_id: circuitoId, atleta_id: atletaId, ...dados, ...extra }, { onConflict: "circuito_id,atleta_id" });
+    if (error) throw error;
+  } catch (e) {
+    console.warn("dual-write circuito_atletas falhou (BH segue via atletas):", (e as any)?.message);
+  }
+}
+
 const ALLOWED_ORIGINS = [
   "https://clubedotenisdemesabh.com.br",
   "https://www.clubedotenisdemesabh.com.br",
@@ -43,6 +81,9 @@ Deno.serve(async (req) => {
 
   const { acao, payload } = body || {};
   if (!acao) return jsonResponse({ sucesso: false, erro: "acao é obrigatória" }, 400);
+
+  // Circuito alvo: o que o app enviar, ou BH por padrao (transicao single-tenant).
+  const circuitoId = (payload && payload.circuitoId) ? String(payload.circuitoId) : await bhId();
 
   try {
     switch (acao) {
@@ -79,13 +120,17 @@ Deno.serve(async (req) => {
           inscrito_em: dataAceite,
         };
 
-        const { error } = await supabase.from("atletas").insert(linha);
+        const { data: novoAtleta, error } = await supabase.from("atletas").insert(linha).select("id").single();
         if (error) {
           const msg = String(error.message || "");
           if (msg.includes("atletas_telefone_unique") || msg.includes("duplicate key")) {
             return jsonResponse({ sucesso: false, erro: "telefone_duplicado" }, 409);
           }
           throw error;
+        }
+        // Dual-write: cria a participacao do atleta no circuito (membership + estado sazonal inicial).
+        if (novoAtleta?.id) {
+          await mirrorSazonal(circuitoId, novoAtleta.id as string, linha, { inscrito_em: dataAceite });
         }
         return jsonResponse({ sucesso: true });
       }
@@ -167,11 +212,13 @@ Deno.serve(async (req) => {
         if (!atleta) return jsonResponse({ sucesso: false, erro: "Atleta não encontrado." }, 404);
         if (atleta.status !== "ativo") return jsonResponse({ sucesso: false, erro: "Apenas atletas ativos podem renovar." }, 403);
         const querRenovar = quer === false ? false : true;
-        const { error } = await supabase.from("atletas").update({
+        const updRenovar = {
           quer_renovar: querRenovar,
           renovacao_em: querRenovar ? new Date().toISOString() : null,
-        }).eq("id", athleteId);
+        };
+        const { error } = await supabase.from("atletas").update(updRenovar).eq("id", athleteId);
         if (error) throw error;
+        await mirrorSazonal(circuitoId, athleteId, updRenovar);
         return jsonResponse({ sucesso: true, dados: { querRenovar } });
       }
 
@@ -200,6 +247,7 @@ Deno.serve(async (req) => {
           comprovante_url: p.comprovanteUrl || null,
           status: "pendente",
           criado_em: p.criadoEm || new Date().toISOString(),
+          circuito_id: circuitoId,
         });
         if (error) throw error;
         return jsonResponse({ sucesso: true });
@@ -209,13 +257,13 @@ Deno.serve(async (req) => {
         const { id } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
         const { data: sol, error: errS } = await supabase
-          .from("solicitacoes_wo").select("status").eq("id", id).single();
+          .from("solicitacoes_wo").select("status").eq("id", id).eq("circuito_id", circuitoId).single();
         if (errS) throw errS;
         if (!sol) return jsonResponse({ sucesso: false, erro: "Solicitação não encontrada." }, 404);
         if (sol.status !== "pendente") {
           return jsonResponse({ sucesso: false, erro: "Só é possível cancelar uma solicitação ainda pendente." }, 409);
         }
-        const { error } = await supabase.from("solicitacoes_wo").delete().eq("id", id).eq("status", "pendente");
+        const { error } = await supabase.from("solicitacoes_wo").delete().eq("id", id).eq("status", "pendente").eq("circuito_id", circuitoId);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
       }

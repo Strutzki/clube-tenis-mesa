@@ -6,6 +6,142 @@ const ADMIN_PIN = Deno.env.get("ADMIN_PIN")!;
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+// --- Multi-circuito (Fase 4A) --------------------------------------------
+// circuito_id do circuito de producao (BH). Memoizado por instancia.
+// Enquanto o app nao envia payload.circuitoId, tudo resolve para BH -> comportamento identico.
+let _bhId: string | null = null;
+async function bhId(): Promise<string> {
+  if (_bhId) return _bhId;
+  const { data, error } = await supabase.from("circuitos").select("id").eq("slug", "bh").single();
+  if (error) throw error;
+  _bhId = data!.id as string;
+  return _bhId;
+}
+
+// --- Dual-write (Fase 4B) -------------------------------------------------
+// O servidor continua gravando o estado sazonal em `atletas` (o BH depende disso)
+// e a config em `configuracao`. Em PARALELO, espelha em `circuito_atletas`/`circuitos`.
+// O espelho e' BEST-EFFORT: se falhar, apenas loga -> nunca quebra a operacao do BH.
+const SEASONAL_COLS = new Set([
+  "status","motivo_reprovacao","pendente_circuito","ultima_recusa_circuito_em","chave",
+  "saldo_temp","vitorias","derrotas","vitorias_total","derrotas_total","wo_culposos_temporada",
+  "aceite_regulamento","data_aceite_regulamento","versao_regulamento",
+  "pagamento_confirmado","pagamento_proxima_confirmado","desconto_pct","isento",
+  "quer_renovar","renovacao_em","historico","posicao_historico",
+]);
+function seasonalOnly(obj: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k in obj) if (SEASONAL_COLS.has(k)) out[k] = obj[k];
+  return out;
+}
+// Espelha campos sazonais de um atleta na sua participacao no circuito (upsert por (circuito_id, atleta_id)).
+async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+  try {
+    const dados = seasonalOnly(campos);
+    if (Object.keys(dados).length === 0 && Object.keys(extra).length === 0) return;
+    const { error } = await supabase.from("circuito_atletas")
+      .upsert({ circuito_id: circuitoId, atleta_id: atletaId, ...dados, ...extra }, { onConflict: "circuito_id,atleta_id" });
+    if (error) throw error;
+  } catch (e) {
+    console.warn("dual-write circuito_atletas falhou (BH segue via atletas):", (e as any)?.message);
+  }
+}
+// Espelha config no circuito (mesmos nomes de coluna que `configuracao`).
+async function mirrorConfig(circuitoId: string, campos: Record<string, unknown>) {
+  try {
+    if (!campos || Object.keys(campos).length === 0) return;
+    const { error } = await supabase.from("circuitos").update(campos).eq("id", circuitoId);
+    if (error) throw error;
+  } catch (e) {
+    console.warn("dual-write circuitos falhou (BH segue via configuracao):", (e as any)?.message);
+  }
+}
+
+// --- Leitura por circuito (Fase 4B passo 3) ------------------------------
+// REGRA DE CAUTELA: para o BH, tudo roda EXATAMENTE como antes (le atletas/configuracao).
+// Para outros circuitos, le circuito_atletas/circuitos. Assim o caminho do BH nao muda.
+
+// Config do circuito: BH -> configuracao(id=1); demais -> circuitos(id).
+async function getCfg(circuitoId: string, cols: string): Promise<any> {
+  const bh = await bhId();
+  if (circuitoId === bh) {
+    const { data, error } = await supabase.from("configuracao").select(cols).eq("id", 1).single();
+    if (error) throw error;
+    return data;
+  }
+  const { data, error } = await supabase.from("circuitos").select(cols).eq("id", circuitoId).single();
+  if (error) throw error;
+  return data;
+}
+// Grava config: BH -> configuracao(id=1) + espelho circuitos; demais -> so circuitos.
+// (Protege configuracao(id=1)/BH de escritas de outros circuitos.)
+async function setCfg(circuitoId: string, campos: Record<string, unknown>) {
+  const bh = await bhId();
+  if (circuitoId === bh) {
+    const { error } = await supabase.from("configuracao").update(campos).eq("id", 1);
+    if (error) throw error;
+    await mirrorConfig(circuitoId, campos);
+  } else {
+    const { error } = await supabase.from("circuitos").update(campos).eq("id", circuitoId);
+    if (error) throw error;
+  }
+}
+// Monta um objeto no formato de linha `atletas` a partir de circuito_atletas + atletas aninhado.
+function mergeAtletaCircuito(ca: any): any {
+  const a = ca.atletas || {};
+  return {
+    ...a,
+    id: a.id,
+    status: ca.status, motivo_reprovacao: ca.motivo_reprovacao,
+    pendente_circuito: ca.pendente_circuito, ultima_recusa_circuito_em: ca.ultima_recusa_circuito_em,
+    chave: ca.chave, saldo_temp: ca.saldo_temp, vitorias: ca.vitorias, derrotas: ca.derrotas,
+    vitorias_total: ca.vitorias_total, derrotas_total: ca.derrotas_total,
+    wo_culposos_temporada: ca.wo_culposos_temporada,
+    pagamento_confirmado: ca.pagamento_confirmado, pagamento_proxima_confirmado: ca.pagamento_proxima_confirmado,
+    desconto_pct: ca.desconto_pct, isento: ca.isento,
+    quer_renovar: ca.quer_renovar, renovacao_em: ca.renovacao_em,
+    historico: ca.historico, posicao_historico: ca.posicao_historico,
+  };
+}
+// Atletas ATIVOS e no circuito (pendente_circuito=false), no formato de `atletas`.
+async function getAtivosNoCircuito(circuitoId: string, exigePagamento: boolean): Promise<any[]> {
+  const bh = await bhId();
+  if (circuitoId === bh) {
+    let q = supabase.from("atletas").select("*").eq("status", "ativo").eq("pendente_circuito", false);
+    if (exigePagamento) q = q.eq("pagamento_confirmado", true);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  }
+  let q = supabase.from("circuito_atletas").select("*, atletas!inner(*)").eq("circuito_id", circuitoId).eq("status", "ativo").eq("pendente_circuito", false);
+  if (exigePagamento) q = q.eq("pagamento_confirmado", true);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data || []).map(mergeAtletaCircuito);
+}
+// Atletas por ids, no formato de `atletas` (para o motor de rating).
+async function getAtletasPorIds(circuitoId: string, ids: string[]): Promise<any[]> {
+  const bh = await bhId();
+  if (circuitoId === bh) {
+    const { data, error } = await supabase.from("atletas").select("*").in("id", ids);
+    if (error) throw error;
+    return data || [];
+  }
+  const { data, error } = await supabase.from("circuito_atletas").select("*, atletas!inner(*)").eq("circuito_id", circuitoId).in("atleta_id", ids);
+  if (error) throw error;
+  return (data || []).map(mergeAtletaCircuito);
+}
+// Conta atletas ativos no circuito (pendente_circuito=false).
+async function countAtivosNoCircuito(circuitoId: string): Promise<number> {
+  const bh = await bhId();
+  if (circuitoId === bh) {
+    const { count } = await supabase.from("atletas").select("*", { count: "exact", head: true }).eq("status", "ativo").eq("pendente_circuito", false);
+    return count || 0;
+  }
+  const { count } = await supabase.from("circuito_atletas").select("*", { count: "exact", head: true }).eq("circuito_id", circuitoId).eq("status", "ativo").eq("pendente_circuito", false);
+  return count || 0;
+}
+
 const ALLOWED_ORIGINS = [
   "https://clubedotenisdemesabh.com.br",
   "https://www.clubedotenisdemesabh.com.br",
@@ -175,19 +311,37 @@ function calcularPrazos(mesRef?: Date) {
 // (inscrito_em) só até preencher as vagas; o excedente segue na fila. Quando o
 // financeiro está ligado, só promove quem já teve o pagamento confirmado — assim
 // vaga contada = vaga de quem vai jogar. Retorna quantos entraram.
-async function promoverBacklog(): Promise<number> {
-  const { data: cfg } = await supabase.from("configuracao").select("max_atletas,financeiro_ativo").eq("id", 1).single();
+async function promoverBacklog(circuitoId: string): Promise<number> {
+  const cfg = await getCfg(circuitoId, "max_atletas,financeiro_ativo");
   const max = cfg?.max_atletas || 20;
-  const { count: nCirc } = await supabase.from("atletas").select("*", { count: "exact", head: true }).eq("status", "ativo").eq("pendente_circuito", false);
-  const vagas = Math.max(0, max - (nCirc || 0));
+  const nCirc = await countAtivosNoCircuito(circuitoId);
+  const vagas = Math.max(0, max - nCirc);
   if (vagas <= 0) return 0;
-  let q = supabase.from("atletas").select("id").eq("status", "ativo").eq("pendente_circuito", true);
-  if (cfg?.financeiro_ativo) q = q.eq("pagamento_confirmado", true);
-  const { data: fila } = await q.order("inscrito_em", { ascending: true }).limit(vagas);
-  const ids = (fila || []).map((a: any) => a.id);
-  if (!ids.length) return 0;
-  const { error } = await supabase.from("atletas").update({ pendente_circuito: false }).in("id", ids);
-  if (error) throw error;
+  const bh = await bhId();
+  let ids: string[] = [];
+  if (circuitoId === bh) {
+    let q = supabase.from("atletas").select("id").eq("status", "ativo").eq("pendente_circuito", true);
+    if (cfg?.financeiro_ativo) q = q.eq("pagamento_confirmado", true);
+    const { data: fila } = await q.order("inscrito_em", { ascending: true }).limit(vagas);
+    ids = (fila || []).map((a: any) => a.id);
+    if (!ids.length) return 0;
+    const { error } = await supabase.from("atletas").update({ pendente_circuito: false }).in("id", ids);
+    if (error) throw error;
+    // dual-write (corrige lacuna do passo 2): espelha em circuito_atletas. Best-effort.
+    try {
+      await supabase.from("circuito_atletas").update({ pendente_circuito: false }).eq("circuito_id", circuitoId).in("atleta_id", ids);
+    } catch (e) {
+      console.warn("dual-write promoverBacklog falhou (BH segue via atletas):", (e as any)?.message);
+    }
+  } else {
+    let q = supabase.from("circuito_atletas").select("atleta_id").eq("circuito_id", circuitoId).eq("status", "ativo").eq("pendente_circuito", true);
+    if (cfg?.financeiro_ativo) q = q.eq("pagamento_confirmado", true);
+    const { data: fila } = await q.order("inscrito_em", { ascending: true }).limit(vagas);
+    ids = (fila || []).map((a: any) => a.atleta_id);
+    if (!ids.length) return 0;
+    const { error } = await supabase.from("circuito_atletas").update({ pendente_circuito: false }).eq("circuito_id", circuitoId).in("atleta_id", ids);
+    if (error) throw error;
+  }
   return ids.length;
 }
 
@@ -219,6 +373,9 @@ Deno.serve(async (req) => {
   const check = await pinValido(String(pin));
   if (!check.ok) return jsonResponse({ sucesso: false, erro: check.motivo }, 401);
 
+  // Circuito alvo: o que o app enviar, ou BH por padrao (transicao single-tenant).
+  const circuitoId = (payload && payload.circuitoId) ? String(payload.circuitoId) : await bhId();
+
   try {
     switch (acao) {
       case "EXCLUIR_ATLETA": {
@@ -237,6 +394,7 @@ Deno.serve(async (req) => {
           : { status: "reprovado", motivo_reprovacao: motivo };
         const { error } = await supabase.from("atletas").update(update).eq("id", id);
         if (error) throw error;
+        await mirrorSazonal(circuitoId, id, update);
         return jsonResponse({ sucesso: true });
       }
 
@@ -247,20 +405,20 @@ Deno.serve(async (req) => {
         }
 
         const { data: partidasRodadaAnterior } = await supabase
-          .from("partidas").select("id").eq("rodada", round - 1).eq("validado", true).eq("calculado", false).eq("rejeitado", false);
+          .from("partidas").select("id").eq("circuito_id", circuitoId).eq("rodada", round - 1).eq("validado", true).eq("calculado", false).eq("rejeitado", false);
         const { data: woRodadaAnterior } = await supabase
-          .from("partidas").select("id").eq("rodada", round - 1).in("wo_tipo", ["culposo", "a_favor"]).eq("calculado", false).eq("rejeitado", false);
+          .from("partidas").select("id").eq("circuito_id", circuitoId).eq("rodada", round - 1).in("wo_tipo", ["culposo", "a_favor"]).eq("calculado", false).eq("rejeitado", false);
 
         if (round % 2 === 0 && (((partidasRodadaAnterior?.length ?? 0) + (woRodadaAnterior?.length ?? 0)) > 0)) {
           return jsonResponse({ sucesso: false, erro: "A rodada anterior ainda tem resultados sem calcular." }, 409);
         }
 
         const { data: pendentes, error: errPend } = await supabase
-          .from("partidas").select("*").eq("rodada", round).eq("validado", true).eq("calculado", false).eq("rejeitado", false).order("admin_aprovado_em", { ascending: true });
+          .from("partidas").select("*").eq("circuito_id", circuitoId).eq("rodada", round).eq("validado", true).eq("calculado", false).eq("rejeitado", false).order("admin_aprovado_em", { ascending: true });
         if (errPend) throw errPend;
 
         const { data: wosRaw, error: errWo } = await supabase
-          .from("partidas").select("*").eq("rodada", round).in("wo_tipo", ["culposo", "a_favor"]).eq("calculado", false).eq("rejeitado", false);
+          .from("partidas").select("*").eq("circuito_id", circuitoId).eq("rodada", round).in("wo_tipo", ["culposo", "a_favor"]).eq("calculado", false).eq("rejeitado", false);
         if (errWo) throw errWo;
         const wos = wosRaw || [];
         const listaPend = pendentes || [];
@@ -272,11 +430,10 @@ Deno.serve(async (req) => {
           ...listaPend.flatMap((m: any) => [m.atleta1_id, m.atleta2_id]),
           ...wos.flatMap((m: any) => [m.atleta1_id, m.atleta2_id]),
         ])];
-        const { data: atletasData, error: errAtl } = await supabase.from("atletas").select("*").in("id", idsAtletas);
-        if (errAtl) throw errAtl;
+        const atletasData = await getAtletasPorIds(circuitoId, idsAtletas);
 
         const athletesMap: Record<string, any> = {};
-        atletasData!.forEach(a => { athletesMap[a.id] = { ...a }; });
+        atletasData.forEach(a => { athletesMap[a.id] = { ...a }; });
 
         const infoPorPartida: Record<string, { favorito_id: string; diferenca_rating_momento: number }> = {};
 
@@ -332,11 +489,10 @@ Deno.serve(async (req) => {
           }
         }
 
-        const { data: todosAtivos, error: errTodos } = await supabase.from("atletas").select("*").eq("status", "ativo").eq("pendente_circuito", false);
-        if (errTodos) throw errTodos;
-        todosAtivos!.forEach(a => { if (!athletesMap[a.id]) athletesMap[a.id] = { ...a }; });
+        const todosAtivos = await getAtivosNoCircuito(circuitoId, false);
+        todosAtivos.forEach(a => { if (!athletesMap[a.id]) athletesMap[a.id] = { ...a }; });
 
-        const { data: partidasTemporada, error: errPartidasTmp } = await supabase.from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado");
+        const { data: partidasTemporada, error: errPartidasTmp } = await supabase.from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado").eq("circuito_id", circuitoId);
         if (errPartidasTmp) throw errPartidasTmp;
         const idsComPartida = new Set<string>();
         (partidasTemporada ?? []).forEach((m: any) => { if (m.validado && !m.rejeitado) { idsComPartida.add(m.atleta1_id); idsComPartida.add(m.atleta2_id); } });
@@ -366,6 +522,10 @@ Deno.serve(async (req) => {
             posicao_historico: a.posicao_historico,
           }).eq("id", id);
           if (error) throw error;
+          await mirrorSazonal(circuitoId, id, {
+            saldo_temp: a.saldo_temp, vitorias: a.vitorias, derrotas: a.derrotas,
+            posicao_historico: a.posicao_historico,
+          });
         }
 
         for (const m of pendentes) {
@@ -392,28 +552,32 @@ Deno.serve(async (req) => {
         if (typeof pendenteCircuito === "boolean") upd.pendente_circuito = pendenteCircuito;
         const { error } = await supabase.from("atletas").update(upd).eq("id", id);
         if (error) throw error;
+        await mirrorSazonal(circuitoId, id, upd);
         return jsonResponse({ sucesso: true });
       }
 
       case "INCLUIR_NO_CIRCUITO": {
         const { id } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
-        const { data: cfg } = await supabase.from("configuracao").select("max_atletas").eq("id", 1).single();
+        const cfg = await getCfg(circuitoId, "max_atletas");
         const max = cfg?.max_atletas || 20;
-        const { count: nCirc } = await supabase.from("atletas").select("*", { count: "exact", head: true }).eq("status", "ativo").eq("pendente_circuito", false);
-        if ((nCirc || 0) >= max) {
+        const nCirc = await countAtivosNoCircuito(circuitoId);
+        if (nCirc >= max) {
           return jsonResponse({ sucesso: false, erro: `Circuito cheio (${nCirc}/${max}). Abra uma vaga antes de incluir.` }, 409);
         }
         const { error } = await supabase.from("atletas").update({ pendente_circuito: false }).eq("id", id);
         if (error) throw error;
+        await mirrorSazonal(circuitoId, id, { pendente_circuito: false });
         return jsonResponse({ sucesso: true });
       }
 
       case "RECUSAR_CIRCUITO": {
         const { id } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
-        const { error } = await supabase.from("atletas").update({ ultima_recusa_circuito_em: new Date().toISOString() }).eq("id", id);
+        const agoraRecusa = new Date().toISOString();
+        const { error } = await supabase.from("atletas").update({ ultima_recusa_circuito_em: agoraRecusa }).eq("id", id);
         if (error) throw error;
+        await mirrorSazonal(circuitoId, id, { ultima_recusa_circuito_em: agoraRecusa });
         return jsonResponse({ sucesso: true });
       }
 
@@ -422,6 +586,7 @@ Deno.serve(async (req) => {
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
         const { error } = await supabase.from("atletas").update({ status: "arquivado", pendente_circuito: false }).eq("id", id);
         if (error) throw error;
+        await mirrorSazonal(circuitoId, id, { status: "arquivado", pendente_circuito: false });
         return jsonResponse({ sucesso: true });
       }
 
@@ -463,48 +628,46 @@ Deno.serve(async (req) => {
       }
 
       case "INICIAR_ETAPA": {
-        const { data: config } = await supabase.from("configuracao").select("fase,financeiro_ativo").eq("id", 1).single();
+        const config = await getCfg(circuitoId, "fase,financeiro_ativo");
         if (config?.fase === "etapa") {
           return jsonResponse({ sucesso: false, erro: "A etapa já está em andamento. Use AVANCAR_RODADA para o próximo par mensal." }, 409);
         }
-        await promoverBacklog();
+        await promoverBacklog(circuitoId);
 
-        let qAtivos = supabase.from("atletas").select("*").eq("status", "ativo").eq("pendente_circuito", false);
-        if (config?.financeiro_ativo) qAtivos = qAtivos.eq("pagamento_confirmado", true);
-        const { data: ativos, error: errAtivos } = await qAtivos;
-        if (errAtivos) throw errAtivos;
+        const ativos = await getAtivosNoCircuito(circuitoId, !!config?.financeiro_ativo);
         if (!ativos || ativos.length < 8) {
           return jsonResponse({ sucesso: false, erro: `Mínimo de 8 atletas ativos para iniciar a etapa (atual: ${ativos?.length ?? 0}).` }, 400);
         }
 
         const { prazoA, prazoB } = calcularPrazos();
-        const keyId = "key_1";
-        const { error: errConfig } = await supabase.from("configuracao").update({ fase: "etapa" }).eq("id", 1);
-        if (errConfig) throw errConfig;
-        await supabase.from("chaves").insert({ id: keyId, nome: "Chave Única", rodada_atual: 1 });
+        const bhKeyIni = await bhId();
+        const keyId = (circuitoId === bhKeyIni) ? "key_1" : `key_${circuitoId.slice(0, 8)}`;
+        await setCfg(circuitoId, { fase: "etapa" });
+        await supabase.from("chaves").insert({ id: keyId, nome: "Chave Única", rodada_atual: 1, circuito_id: circuitoId });
         for (const a of ativos) {
           const { error } = await supabase.from("atletas").update({ chave: keyId }).eq("id", a.id);
           if (error) throw error;
+          await mirrorSazonal(circuitoId, a.id, { chave: keyId });
         }
         const { rodada1, rodada2 } = gerarPareamentoPorRating(ativos, []);
         for (const pair of rodada1) {
           const mid = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: 1, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoA });
+          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: 1, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoA, circuito_id: circuitoId });
           if (error) throw error;
         }
         for (const pair of rodada2) {
           const mid = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: 2, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoB });
+          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: 2, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoB, circuito_id: circuitoId });
           if (error) throw error;
         }
         return jsonResponse({ sucesso: true, dados: { atletas: ativos.length, partidas: rodada1.length + rodada2.length } });
       }
 
       case "AVANCAR_RODADA": {
-        const { data: todasPartidas, error: errPartidas } = await supabase.from("partidas").select("atleta1_id,atleta2_id,rodada,prazo");
+        const { data: todasPartidas, error: errPartidas } = await supabase.from("partidas").select("atleta1_id,atleta2_id,rodada,prazo").eq("circuito_id", circuitoId);
         if (errPartidas) throw errPartidas;
         const roundBase = (todasPartidas ?? []).reduce((max: number, m: any) => Math.max(max, m.rodada || 0), 0);
-        const { data: cfgRod } = await supabase.from("configuracao").select("rodadas_por_temporada,financeiro_ativo").eq("id", 1).single();
+        const cfgRod = await getCfg(circuitoId, "rodadas_por_temporada,financeiro_ativo");
         const maxRodadas = cfgRod?.rodadas_por_temporada || 6;
         if (roundBase >= maxRodadas) {
           return jsonResponse({ sucesso: false, erro: `A temporada já tem as ${maxRodadas} rodadas configuradas. Inicie uma nova temporada.` }, 409);
@@ -513,16 +676,13 @@ Deno.serve(async (req) => {
         const inicioUltimoTerco = maxRodadas - Math.ceil(maxRodadas / 3) + 1;
         const permiteEntrada = rA < inicioUltimoTerco;
         if (permiteEntrada) {
-          await promoverBacklog();
+          await promoverBacklog(circuitoId);
         }
-        let qAtivos = supabase.from("atletas").select("*").eq("status", "ativo").eq("pendente_circuito", false);
-        if (cfgRod?.financeiro_ativo) qAtivos = qAtivos.eq("pagamento_confirmado", true);
-        const { data: ativos, error: errAtivos } = await qAtivos;
-        if (errAtivos) throw errAtivos;
+        const ativos = await getAtivosNoCircuito(circuitoId, !!cfgRod?.financeiro_ativo);
         if (!ativos || ativos.length < 2) {
           return jsonResponse({ sucesso: false, erro: `São necessários ao menos 2 atletas ativos para gerar uma rodada (atual: ${ativos?.length ?? 0}).` }, 400);
         }
-        const { data: chaveAtual } = await supabase.from("chaves").select("id").limit(1).single();
+        const { data: chaveAtual } = await supabase.from("chaves").select("id").eq("circuito_id", circuitoId).limit(1).single();
         const keyId = chaveAtual?.id || "key_1";
         const parIndex = Math.floor(rB / 2) - 1;
         const prazoR1Existente = (todasPartidas ?? []).filter((m: any) => m.rodada === 1 && m.prazo).map((m: any) => m.prazo).sort()[0];
@@ -536,12 +696,12 @@ Deno.serve(async (req) => {
         await supabase.from("chaves").update({ rodada_atual: rB }).eq("id", keyId);
         for (const pair of rodada1) {
           const mid = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: rA, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoA });
+          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: rA, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoA, circuito_id: circuitoId });
           if (error) throw error;
         }
         for (const pair of rodada2) {
           const mid = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: rB, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoB });
+          const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: rB, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoB, circuito_id: circuitoId });
           if (error) throw error;
         }
         return jsonResponse({ sucesso: true, dados: { rodadas: [rA, rB], partidas: rodada1.length + rodada2.length } });
@@ -575,6 +735,7 @@ Deno.serve(async (req) => {
           const { error } = await supabase.from("mensagens_enviadas").insert({
             id, atleta_id: athleteId || null, atleta_nome: athleteName || null,
             categoria, categoria_label: categoriaLabel, texto, enviado_em: enviadoEm, match_id: matchId || null,
+            circuito_id: circuitoId,
           });
           if (error) throw error;
         } catch (e) {
@@ -590,7 +751,7 @@ Deno.serve(async (req) => {
         const now = new Date().toISOString();
         const { error: errSol } = await supabase.from("solicitacoes_wo").update({
           status: aprovado ? "aprovado" : "recusado", respondido_em: now, motivo_recusa: motivoRecusa || null,
-        }).eq("id", id);
+        }).eq("id", id).eq("circuito_id", circuitoId);
         if (errSol) throw errSol;
         if (aprovado) {
           if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório quando aprovado" }, 400);
@@ -604,7 +765,7 @@ Deno.serve(async (req) => {
 
       case "ABRIR_PROXIMA_TEMPORADA": {
         const p = payload || {};
-        const { data: cfg } = await supabase.from("configuracao").select("temporada_numero,temporada_ano").eq("id", 1).single();
+        const cfg = await getCfg(circuitoId, "temporada_numero,temporada_ano");
         const num = cfg?.temporada_numero || 1;
         const ano = cfg?.temporada_ano || new Date().getFullYear();
         const proxNum = num >= 3 ? 1 : num + 1;
@@ -618,21 +779,23 @@ Deno.serve(async (req) => {
           proxima_valor_desconto: p.valorDesconto != null ? Math.max(0, Math.round(Number(p.valorDesconto))) : null,
         };
         if (p.pixChave !== undefined) upd.pix_chave = (typeof p.pixChave === "string" && p.pixChave.trim()) ? p.pixChave.trim() : null;
-        const { error } = await supabase.from("configuracao").update(upd).eq("id", 1);
-        if (error) throw error;
+        await setCfg(circuitoId, upd);
         return jsonResponse({ sucesso: true, dados: { rotulo: upd.proxima_rotulo } });
       }
 
       case "CANCELAR_PROXIMA": {
-        const { error } = await supabase.from("configuracao").update({
+        const updCancel = {
           proxima_aberta: false, proxima_nome: null, proxima_data_inicio: null, proxima_rotulo: null,
           proxima_valor_cheio: null, proxima_valor_desconto: null,
-        }).eq("id", 1);
-        if (error) throw error;
+        };
+        await setCfg(circuitoId, updCancel);
         return jsonResponse({ sucesso: true });
       }
 
       case "NOVA_TEMPORADA": {
+        if (circuitoId !== await bhId()) {
+          return jsonResponse({ sucesso: false, erro: "Virada de temporada multi-circuito ainda não habilitada." }, 400);
+        }
         const { data: ativos, error: errAtivos } = await supabase.from("atletas").select("*").eq("status", "ativo");
         if (errAtivos) throw errAtivos;
         const { data: config, error: errConfigGet } = await supabase.from("configuracao").select("temporada_numero,temporada_ano,proxima_aberta,proxima_nome,proxima_data_inicio,proxima_rotulo,proxima_valor_cheio,proxima_valor_desconto").eq("id", 1).single();
@@ -651,7 +814,7 @@ Deno.serve(async (req) => {
           const historicoAtualizado = posicaoFinal[a.id]
             ? [{ temporada: rotuloTemporada, pos: posicaoFinal[a.id] }, ...(a.historico || [])]
             : (a.historico || []);
-          const { error } = await supabase.from("atletas").update({
+          const updNova: Record<string, unknown> = {
             vitorias_total: (a.vitorias_total || 0) + (a.vitorias || 0),
             derrotas_total: (a.derrotas_total || 0) + (a.derrotas || 0),
             saldo_temp: 0, vitorias: 0, derrotas: 0, chave: null,
@@ -660,8 +823,10 @@ Deno.serve(async (req) => {
             pagamento_proxima_confirmado: false,
             quer_renovar: false, renovacao_em: null,
             historico: historicoAtualizado,
-          }).eq("id", a.id);
+          };
+          const { error } = await supabase.from("atletas").update(updNova).eq("id", a.id);
           if (error) throw error;
+          await mirrorSazonal(circuitoId, a.id, updNova);
         }
         const { error: errArq } = await supabase.rpc("arquivar_partidas_temporada", { p_rotulo: rotuloTemporada });
         if (errArq) throw errArq;
@@ -692,6 +857,7 @@ Deno.serve(async (req) => {
         }
         const { error: errConfig } = await supabase.from("configuracao").update(updConfig).eq("id", 1);
         if (errConfig) throw errConfig;
+        await mirrorConfig(circuitoId, updConfig);
         return jsonResponse({ sucesso: true, dados: { temporadaNumero: proximoNumero, temporadaAno: proximoAno, arquivadas: rotuloTemporada } });
       }
 
@@ -717,6 +883,7 @@ Deno.serve(async (req) => {
           const novo = ((atl?.wo_culposos_temporada) || 0) + 1;
           const { error: e2 } = await supabase.from("atletas").update({ wo_culposos_temporada: novo }).eq("id", faltosoId);
           if (e2) throw e2;
+          await mirrorSazonal(circuitoId, faltosoId, { wo_culposos_temporada: novo });
         }
         return jsonResponse({ sucesso: true });
       }
@@ -726,7 +893,7 @@ Deno.serve(async (req) => {
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
         if (quem !== "solicitante" && quem !== "adversario") return jsonResponse({ sucesso: false, erro: "quem deve ser 'solicitante' ou 'adversario'" }, 400);
         const campo = quem === "solicitante" ? "notificado_solicitante" : "notificado_adversario";
-        const { error } = await supabase.from("solicitacoes_wo").update({ [campo]: true }).eq("id", id);
+        const { error } = await supabase.from("solicitacoes_wo").update({ [campo]: true }).eq("id", id).eq("circuito_id", circuitoId);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
       }
@@ -734,16 +901,14 @@ Deno.serve(async (req) => {
       case "DEFINIR_RODADAS": {
         const { rodadas } = payload || {};
         if (typeof rodadas !== "number" || rodadas < 2 || rodadas % 2 !== 0) return jsonResponse({ sucesso: false, erro: "rodadas deve ser um número par >= 2" }, 400);
-        const { error } = await supabase.from("configuracao").update({ rodadas_por_temporada: rodadas }).eq("id", 1);
-        if (error) throw error;
+        await setCfg(circuitoId, { rodadas_por_temporada: rodadas });
         return jsonResponse({ sucesso: true });
       }
 
       case "DEFINIR_AUTO_VALIDAR": {
         const { ligado } = payload || {};
         if (typeof ligado !== "boolean") return jsonResponse({ sucesso: false, erro: "ligado (boolean) é obrigatório" }, 400);
-        const { error } = await supabase.from("configuracao").update({ auto_validar_placar: ligado }).eq("id", 1);
-        if (error) throw error;
+        await setCfg(circuitoId, { auto_validar_placar: ligado });
         return jsonResponse({ sucesso: true });
       }
 
@@ -755,8 +920,7 @@ Deno.serve(async (req) => {
         if (p.maxAtletas !== undefined) upd.max_atletas = Math.max(2, Math.round(Number(p.maxAtletas) || 20));
         if (p.pixChave !== undefined) upd.pix_chave = (typeof p.pixChave === "string" && p.pixChave.trim()) ? p.pixChave.trim() : null;
         if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
-        const { error } = await supabase.from("configuracao").update(upd).eq("id", 1);
-        if (error) throw error;
+        await setCfg(circuitoId, upd);
         return jsonResponse({ sucesso: true });
       }
 
@@ -770,8 +934,7 @@ Deno.serve(async (req) => {
         if (p.proximaValorCheio !== undefined) upd.proxima_valor_cheio = (p.proximaValorCheio === null ? null : Math.max(0, Math.round(Number(p.proximaValorCheio))));
         if (p.proximaValorDesconto !== undefined) upd.proxima_valor_desconto = (p.proximaValorDesconto === null ? null : Math.max(0, Math.round(Number(p.proximaValorDesconto))));
         if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
-        const { error } = await supabase.from("configuracao").update(upd).eq("id", 1);
-        if (error) throw error;
+        await setCfg(circuitoId, upd);
         return jsonResponse({ sucesso: true });
       }
 
@@ -784,6 +947,7 @@ Deno.serve(async (req) => {
         if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
         const { error } = await supabase.from("atletas").update(upd).eq("id", atletaId);
         if (error) throw error;
+        await mirrorSazonal(circuitoId, atletaId, upd);
         return jsonResponse({ sucesso: true });
       }
 
@@ -794,7 +958,7 @@ Deno.serve(async (req) => {
         const id = p.id || `pag_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const now = new Date().toISOString();
         const { error: errIns } = await supabase.from("pagamentos").insert({
-          id, atleta_id: p.atletaId, temporada_rotulo: p.temporadaRotulo || null,
+          id, atleta_id: p.atletaId, temporada_rotulo: p.temporadaRotulo || null, circuito_id: circuitoId,
           valor: p.valor != null ? Math.max(0, Math.round(Number(p.valor))) : null,
           percentual: p.percentual != null ? Math.round(Number(p.percentual)) : null,
           desconto_pct_aplicado: p.descontoPctAplicado != null ? Math.round(Number(p.descontoPctAplicado)) : null,
@@ -806,28 +970,30 @@ Deno.serve(async (req) => {
         const flagCol = alvo === "proxima" ? { pagamento_proxima_confirmado: true } : { pagamento_confirmado: true };
         const { error: errFlag } = await supabase.from("atletas").update(flagCol).eq("id", p.atletaId);
         if (errFlag) throw errFlag;
+        await mirrorSazonal(circuitoId, p.atletaId, flagCol);
         return jsonResponse({ sucesso: true, dados: { id, alvo } });
       }
 
       case "ESTORNAR_PAGAMENTO": {
         const { id } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
-        const { data: pag, error: errGet } = await supabase.from("pagamentos").select("atleta_id,temporada_rotulo").eq("id", id).single();
+        const { data: pag, error: errGet } = await supabase.from("pagamentos").select("atleta_id,temporada_rotulo").eq("id", id).eq("circuito_id", circuitoId).single();
         if (errGet) throw errGet;
         if (!pag) return jsonResponse({ sucesso: false, erro: "Pagamento não encontrado." }, 404);
-        const { error: errUpd } = await supabase.from("pagamentos").update({ status: "estornado" }).eq("id", id);
+        const { error: errUpd } = await supabase.from("pagamentos").update({ status: "estornado" }).eq("id", id).eq("circuito_id", circuitoId);
         if (errUpd) throw errUpd;
         if (pag.atleta_id) {
-          const { data: cfg } = await supabase.from("configuracao").select("proxima_rotulo").eq("id", 1).single();
+          const cfg = await getCfg(circuitoId, "proxima_rotulo");
           const ehProxima = !!(pag.temporada_rotulo && cfg?.proxima_rotulo && pag.temporada_rotulo === cfg.proxima_rotulo);
           const flagCol = ehProxima ? { pagamento_proxima_confirmado: false } : { pagamento_confirmado: false };
           await supabase.from("atletas").update(flagCol).eq("id", pag.atleta_id);
+          await mirrorSazonal(circuitoId, pag.atleta_id, flagCol);
         }
         return jsonResponse({ sucesso: true });
       }
 
       case "LISTAR_PAGAMENTOS": {
-        const { data, error } = await supabase.from("pagamentos").select("*").order("criado_em", { ascending: false }).limit(500);
+        const { data, error } = await supabase.from("pagamentos").select("*").eq("circuito_id", circuitoId).order("criado_em", { ascending: false }).limit(500);
         if (error) throw error;
         return jsonResponse({ sucesso: true, dados: data });
       }
@@ -842,7 +1008,7 @@ Deno.serve(async (req) => {
         if (p.metodo !== undefined) upd.metodo = p.metodo || "pix";
         if (p.observacao !== undefined) upd.observacao = p.observacao || null;
         if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
-        const { error } = await supabase.from("pagamentos").update(upd).eq("id", p.id);
+        const { error } = await supabase.from("pagamentos").update(upd).eq("id", p.id).eq("circuito_id", circuitoId);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
       }
@@ -854,7 +1020,7 @@ Deno.serve(async (req) => {
       }
 
       case "LISTAR_MENSAGENS": {
-        const { data, error } = await supabase.from("mensagens_enviadas").select("*").order("enviado_em", { ascending: false }).limit(200);
+        const { data, error } = await supabase.from("mensagens_enviadas").select("*").eq("circuito_id", circuitoId).order("enviado_em", { ascending: false }).limit(200);
         if (error) throw error;
         return jsonResponse({ sucesso: true, dados: data });
       }

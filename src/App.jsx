@@ -1194,7 +1194,7 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
     card: { background:T.verdeCard, borderRadius:16, padding:22, width:"100%", maxWidth:360, border:"1px solid rgba(255,255,255,0.06)" },
     btn: (bg) => ({ background:bg||T.terracota, color:bg?"#fff":T.verde, border:"none", borderRadius:11, padding:"13px", fontSize:14, fontWeight:700, cursor:"pointer", width:"100%", marginBottom:10 }),
     outline: { background:"transparent", color:T.terracota, border:`1px solid ${T.bordaSuave}`, borderRadius:11, padding:"13px", fontSize:14, fontWeight:600, cursor:"pointer", width:"100%", marginBottom:10 },
-    input: { background:T.verde, border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:T.offwhite, padding:"11px 12px", fontSize:14, width:"100%", marginBottom:10, outline:"none", boxSizing:"border-box" },
+    input: { background:T.verde, border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:T.offwhite, padding:"11px 12px", fontSize:16, width:"100%", marginBottom:10, outline:"none", boxSizing:"border-box" },
     label: { fontSize:11, fontWeight:700, color:T.cinzaSuave, textTransform:"uppercase", letterSpacing:0.8, display:"block", marginBottom:5, fontFamily:T.mono },
     err: { color:T.vermelho, fontSize:12, textAlign:"center", marginTop:8 },
     back: { background:"none", border:"none", color:T.cinza, cursor:"pointer", fontSize:13, marginBottom:16, display:"flex", alignItems:"center", gap:4 },
@@ -1330,8 +1330,8 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
     title: { fontSize:15, fontWeight:800, color:"#F0EAE0", marginBottom:4 },
     sub: { fontSize:11, color:"#7d9188", marginBottom:16 },
     label: { fontSize:11, fontWeight:700, color:"#9db3a8", textTransform:"uppercase", letterSpacing:0.8, display:"block", marginBottom:5, marginTop:14 },
-    input: { background:"#1C2B27", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:"#F0EAE0", padding:"11px 12px", fontSize:14, width:"100%", outline:"none", boxSizing:"border-box" },
-    select: { background:"#1C2B27", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:"#F0EAE0", padding:"11px 12px", fontSize:14, width:"100%", outline:"none" },
+    input: { background:"#1C2B27", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:"#F0EAE0", padding:"11px 12px", fontSize:16, width:"100%", outline:"none", boxSizing:"border-box" },
+    select: { background:"#1C2B27", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:"#F0EAE0", padding:"11px 12px", fontSize:16, width:"100%", outline:"none" },
     btn: (dis) => ({ background: dis?"#223330":T.terracotaBtn, color: dis?"#7d9188":"#fff", border:"none", borderRadius:11, padding:"13px", fontSize:14, fontWeight:700, cursor: dis?"default":"pointer", width:"100%", marginTop:16 }),
     back: { background:"none", border:"none", color:"#7d9188", cursor:"pointer", fontSize:13, marginBottom:16, display:"flex", alignItems:"center", gap:4 },
     steps: { display:"flex", gap:6, marginBottom:20, justifyContent:"center" },
@@ -1404,11 +1404,12 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
 
         {(() => {
           const telDupl = telDuplStatus === "duplicado";
+          const bloqueado = telDupl || telDuplStatus === "checking";
           return (
-            <button style={s.btn(!name.trim()||!phone.trim()||telDupl)}
-              onClick={()=>{ if(name.trim()&&phone.trim()&&!telDupl) setStep(2); }}
-              disabled={!name.trim()||!phone.trim()||telDupl}>
-              Continuar →
+            <button style={s.btn(!name.trim()||!phone.trim()||bloqueado)}
+              onClick={()=>{ if(name.trim()&&phone.trim()&&!bloqueado) setStep(2); }}
+              disabled={!name.trim()||!phone.trim()||bloqueado}>
+              {telDuplStatus === "checking" ? "Verificando telefone…" : "Continuar →"}
             </button>
           );
         })()}
@@ -4521,7 +4522,7 @@ function CartaModal({ athlete, posicao, onClose, podeBaixar = false }) {
           width={Math.min(300, window.innerWidth - 60)}
         />
         {podeBaixar && (
-          <button onClick={baixar} disabled={baixando} style={{fontFamily:T.sans,fontWeight:600,fontSize:14,color:T.offwhite,background:T.terracota,border:"none",borderRadius:22,padding:"12px 22px",cursor:baixando?"default":"pointer",opacity:baixando?0.7:1,display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={baixar} disabled={baixando} style={{fontFamily:T.sans,fontWeight:600,fontSize:14,color:"#fff",background:T.terracotaBtn,border:"none",borderRadius:22,padding:"12px 22px",cursor:baixando?"default":"pointer",opacity:baixando?0.7:1,display:"flex",alignItems:"center",gap:8}}>
             {baixando ? "Gerando imagem…" : "⬇ Baixar carta"}
           </button>
         )}
@@ -4639,7 +4640,7 @@ function PerfilAtletaView({ state, athlete, onClose, onVerCarta, onVerEstatistic
           <button onClick={onVerEstatisticas} style={{width:"100%",boxSizing:"border-box",border:`1px solid rgba(240,234,224,0.25)`,background:"transparent",color:T.offwhite,fontFamily:T.sans,fontWeight:600,fontSize:14,padding:"13px",borderRadius:13,cursor:"pointer"}}>
             Ver estatísticas completas
           </button>
-          <button onClick={onVerCarta} style={{width:"100%",boxSizing:"border-box",border:"none",background:T.terracota,color:T.offwhite,fontFamily:T.sans,fontWeight:600,fontSize:15,padding:"14px",borderRadius:13,cursor:"pointer"}}>
+          <button onClick={onVerCarta} style={{width:"100%",boxSizing:"border-box",border:"none",background:T.terracotaBtn,color:"#fff",fontFamily:T.sans,fontWeight:600,fontSize:15,padding:"14px",borderRadius:13,cursor:"pointer"}}>
             Ver carta do atleta
           </button>
         </div>

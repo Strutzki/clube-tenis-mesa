@@ -7,6 +7,7 @@ const T = {
   bezel: "#111C19",      // verde-bezel — barra de abas / moldura
   verdeCard: "#223330",  // verde-médio — cards
   terracota: "#D85A30",  // destaque (usar com moderação)
+  terracotaBtn: "#B8461F", // fundo de botão com texto claro (contraste AA >= 4.5:1)
   offwhite: "#F0EAE0",   // texto (substitui branco puro)
   madeira: "#9C6F3E",    // detalhe/cabo — nunca fundo
   cinza: "#7d9188",      // texto secundário
@@ -40,6 +41,7 @@ if (typeof document !== "undefined" && !document.getElementById("ctm-keyframes")
     @keyframes ctm-ballShadow { 0%,100% { transform: scaleX(1); opacity:.35; } 50% { transform: scaleX(.6); opacity:.15; } }
     @keyframes ctm-logoIn { 0% { transform: rotateY(-180deg) scale(.5); opacity: 0; } 55% { opacity: 1; } 100% { transform: rotateY(0) scale(1); opacity: 1; } }
     @keyframes ctm-logoRing { 0%,100% { box-shadow: 0 0 0 0 rgba(216,90,48,0); } 50% { box-shadow: 0 0 0 5px rgba(216,90,48,.18); } }
+    input::placeholder, textarea::placeholder { color: #9db3a8; opacity: 1; }
   `;
   document.head.appendChild(style);
 }
@@ -1224,7 +1226,7 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
 
         {/* acessos principais */}
         <div style={{width:"100%",marginTop:34}}>
-          <button onClick={()=>setMode("athlete")} style={{display:"flex",alignItems:"center",gap:14,width:"100%",textAlign:"left",border:"none",background:T.terracota,color:T.offwhite,borderRadius:16,padding:"17px 18px",marginBottom:12,cursor:"pointer",fontFamily:T.sans}}>
+          <button onClick={()=>setMode("athlete")} style={{display:"flex",alignItems:"center",gap:14,width:"100%",textAlign:"left",border:"none",background:T.terracotaBtn,color:T.offwhite,borderRadius:16,padding:"17px 18px",marginBottom:12,cursor:"pointer",fontFamily:T.sans}}>
             <span style={{width:36,height:36,borderRadius:11,background:"rgba(240,234,224,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{width:15,height:15,borderRadius:"50%",background:T.offwhite}}/></span>
             <span style={{flex:1}}><span style={{display:"block",fontFamily:T.serif,fontSize:20,lineHeight:1}}>Sou atleta</span><span style={{display:"block",fontFamily:T.mono,fontSize:8.5,letterSpacing:0.5,textTransform:"uppercase",color:"rgba(240,234,224,0.85)",marginTop:5}}>Perfil, jogos e ranking</span></span>
             <span style={{fontSize:19}}>→</span>
@@ -1330,7 +1332,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
     label: { fontSize:11, fontWeight:700, color:"#9db3a8", textTransform:"uppercase", letterSpacing:0.8, display:"block", marginBottom:5, marginTop:14 },
     input: { background:"#1C2B27", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:"#F0EAE0", padding:"11px 12px", fontSize:14, width:"100%", outline:"none", boxSizing:"border-box" },
     select: { background:"#1C2B27", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:"#F0EAE0", padding:"11px 12px", fontSize:14, width:"100%", outline:"none" },
-    btn: (dis) => ({ background: dis?"#223330":T.terracota, color: dis?"#7d9188":"#fff", border:"none", borderRadius:11, padding:"13px", fontSize:14, fontWeight:700, cursor: dis?"default":"pointer", width:"100%", marginTop:16 }),
+    btn: (dis) => ({ background: dis?"#223330":T.terracotaBtn, color: dis?"#7d9188":"#fff", border:"none", borderRadius:11, padding:"13px", fontSize:14, fontWeight:700, cursor: dis?"default":"pointer", width:"100%", marginTop:16 }),
     back: { background:"none", border:"none", color:"#7d9188", cursor:"pointer", fontSize:13, marginBottom:16, display:"flex", alignItems:"center", gap:4 },
     steps: { display:"flex", gap:6, marginBottom:20, justifyContent:"center" },
     stepDot: (ativo, feito) => ({ width:28, height:4, borderRadius:2, background: feito?"#6a9d7a": ativo?"#D85A30":"rgba(255,255,255,0.1)" }),
@@ -1354,6 +1356,11 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
         <Steps/>
         <div style={s.title}>📝 Inscrição — Dados Pessoais</div>
         <div style={s.sub}>Passo 1 de 3 · Seus dados de cadastro</div>
+
+        <div style={{...s.box("#D85A30"), marginTop:2, marginBottom:6}}>
+          <strong style={{color:"#F0EAE0"}}>Temporada 1 · modalidade piloto</strong><br/>
+          Nesta primeira temporada, o Circuito BH está aberto ao ranking <strong style={{color:"#F0EAE0"}}>masculino adulto (18+)</strong>. Outras categorias entram em breve.
+        </div>
 
         <label style={s.label}>Nome completo *</label>
         <input style={s.input} value={name} onChange={e=>setName(e.target.value)} placeholder="Seu nome completo"/>
@@ -3296,7 +3303,7 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
         <button
           onClick={()=>cadastrarBiometria(oferecerBio)}
           disabled={bioStatus==="verificando"}
-          style={{width:"100%",padding:"16px",borderRadius:12,border:"none",background:T.terracota,color:"#fff",fontSize:15,fontWeight:700,cursor:bioStatus==="verificando"?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:10}}
+          style={{width:"100%",padding:"16px",borderRadius:12,border:"none",background:T.terracotaBtn,color:"#fff",fontSize:15,fontWeight:700,cursor:bioStatus==="verificando"?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:10}}
         >
           <span style={{fontSize:20}}>👆</span>
           {bioStatus==="verificando" ? "Verificando…" : "Ativar agora"}
@@ -3318,7 +3325,7 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
         <button
           onClick={autenticarBiometria}
           disabled={bioStatus==="verificando"}
-          style={{width:"100%",padding:"16px",borderRadius:12,border:"none",background:T.terracota,color:"#fff",fontSize:15,fontWeight:700,cursor:bioStatus==="verificando"?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:8}}
+          style={{width:"100%",padding:"16px",borderRadius:12,border:"none",background:T.terracotaBtn,color:"#fff",fontSize:15,fontWeight:700,cursor:bioStatus==="verificando"?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:8}}
         >
           <span style={{fontSize:20}}>👆</span>
           {bioStatus==="verificando" ? "Verificando…" : "Entrar com Face ID / digital"}

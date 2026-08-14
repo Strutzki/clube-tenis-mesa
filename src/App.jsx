@@ -6576,7 +6576,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
           const p2 = state.athletes.find(a=>a.id===m.p2Id);
           return (
             <Card key={m.id} style={{border:"1px solid rgba(255,255,255,0.05)"}}>
-              <div style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Rodada {m.round}{m.validadoAutomatico && <span style={{marginLeft:8,color:"#6a9d7a",textTransform:"none",letterSpacing:0,fontWeight:700}}>⚡ validado automaticamente</span>}</div>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Rodada {m.round}{m.validadoAutomatico && <span style={{marginLeft:8,color:"#6a9d7a",textTransform:"none",letterSpacing:0,fontWeight:700}}>⚡ validado automaticamente</span>}{m.foraDoPrazo && <span style={{marginLeft:8,color:"#f0b060",textTransform:"none",letterSpacing:0,fontWeight:700}}>⏰ foi validada fora do prazo</span>}</div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}}>
                 <span style={{fontSize:13,color:"#F0EAE0",flex:1}}>{p1?.name}</span>
                 <span style={{fontSize:14,fontWeight:700,color:"#9db3a8"}}>{m.score1} × {m.score2}</span>
@@ -6782,6 +6782,10 @@ function MatchCard({ m, state, admin=false, currentAthleteId }) {
           return <span style={{fontFamily:T.mono,fontSize:9,color:ds.color,letterSpacing:0.8,fontWeight:ds.urgent?700:400,textTransform:"uppercase"}}>{label}</span>;
         })()}
       </div>
+
+      {m.foraDoPrazo && (
+        <div style={{fontFamily:T.mono,fontSize:9,fontWeight:700,color:"#f0b060",letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>⏰ Enviado fora do prazo</div>
+      )}
 
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
         <span style={{fontFamily:T.serif,fontSize:17,lineHeight:1.15,color: p1Ganhou ? T.verde2 : T.offwhite,flex:1}}>

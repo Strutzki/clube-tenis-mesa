@@ -57,6 +57,26 @@ async function mirrorConfig(circuitoId: string, campos: Record<string, unknown>)
   }
 }
 
+// Escreve um update de atleta roteando por circuito (blindagem cross-tenant):
+// - BH: grava tudo em `atletas` (fonte que o app le) + espelha o sazonal em circuito_atletas (como hoje).
+// - nao-BH: IDENTIDADE (rating/nome/etc.) -> atletas (compartilhada, Modelo B); SAZONAL -> so circuito_atletas.
+async function writeAtleta(circuitoId: string, atletaId: string, campos: Record<string, unknown>) {
+  const bh = await bhId();
+  if (circuitoId === bh) {
+    const { error } = await supabase.from("atletas").update(campos).eq("id", atletaId);
+    if (error) throw error;
+    await mirrorSazonal(circuitoId, atletaId, campos);
+    return;
+  }
+  const identidade: Record<string, unknown> = {};
+  for (const k in campos) if (!SEASONAL_COLS.has(k)) identidade[k] = campos[k];
+  if (Object.keys(identidade).length > 0) {
+    const { error } = await supabase.from("atletas").update(identidade).eq("id", atletaId);
+    if (error) throw error;
+  }
+  await mirrorSazonal(circuitoId, atletaId, campos);
+}
+
 // --- Leitura por circuito (Fase 4B passo 3) ------------------------------
 // REGRA DE CAUTELA: para o BH, tudo roda EXATAMENTE como antes (le atletas/configuracao).
 // Para outros circuitos, le circuito_atletas/circuitos. Assim o caminho do BH nao muda.
@@ -392,9 +412,7 @@ Deno.serve(async (req) => {
         const update = approved
           ? { status: "ativo", rating, rating_inicial: rating, saldo_temp: 0, pendente_circuito: true }
           : { status: "reprovado", motivo_reprovacao: motivo };
-        const { error } = await supabase.from("atletas").update(update).eq("id", id);
-        if (error) throw error;
-        await mirrorSazonal(circuitoId, id, update);
+        await writeAtleta(circuitoId, id, update);
         return jsonResponse({ sucesso: true });
       }
 
@@ -516,14 +534,9 @@ Deno.serve(async (req) => {
 
         for (const id of idsAlterados) {
           const a = athletesMap[id];
-          const { error } = await supabase.from("atletas").update({
+          await writeAtleta(circuitoId, id, {
             rating: a.rating, saldo_temp: a.saldo_temp, vitorias: a.vitorias, derrotas: a.derrotas,
             rating_pico: a.rating_pico, rating_historico: a.rating_historico,
-            posicao_historico: a.posicao_historico,
-          }).eq("id", id);
-          if (error) throw error;
-          await mirrorSazonal(circuitoId, id, {
-            saldo_temp: a.saldo_temp, vitorias: a.vitorias, derrotas: a.derrotas,
             posicao_historico: a.posicao_historico,
           });
         }
@@ -550,9 +563,7 @@ Deno.serve(async (req) => {
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
         const upd: Record<string, unknown> = { nome, telefone, apelido: apelido || null, rating, status };
         if (typeof pendenteCircuito === "boolean") upd.pendente_circuito = pendenteCircuito;
-        const { error } = await supabase.from("atletas").update(upd).eq("id", id);
-        if (error) throw error;
-        await mirrorSazonal(circuitoId, id, upd);
+        await writeAtleta(circuitoId, id, upd);
         return jsonResponse({ sucesso: true });
       }
 
@@ -565,9 +576,7 @@ Deno.serve(async (req) => {
         if (nCirc >= max) {
           return jsonResponse({ sucesso: false, erro: `Circuito cheio (${nCirc}/${max}). Abra uma vaga antes de incluir.` }, 409);
         }
-        const { error } = await supabase.from("atletas").update({ pendente_circuito: false }).eq("id", id);
-        if (error) throw error;
-        await mirrorSazonal(circuitoId, id, { pendente_circuito: false });
+        await writeAtleta(circuitoId, id, { pendente_circuito: false });
         return jsonResponse({ sucesso: true });
       }
 
@@ -575,18 +584,14 @@ Deno.serve(async (req) => {
         const { id } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
         const agoraRecusa = new Date().toISOString();
-        const { error } = await supabase.from("atletas").update({ ultima_recusa_circuito_em: agoraRecusa }).eq("id", id);
-        if (error) throw error;
-        await mirrorSazonal(circuitoId, id, { ultima_recusa_circuito_em: agoraRecusa });
+        await writeAtleta(circuitoId, id, { ultima_recusa_circuito_em: agoraRecusa });
         return jsonResponse({ sucesso: true });
       }
 
       case "ARQUIVAR_ATLETA": {
         const { id } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
-        const { error } = await supabase.from("atletas").update({ status: "arquivado", pendente_circuito: false }).eq("id", id);
-        if (error) throw error;
-        await mirrorSazonal(circuitoId, id, { status: "arquivado", pendente_circuito: false });
+        await writeAtleta(circuitoId, id, { status: "arquivado", pendente_circuito: false });
         return jsonResponse({ sucesso: true });
       }
 
@@ -645,9 +650,7 @@ Deno.serve(async (req) => {
         await setCfg(circuitoId, { fase: "etapa" });
         await supabase.from("chaves").insert({ id: keyId, nome: "Chave Única", rodada_atual: 1, circuito_id: circuitoId });
         for (const a of ativos) {
-          const { error } = await supabase.from("atletas").update({ chave: keyId }).eq("id", a.id);
-          if (error) throw error;
-          await mirrorSazonal(circuitoId, a.id, { chave: keyId });
+          await writeAtleta(circuitoId, a.id, { chave: keyId });
         }
         const { rodada1, rodada2 } = gerarPareamentoPorRating(ativos, []);
         for (const pair of rodada1) {
@@ -824,9 +827,7 @@ Deno.serve(async (req) => {
             quer_renovar: false, renovacao_em: null,
             historico: historicoAtualizado,
           };
-          const { error } = await supabase.from("atletas").update(updNova).eq("id", a.id);
-          if (error) throw error;
-          await mirrorSazonal(circuitoId, a.id, updNova);
+          await writeAtleta(circuitoId, a.id, updNova);
         }
         const { error: errArq } = await supabase.rpc("arquivar_partidas_temporada", { p_rotulo: rotuloTemporada });
         if (errArq) throw errArq;
@@ -881,9 +882,7 @@ Deno.serve(async (req) => {
         if (tipo === "culposo" && faltosoId) {
           const { data: atl } = await supabase.from("atletas").select("wo_culposos_temporada").eq("id", faltosoId).single();
           const novo = ((atl?.wo_culposos_temporada) || 0) + 1;
-          const { error: e2 } = await supabase.from("atletas").update({ wo_culposos_temporada: novo }).eq("id", faltosoId);
-          if (e2) throw e2;
-          await mirrorSazonal(circuitoId, faltosoId, { wo_culposos_temporada: novo });
+          await writeAtleta(circuitoId, faltosoId, { wo_culposos_temporada: novo });
         }
         return jsonResponse({ sucesso: true });
       }
@@ -945,9 +944,7 @@ Deno.serve(async (req) => {
         if (descontoPct !== undefined) upd.desconto_pct = (descontoPct === null ? null : Math.min(100, Math.max(0, Math.round(Number(descontoPct) || 0))));
         if (typeof isento === "boolean") upd.isento = isento;
         if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
-        const { error } = await supabase.from("atletas").update(upd).eq("id", atletaId);
-        if (error) throw error;
-        await mirrorSazonal(circuitoId, atletaId, upd);
+        await writeAtleta(circuitoId, atletaId, upd);
         return jsonResponse({ sucesso: true });
       }
 
@@ -968,9 +965,7 @@ Deno.serve(async (req) => {
         });
         if (errIns) throw errIns;
         const flagCol = alvo === "proxima" ? { pagamento_proxima_confirmado: true } : { pagamento_confirmado: true };
-        const { error: errFlag } = await supabase.from("atletas").update(flagCol).eq("id", p.atletaId);
-        if (errFlag) throw errFlag;
-        await mirrorSazonal(circuitoId, p.atletaId, flagCol);
+        await writeAtleta(circuitoId, p.atletaId, flagCol);
         return jsonResponse({ sucesso: true, dados: { id, alvo } });
       }
 
@@ -986,8 +981,7 @@ Deno.serve(async (req) => {
           const cfg = await getCfg(circuitoId, "proxima_rotulo");
           const ehProxima = !!(pag.temporada_rotulo && cfg?.proxima_rotulo && pag.temporada_rotulo === cfg.proxima_rotulo);
           const flagCol = ehProxima ? { pagamento_proxima_confirmado: false } : { pagamento_confirmado: false };
-          await supabase.from("atletas").update(flagCol).eq("id", pag.atleta_id);
-          await mirrorSazonal(circuitoId, pag.atleta_id, flagCol);
+          await writeAtleta(circuitoId, pag.atleta_id, flagCol);
         }
         return jsonResponse({ sucesso: true });
       }

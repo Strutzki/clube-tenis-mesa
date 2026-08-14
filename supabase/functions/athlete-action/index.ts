@@ -46,6 +46,24 @@ async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Recor
     console.warn("dual-write circuito_atletas falhou (BH segue via atletas):", (e as any)?.message);
   }
 }
+// Escreve update de atleta roteando por circuito (blindagem cross-tenant):
+// BH -> atletas (fonte do app) + espelho; nao-BH -> identidade em atletas, sazonal so em circuito_atletas.
+async function writeAtleta(circuitoId: string, atletaId: string, campos: Record<string, unknown>) {
+  const bh = await bhId();
+  if (circuitoId === bh) {
+    const { error } = await supabase.from("atletas").update(campos).eq("id", atletaId);
+    if (error) throw error;
+    await mirrorSazonal(circuitoId, atletaId, campos);
+    return;
+  }
+  const identidade: Record<string, unknown> = {};
+  for (const k in campos) if (!SEASONAL_COLS.has(k)) identidade[k] = campos[k];
+  if (Object.keys(identidade).length > 0) {
+    const { error } = await supabase.from("atletas").update(identidade).eq("id", atletaId);
+    if (error) throw error;
+  }
+  await mirrorSazonal(circuitoId, atletaId, campos);
+}
 
 const ALLOWED_ORIGINS = [
   "https://clubedotenisdemesabh.com.br",
@@ -143,7 +161,7 @@ Deno.serve(async (req) => {
         }
 
         const { data: partida, error: errP } = await supabase
-          .from("partidas").select("atleta1_id,atleta2_id,prazo,validado,rejeitado,wo_tipo,p1_placar1,p1_placar2,p2_placar1,p2_placar2").eq("id", matchId).single();
+          .from("partidas").select("atleta1_id,atleta2_id,prazo,fora_do_prazo,validado,rejeitado,wo_tipo,p1_placar1,p1_placar2,p2_placar1,p2_placar2").eq("id", matchId).single();
         if (errP) throw errP;
         if (!partida) return jsonResponse({ sucesso: false, erro: "Partida não encontrada." }, 404);
         if (partida.validado || partida.rejeitado) {
@@ -160,16 +178,19 @@ Deno.serve(async (req) => {
           return jsonResponse({ sucesso: false, erro: "Você não participa desta partida." }, 403);
         }
 
-        // Sinaliza (nao bloqueia) placar lancado fora do prazo — o admin decide o que fazer.
+        // Sinaliza (nao bloqueia) placar fora do prazo — o admin decide. Vale se ESTE envio
+        // e' tardio OU se a partida ja estava marcada (um envio anterior foi tardio).
         const hojeSP = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
-        if (partida.prazo && hojeSP > String(partida.prazo)) upd.fora_do_prazo = true;
+        const isForaPrazo = !!(partida.prazo && hojeSP > String(partida.prazo)) || !!partida.fora_do_prazo;
+        if (isForaPrazo) upd.fora_do_prazo = true;
 
         const { error } = await supabase.from("partidas").update(upd).eq("id", matchId);
         if (error) throw error;
 
         try {
+          // Fora do prazo NAO auto-valida: cai em "Aguardando Validacao" para o admin decidir.
           const { data: cfg } = await supabase.from("configuracao").select("auto_validar_placar").eq("id", 1).single();
-          if (cfg?.auto_validar_placar === true && !partida.wo_tipo) {
+          if (cfg?.auto_validar_placar === true && !partida.wo_tipo && !isForaPrazo) {
             const ehA = athleteId === partida.atleta1_id;
             const p1p1 = ehA ? score1 : partida.p1_placar1;
             const p1p2 = ehA ? score2 : partida.p1_placar2;
@@ -220,9 +241,7 @@ Deno.serve(async (req) => {
           quer_renovar: querRenovar,
           renovacao_em: querRenovar ? new Date().toISOString() : null,
         };
-        const { error } = await supabase.from("atletas").update(updRenovar).eq("id", athleteId);
-        if (error) throw error;
-        await mirrorSazonal(circuitoId, athleteId, updRenovar);
+        await writeAtleta(circuitoId, athleteId, updRenovar);
         return jsonResponse({ sucesso: true, dados: { querRenovar } });
       }
 

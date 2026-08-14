@@ -3500,6 +3500,7 @@ export default function App() {
         imputadoPeloAdmin: m.imputado_pelo_admin || false,
         rejeitado: m.rejeitado, motivoRejeicao: m.motivo_rejeicao,
         deadline: m.prazo,
+        foraDoPrazo: m.fora_do_prazo || false,
         criadoEm: m.criado_em || null,
         resultadoComunicado: m.resultado_comunicado || false,
         woTipo: m.wo_tipo || null,
@@ -6537,6 +6538,11 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
           return (
             <Card key={m.id} style={{border:`1px solid ${match?"rgba(74,222,128,0.2)":"rgba(248,113,113,0.3)"}`}}>
               <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:8}}>Rodada {m.round}</div>
+              {m.foraDoPrazo && (
+                <div style={{fontSize:11,fontWeight:700,color:"#f0b060",background:"rgba(216,90,48,0.14)",border:"1px solid rgba(216,90,48,0.4)",borderRadius:8,padding:"6px 10px",marginBottom:8,lineHeight:1.4}}>
+                  ⏰ Placar enviado fora do prazo — você decide se valida ou não.
+                </div>
+              )}
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
                 <span style={{fontSize:13,color:"#F0EAE0"}}>{p1?.name}</span>
                 <span style={{fontSize:13,color:"#7d9188"}}>vs</span>

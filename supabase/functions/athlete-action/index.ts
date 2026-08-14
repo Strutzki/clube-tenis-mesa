@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
         }
 
         const { data: partida, error: errP } = await supabase
-          .from("partidas").select("atleta1_id,atleta2_id,validado,rejeitado,wo_tipo,p1_placar1,p1_placar2,p2_placar1,p2_placar2").eq("id", matchId).single();
+          .from("partidas").select("atleta1_id,atleta2_id,prazo,validado,rejeitado,wo_tipo,p1_placar1,p1_placar2,p2_placar1,p2_placar2").eq("id", matchId).single();
         if (errP) throw errP;
         if (!partida) return jsonResponse({ sucesso: false, erro: "Partida não encontrada." }, 404);
         if (partida.validado || partida.rejeitado) {
@@ -159,6 +159,10 @@ Deno.serve(async (req) => {
         } else {
           return jsonResponse({ sucesso: false, erro: "Você não participa desta partida." }, 403);
         }
+
+        // Sinaliza (nao bloqueia) placar lancado fora do prazo — o admin decide o que fazer.
+        const hojeSP = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+        if (partida.prazo && hojeSP > String(partida.prazo)) upd.fora_do_prazo = true;
 
         const { error } = await supabase.from("partidas").update(upd).eq("id", matchId);
         if (error) throw error;

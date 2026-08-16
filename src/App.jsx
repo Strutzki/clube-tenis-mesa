@@ -137,7 +137,7 @@ function mesDoPrazo(deadline) {
 
 const db = {
   // Atletas
-  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,exclusao_solicitada_em,pagamento_confirmado,quer_renovar,renovacao_em,pagamento_proxima_confirmado"),
+  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,exclusao_solicitada_em,pagamento_confirmado,quer_renovar,renovacao_em,pagamento_proxima_confirmado,bio_cred_ids"),
   insertAtleta: (data) => supaFetch("atletas", { method:"POST", body: JSON.stringify(data), prefer: "return=minimal" }),
   updateAtleta: (id, data) => supaFetch(`atletas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data), prefer: "return=minimal" }),
 
@@ -251,6 +251,7 @@ function mapAtletaFromDb(a) {
     posicaoHistorico: a.posicao_historico || [],
     woCulpososTemporada: a.wo_culposos_temporada || 0,
     exclusaoSolicitadaEm: a.exclusao_solicitada_em || null,
+    bioCredIds: Array.isArray(a.bio_cred_ids) ? a.bio_cred_ids : [],
   };
 }
 
@@ -272,6 +273,53 @@ async function buscarAtletaPorTelefonePublico(telefone) {
   const data = await res.json();
   const row = Array.isArray(data) ? data[0] : null;
   return row ? mapAtletaFromDb(row) : null;
+}
+
+// ── Biometria resiliente (Correção B) ──────────────────────────────────────
+// O credId da biometria fica no localStorage do aparelho, que o navegador pode
+// limpar (foi o que apagou a biometria). Guardamos o credId também no servidor
+// (NÃO é segredo — não autentica no servidor, só é o "gate" local) pra recuperar
+// a biometria depois de uma limpeza, sem recadastro. Tudo best-effort: nunca
+// bloqueia login nem cadastro.
+async function salvarBioCredAtleta(atletaId, credId) {
+  try {
+    await fetch(`${SUPA_URL}/functions/v1/athlete-action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+      body: JSON.stringify({ acao: "SALVAR_BIO_CRED", payload: { atletaId, credId } }),
+    });
+  } catch (e) { /* best-effort */ }
+}
+async function salvarBioCredAdmin(credId, pin) {
+  try {
+    await fetch(`${SUPA_URL}/functions/v1/admin-action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+      body: JSON.stringify({ pin, acao: "SALVAR_ADMIN_BIO_CRED", payload: { credId } }),
+    });
+  } catch (e) { /* best-effort — servidor rejeita se o PIN não bater */ }
+}
+async function buscarAdminBioCredIds() {
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/configuracao?id=eq.1&select=admin_bio_cred_ids`, {
+      headers: { "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}` },
+    });
+    if (!res.ok) return [];
+    const d = await res.json();
+    const arr = d?.[0]?.admin_bio_cred_ids;
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+// Converte credId(base64) -> {id, type} para allowCredentials do WebAuthn.
+function credIdsParaAllow(lista) {
+  const vistos = new Set();
+  const out = [];
+  for (const s of lista) {
+    if (!s || vistos.has(s)) continue;
+    vistos.add(s);
+    try { out.push({ id: Uint8Array.from(atob(s), c => c.charCodeAt(0)), type: "public-key" }); } catch (e) { /* ignora credId inválido */ }
+  }
+  return out;
 }
 
 // Preço da temporada do PRÓPRIO atleta, via função SECURITY DEFINER — assim o
@@ -2980,6 +3028,7 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
   const [biometriaDisp, setBiometriaDisp] = useState(false);
   const [biometriaAtiva, setBiometriaAtiva] = useState(false);
   const [biometriaStatus, setBiometriaStatus] = useState(""); // "", "cadastrando", "ok", "erro"
+  const [serverCredIds, setServerCredIds] = useState([]); // credIds guardados no servidor (recuperação)
 
   // Verificar se biometria está disponível e cadastrada
   useState(() => {
@@ -2989,7 +3038,11 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
           await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
         setBiometriaDisp(!!suporte);
         const cadastrada = localStorage.getItem("ctm_bio_credId");
-        setBiometriaAtiva(!!cadastrada);
+        // Recupera credIds guardados no servidor — a biometria volta mesmo que o
+        // navegador tenha limpado o localStorage deste aparelho (Correção B).
+        const doServidor = await buscarAdminBioCredIds();
+        setServerCredIds(doServidor);
+        setBiometriaAtiva(!!cadastrada || doServidor.length > 0);
       } catch(e) {
         setBiometriaDisp(false);
       }
@@ -3023,6 +3076,10 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
       // Salvar o ID da credencial
       const credId = btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
       localStorage.setItem("ctm_bio_credId", credId);
+      // Guarda no servidor (best-effort; rejeitado se o PIN não bater) pra
+      // recuperar a biometria se o navegador limpar o localStorage.
+      salvarBioCredAdmin(credId, pass);
+      setServerCredIds(prev => prev.includes(credId) ? prev : [...prev, credId]);
       setBiometriaAtiva(true);
       setBiometriaStatus("ok");
       setErr("");
@@ -3040,13 +3097,15 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
     try {
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
-      const credIdStr = localStorage.getItem("ctm_bio_credId");
-      const credIdBytes = Uint8Array.from(atob(credIdStr), c => c.charCodeAt(0));
+      const localC = localStorage.getItem("ctm_bio_credId");
+      // União: credId local + os guardados no servidor. O aparelho casa o que tiver.
+      const allow = credIdsParaAllow([localC, ...serverCredIds]);
+      if (allow.length === 0) { setBiometriaStatus("erro"); setErr("Biometria não encontrada neste aparelho."); return; }
       await navigator.credentials.get({
         publicKey: {
           challenge,
           rpId: window.location.hostname,
-          allowCredentials: [{ id: credIdBytes, type: "public-key" }],
+          allowCredentials: allow,
           userVerification: "required",
           timeout: 60000,
         }
@@ -3210,6 +3269,9 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
       localStorage.setItem("ctm_bio_atleta_credId", credId);
       localStorage.setItem("ctm_bio_atleta_id", atleta.id);
       localStorage.setItem("ctm_bio_atleta_nome", nomeExibicao(atleta));
+      // Guarda o credId no servidor (best-effort) pra recuperar a biometria
+      // se o navegador limpar o localStorage deste aparelho (Correção B).
+      salvarBioCredAtleta(atleta.id, credId);
       setBioStatus("");
       onAthleteLogin(atleta);
     } catch(e) {
@@ -3223,12 +3285,15 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
     try {
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
-      const credIdBytes = Uint8Array.from(atob(bioCredId), c => c.charCodeAt(0));
+      const alvoBio = athletes.find(a => String(a.id) === String(bioAtletaId));
+      // União: credId local + os guardados no servidor pra este atleta.
+      const allow = credIdsParaAllow([bioCredId, ...((alvoBio?.bioCredIds) || [])]);
+      if (allow.length === 0) { setBioStatus("erro"); setErr("Biometria não reconhecida. Use seu número."); setMostrarFallback(true); return; }
       await navigator.credentials.get({
         publicKey: {
           challenge,
           rpId: window.location.hostname,
-          allowCredentials: [{ id: credIdBytes, type: "public-key" }],
+          allowCredentials: allow,
           userVerification: "required",
           timeout: 60000,
         }
@@ -3289,7 +3354,19 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
       if (!d.atleta) { setErr("Não consegui entrar. Tente de novo."); return; }
       const found = mapAtletaFromDb(d.atleta);
       if (found.status !== "ativo") { setErr("Seu cadastro ainda não foi aprovado pelo admin."); return; }
-      const jaTemBioNesteAparelho = bioCredId && String(bioAtletaId) === String(found.id);
+      let jaTemBioNesteAparelho = bioCredId && String(bioAtletaId) === String(found.id);
+      // Reidrata a biometria a partir do servidor se este aparelho perdeu o
+      // localStorage mas o atleta já tinha credencial cadastrada (Correção B).
+      try {
+        const alvo = athletes.find(a => String(a.id) === String(found.id));
+        const serverIds = (alvo?.bioCredIds) || [];
+        if (serverIds.length && !localStorage.getItem("ctm_bio_atleta_credId")) {
+          localStorage.setItem("ctm_bio_atleta_credId", serverIds[serverIds.length - 1]);
+          localStorage.setItem("ctm_bio_atleta_id", found.id);
+          localStorage.setItem("ctm_bio_atleta_nome", nomeExibicao(found));
+          jaTemBioNesteAparelho = true;
+        }
+      } catch (e) { /* best-effort */ }
       setEtapaPin("");
       if (bioDisponivel && !jaTemBioNesteAparelho) setOferecerBio(found);
       else onAthleteLogin(found);
@@ -3477,6 +3554,21 @@ export default function App() {
 
   // ── Carregar dados do Supabase ao iniciar ──────────────────
   useEffect(() => { loadFromSupabase(); }, []);
+
+  // ── Pedir armazenamento persistente ────────────────────────
+  // Sem isso, o navegador (Chrome/Android inclusive) pode descartar o
+  // localStorage sob pressão de espaço — foi o que apagou sessão + biometria.
+  // Com a permissão concedida (quase sempre em app "instalado" na tela inicial),
+  // o storage do site deixa de ser elegível a descarte automático. Best-effort.
+  useEffect(() => {
+    try {
+      if (navigator.storage && navigator.storage.persist) {
+        (navigator.storage.persisted ? navigator.storage.persisted() : Promise.resolve(false))
+          .then(ja => { if (!ja) return navigator.storage.persist(); })
+          .catch(() => {});
+      }
+    } catch (e) { /* ambiente sem Storage API — ignora */ }
+  }, []);
 
   async function loadFromSupabase() {
     setDbStatus("loading");

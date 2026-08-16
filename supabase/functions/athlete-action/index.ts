@@ -245,6 +245,26 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true, dados: { querRenovar } });
       }
 
+      // Guarda o handle (credId) da credencial WebAuthn no cadastro do atleta.
+      // NAO e' segredo (nao autentica no servidor; e' so o "gate" local). Guardar
+      // aqui permite recuperar a biometria depois que o navegador limpa o localStorage.
+      // bio_cred_ids e' IDENTIDADE (compartilhada entre circuitos) -> grava direto em atletas.
+      case "SALVAR_BIO_CRED": {
+        const { atletaId, credId } = payload || {};
+        if (!atletaId || !credId || typeof credId !== "string") {
+          return jsonResponse({ sucesso: false, erro: "atletaId e credId são obrigatórios" }, 400);
+        }
+        const { data: at, error: eSel } = await supabase.from("atletas").select("bio_cred_ids").eq("id", atletaId).single();
+        if (eSel) throw eSel;
+        const atual = Array.isArray(at?.bio_cred_ids) ? (at!.bio_cred_ids as string[]) : [];
+        if (!atual.includes(credId)) {
+          const novo = [...atual, credId].slice(-5); // no maximo 5 aparelhos por atleta
+          const { error: eUpd } = await supabase.from("atletas").update({ bio_cred_ids: novo }).eq("id", atletaId);
+          if (eUpd) throw eUpd;
+        }
+        return jsonResponse({ sucesso: true });
+      }
+
       case "SOLICITAR_WO": {
         const p = payload || {};
         if (!p.id || !p.matchId || !p.athleteId) {

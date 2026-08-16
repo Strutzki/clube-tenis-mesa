@@ -911,6 +911,23 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true });
       }
 
+      // Guarda o handle (credId) da biometria do ADMIN (protegido pelo PIN, ja checado
+      // no topo do handler). NAO e' segredo. Permite recuperar a biometria do admin
+      // depois que o navegador limpa o localStorage. Config global (admin unico).
+      case "SALVAR_ADMIN_BIO_CRED": {
+        const { credId } = payload || {};
+        if (!credId || typeof credId !== "string") return jsonResponse({ sucesso: false, erro: "credId é obrigatório" }, 400);
+        const { data: cfg, error: eSel } = await supabase.from("configuracao").select("admin_bio_cred_ids").eq("id", 1).single();
+        if (eSel) throw eSel;
+        const atual = Array.isArray(cfg?.admin_bio_cred_ids) ? (cfg!.admin_bio_cred_ids as string[]) : [];
+        if (!atual.includes(credId)) {
+          const novo = [...atual, credId].slice(-5); // no maximo 5 aparelhos
+          const { error: eUpd } = await supabase.from("configuracao").update({ admin_bio_cred_ids: novo }).eq("id", 1);
+          if (eUpd) throw eUpd;
+        }
+        return jsonResponse({ sucesso: true });
+      }
+
       case "DEFINIR_CONFIG_CIRCUITO": {
         const p = payload || {};
         const upd: Record<string, unknown> = {};

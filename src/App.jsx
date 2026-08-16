@@ -2429,13 +2429,19 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
     }
 
     case "ranking": {
+      // Dedupe por RODADA PROCESSADA (não por par mensal): cada rodada que o admin
+      // processa libera um novo disparo de ranking. A chave sintética `ranking-r{N}`
+      // entra como matchId — o mensagemJaEnviada já escopa por matchId, então o
+      // ranking some só depois de enviado PARA AQUELA rodada e renova na próxima.
+      const rodadaRef = ultimaRodadaProcessada(state) || rodadaAtual;
       const top = [...ativos]
         .sort(cmpRanking(state.matches))
         .slice(0, 10)
         .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
       return ativos.map(a => ({
         atleta: a,
-        msg: `🏆 *${nomeCircuito} — Ranking Atualizado*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Confira o ranking após a Rodada ${ultimaRodadaProcessada(state) || rodadaAtual}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | Rating: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
+        matchId: `ranking-r${rodadaRef}`,
+        msg: `🏆 *${nomeCircuito} — Ranking Atualizado*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Confira o ranking após a Rodada ${rodadaRef}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | Rating: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
       }));
     }
 

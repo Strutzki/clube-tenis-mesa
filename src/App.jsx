@@ -310,17 +310,6 @@ async function buscarAdminBioCredIds() {
     return Array.isArray(arr) ? arr : [];
   } catch (e) { return []; }
 }
-// Converte credId(base64) -> {id, type} para allowCredentials do WebAuthn.
-function credIdsParaAllow(lista) {
-  const vistos = new Set();
-  const out = [];
-  for (const s of lista) {
-    if (!s || vistos.has(s)) continue;
-    vistos.add(s);
-    try { out.push({ id: Uint8Array.from(atob(s), c => c.charCodeAt(0)), type: "public-key" }); } catch (e) { /* ignora credId inválido */ }
-  }
-  return out;
-}
 
 // Preço da temporada do PRÓPRIO atleta, via função SECURITY DEFINER — assim o
 // desconto/isenção individual não precisa trafegar na lista pública de atletas
@@ -3028,7 +3017,6 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
   const [biometriaDisp, setBiometriaDisp] = useState(false);
   const [biometriaAtiva, setBiometriaAtiva] = useState(false);
   const [biometriaStatus, setBiometriaStatus] = useState(""); // "", "cadastrando", "ok", "erro"
-  const [serverCredIds, setServerCredIds] = useState([]); // credIds guardados no servidor (recuperação)
 
   // Verificar se biometria está disponível e cadastrada
   useState(() => {
@@ -3037,12 +3025,18 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
         const suporte = window.PublicKeyCredential &&
           await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
         setBiometriaDisp(!!suporte);
-        const cadastrada = localStorage.getItem("ctm_bio_credId");
-        // Recupera credIds guardados no servidor — a biometria volta mesmo que o
-        // navegador tenha limpado o localStorage deste aparelho (Correção B).
-        const doServidor = await buscarAdminBioCredIds();
-        setServerCredIds(doServidor);
-        setBiometriaAtiva(!!cadastrada || doServidor.length > 0);
+        let cadastrada = localStorage.getItem("ctm_bio_credId");
+        // Recuperação: se este aparelho perdeu o localStorage mas o servidor tem a
+        // credencial, reidrata pro localStorage — a biometria volta sem recadastro,
+        // e o login segue usando UMA credencial local (sem o fluxo cross-device).
+        if (!cadastrada) {
+          const doServidor = await buscarAdminBioCredIds();
+          if (doServidor.length) {
+            localStorage.setItem("ctm_bio_credId", doServidor[doServidor.length - 1]);
+            cadastrada = doServidor[doServidor.length - 1];
+          }
+        }
+        setBiometriaAtiva(!!cadastrada);
       } catch(e) {
         setBiometriaDisp(false);
       }
@@ -3079,7 +3073,6 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
       // Guarda no servidor (best-effort; rejeitado se o PIN não bater) pra
       // recuperar a biometria se o navegador limpar o localStorage.
       salvarBioCredAdmin(credId, pass);
-      setServerCredIds(prev => prev.includes(credId) ? prev : [...prev, credId]);
       setBiometriaAtiva(true);
       setBiometriaStatus("ok");
       setErr("");
@@ -3097,15 +3090,13 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
     try {
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
-      const localC = localStorage.getItem("ctm_bio_credId");
-      // União: credId local + os guardados no servidor. O aparelho casa o que tiver.
-      const allow = credIdsParaAllow([localC, ...serverCredIds]);
-      if (allow.length === 0) { setBiometriaStatus("erro"); setErr("Biometria não encontrada neste aparelho."); return; }
+      const credIdStr = localStorage.getItem("ctm_bio_credId");
+      const credIdBytes = Uint8Array.from(atob(credIdStr), c => c.charCodeAt(0));
       await navigator.credentials.get({
         publicKey: {
           challenge,
           rpId: window.location.hostname,
-          allowCredentials: allow,
+          allowCredentials: [{ id: credIdBytes, type: "public-key" }],
           userVerification: "required",
           timeout: 60000,
         }
@@ -3285,15 +3276,15 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
     try {
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
-      const alvoBio = athletes.find(a => String(a.id) === String(bioAtletaId));
-      // União: credId local + os guardados no servidor pra este atleta.
-      const allow = credIdsParaAllow([bioCredId, ...((alvoBio?.bioCredIds) || [])]);
-      if (allow.length === 0) { setBioStatus("erro"); setErr("Biometria não reconhecida. Use seu número."); setMostrarFallback(true); return; }
+      // Uma credencial só (a local deste aparelho). Listar várias no allowCredentials
+      // faz o Android tentar o fluxo cross-device (QR) e causa a demora. A recuperação
+      // após limpeza do localStorage é feita na reidratação do login por telefone.
+      const credIdBytes = Uint8Array.from(atob(bioCredId), c => c.charCodeAt(0));
       await navigator.credentials.get({
         publicKey: {
           challenge,
           rpId: window.location.hostname,
-          allowCredentials: allow,
+          allowCredentials: [{ id: credIdBytes, type: "public-key" }],
           userVerification: "required",
           timeout: 60000,
         }

@@ -74,6 +74,15 @@ const ADMIN_PASS = "2073";
 const SUPA_URL = "https://eultwfzzlgcmcikobmmy.supabase.co";
 const SUPA_KEY = "sb_publishable_h0-_rOD0-ZPAIIkYm3xgcg_V1i-SZZN";
 
+// rpId da biometria (WebAuthn) FIXADO no domínio-mãe: assim o passkey vale tanto no
+// apex (clubedotenisdemesabh.com.br) quanto no www, e sobrevive a trocas de subdomínio
+// — foi a divergência de domínio (vercel.app → raiz → www) que fazia o Chrome cair no
+// fluxo lento "de outro aparelho". Fora do domínio oficial (preview .vercel.app,
+// localhost) usa o hostname pra não dar SecurityError.
+const RP_ID = location.hostname.endsWith("clubedotenisdemesabh.com.br")
+  ? "clubedotenisdemesabh.com.br"
+  : location.hostname;
+
 async function supaFetch(path, options = {}) {
   const res = await fetch(`${SUPA_URL}/rest/v1/${path}`, {
     headers: {
@@ -3053,15 +3062,17 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
       const cred = await navigator.credentials.create({
         publicKey: {
           challenge,
-          rp: { name: "Clube do Tênis de Mesa", id: window.location.hostname },
+          rp: { name: "Clube do Tênis de Mesa", id: RP_ID },
           user: {
             id: new TextEncoder().encode("admin-ctm"),
             name: "Admin",
             displayName: "Administrador CTM",
           },
-          pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+          pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
           authenticatorSelection: {
             authenticatorAttachment: "platform",
+            residentKey: "required",
+            requireResidentKey: true,
             userVerification: "required",
           },
           timeout: 60000,
@@ -3090,13 +3101,12 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
     try {
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
-      const credIdStr = localStorage.getItem("ctm_bio_credId");
-      const credIdBytes = Uint8Array.from(atob(credIdStr), c => c.charCodeAt(0));
       await navigator.credentials.get({
         publicKey: {
           challenge,
-          rpId: window.location.hostname,
-          allowCredentials: [{ id: credIdBytes, type: "public-key" }],
+          rpId: RP_ID,
+          // Passkey descobrível: sem allowCredentials, o Android acha o passkey local
+          // (sem o fluxo lento de "outro aparelho"/QR).
           userVerification: "required",
           timeout: 60000,
         }
@@ -3245,14 +3255,14 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
       const cred = await navigator.credentials.create({
         publicKey: {
           challenge,
-          rp: { name: "Clube do Tênis de Mesa", id: window.location.hostname },
+          rp: { name: "Clube do Tênis de Mesa", id: RP_ID },
           user: {
             id: new TextEncoder().encode(`atleta-${atleta.id}`),
             name: atleta.phone,
             displayName: nomeExibicao(atleta),
           },
-          pubKeyCredParams: [{ alg: -7, type: "public-key" }],
-          authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+          pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
+          authenticatorSelection: { authenticatorAttachment: "platform", residentKey: "required", requireResidentKey: true, userVerification: "required" },
           timeout: 60000,
         }
       });
@@ -3276,20 +3286,26 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
     try {
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
-      // Uma credencial só (a local deste aparelho). Listar várias no allowCredentials
-      // faz o Android tentar o fluxo cross-device (QR) e causa a demora. A recuperação
-      // após limpeza do localStorage é feita na reidratação do login por telefone.
-      const credIdBytes = Uint8Array.from(atob(bioCredId), c => c.charCodeAt(0));
-      await navigator.credentials.get({
+      // Passkey descobrível: SEM allowCredentials — o Android acha o passkey local e
+      // identifica o atleta pelo userHandle guardado nele ("atleta-<id>"). Sem isso,
+      // o Chrome caía no fluxo lento de "outro aparelho" (QR) e travava.
+      const assertion = await navigator.credentials.get({
         publicKey: {
           challenge,
-          rpId: window.location.hostname,
-          allowCredentials: [{ id: credIdBytes, type: "public-key" }],
+          rpId: RP_ID,
           userVerification: "required",
           timeout: 60000,
         }
       });
-      const atleta = athletes.find(a => String(a.id) === String(bioAtletaId) && a.status === "ativo");
+      let atletaId = bioAtletaId; // fallback: id guardado no localStorage
+      try {
+        const uh = assertion?.response?.userHandle;
+        if (uh) {
+          const handle = new TextDecoder().decode(new Uint8Array(uh));
+          if (handle.startsWith("atleta-")) atletaId = handle.slice(7);
+        }
+      } catch (e) { /* usa o fallback do localStorage */ }
+      const atleta = athletes.find(a => String(a.id) === String(atletaId) && a.status === "ativo");
       if (atleta) { setBioStatus(""); onAthleteLogin(atleta); }
       else { setBioStatus("erro"); setErr("Cadastro não encontrado. Entre com seu número."); setMostrarFallback(true); }
     } catch(e) {

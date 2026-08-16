@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+    <!-- Domínio canônico: quem abrir pelo .vercel.app (sufixo público que quebra a
+         sincronização de passkey/biometria no Android/Google) é enviado ao domínio
+         oficial ANTES do app carregar. O domínio oficial não dispara isto (sem loop). -->
+    <script>
+      (function () {
+        try {
+          if (location.hostname === "clube-tenis-mesa.vercel.app") {
+            location.replace("https://clubedotenisdemesabh.com.br" + location.pathname + location.search + location.hash);
+          }
+        } catch (e) {}
+      })();
+    </script>
+
     <!-- Título -->
     <title>Clube do Tênis de Mesa BH</title>
     <meta name="description" content="Circuito de Tênis de Mesa de Belo Horizonte" />

@@ -73,6 +73,8 @@ const ADMIN_PASS = "2073";
 // ── SUPABASE CONFIG ──────────────────────────────────────────
 const SUPA_URL = "https://eultwfzzlgcmcikobmmy.supabase.co";
 const SUPA_KEY = "sb_publishable_h0-_rOD0-ZPAIIkYm3xgcg_V1i-SZZN";
+// Circuito ativo (Fase 4C). Fixo em BH — vira o seletor na 4D.
+const CIRCUITO_ATIVO = "272dd67c-ea33-41a3-8fb9-1fd909d7f3fa";
 
 // rpId da biometria (WebAuthn) FIXADO no domínio-mãe: assim o passkey vale tanto no
 // apex (clubedotenisdemesabh.com.br) quanto no www, e sobrevive a trocas de subdomínio
@@ -146,25 +148,25 @@ function mesDoPrazo(deadline) {
 
 const db = {
   // Atletas
-  getAtletas: () => supaFetch("atletas?order=rating.desc&select=id,nome,federado,rating,rating_inicial,saldo_temp,status,motivo_reprovacao,chave,vitorias,derrotas,aceite_regulamento,data_aceite_regulamento,versao_regulamento,aceite_lgpd,data_aceite_lgpd,inscrito_em,atualizado_em,apelido,pendente_circuito,ultima_recusa_circuito_em,vitorias_total,derrotas_total,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,exclusao_solicitada_em,pagamento_confirmado,quer_renovar,renovacao_em,pagamento_proxima_confirmado,bio_cred_ids"),
+  getAtletas: () => supaFetch(`circuito_atletas?circuito_id=eq.${CIRCUITO_ATIVO}&select=status,motivo_reprovacao,pendente_circuito,ultima_recusa_circuito_em,chave,saldo_temp,vitorias,derrotas,vitorias_total,derrotas_total,aceite_regulamento,data_aceite_regulamento,versao_regulamento,pagamento_confirmado,pagamento_proxima_confirmado,quer_renovar,renovacao_em,inscrito_em,historico,posicao_historico,atletas(id,nome,federado,rating,rating_inicial,apelido,foto_url,estilo_jogo,aceite_lgpd,data_aceite_lgpd,atualizado_em,rating_pico,rating_historico,exclusao_solicitada_em,bio_cred_ids)`),
   insertAtleta: (data) => supaFetch("atletas", { method:"POST", body: JSON.stringify(data), prefer: "return=minimal" }),
   updateAtleta: (id, data) => supaFetch(`atletas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data), prefer: "return=minimal" }),
 
   // Partidas
-  getPartidas: () => supaFetch("partidas?order=rodada.asc,criado_em.asc"),
+  getPartidas: () => supaFetch(`partidas?circuito_id=eq.${CIRCUITO_ATIVO}&order=rodada.asc,criado_em.asc`),
   getHistorico: () => supaFetch("partidas_historico?order=temporada_rotulo.desc,rodada.asc"),
   insertPartida: (data) => supaFetch("partidas", { method:"POST", body: JSON.stringify(data) }),
   updatePartida: (id, data) => supaFetch(`partidas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data) }),
   deleteAllPartidas: () => supaFetch("partidas?id=neq.__none__", { method:"DELETE" }),
 
   // Chaves
-  getChaves: () => supaFetch("chaves?order=id.asc"),
+  getChaves: () => supaFetch(`chaves?circuito_id=eq.${CIRCUITO_ATIVO}&order=id.asc`),
   insertChave: (data) => supaFetch("chaves", { method:"POST", body: JSON.stringify(data) }),
   updateChave: (id, data) => supaFetch(`chaves?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data) }),
   deleteAllChaves: () => supaFetch("chaves?id=neq.__none__", { method:"DELETE" }),
 
   // Config
-  getConfig: () => supaFetch("configuracao?id=eq.1"),
+  getConfig: () => supaFetch(`circuitos?id=eq.${CIRCUITO_ATIVO}`),
   updateConfig: (data) => supaFetch("configuracao?id=eq.1", { method:"PATCH", body: JSON.stringify(data) }),
 
   // Histórico de mensagens de WhatsApp enviadas
@@ -172,7 +174,7 @@ const db = {
   insertMensagemEnviada: (data) => supaFetch("mensagens_enviadas", { method:"POST", body: JSON.stringify(data) }),
 
   // Solicitações de W.O. Justificado (atleta sinaliza que não vai jogar; admin aprova/recusa)
-  getSolicitacoesWo: () => supaFetch("solicitacoes_wo?order=criado_em.desc&limit=200"),
+  getSolicitacoesWo: () => supaFetch(`solicitacoes_wo?circuito_id=eq.${CIRCUITO_ATIVO}&order=criado_em.desc&limit=200`),
   insertSolicitacaoWo: (data) => supaFetch("solicitacoes_wo", { method:"POST", body: JSON.stringify(data) }),
   updateSolicitacaoWo: (id, data) => supaFetch(`solicitacoes_wo?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data) }),
   deleteSolicitacaoWo: (id) => supaFetch(`solicitacoes_wo?id=eq.${id}`, { method:"DELETE" }),
@@ -262,6 +264,26 @@ function mapAtletaFromDb(a) {
     exclusaoSolicitadaEm: a.exclusao_solicitada_em || null,
     bioCredIds: Array.isArray(a.bio_cred_ids) ? a.bio_cred_ids : [],
   };
+}
+
+// Fase 4C: monta um atleta a partir da linha de circuito_atletas com `atletas`
+// aninhado — identidade vem de `atletas`, sazonal de circuito_atletas (espelha o
+// mergeAtletaCircuito do servidor). Reaproveita o mapAtletaFromDb.
+function mapAtletaFromCircuito(ca) {
+  const a = ca.atletas || {};
+  return mapAtletaFromDb({
+    ...a, id: a.id,
+    status: ca.status, motivo_reprovacao: ca.motivo_reprovacao,
+    pendente_circuito: ca.pendente_circuito, ultima_recusa_circuito_em: ca.ultima_recusa_circuito_em,
+    chave: ca.chave, saldo_temp: ca.saldo_temp, vitorias: ca.vitorias, derrotas: ca.derrotas,
+    vitorias_total: ca.vitorias_total, derrotas_total: ca.derrotas_total,
+    aceite_regulamento: ca.aceite_regulamento, data_aceite_regulamento: ca.data_aceite_regulamento,
+    versao_regulamento: ca.versao_regulamento,
+    pagamento_confirmado: ca.pagamento_confirmado, pagamento_proxima_confirmado: ca.pagamento_proxima_confirmado,
+    quer_renovar: ca.quer_renovar, renovacao_em: ca.renovacao_em,
+    inscrito_em: ca.inscrito_em, historico: ca.historico, posicao_historico: ca.posicao_historico,
+    // wo_culposos_temporada NAO vem no read publico -> mapAtletaFromDb faz ||0 (paridade com hoje)
+  });
 }
 
 // Busca UM atleta pelo telefone, sem precisar da lista inteira (e sem PIN —
@@ -3590,7 +3612,7 @@ export default function App() {
       let solicitacoesWoLog = [];
       try { solicitacoesWoLog = await db.getSolicitacoesWo(); }
       catch(e) { console.warn("Solicitações de W.O. indisponíveis (migration pendente?):", e.message); }
-      const athletesMapped = (atletas||[]).map(mapAtletaFromDb);
+      const athletesMapped = (atletas||[]).map(mapAtletaFromCircuito).sort((a,b)=>(b.rating||0)-(a.rating||0));
       const matchesMapped = (partidas||[]).map(m => ({
         id: m.id, keyId: m.chave_id, round: m.rodada,
         p1Id: m.atleta1_id, p2Id: m.atleta2_id,

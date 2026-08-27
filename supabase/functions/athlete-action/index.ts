@@ -71,7 +71,7 @@ const ALLOWED_ORIGINS = [
   "https://clube-tenis-mesa.vercel.app",
 ];
 
-const VERSAO_REGULAMENTO = "v03-11";
+const VERSAO_REGULAMENTO = "v03-12";
 
 function scoreValido(n: unknown): boolean {
   return Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 99;

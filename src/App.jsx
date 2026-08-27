@@ -419,7 +419,7 @@ function clearPinCache() {
   try { sessionStorage.removeItem(PIN_SESSAO_KEY); } catch(e) {}
 }
 
-// ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-11, Cap. 05) ──────
+// ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-12, Cap. 05) ──────
 // Tabela Básica de Cálculo do Rating do Manual Tênis de Mesa Brasil (item 1.7.2.4.5)
 // Valores por faixa de diferença de rating. Usados sempre com peso 1 (rodada
 // regular). O torneio presencial é só pódio/prêmios — NÃO afeta o rating.
@@ -623,7 +623,7 @@ function reducer(state, action) {
         status: "pendente", key: null,
         aceiteRegulamento: aceiteRegulamento || false,
         dataAceiteRegulamento: dataAceite || null,
-        versaoRegulamento: "v03-11",
+        versaoRegulamento: "v03-12",
         aceiteLGPD: aceiteLGPD || false,
         dataAceiteLGPD: dataAceite || null,
         inscritoEm: dataAceite || new Date().toISOString(),
@@ -684,11 +684,11 @@ function reducer(state, action) {
       // Pareamento por rating (Cap. 03) — gera o par mensal (2 rodadas) sem repetição
       const { rodada1, rodada2, bye1, bye2 } = gerarPareamentoPorRating(ativos, []);
 
-      // Prazos por calendário fixo mensal (Cap. 01/13): R1 até dia 15, R2 até dia 25
+      // Prazos por calendário fixo mensal (Cap. 01/13): R1 até dia 15, R2 até dia 27
       const hoje = new Date();
       const ano = hoje.getFullYear(), mes = hoje.getMonth();
       const prazoR1 = new Date(ano, mes, 15).toISOString().split("T")[0];
-      const prazoR2 = new Date(ano, mes, 25).toISOString().split("T")[0];
+      const prazoR2 = new Date(ano, mes, 27).toISOString().split("T")[0];
 
       const key = {
         id: "key_1", name: "Chave Única",
@@ -1084,7 +1084,7 @@ function reducer(state, action) {
       // Prazos por calendário sequencial (Cap. 01/13): o novo par mensal usa o
       // mês da rodada 1 da temporada + o índice do par (jul, ago, set...),
       // independentemente da data em que o admin avança. Os dois prazos ficam
-      // SEMPRE no mesmo mês (R1 dia 15, R2 dia 25).
+      // SEMPRE no mesmo mês (R1 dia 15, R2 dia 27).
       const r1Match = state.matches.find(m => (m.round || 0) === 1 && (m.deadline || m.scoreDeadline));
       const parIndex = Math.floor(roundBase / 2); // pares: (1,2)=0, (3,4)=1...
       let baseAno, baseMes;
@@ -1097,7 +1097,7 @@ function reducer(state, action) {
         baseAno = hoje.getFullYear(); baseMes = hoje.getMonth();
       }
       const prazoR1 = new Date(baseAno, baseMes, 15).toISOString().split("T")[0];
-      const prazoR2 = new Date(baseAno, baseMes, 25).toISOString().split("T")[0];
+      const prazoR2 = new Date(baseAno, baseMes, 27).toISOString().split("T")[0];
 
       const mkMatch = (pair, round, prazo) => ({
         id: `m_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
@@ -1579,7 +1579,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
                 <div style={{fontSize:11,color:"#9db3a8",lineHeight:1.6}}>{d}</div>
               </div>
             ))}
-            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>Regulamento completo disponível na tela inicial · v03-11</div>
+            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>Regulamento completo disponível na tela inicial · v03-12</div>
           </div>
         )}
 
@@ -1589,7 +1589,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
               {aceiteReg && <span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}
             </div>
             <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>
-              Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-11). Estou ciente do aviso sobre atletas federados pela CBTM.
+              Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-12). Estou ciente do aviso sobre atletas federados pela CBTM.
             </div>
           </div>
         )}
@@ -1645,7 +1645,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
         <div style={{background:"rgba(74,222,128,0.08)", border:"1px solid rgba(74,222,128,0.2)", borderRadius:10, padding:"12px 14px", marginBottom:16, textAlign:"left"}}>
           <div style={{fontSize:11, fontWeight:700, color:"#6a9d7a", marginBottom:8}}>✓ Registrado com sucesso</div>
           <div style={{fontSize:11, color:"#7d9188", lineHeight:1.8}}>
-            📋 Aceite do regulamento v03-11<br/>
+            📋 Aceite do regulamento v03-12<br/>
             🔒 Consentimento LGPD (Lei 13.709/2018)<br/>
             📅 Data/hora: {new Date().toLocaleString("pt-BR")}
           </div>
@@ -1660,7 +1660,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
 
 
 
-// ── REGULAMENTO VIEW (regulamento v03-11) ─────────────────────────────────────
+// ── REGULAMENTO VIEW (regulamento v03-12) ─────────────────────────────────────
 function RegulamentoView({ onBack }) {
   const [capAberto, setCapAberto] = useState(null);
 
@@ -1728,10 +1728,10 @@ function RegulamentoView({ onBack }) {
           <Ul items={[
             "🗓️ Dia 1º — sistema publica os DOIS confrontos do mês de uma vez no grupo WhatsApp, e cada atleta recebe seu confronto também por mensagem individual",
             "🏓 1ª rodada: jogo realizado e placar registrado entre os dias 1 e 15",
-            "🏓 2ª rodada: jogo realizado e placar registrado entre os dias 1 e 25",
+            "🏓 2ª rodada: jogo realizado e placar registrado entre os dias 1 e 27",
             "🔍 Conferência do admin (1ª rodada): dias 16 a 19",
             "🏆 Ranking da 1ª rodada divulgado: dia 20",
-            "🔍 Conferência do admin (2ª rodada): dias 26 a 29",
+            "🔍 Conferência do admin (2ª rodada): dias 28 a 29",
             "🏆 Ranking da 2ª rodada divulgado: último dia do mês",
           ]}/>
         </Box>
@@ -1739,8 +1739,8 @@ function RegulamentoView({ onBack }) {
           <p style={s.p}>Os dois confrontos do mês são conhecidos desde o dia 1º. Cada rodada tem sua própria janela para o jogo ser realizado e o placar registrado — não é necessário seguir a ordem (1ª antes da 2ª), mas cada uma deve respeitar sua janela.</p>
         </Box>
         <Tbl headers={["Etapa","1ª Rodada","2ª Rodada"]} rows={[
-          ["Janela para jogar e registrar","Dias 1 a 15","Dias 1 a 25"],
-          ["Conferência do admin","Dias 16 a 19","Dias 26 a 29"],
+          ["Janela para jogar e registrar","Dias 1 a 15","Dias 1 a 27"],
+          ["Conferência do admin","Dias 16 a 19","Dias 28 a 29"],
           ["Ranking divulgado","Dia 20","Último dia do mês"],
         ]}/>
         <Box cor="#9C6F3E" titulo="📌 Por Que Saber os Dois Confrontos Desde o Início?">
@@ -1898,13 +1898,13 @@ function RegulamentoView({ onBack }) {
           ]}/>
         </Box>
         <Box cor="#c25a45" titulo="⚠️ Janela de Cada Rodada">
-          <p style={s.p}>A <span style={s.dest}>1ª rodada</span> deve ser jogada e o placar registrado entre os dias 1 e 15. A <span style={s.dest}>2ª rodada</span> deve ser jogada e registrada entre os dias 1 e 25. Não é necessário jogar na ordem das rodadas, mas cada uma precisa respeitar sua própria janela.</p>
+          <p style={s.p}>A <span style={s.dest}>1ª rodada</span> deve ser jogada e o placar registrado entre os dias 1 e 15. A <span style={s.dest}>2ª rodada</span> deve ser jogada e registrada entre os dias 1 e 27. Não é necessário jogar na ordem das rodadas, mas cada uma precisa respeitar sua própria janela.</p>
         </Box>
         <Box cor="#9C6F3E" titulo="⏳ Flexibilidade de Registro">
           <p style={s.p}>Dentro do prazo de cada rodada, os dois atletas podem registrar o placar em momentos diferentes — não é necessário confirmar ao mesmo tempo. O que importa é que ambos confirmem o mesmo resultado antes do prazo daquela rodada.</p>
         </Box>
         <Box cor="#D85A30" titulo="🔍 Janela de Conferência do Admin">
-          <p style={s.p}>Após o prazo de registro de cada rodada, o administrador tem uma janela para conferir resultados, resolver divergências e aplicar W.O.s antes de processar o rating e divulgar o ranking atualizado: dias 16 a 19 para a 1ª rodada, e dias 26 a 29 para a 2ª rodada.</p>
+          <p style={s.p}>Após o prazo de registro de cada rodada, o administrador tem uma janela para conferir resultados, resolver divergências e aplicar W.O.s antes de processar o rating e divulgar o ranking atualizado: dias 16 a 19 para a 1ª rodada, e dias 28 a 29 para a 2ª rodada.</p>
         </Box>
         <Box cor="#D85A30" titulo="🧮 Validação e Cálculo — Duas Etapas Diferentes">
           <p style={s.p}>Confirmar o placar (validação) e aplicar o efeito no rating/ranking (cálculo) são etapas separadas. O placar fica oficial assim que os dois atletas confirmam (ou o administrador resolve uma pendência) — mas o Rating e o saldo de pontos só mudam quando o administrador processa a rodada, o que só acontece depois que <span style={s.dest}>todas</span> as partidas daquela rodada estiverem resolvidas (validadas ou W.O.), e sempre na ordem: 1ª rodada primeiro, 2ª rodada depois. Isso evita que um resultado registrado cedo demais altere o ranking antes da hora certa.</p>
@@ -2060,8 +2060,8 @@ function RegulamentoView({ onBack }) {
             "Dias 1 a 15: janela para jogar e registrar o placar da 1ª rodada",
             "Dias 16 a 19: admin confere resultados e resolve divergências da 1ª rodada",
             "Dia 20: ranking e Rating da 1ª rodada divulgados",
-            "Dias 1 a 25: janela para jogar e registrar o placar da 2ª rodada",
-            "Dias 26 a 29: admin confere resultados e resolve divergências da 2ª rodada",
+            "Dias 1 a 27: janela para jogar e registrar o placar da 2ª rodada",
+            "Dias 28 a 29: admin confere resultados e resolve divergências da 2ª rodada",
             "Último dia do mês: ranking e Rating da 2ª rodada divulgados",
           ]}/>
         </Box>
@@ -2092,7 +2092,7 @@ function RegulamentoView({ onBack }) {
           ]}/>
           <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A decisão do administrador em casos omissos é final. Situações recorrentes podem motivar a inclusão de uma nova regra em versão futura deste regulamento.</p>
         </Box>
-        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Circuito BH · Regulamento v03-11</div>
+        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Circuito BH · Regulamento v03-12</div>
       </div>
     );
     return null;
@@ -2108,7 +2108,7 @@ function RegulamentoView({ onBack }) {
         <div style={s.logoWrap}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
         <div style={{flex:1,marginLeft:10}}>
           <div style={{fontSize:14,fontWeight:800,color:"#fff"}}>Regulamento Oficial</div>
-          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · v03-11</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · v03-12</div>
         </div>
         <button style={s.backBtn} onClick={onBack}>← Voltar</button>
       </div>
@@ -2395,7 +2395,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
         const rotuloMes = mesRef ? `de ${mesRef}` : "deste mês";
         return {
           atleta,
-          msg: `🏓 *${nomeCircuito} — ${tituloMes}*\n\nOlá ${nomeExibicao(atleta).split(" ")[0]}! Seus dois confrontos ${rotuloMes}:\n\n${linhasJogos}\n\n📅 1ª rodada: jogar e registrar entre os dias 1 e 15\n📅 2ª rodada: jogar e registrar entre os dias 1 e 25\n\nBons jogos! 🏆`,
+          msg: `🏓 *${nomeCircuito} — ${tituloMes}*\n\nOlá ${nomeExibicao(atleta).split(" ")[0]}! Seus dois confrontos ${rotuloMes}:\n\n${linhasJogos}\n\n📅 1ª rodada: jogar e registrar entre os dias 1 e 15\n📅 2ª rodada: jogar e registrar entre os dias 1 e 27\n\nBons jogos! 🏆`,
         };
       });
     }
@@ -2669,7 +2669,7 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
 
     switch(tipo) {
       case "abertura":
-        return `🏓 *${nomeCircuito} — ${tituloMesColetiva}!*\n\nOlá galera! Os dois confrontos ${rotuloMesColetiva} já estão definidos:\n\n*🗓️ Rodada ${rodadaA} — jogar e registrar até dia 15:*\n${confrontosA.join("\n")}\n\n*🗓️ Rodada ${rodadaB} — jogar e registrar até dia 25:*\n${confrontosB.join("\n")}\n\nBons jogos! 🏆`;
+        return `🏓 *${nomeCircuito} — ${tituloMesColetiva}!*\n\nOlá galera! Os dois confrontos ${rotuloMesColetiva} já estão definidos:\n\n*🗓️ Rodada ${rodadaA} — jogar e registrar até dia 15:*\n${confrontosA.join("\n")}\n\n*🗓️ Rodada ${rodadaB} — jogar e registrar até dia 27:*\n${confrontosB.join("\n")}\n\nBons jogos! 🏆`;
       case "ranking":
         return `🏆 *${nomeCircuito} — Ranking Rodada ${ultimaRodadaProcessada(state) || rodadaAtual}*\n\n${top.join("\n")}\n\nAcompanhe todos os detalhes no app e no @clubedotenisdemesa! 🏓`;
       case "encerramento":
@@ -6277,7 +6277,7 @@ function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, n
   // Na 1ª rodada do par mensal (ímpar), esperamos o prazo PRÓPRIO dela (ex: dia 15).
   // Na 2ª rodada (par), a regra do Juliano é "só depois de fechar a 1ª" — isso já é
   // garantido pela trava de ordem acima, então aqui não esperamos também o prazo
-  // próprio da 2ª rodada (ex: dia 25): assim que a 1ª terminar, a 2ª já libera.
+  // próprio da 2ª rodada (ex: dia 27): assim que a 1ª terminar, a 2ª já libera.
   const ehSegundaDoPar = round % 2 === 0;
   const prazo = pendentes[0]?.deadline;
   const liberado = ehSegundaDoPar ? true : (prazo ? new Date() >= new Date(prazo) : true);

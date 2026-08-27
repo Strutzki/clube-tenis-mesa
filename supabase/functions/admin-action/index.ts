@@ -320,10 +320,10 @@ function calcularPrazos(mesRef?: Date) {
     ref = mesRef;
   } else {
     const hoje = new Date();
-    ref = (hoje.getDate() > 25) ? new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1) : hoje;
+    ref = (hoje.getDate() > 27) ? new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1) : hoje;
   }
   const prazoA = new Date(ref.getFullYear(), ref.getMonth(), 15);
-  const prazoB = new Date(ref.getFullYear(), ref.getMonth(), 25);
+  const prazoB = new Date(ref.getFullYear(), ref.getMonth(), 27);
   return { prazoA: prazoA.toISOString().split("T")[0], prazoB: prazoB.toISOString().split("T")[0] };
 }
 

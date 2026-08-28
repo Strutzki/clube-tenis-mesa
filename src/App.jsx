@@ -3569,6 +3569,10 @@ export default function App() {
   const [tab, setTab] = useState(sessaoSalva.tab || "dashboard");
   const [dbStatus, setDbStatus] = useState("loading");
   const [dbMsg, setDbMsg] = useState("");
+  // A2: seletor de circuito (super-admin). Default BH; NÃO persiste (recarrega no BH).
+  const [circuitos, setCircuitos] = useState([]);
+  const [circuitoSelId, setCircuitoSelId] = useState(CIRCUITO_BH_ID);
+  const loadGenRef = useRef(0); // guarda contra loads fora de ordem (troca de circuito)
   // Confirmação de PIN pra ações de escrita do admin (Edge Function admin-action).
   // null = nenhum prompt aberto; senão, { onSubmit, onCancel }.
   const [pinPrompt, setPinPrompt] = useState(null);
@@ -3609,6 +3613,7 @@ export default function App() {
   }, []);
 
   async function loadFromSupabase() {
+    const myGen = ++loadGenRef.current;
     setDbStatus("loading");
     try {
       const [atletas, partidas, chaves, config] = await Promise.all([
@@ -3659,6 +3664,7 @@ export default function App() {
         notificadoSolicitante: s.notificado_solicitante || false,
         notificadoAdversario: s.notificado_adversario || false,
       }));
+      if (myGen !== loadGenRef.current) return true; // load mais novo em andamento — descarta este (troca de circuito)
       dispatch({ type:"LOAD_FROM_DB", payload:{
         athletes: athletesMapped, matches: matchesMapped,
         keys: keysMapped, phase: config?.[0]?.fase||"inscricoes",
@@ -3689,11 +3695,34 @@ export default function App() {
         else { setCurrentAthlete(null); localStorage.removeItem("ctm_sessao"); }
       }
       setDbStatus("ok");
+      return true;
     } catch(e) {
       console.error(e);
       setDbStatus("error");
       setDbMsg(e.message);
+      return false;
     }
+  }
+
+  // A2: carrega os circuitos ativos (pro seletor) quando o admin loga.
+  useEffect(() => {
+    if (!isAdmin) return;
+    let vivo = true;
+    supaFetch("circuitos?select=id,slug,nome_circuito,sistema&ativo=eq.true&order=nome_circuito.asc")
+      .then(cs => { if (vivo && Array.isArray(cs)) setCircuitos(cs); })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, [isAdmin]);
+
+  // A2: troca o circuito ativo (super-admin) e recarrega. Guarda: não troca durante carga.
+  async function trocarCircuito(circ) {
+    if (!circ || !circ.id || circ.id === CIRCUITO_ATIVO) return;
+    if (dbStatus === "loading") return;
+    const prevAtivo = CIRCUITO_ATIVO, prevSel = circuitoSelId;
+    setCircuitoAtivo(circ.id);
+    setCircuitoSelId(circ.id);
+    const ok = await loadFromSupabase();
+    if (ok === false) { setCircuitoAtivo(prevAtivo); setCircuitoSelId(prevSel); } // R1: reverte se o load falhar
   }
 
   // Resolve com o PIN em cache, ou abre o PinPromptModal e espera a confirmação.
@@ -4071,14 +4100,14 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); }} />
+      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
-          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} />
+          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} />
         ) : isVisitante ? (
           <VisitanteView state={state} tab={tab} setTab={setTab} />
         ) : (
@@ -5056,8 +5085,8 @@ const Badge = ({label, color="#D85A30"}) => (
 );
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
-function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, loadFromSupabase }) {
-  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} />;
+function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, dbStatus }) {
+  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
@@ -5317,6 +5346,46 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
 // ── PLATAFORMA (Fase A1): criar um novo circuito (super-admin, via CRIAR_CIRCUITO).
 // Card no painel do admin + modal com o formulário. O `sistema` (A=rating/B=pontos)
 // TRAVA na criação. Não toca no BH; alternar entre circuitos vem no A2.
+// A2: seletor de circuito (super-admin). Contexto fixo "Gerenciando: X" + troca.
+// Só aparece com >1 circuito. Trocar recarrega os dados do circuito escolhido.
+function SeletorCircuito({ circuitos, circuitoSelId, trocar, carregando }) {
+  const [aberto, setAberto] = useState(false);
+  if (!circuitos || circuitos.length <= 1) return null;
+  const atual = circuitos.find(c => c.id === circuitoSelId);
+  const nomeAtual = atual ? atual.nome_circuito : "Circuito BH";
+  return (
+    <Card style={{marginBottom:16, border:`1.5px solid ${T.terracota}`, background:"rgba(216,90,48,0.08)"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8}}>Gerenciando</div>
+          <div style={{fontSize:15,fontWeight:800,color:T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeAtual}</div>
+        </div>
+        <Btn small onClick={()=>!carregando && setAberto(v=>!v)} color={T.terracotaBtn} disabled={carregando}>{carregando?"…":"Trocar"}</Btn>
+      </div>
+      {aberto && (
+        <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
+          {circuitos.map(c => {
+            const sel = c.id === circuitoSelId;
+            return (
+              <div key={c.id} onClick={()=>{ setAberto(false); if(!sel) trocar(c); }} style={{
+                border:`1.5px solid ${sel?T.terracota:T.bordaSuave}`, borderRadius:10, padding:"9px 12px", cursor: sel?"default":"pointer",
+                background: sel ? "rgba(216,90,48,0.10)" : "transparent", display:"flex", justifyContent:"space-between", alignItems:"center",
+              }}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{c.nome_circuito}</div>
+                  <div style={{fontSize:11,color:T.cinza}}>{c.slug} · Sistema {c.sistema}</div>
+                </div>
+                {sel && <span style={{fontSize:11,color:T.terracota,fontWeight:700}}>atual</span>}
+              </div>
+            );
+          })}
+          <div style={{fontSize:10.5,color:T.madeira}}>Trocar recarrega os dados do circuito escolhido. Você mantém acesso total (super-admin).</div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function CriarCircuitoCard({ chamarAdminAction }) {
   const [aberto, setAberto] = useState(false);
   const [nome, setNome] = useState("");
@@ -5456,7 +5525,7 @@ function CriarCircuitoCard({ chamarAdminAction }) {
   );
 }
 
-function AdminDashboard({ state, setTab, dispatch, chamarAdminAction }) {
+function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, circuitos, circuitoSelId, trocarCircuito, dbStatus }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
@@ -5559,6 +5628,7 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction }) {
 
   return (
     <div>
+      <SeletorCircuito circuitos={circuitos} circuitoSelId={circuitoSelId} trocar={trocarCircuito} carregando={dbStatus==="loading"} />
       <CriarCircuitoCard chamarAdminAction={chamarAdminAction} />
       <SecTitle>Visão Geral</SecTitle>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>

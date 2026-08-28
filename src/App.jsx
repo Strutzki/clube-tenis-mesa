@@ -3571,7 +3571,15 @@ export default function App() {
   const [dbMsg, setDbMsg] = useState("");
   // A2: seletor de circuito (super-admin). Default BH; NÃO persiste (recarrega no BH).
   const [circuitos, setCircuitos] = useState([]);
-  const [circuitoSelId, setCircuitoSelId] = useState(CIRCUITO_BH_ID);
+  const [circuitoSelId, setCircuitoSelId] = useState(() => {
+    // A2: restaura o circuito selecionado da sessão (persiste entre reloads). Default BH.
+    const s = sessaoSalva.circuitoSelId;
+    if (typeof s === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) {
+      setCircuitoAtivo(s);
+      return s;
+    }
+    return CIRCUITO_BH_ID;
+  });
   const loadGenRef = useRef(0); // guarda contra loads fora de ordem (troca de circuito)
   const msgsCircRef = useRef(null); // A2: circuito cujo histórico de mensagens está carregado (recarrega ao trocar)
   // Confirmação de PIN pra ações de escrita do admin (Edge Function admin-action).
@@ -3591,9 +3599,10 @@ export default function App() {
       athleteId: currentAthlete?.id || null,
       isVisitante,
       tab,
+      circuitoSelId,
     };
     localStorage.setItem("ctm_sessao", JSON.stringify(sessao));
-  }, [isAdmin, currentAthlete, isVisitante, tab]);
+  }, [isAdmin, currentAthlete, isVisitante, tab, circuitoSelId]);
 
   // ── Carregar dados do Supabase ao iniciar ──────────────────
   useEffect(() => { loadFromSupabase(); }, []);
@@ -3710,7 +3719,14 @@ export default function App() {
     if (!isAdmin) return;
     let vivo = true;
     supaFetch("circuitos?select=id,slug,nome_circuito,sistema&ativo=eq.true&order=nome_circuito.asc")
-      .then(cs => { if (vivo && Array.isArray(cs)) setCircuitos(cs); })
+      .then(cs => {
+        if (!vivo || !Array.isArray(cs)) return;
+        setCircuitos(cs);
+        // Auto-cura: se o circuito restaurado da sessão não existe mais, volta pro BH.
+        if (circuitoSelId !== CIRCUITO_BH_ID && !cs.some(c => c.id === circuitoSelId)) {
+          setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); loadFromSupabase();
+        }
+      })
       .catch(() => {});
     return () => { vivo = false; };
   }, [isAdmin]);
@@ -5354,7 +5370,7 @@ function SeletorCircuito({ circuitos, circuitoSelId, trocar, carregando }) {
   const [aberto, setAberto] = useState(false);
   if (!circuitos || circuitos.length <= 1) return null;
   const atual = circuitos.find(c => c.id === circuitoSelId);
-  const nomeAtual = atual ? atual.nome_circuito : "Circuito BH";
+  const nomeAtual = atual ? atual.nome_circuito : (circuitoSelId === CIRCUITO_BH_ID ? "Circuito BH" : "…");
   return (
     <Card style={{marginBottom:16, border:`1.5px solid ${T.terracota}`, background:"rgba(216,90,48,0.08)"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>

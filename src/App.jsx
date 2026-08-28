@@ -5048,7 +5048,7 @@ const Badge = ({label, color="#D85A30"}) => (
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
 function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, loadFromSupabase }) {
-  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} />;
+  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
@@ -5305,7 +5305,148 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
 }
 
 // ── ADMIN DASHBOARD ───────────────────────────────────────────────────────────
-function AdminDashboard({ state, setTab, dispatch }) {
+// ── PLATAFORMA (Fase A1): criar um novo circuito (super-admin, via CRIAR_CIRCUITO).
+// Card no painel do admin + modal com o formulário. O `sistema` (A=rating/B=pontos)
+// TRAVA na criação. Não toca no BH; alternar entre circuitos vem no A2.
+function CriarCircuitoCard({ chamarAdminAction }) {
+  const [aberto, setAberto] = useState(false);
+  const [nome, setNome] = useState("");
+  const [cidade, setCidade] = useState("");
+  const [uf, setUf] = useState("");
+  const [slug, setSlug] = useState("");
+  const [sistema, setSistema] = useState(null);       // "A" | "B"
+  const [pareamento, setPareamento] = useState(null); // "sorteio" | "grupos"
+  const [maxAtletas, setMaxAtletas] = useState("20");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [criado, setCriado] = useState(null);
+
+  const slugLimpo = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const podeCriar = !!(nome.trim() && slugLimpo.length >= 2 && slugLimpo !== "bh" && sistema && (sistema === "A" || pareamento));
+
+  function reset() {
+    setNome(""); setCidade(""); setUf(""); setSlug(""); setSistema(null);
+    setPareamento(null); setMaxAtletas("20"); setErro(""); setCriado(null);
+  }
+  async function criar() {
+    setSalvando(true); setErro(""); setCriado(null);
+    try {
+      const dados = await chamarAdminAction("CRIAR_CIRCUITO", {
+        nome: nome.trim(),
+        cidade: cidade.trim() || null,
+        uf: uf.trim() || null,
+        slug: slugLimpo,
+        sistema,
+        pareamento: sistema === "B" ? pareamento : null,
+        maxAtletas: Number(maxAtletas) || 20,
+      });
+      setCriado(dados);
+    } catch (e) {
+      setErro(e.message || "Erro ao criar circuito.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  const inp = { width:"100%", boxSizing:"border-box", background:"#182420", border:`1px solid ${T.borda}`, borderRadius:8, color:T.offwhite, padding:"10px 12px", fontSize:14, fontFamily:T.sans, marginTop:6 };
+  const lbl = { fontSize:11, fontWeight:700, color:T.cinzaSuave, textTransform:"uppercase", letterSpacing:0.6 };
+  const optCard = (sel) => ({ border:`1.5px solid ${sel?T.terracota:T.bordaSuave}`, borderRadius:10, padding:"10px 12px", marginTop:8, cursor:"pointer", background: sel ? "rgba(216,90,48,0.10)" : "transparent" });
+
+  return (
+    <Card style={{marginBottom:16, border:`1px solid ${T.bordaSuave}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>🌐 Plataforma</div>
+          <div style={{fontSize:12,color:T.cinza,marginTop:2}}>Criar um novo circuito</div>
+        </div>
+        <Btn small onClick={()=>{ reset(); setAberto(true); }} color={T.terracotaBtn}>+ Novo circuito</Btn>
+      </div>
+
+      {aberto && (
+        <div onClick={()=>!salvando && setAberto(false)} style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,overflowY:"auto"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:T.verdeCard,borderRadius:16,padding:20,width:"100%",maxWidth:440,maxHeight:"90vh",overflowY:"auto",border:`1px solid ${T.borda}`}}>
+            {criado ? (
+              <div>
+                <div style={{fontSize:16,fontWeight:800,color:T.verde2,marginBottom:8}}>✓ Circuito criado!</div>
+                <div style={{fontSize:14,color:T.offwhite,marginBottom:6}}><strong>{criado.nome_circuito}</strong> — sistema {criado.sistema}{criado.pareamento?` · ${criado.pareamento}`:""}</div>
+                <div style={{fontSize:12,color:T.cinza,marginBottom:16}}>Slug: <code>{criado.slug}</code>. Nasce vazio, pronto para inscrições. Alternar entre circuitos vem na próxima atualização.</div>
+                <Btn full onClick={()=>setAberto(false)} color={T.terracotaBtn}>Fechar</Btn>
+              </div>
+            ) : (
+              <div>
+                <div style={{fontSize:16,fontWeight:800,color:T.offwhite,marginBottom:4}}>Novo circuito</div>
+                <div style={{fontSize:12,color:T.cinza,marginBottom:14}}>O sistema escolhido <strong>trava</strong> na criação e não muda depois.</div>
+
+                <div style={lbl}>Nome do circuito</div>
+                <input value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex: Circuito São Paulo" style={inp}/>
+
+                <div style={{display:"flex",gap:10,marginTop:12}}>
+                  <div style={{flex:2}}>
+                    <div style={lbl}>Cidade</div>
+                    <input value={cidade} onChange={e=>setCidade(e.target.value)} placeholder="São Paulo" style={inp}/>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={lbl}>UF</div>
+                    <input value={uf} onChange={e=>setUf(e.target.value.toUpperCase().slice(0,2))} placeholder="SP" style={inp}/>
+                  </div>
+                </div>
+
+                <div style={{marginTop:12}}>
+                  <div style={lbl}>Slug (apelido na URL)</div>
+                  <input value={slug} onChange={e=>setSlug(e.target.value)} placeholder="sp" style={inp}/>
+                  <div style={{fontSize:11,color:T.cinza,marginTop:4}}>Fica: <code>{slugLimpo || "—"}</code> · só letras, números e hífen · ≠ "bh"</div>
+                </div>
+
+                <div style={{marginTop:16}}>
+                  <div style={lbl}>Sistema de pontuação (trava)</div>
+                  {[
+                    {id:"A", t:"A — Rating / CBTM", d:"Pontos variáveis pela diferença de rating. Rating permanente. Igual ao BH."},
+                    {id:"B", t:"B — Pontos fixos", d:"Vitória 2, derrota 1. Sem rating. A partida sempre conta."},
+                  ].map(o => (
+                    <div key={o.id} onClick={()=>{ setSistema(o.id); if(o.id==="A") setPareamento(null); }} style={optCard(sistema===o.id)}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{o.t}</div>
+                      <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>{o.d}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {sistema==="B" && (
+                  <div style={{marginTop:16}}>
+                    <div style={lbl}>Pareamento (Sistema B)</div>
+                    {[
+                      {id:"sorteio", t:"Sorteio aleatório", d:"Sorteia confrontos a cada rodada, sem repetir adversário na temporada."},
+                      {id:"grupos", t:"Grupos por faixa", d:"Pareia por faixa de posição na tabela de pontos atual."},
+                    ].map(o => (
+                      <div key={o.id} onClick={()=>setPareamento(o.id)} style={optCard(pareamento===o.id)}>
+                        <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{o.t}</div>
+                        <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>{o.d}</div>
+                      </div>
+                    ))}
+                    <div style={{fontSize:11,color:T.madeira,marginTop:8}}>⚠️ O Sistema B ainda não é operável (motor e regulamento em construção). O circuito é criado, mas ainda não roda.</div>
+                  </div>
+                )}
+
+                <div style={{marginTop:14}}>
+                  <div style={lbl}>Máx. de atletas</div>
+                  <input value={maxAtletas} onChange={e=>setMaxAtletas(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric" style={{...inp, maxWidth:120}}/>
+                </div>
+
+                {erro && <div style={{fontSize:13,color:T.vermelho,marginTop:14}}>{erro}</div>}
+
+                <div style={{display:"flex",gap:8,marginTop:18,flexWrap:"wrap"}}>
+                  <Btn onClick={criar} disabled={!podeCriar||salvando} color={T.terracotaBtn}>{salvando?"Criando…":"Criar circuito"}</Btn>
+                  <Btn onClick={()=>!salvando && setAberto(false)} color={T.bordaSuave}>Cancelar</Btn>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function AdminDashboard({ state, setTab, dispatch, chamarAdminAction }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
@@ -5408,6 +5549,7 @@ function AdminDashboard({ state, setTab, dispatch }) {
 
   return (
     <div>
+      <CriarCircuitoCard chamarAdminAction={chamarAdminAction} />
       <SecTitle>Visão Geral</SecTitle>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
         {[

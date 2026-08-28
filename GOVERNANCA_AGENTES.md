@@ -26,6 +26,7 @@ Mudanças que cruzam áreas → mais de um agente.
 - Fase A (CRIAR_CIRCUITO + seletor) — Guardião: GO-com-condições → `PLANO_FASE_A.md`.
 - Conceito da plataforma (5 telas) — Designer + Advogado do Atleta (supervisionados).
 - Teste-isca de marca — Designer pegou 4/4 dos erros plantados, 0 falso positivo.
+- Fase A1 (CRIAR_CIRCUITO + coluna pareamento) — Guardião (supervisionado): GO-com-condições → migração aplicada, admin-action v41 no ar, teste de dados OK (circuito A e B inserem, constraint rejeita valor inválido, BH byte-idêntico, teste limpo). Front (card "Novo circuito" no painel admin) escrito; deploy via atualizar.sh pendente. Suporta os dois sistemas (A rating / B pontos), com o sistema travando na criação. B só fica operável no passo 2 (motor + regulamento).
 - Prazo da R2 (dia 25 → dia 27) — Advogado do Atleta (supervisionado): AJUSTES → aplicados. Achados: 3 pontos de cálculo (não 2; incluía App.jsx L1100 escondido), calendário do regulamento reescrito (conferência R2 26-29 → 28-29), versão v03-11 → v03-12 sem re-aceite bloqueante (versão é só carimbo, nenhum código força re-aceite). Forward-looking. Edge (admin-action v40, athlete-action v14) deployado e verificado ao vivo; front aguardando atualizar.sh.
 
 ## Honestidade / limites

@@ -928,6 +928,61 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true });
       }
 
+      // Cria um NOVO circuito (plataforma multi-circuito, Fase A1). Protegido pelo PIN
+      // (super-admin). NAO toca no BH nem em nenhum circuito existente: e' um INSERT puro
+      // em `circuitos` com defaults saos espelhando o BH. Reversivel por DELETE.
+      // O `sistema` (A=rating / B=pontos) TRAVA na criacao e nunca muda (dados incompativeis).
+      case "CRIAR_CIRCUITO": {
+        const p = payload || {};
+        const nome = String(p.nome || "").trim();
+        const slug = String(p.slug || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+        const cidade = p.cidade ? String(p.cidade).trim() : null;
+        const uf = p.uf ? String(p.uf).trim().toUpperCase().slice(0, 2) : null;
+        const sistema = (p.sistema === "A" || p.sistema === "B") ? p.sistema : null;
+        const pareamento = (p.pareamento === "sorteio" || p.pareamento === "grupos") ? p.pareamento : null;
+        const maxAtletas = p.maxAtletas != null ? Math.max(2, Math.round(Number(p.maxAtletas) || 20)) : 20;
+        const rodadas = (p.rodadas != null && Number(p.rodadas) >= 2 && Number(p.rodadas) % 2 === 0) ? Math.round(Number(p.rodadas)) : 6;
+
+        if (!nome) return jsonResponse({ sucesso: false, erro: "Nome do circuito é obrigatório." }, 400);
+        if (slug.length < 2) return jsonResponse({ sucesso: false, erro: "Slug inválido — use ao menos 2 caracteres (letras, números ou hífen)." }, 400);
+        if (slug === "bh") return jsonResponse({ sucesso: false, erro: "O slug 'bh' é reservado ao circuito de Belo Horizonte." }, 400);
+        if (!sistema) return jsonResponse({ sucesso: false, erro: "Escolha o sistema do circuito (A — rating, ou B — pontos)." }, 400);
+        if (sistema === "B" && !pareamento) return jsonResponse({ sucesso: false, erro: "No Sistema B, escolha o método de pareamento (sorteio ou grupos)." }, 400);
+
+        const { data: jaExiste, error: eSel } = await supabase.from("circuitos").select("id").eq("slug", slug).maybeSingle();
+        if (eSel) throw eSel;
+        if (jaExiste) return jsonResponse({ sucesso: false, erro: `Já existe um circuito com o slug '${slug}'. Escolha outro.` }, 409);
+
+        const novo = {
+          slug,
+          nome_circuito: nome,
+          cidade,
+          uf,
+          sistema,
+          pareamento: sistema === "B" ? pareamento : null,
+          fase: "inscricoes",
+          temporada_numero: 1,
+          temporada_ano: new Date().getFullYear(),
+          rodadas_por_temporada: rodadas,
+          auto_validar_placar: false,
+          financeiro_ativo: false,
+          max_atletas: maxAtletas,
+          desconto_global_pct: 0,
+          percentual_entrada_meio: 80,
+          ativo: true,
+          regulamento_versao: sistema === "A" ? "v03-12" : null,
+        };
+        const { data: ins, error } = await supabase.from("circuitos").insert(novo).select("id, slug, nome_circuito, sistema, pareamento").single();
+        if (error) {
+          const msg = String(error.message || "");
+          if (msg.includes("duplicate") || msg.includes("unique") || msg.includes("circuitos_slug_key")) {
+            return jsonResponse({ sucesso: false, erro: `Já existe um circuito com o slug '${slug}'. Escolha outro.` }, 409);
+          }
+          throw error;
+        }
+        return jsonResponse({ sucesso: true, dados: ins });
+      }
+
       case "DEFINIR_CONFIG_CIRCUITO": {
         const p = payload || {};
         const upd: Record<string, unknown> = {};

@@ -163,7 +163,7 @@ const db = {
 
   // Partidas
   getPartidas: () => supaFetch(`partidas?circuito_id=eq.${CIRCUITO_ATIVO}&order=rodada.asc,criado_em.asc`),
-  getHistorico: () => supaFetch("partidas_historico?order=temporada_rotulo.desc,rodada.asc"),
+  getHistorico: () => supaFetch(`partidas_historico?circuito_id=eq.${CIRCUITO_ATIVO}&order=temporada_rotulo.desc,rodada.asc`),
   insertPartida: (data) => supaFetch("partidas", { method:"POST", body: JSON.stringify(data) }),
   updatePartida: (id, data) => supaFetch(`partidas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data) }),
   deleteAllPartidas: () => supaFetch("partidas?id=neq.__none__", { method:"DELETE" }),
@@ -3573,6 +3573,7 @@ export default function App() {
   const [circuitos, setCircuitos] = useState([]);
   const [circuitoSelId, setCircuitoSelId] = useState(CIRCUITO_BH_ID);
   const loadGenRef = useRef(0); // guarda contra loads fora de ordem (troca de circuito)
+  const msgsCircRef = useRef(null); // A2: circuito cujo histórico de mensagens está carregado (recarrega ao trocar)
   // Confirmação de PIN pra ações de escrita do admin (Edge Function admin-action).
   // null = nenhum prompt aberto; senão, { onSubmit, onCancel }.
   const [pinPrompt, setPinPrompt] = useState(null);
@@ -3722,7 +3723,8 @@ export default function App() {
     setCircuitoAtivo(circ.id);
     setCircuitoSelId(circ.id);
     const ok = await loadFromSupabase();
-    if (ok === false) { setCircuitoAtivo(prevAtivo); setCircuitoSelId(prevSel); } // R1: reverte se o load falhar
+    if (ok === false) { setCircuitoAtivo(prevAtivo); setCircuitoSelId(prevSel); return; } // R1: reverte se o load falhar
+    dispatch({ type: "SET_MENSAGENS_ENVIADAS", payload: [] }); // A2: limpa o histórico; recarrega no circuito novo (msgsCircRef != CIRCUITO_ATIVO)
   }
 
   // Resolve com o PIN em cache, ou abre o PinPromptModal e espera a confirmação.
@@ -3787,7 +3789,7 @@ export default function App() {
   // Histórico de mensagens (admin) sob demanda, com PIN, via Edge Function —
   // não é mais leitura pública. Busca uma vez por sessão; falha graciosa.
   async function garantirMensagensEnviadas() {
-    if (msgsCarregadas) return;
+    if (msgsCircRef.current === CIRCUITO_ATIVO) return; // já carregado PARA ESTE circuito
     try {
       const dados = await chamarAdminAction("LISTAR_MENSAGENS", {});
       const mapa = (dados || []).map(m => ({
@@ -3796,7 +3798,7 @@ export default function App() {
         texto: m.texto, enviadoEm: m.enviado_em, matchId: m.match_id || null,
       }));
       dispatch({ type: "SET_MENSAGENS_ENVIADAS", payload: mapa });
-      setMsgsCarregadas(true);
+      msgsCircRef.current = CIRCUITO_ATIVO;
     } catch(e) {
       console.warn("Não consegui carregar o histórico de mensagens:", e.message);
     }
@@ -5091,9 +5093,9 @@ function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones,
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
   if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} />;
-  if (tab === "historico") return <AdminHistorico state={state} />;
-  if (tab === "mensagens") return <AdminMensagens state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
-  if (tab === "financeiro") return <AdminFinanceiro state={state} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} />;
+  if (tab === "historico") return <AdminHistorico key={circuitoSelId} state={state} />;
+  if (tab === "mensagens") return <AdminMensagens key={circuitoSelId} state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
+  if (tab === "financeiro") return <AdminFinanceiro key={circuitoSelId} state={state} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} />;
   return null;
 }
 

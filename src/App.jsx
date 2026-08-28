@@ -5322,7 +5322,7 @@ function CriarCircuitoCard({ chamarAdminAction }) {
   const [criado, setCriado] = useState(null);
 
   const slugLimpo = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
-  const podeCriar = !!(nome.trim() && slugLimpo.length >= 2 && slugLimpo !== "bh" && sistema && (sistema === "A" || pareamento));
+  const podeCriar = !!(nome.trim() && slugLimpo.length >= 2 && slugLimpo !== "bh" && sistema && (sistema === "A" || pareamento) && Number(maxAtletas) >= 10);
 
   function reset() {
     setNome(""); setCidade(""); setUf(""); setSlug(""); setSistema(null);
@@ -5429,6 +5429,7 @@ function CriarCircuitoCard({ chamarAdminAction }) {
                 <div style={{marginTop:14}}>
                   <div style={lbl}>Máx. de atletas</div>
                   <input value={maxAtletas} onChange={e=>setMaxAtletas(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric" style={{...inp, maxWidth:120}}/>
+                  <div style={{fontSize:11,color: Number(maxAtletas)>=10 ? T.cinza : T.vermelho,marginTop:4}}>Mínimo 10 atletas.</div>
                 </div>
 
                 {erro && <div style={{fontSize:13,color:T.vermelho,marginTop:14}}>{erro}</div>}

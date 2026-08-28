@@ -940,7 +940,7 @@ Deno.serve(async (req) => {
         const uf = p.uf ? String(p.uf).trim().toUpperCase().slice(0, 2) : null;
         const sistema = (p.sistema === "A" || p.sistema === "B") ? p.sistema : null;
         const pareamento = (p.pareamento === "sorteio" || p.pareamento === "grupos") ? p.pareamento : null;
-        const maxAtletas = p.maxAtletas != null ? Math.max(2, Math.round(Number(p.maxAtletas) || 20)) : 20;
+        const maxAtletas = p.maxAtletas != null ? Math.max(10, Math.round(Number(p.maxAtletas) || 20)) : 20;
         const rodadas = (p.rodadas != null && Number(p.rodadas) >= 2 && Number(p.rodadas) % 2 === 0) ? Math.round(Number(p.rodadas)) : 6;
 
         if (!nome) return jsonResponse({ sucesso: false, erro: "Nome do circuito é obrigatório." }, 400);

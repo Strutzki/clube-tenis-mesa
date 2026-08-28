@@ -5363,7 +5363,7 @@ function CriarCircuitoCard({ chamarAdminAction }) {
       </div>
 
       {aberto && (
-        <div onClick={()=>!salvando && setAberto(false)} style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,overflowY:"auto"}}>
+        <div onClick={()=>!salvando && setAberto(false)} style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:1400,display:"flex",alignItems:"center",justifyContent:"center",padding:20,overflowY:"auto"}}>
           <div onClick={e=>e.stopPropagation()} style={{background:T.verdeCard,borderRadius:16,padding:20,width:"100%",maxWidth:440,maxHeight:"90vh",overflowY:"auto",border:`1px solid ${T.borda}`}}>
             {criado ? (
               <div>

@@ -401,9 +401,41 @@ Deno.serve(async (req) => {
       case "EXCLUIR_ATLETA": {
         const { id } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
-        const { error } = await supabase.from("atletas").delete().eq("id", id);
+        // Valida UUID antes de interpolar no filtro `.or(...)` (a `.eq` é parametrizada,
+        // mas a string do `.or` não é) — fecha injeção de filtro PostgREST.
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id))) {
+          return jsonResponse({ sucesso: false, erro: "id inválido" }, 400);
+        }
+        const bhExcl = await bhId();
+        // BH (legado): o roster É a identidade global -> exclusão global, como sempre.
+        if (circuitoId === bhExcl) {
+          const { error } = await supabase.from("atletas").delete().eq("id", id);
+          if (error) throw error;
+          return jsonResponse({ sucesso: true, dados: { escopo: "global" } });
+        }
+        // Circuito NÃO-BH: apaga SÓ a participação (circuito_atletas). A identidade
+        // global (atletas), o rating e a participação em outros circuitos ficam intactos.
+        // Guarda: bloqueia se o atleta tiver partidas NESTE circuito (evita partida órfã) —
+        // nesse caso o admin deve arquivar, não excluir.
+        const { count: nPartidasCirc } = await supabase
+          .from("partidas")
+          .select("*", { count: "exact", head: true })
+          .eq("circuito_id", circuitoId)
+          .or(`atleta1_id.eq.${id},atleta2_id.eq.${id}`);
+        if ((nPartidasCirc ?? 0) > 0) {
+          return jsonResponse({ sucesso: false, erro: "Este atleta tem partidas neste circuito. Arquive em vez de excluir." }, 409);
+        }
+        const { data: apagadas, error } = await supabase
+          .from("circuito_atletas")
+          .delete()
+          .eq("circuito_id", circuitoId)
+          .eq("atleta_id", id)
+          .select("atleta_id");
         if (error) throw error;
-        return jsonResponse({ sucesso: true });
+        if (!apagadas || apagadas.length === 0) {
+          return jsonResponse({ sucesso: false, erro: "Atleta não está neste circuito." }, 404);
+        }
+        return jsonResponse({ sucesso: true, dados: { escopo: "circuito", removidos: apagadas.length } });
       }
 
       case "INSCRICAO_VALIDAR": {

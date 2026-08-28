@@ -74,7 +74,16 @@ const ADMIN_PASS = "2073";
 const SUPA_URL = "https://eultwfzzlgcmcikobmmy.supabase.co";
 const SUPA_KEY = "sb_publishable_h0-_rOD0-ZPAIIkYm3xgcg_V1i-SZZN";
 // Circuito ativo (Fase 4C). Fixo em BH — vira o seletor na 4D.
-const CIRCUITO_ATIVO = "272dd67c-ea33-41a3-8fb9-1fd909d7f3fa";
+// Circuito selecionado (default = BH). A2: o seletor troca via setCircuitoAtivo.
+// Com o BH selecionado, as leituras e escritas são byte-idênticas a hoje (o servidor
+// resolve o mesmo id por default). SEMPRE um UUID (nunca slug/vazio).
+let CIRCUITO_ATIVO = "272dd67c-ea33-41a3-8fb9-1fd909d7f3fa";
+const CIRCUITO_BH_ID = "272dd67c-ea33-41a3-8fb9-1fd909d7f3fa"; // base/segurança: nunca muda
+function setCircuitoAtivo(uuid) {
+  if (typeof uuid === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid)) {
+    CIRCUITO_ATIVO = uuid;
+  }
+}
 
 // rpId da biometria (WebAuthn) FIXADO no domínio-mãe: assim o passkey vale tanto no
 // apex (clubedotenisdemesabh.com.br) quanto no www, e sobrevive a trocas de subdomínio
@@ -3713,7 +3722,7 @@ export default function App() {
         "Authorization": `Bearer ${SUPA_KEY}`,
         "apikey": SUPA_KEY,
       },
-      body: JSON.stringify({ pin, acao, payload }),
+      body: JSON.stringify({ pin, acao, payload: { ...(payload || {}), circuitoId: CIRCUITO_ATIVO } }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.sucesso) {
@@ -3734,7 +3743,7 @@ export default function App() {
         "Authorization": `Bearer ${SUPA_KEY}`,
         "apikey": SUPA_KEY,
       },
-      body: JSON.stringify({ acao, payload }),
+      body: JSON.stringify({ acao, payload: { ...(payload || {}), circuitoId: CIRCUITO_ATIVO } }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.sucesso) {

@@ -183,7 +183,7 @@ const db = {
   updateConfig: (data) => supaFetch("configuracao?id=eq.1", { method:"PATCH", body: JSON.stringify(data) }),
 
   // Circuitos com inscrições abertas (leitura pública — só campos públicos). Fatia 2/inscrição por circuito.
-  getCircuitosAbertos: () => supaFetch(`circuitos?select=id,slug,nome_circuito,cidade,uf,sistema&ativo=eq.true&inscricoes_abertas=eq.true&order=nome_circuito.asc`),
+  getCircuitosAbertos: () => supaFetch(`circuitos?select=id,slug,nome_circuito,nome_exibicao,cidade,uf,sistema&ativo=eq.true&inscricoes_abertas=eq.true&order=nome_circuito.asc`),
 
   // Histórico de mensagens de WhatsApp enviadas
   getMensagensEnviadas: () => supaFetch("mensagens_enviadas?order=enviado_em.desc&limit=200"),
@@ -1419,6 +1419,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
   const [lista, setLista] = useState(null); // null = carregando
   const [erro, setErro] = useState(false);
   const [escolhido, setEscolhido] = useState(null);
+  const [confirmado, setConfirmado] = useState(false);
   useEffect(() => {
     let vivo = true;
     db.getCircuitosAbertos()
@@ -1434,14 +1435,40 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
 
   const wrap = { minHeight:"100vh", background:T.verde, fontFamily:T.sans, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, color:T.offwhite };
   const backBtn = { background:"none", border:"none", color:T.cinza, cursor:"pointer", fontSize:13, marginBottom:16 };
+  const selo = (sis) => sis === "B"
+    ? { txt:"Pontos", desc:"Vitória vale 2, derrota 1 — sem rating", cor:"#6a9d7a" }
+    : { txt:"Rating", desc:"Rating tipo CBTM — sobe e desce", cor:T.terracota };
+  // Nome de EXIBIÇÃO do circuito (separado do nome_circuito, que é o rótulo das mensagens).
+  const nomeCirc = (c) => (c && (c.nome_exibicao || c.nome_circuito)) || "Clube do Tênis de Mesa";
 
-  // Circuito escolhido -> formulário. Injeta o circuitoId escolhido no submit (roteia a inscrição).
-  if (escolhido) {
+  // Confirmado -> formulário. Injeta o circuitoId escolhido no submit (roteia a inscrição).
+  if (escolhido && confirmado) {
     return <InscricaoForm
-      onBack={() => { if (lista && lista.length > 1) setEscolhido(null); else onBack(); }}
+      onBack={() => setConfirmado(false)}
       onSubmit={(p) => onSubmit({ ...p, circuitoId: escolhido.id })}
       athletes={athletes}
     />;
+  }
+  // Circuito escolhido (inclui o auto-selecionado quando só há um) -> confirmação com nome + selo.
+  if (escolhido) {
+    const sl = selo(escolhido.sistema);
+    return (
+      <div style={{minHeight:"100vh",background:T.verde,fontFamily:T.sans,display:"flex",justifyContent:"center"}}>
+        <div style={{width:"100%",maxWidth:390,padding:"20px 24px 40px",color:T.offwhite}}>
+          <button onClick={() => { if (lista && lista.length > 1) setEscolhido(null); else onBack(); }} style={backBtn}>← Voltar</button>
+          <div style={{fontSize:11,color:T.cinza,marginBottom:8,fontFamily:T.mono,letterSpacing:1,textTransform:"uppercase"}}>Você está se inscrevendo em</div>
+          <div style={{background:T.verdeCard,border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:18,marginBottom:20}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+              <div style={{fontFamily:T.serif,fontSize:22}}>{nomeCirc(escolhido)}</div>
+              <span style={{fontFamily:T.mono,fontSize:9,letterSpacing:1,textTransform:"uppercase",color:sl.cor,border:`1px solid ${sl.cor}`,borderRadius:20,padding:"3px 9px",whiteSpace:"nowrap"}}>{sl.txt}</span>
+            </div>
+            {(escolhido.cidade || escolhido.uf) && <div style={{fontSize:12,color:T.cinza,marginTop:4}}>{[escolhido.cidade, escolhido.uf].filter(Boolean).join(" · ")}</div>}
+            <div style={{fontSize:12,color:"rgba(240,234,224,0.55)",marginTop:8}}>{sl.desc}</div>
+          </div>
+          <button onClick={() => setConfirmado(true)} style={{width:"100%",background:T.terracota,color:T.verde,border:"none",borderRadius:12,padding:14,fontSize:15,fontWeight:800,cursor:"pointer"}}>Continuar para inscrição →</button>
+        </div>
+      </div>
+    );
   }
   // Fallback (leitura falhou): não bloqueia o atleta -> formulário do circuito ativo (BH).
   if (erro) return <InscricaoForm onBack={onBack} onSubmit={onSubmit} athletes={athletes} />;
@@ -1460,9 +1487,6 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
     </div>
   );
   // Vários abertos -> lista com selo de sistema
-  const selo = (sis) => sis === "B"
-    ? { txt:"Pontos", desc:"Vitória vale 2, derrota 1 — sem rating", cor:"#6a9d7a" }
-    : { txt:"Rating", desc:"Rating tipo CBTM — sobe e desce", cor:T.terracota };
   return (
     <div style={{minHeight:"100vh",background:T.verde,fontFamily:T.sans,display:"flex",justifyContent:"center"}}>
       <div style={{width:"100%",maxWidth:390,padding:"20px 24px 40px",color:T.offwhite}}>
@@ -1474,7 +1498,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
           return (
             <button key={c.id} onClick={() => setEscolhido(c)} style={{display:"block",width:"100%",textAlign:"left",background:T.verdeCard,border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"16px 18px",marginBottom:12,cursor:"pointer",color:T.offwhite}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                <div style={{fontFamily:T.serif,fontSize:18}}>{c.nome_circuito}</div>
+                <div style={{fontFamily:T.serif,fontSize:18}}>{nomeCirc(c)}</div>
                 <span style={{fontFamily:T.mono,fontSize:9,letterSpacing:1,textTransform:"uppercase",color:sl.cor,border:`1px solid ${sl.cor}`,borderRadius:20,padding:"3px 9px",whiteSpace:"nowrap"}}>{sl.txt}</span>
               </div>
               {(c.cidade || c.uf) && <div style={{fontSize:12,color:T.cinza,marginTop:3}}>{[c.cidade, c.uf].filter(Boolean).join(" · ")}</div>}

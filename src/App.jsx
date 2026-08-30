@@ -182,6 +182,9 @@ const db = {
   getConfig: () => supaFetch(`circuitos?id=eq.${CIRCUITO_ATIVO}`),
   updateConfig: (data) => supaFetch("configuracao?id=eq.1", { method:"PATCH", body: JSON.stringify(data) }),
 
+  // Circuitos com inscrições abertas (leitura pública — só campos públicos). Fatia 2/inscrição por circuito.
+  getCircuitosAbertos: () => supaFetch(`circuitos?select=id,slug,nome_circuito,cidade,uf,sistema&ativo=eq.true&inscricoes_abertas=eq.true&order=nome_circuito.asc`),
+
   // Histórico de mensagens de WhatsApp enviadas
   getMensagensEnviadas: () => supaFetch("mensagens_enviadas?order=enviado_em.desc&limit=200"),
   insertMensagemEnviada: (data) => supaFetch("mensagens_enviadas", { method:"POST", body: JSON.stringify(data) }),
@@ -1399,13 +1402,89 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
     />
   );
 
-  if (mode === "inscricao") return <InscricaoForm onBack={() => setMode("select")} onSubmit={onInscricao} athletes={athletes} />;
+  if (mode === "inscricao") return <SelecaoCircuitoInscricao onBack={() => setMode("select")} onSubmit={onInscricao} athletes={athletes} />;
   if (mode === "regulamento") return <RegulamentoView onBack={() => setMode("select")} />;
   function doAdmin(bypass=false) {
     if (bypass) { onLogin(); return; }
     if (user===ADMIN_USER && pass===ADMIN_PASS) { setPinCache(pass); onLogin(); }
     else { setErr("Usuário ou senha incorretos."); setTimeout(()=>setErr(""),3000); }
   }
+}
+
+// ── GATE DE INSCRIÇÃO ─────────────────────────────────────────────────────────
+// Ao apertar "Inscreva-se", checa PRIMEIRO se há circuito com inscrições abertas.
+// 0 -> mensagem (sem formulário); 1 -> auto-seleciona; vários -> lista com selo de sistema.
+// Fallback: se a leitura falhar, não trava — cai no formulário do circuito ativo (BH).
+function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
+  const [lista, setLista] = useState(null); // null = carregando
+  const [erro, setErro] = useState(false);
+  const [escolhido, setEscolhido] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    db.getCircuitosAbertos()
+      .then(cs => {
+        if (!vivo) return;
+        const arr = Array.isArray(cs) ? cs : [];
+        setLista(arr);
+        if (arr.length === 1) setEscolhido(arr[0]); // um só -> auto-seleciona (mantém o "um toque" do BH)
+      })
+      .catch(() => { if (vivo) setErro(true); });
+    return () => { vivo = false; };
+  }, []);
+
+  const wrap = { minHeight:"100vh", background:T.verde, fontFamily:T.sans, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, color:T.offwhite };
+  const backBtn = { background:"none", border:"none", color:T.cinza, cursor:"pointer", fontSize:13, marginBottom:16 };
+
+  // Circuito escolhido -> formulário. Injeta o circuitoId escolhido no submit (roteia a inscrição).
+  if (escolhido) {
+    return <InscricaoForm
+      onBack={() => { if (lista && lista.length > 1) setEscolhido(null); else onBack(); }}
+      onSubmit={(p) => onSubmit({ ...p, circuitoId: escolhido.id })}
+      athletes={athletes}
+    />;
+  }
+  // Fallback (leitura falhou): não bloqueia o atleta -> formulário do circuito ativo (BH).
+  if (erro) return <InscricaoForm onBack={onBack} onSubmit={onSubmit} athletes={athletes} />;
+  // Carregando
+  if (lista === null) return <div style={wrap}><div style={{fontFamily:T.mono,fontSize:12,letterSpacing:1,color:T.cinza}}>Procurando circuitos abertos…</div></div>;
+  // Nenhum aberto
+  if (lista.length === 0) return (
+    <div style={wrap}>
+      <div style={{maxWidth:360,textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:12}}>🏓</div>
+        <div style={{fontFamily:T.serif,fontSize:22,marginBottom:8}}>Sem circuitos abertos agora</div>
+        <div style={{fontSize:13,color:T.cinza,lineHeight:1.5,marginBottom:20}}>No momento nenhum circuito está aceitando novas inscrições. Fica de olho no Instagram — é por lá que a gente avisa quando abre. <strong style={{color:T.offwhite}}>Vem pro Clube!</strong></div>
+        <a href="https://instagram.com/clubedotenisdemesa" target="_blank" rel="noreferrer" style={{color:T.terracota,textDecoration:"none",fontWeight:700,fontSize:13}}>@clubedotenisdemesa</a>
+        <div><button onClick={onBack} style={{...backBtn, marginTop:24}}>← Voltar</button></div>
+      </div>
+    </div>
+  );
+  // Vários abertos -> lista com selo de sistema
+  const selo = (sis) => sis === "B"
+    ? { txt:"Pontos", desc:"Vitória vale 2, derrota 1 — sem rating", cor:"#6a9d7a" }
+    : { txt:"Rating", desc:"Rating tipo CBTM — sobe e desce", cor:T.terracota };
+  return (
+    <div style={{minHeight:"100vh",background:T.verde,fontFamily:T.sans,display:"flex",justifyContent:"center"}}>
+      <div style={{width:"100%",maxWidth:390,padding:"20px 24px 40px",color:T.offwhite}}>
+        <button onClick={onBack} style={backBtn}>← Voltar</button>
+        <div style={{fontFamily:T.serif,fontSize:26,marginBottom:6}}>Escolha o circuito</div>
+        <div style={{fontSize:12,color:T.cinza,marginBottom:20}}>Onde você quer se inscrever. O circuito define o modelo de pontuação.</div>
+        {lista.map(c => {
+          const sl = selo(c.sistema);
+          return (
+            <button key={c.id} onClick={() => setEscolhido(c)} style={{display:"block",width:"100%",textAlign:"left",background:T.verdeCard,border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"16px 18px",marginBottom:12,cursor:"pointer",color:T.offwhite}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                <div style={{fontFamily:T.serif,fontSize:18}}>{c.nome_circuito}</div>
+                <span style={{fontFamily:T.mono,fontSize:9,letterSpacing:1,textTransform:"uppercase",color:sl.cor,border:`1px solid ${sl.cor}`,borderRadius:20,padding:"3px 9px",whiteSpace:"nowrap"}}>{sl.txt}</span>
+              </div>
+              {(c.cidade || c.uf) && <div style={{fontSize:12,color:T.cinza,marginTop:3}}>{[c.cidade, c.uf].filter(Boolean).join(" · ")}</div>}
+              <div style={{fontSize:11,color:"rgba(240,234,224,0.5)",marginTop:6}}>{sl.desc}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 // ── FORMULÁRIO DE INSCRIÇÃO (público) ────────────────────────────────────────
@@ -3832,7 +3911,9 @@ export default function App() {
         "Authorization": `Bearer ${SUPA_KEY}`,
         "apikey": SUPA_KEY,
       },
-      body: JSON.stringify({ acao, payload: { ...(payload || {}), circuitoId: CIRCUITO_ATIVO } }),
+      // Respeita um circuitoId explícito no payload (inscrição por circuito escolhido);
+      // na ausência, usa o circuito ativo (comportamento de sempre).
+      body: JSON.stringify({ acao, payload: { ...(payload || {}), circuitoId: (payload && payload.circuitoId) ? payload.circuitoId : CIRCUITO_ATIVO } }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.sucesso) {
@@ -3948,6 +4029,7 @@ export default function App() {
           aceiteRegulamento: p.aceiteRegulamento || false,
           aceiteLGPD: p.aceiteLGPD || false,
           dataAceite: p.dataAceite || null,
+          circuitoId: p.circuitoId || undefined, // inscrição no circuito escolhido (Fatia 3); ausente = circuito ativo
         });
       } catch(e) {
         // Rede de segurança: telefone duplicado (retornado pela função ou pela

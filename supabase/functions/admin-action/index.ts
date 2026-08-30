@@ -1138,6 +1138,16 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true });
       }
 
+      // Liga/desliga as inscrições do circuito. A coluna `inscricoes_abertas` vive SÓ em
+      // `circuitos` (inclusive pro BH), então grava direto lá — nunca via setCfg/configuracao.
+      case "DEFINIR_INSCRICOES_ABERTAS": {
+        const { abertas } = payload || {};
+        if (typeof abertas !== "boolean") return jsonResponse({ sucesso: false, erro: "abertas (boolean) é obrigatório" }, 400);
+        const { error } = await supabase.from("circuitos").update({ inscricoes_abertas: abertas }).eq("id", circuitoId);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
       // Guarda o handle (credId) da biometria do ADMIN (protegido pelo PIN, ja checado
       // no topo do handler). NAO e' segredo. Permite recuperar a biometria do admin
       // depois que o navegador limpa o localStorage. Config global (admin unico).
@@ -1198,6 +1208,7 @@ Deno.serve(async (req) => {
           percentual_entrada_meio: 80,
           ativo: true,
           regulamento_versao: sistema === "A" ? "v03-12" : null,
+          inscricoes_abertas: false,
         };
         const { data: ins, error } = await supabase.from("circuitos").insert(novo).select("id, slug, nome_circuito, sistema, pareamento").single();
         if (error) {

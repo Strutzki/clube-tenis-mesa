@@ -617,6 +617,7 @@ const INIT = {
   temporadaAno: new Date().getFullYear(),
   mensagensEnviadas: [], // histórico de disparos de WhatsApp (log, não afeta ranking/rating)
   solicitacoesWo: [],    // pedidos de W.O. Justificado feitos pelo próprio atleta (Cap. 07)
+  inscricoesAbertas: false, // flag por circuito: circuito aceita novas inscrições (setada no load)
 };
 
 function reducer(state, action) {
@@ -1147,6 +1148,10 @@ function reducer(state, action) {
       return { ...state, autoValidarPlacar: !!action.payload?.ligado };
     }
 
+    case "DEFINIR_INSCRICOES_ABERTAS": {
+      return { ...state, inscricoesAbertas: !!action.payload?.abertas };
+    }
+
     case "DEFINIR_CONFIG_CIRCUITO": {
       const { nome, dataInicio, maxAtletas } = action.payload || {};
       return { ...state,
@@ -1157,7 +1162,7 @@ function reducer(state, action) {
     }
 
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, nomeCircuito, dataInicioTemporada, maxAtletas, proximaAberta, proximaNome, proximaDataInicio, proximaRotulo, proximaValorCheio, proximaValorDesconto, pixChave, mensagensEnviadas, solicitacoesWo } = action.payload;
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, nomeCircuito, dataInicioTemporada, maxAtletas, proximaAberta, proximaNome, proximaDataInicio, proximaRotulo, proximaValorCheio, proximaValorDesconto, pixChave, mensagensEnviadas, solicitacoesWo, inscricoesAbertas } = action.payload;
       return {
         ...state, athletes, matches, keys, phase,
         proximaAberta: proximaAberta ?? state.proximaAberta,
@@ -1180,6 +1185,7 @@ function reducer(state, action) {
         temporadaAno: temporadaAno ?? state.temporadaAno,
         mensagensEnviadas: mensagensEnviadas ?? state.mensagensEnviadas,
         solicitacoesWo: solicitacoesWo ?? state.solicitacoesWo,
+        inscricoesAbertas: inscricoesAbertas ?? state.inscricoesAbertas,
       };
     }
 
@@ -3732,6 +3738,7 @@ export default function App() {
         proximaValorDesconto: config?.[0]?.proxima_valor_desconto ?? null,
         pixChave: config?.[0]?.pix_chave || null,
         solicitacoesWo: solicitacoesWoMapped,
+        inscricoesAbertas: config?.[0]?.inscricoes_abertas || false,
       }});
       // Restaurar atleta completo da sessão após carregar do banco
       if (sessaoSalva.athleteId) {
@@ -4003,6 +4010,9 @@ export default function App() {
     }
     else if (action.type === "DEFINIR_AUTO_VALIDAR") {
       await chamarAdminAction("DEFINIR_AUTO_VALIDAR", { ligado: action.payload.ligado });
+    }
+    else if (action.type === "DEFINIR_INSCRICOES_ABERTAS") {
+      await chamarAdminAction("DEFINIR_INSCRICOES_ABERTAS", { abertas: action.payload.abertas });
     }
     else if (action.type === "DEFINIR_CONFIG_CIRCUITO") {
       await chamarAdminAction("DEFINIR_CONFIG_CIRCUITO", action.payload || {});
@@ -6808,6 +6818,19 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
           <button onClick={()=>dispatch({type:"DEFINIR_AUTO_VALIDAR",payload:{ligado:!state.autoValidarPlacar}})}
             style={{padding:"8px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.2)",background:state.autoValidarPlacar?"#6a9d7a":"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>
             {state.autoValidarPlacar ? "✓ Ligada" : "Desligada"}
+          </button>
+        </div>
+      </Card>
+
+      <Card style={{border:`1px solid ${state.inscricoesAbertas?"rgba(106,157,122,0.35)":"rgba(255,255,255,0.08)"}`,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>📝 Inscrições abertas</div>
+            <div style={{fontSize:11,color:"#7d9188",lineHeight:1.5}}>Quando ligada, este circuito aceita novas inscrições de atletas. Desligue para pausar a entrada (lotado, temporada avançada, etc.).</div>
+          </div>
+          <button onClick={()=>dispatch({type:"DEFINIR_INSCRICOES_ABERTAS",payload:{abertas:!state.inscricoesAbertas}})}
+            style={{padding:"8px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.2)",background:state.inscricoesAbertas?"#6a9d7a":"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>
+            {state.inscricoesAbertas ? "✓ Abertas" : "Fechadas"}
           </button>
         </div>
       </Card>

@@ -73,7 +73,7 @@ No A, W.O. justificado **anula** (rejeita a partida). No B, **sempre conta**:
 
 ## Falta
 - **Fatia 5:** W.O. no Sistema B (mapa de pontos, justificado que não anula) — hoje bloqueado.
-- **Fatia 6 (núcleo) — FEITA no front (não deployada):** o caminho de escrita já recarregava do servidor (INICIAR/AVANCAR/PROCESSAR/WO/validar → `loadFromSupabase`). Faltava a EXIBIÇÃO: `cmpRanking` agora ramifica pelo `SISTEMA_ATIVO` (setado no load) — desempate B (menos WO → h2h → % aproveitamento → saldo de sets → id); BH ('A') byte-idêntico. Testado (front 4/4). **Polimento cosmético pendente:** esconder coluna/gráfico de rating e rotular "Pontos" nas telas quando sistema B (não quebra, só estética).
+- **Fatia 6 (núcleo) — FEITA e DEPLOYADA (commit f82f121 no origin/main, Vercel publicou; site saudável):** o caminho de escrita já recarregava do servidor (INICIAR/AVANCAR/PROCESSAR/WO/validar → `loadFromSupabase`). Faltava a EXIBIÇÃO: `cmpRanking` agora ramifica pelo `SISTEMA_ATIVO` (setado no load) — desempate B (menos WO → h2h → % aproveitamento → saldo de sets → id); BH ('A') byte-idêntico. Testado (front 4/4). **Polimento cosmético pendente:** esconder coluna/gráfico de rating e rotular "Pontos" nas telas quando sistema B (não quebra, só estética).
 - **Teste ponta a ponta:** criar circuito B com atletas NOVOS (disjuntos do BH), iniciar etapa, lançar placares, processar — conferir pontos/ranking/bye.
 - Cabear os regulamentos (`RegulamentoView` por `sistema`/versão).
 

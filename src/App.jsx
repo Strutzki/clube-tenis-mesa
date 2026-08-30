@@ -2441,7 +2441,10 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
     }
 
     case "resultados": {
-      const validadas = state.matches.filter(m => m.validated);
+      // Resultado já comunicado (flag PERSISTENTE na partida) nunca volta a pendente.
+      // Antes, o "enviada" dependia só do log temporal (jaEnviada), que tem corte por par
+      // mensal — então a cada novo par os resultados antigos reapareciam como pendentes.
+      const validadas = state.matches.filter(m => m.validated && !m.resultadoComunicado);
       return validadas.map(m => {
         const p1 = state.athletes.find(a => a.id === m.p1Id);
         const p2 = state.athletes.find(a => a.id === m.p2Id);

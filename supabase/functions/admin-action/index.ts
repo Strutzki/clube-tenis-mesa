@@ -18,6 +18,21 @@ async function bhId(): Promise<string> {
   return _bhId;
 }
 
+// Resolve o sistema do circuito ('A'/'B') SEM consultar coluna inexistente: o BH le a
+// config de `configuracao` (que NAO tem `sistema`), entao resolvemos por codigo. Memoizado.
+// Fail-safe: qualquer duvida -> 'A' (comportamento do BH). `sistema`/`pareamento` so em `circuitos`.
+const _sistemaCache = new Map<string, string>();
+async function getSistema(circuitoId: string): Promise<string> {
+  const bh = await bhId();
+  if (circuitoId === bh) return "A";
+  if (_sistemaCache.has(circuitoId)) return _sistemaCache.get(circuitoId)!;
+  const { data, error } = await supabase.from("circuitos").select("sistema").eq("id", circuitoId).single();
+  if (error) throw error; // fail-closed: NUNCA assumir 'A' num circuito nao-BH por falha transitoria (evitaria gravar rating no B)
+  const s = (data?.sistema === "B") ? "B" : "A";
+  _sistemaCache.set(circuitoId, s);
+  return s;
+}
+
 // --- Dual-write (Fase 4B) -------------------------------------------------
 // O servidor continua gravando o estado sazonal em `atletas` (o BH depende disso)
 // e a config em `configuracao`. Em PARALELO, espelha em `circuito_atletas`/`circuitos`.
@@ -70,6 +85,11 @@ async function writeAtleta(circuitoId: string, atletaId: string, campos: Record<
   }
   const identidade: Record<string, unknown> = {};
   for (const k in campos) if (!SEASONAL_COLS.has(k)) identidade[k] = campos[k];
+  // Guard motor B (defesa em profundidade): circuito Sistema B NUNCA escreve identidade de
+  // rating na tabela global `atletas` — nem que um bug futuro tente. NAO afeta o BH ('A').
+  if ((await getSistema(circuitoId)) === "B") {
+    delete identidade.rating; delete identidade.rating_pico; delete identidade.rating_historico;
+  }
   if (Object.keys(identidade).length > 0) {
     const { error } = await supabase.from("atletas").update(identidade).eq("id", atletaId);
     if (error) throw error;
@@ -255,6 +275,37 @@ function cmpRankingDB(partidas: any[]) {
   };
 }
 
+// Comparador de ranking do Sistema B (pontos fixos). saldo_temp = pontos acumulados (V=2/D=1).
+// Desempate: pontos -> MENOS W.O. injustificados -> confronto direto -> % aproveitamento -> saldo de sets -> id (estavel).
+// (Definido aqui; so e' CHAMADO no ramo `sistema === 'B'` — inerte pro BH ate a Fatia 2.)
+function aproveitamentoB(a: any): number {
+  const n = (a.vitorias || 0) + (a.derrotas || 0);
+  return n > 0 ? (a.vitorias || 0) / n : 0;
+}
+function saldoSetsB(id: string, partidas: any[]): number {
+  let s = 0;
+  for (const m of partidas) {
+    if (m.rejeitado || !m.validado) continue;
+    if (m.placar1 == null || m.placar2 == null) continue;
+    if (m.atleta1_id === id) s += (m.placar1 - m.placar2);
+    else if (m.atleta2_id === id) s += (m.placar2 - m.placar1);
+  }
+  return s;
+}
+function cmpRankingB(partidas: any[]) {
+  return (a: any, b: any) => {
+    if ((b.saldo_temp || 0) !== (a.saldo_temp || 0)) return (b.saldo_temp || 0) - (a.saldo_temp || 0);
+    if ((a.wo_culposos_temporada || 0) !== (b.wo_culposos_temporada || 0)) return (a.wo_culposos_temporada || 0) - (b.wo_culposos_temporada || 0);
+    const h2h = confrontoDiretoDB(a.id, b.id, partidas);
+    if (h2h !== 0) return -h2h;
+    const apA = aproveitamentoB(a), apB = aproveitamentoB(b);
+    if (apB !== apA) return apB - apA;
+    const ssA = saldoSetsB(a.id, partidas), ssB = saldoSetsB(b.id, partidas);
+    if (ssB !== ssA) return ssB - ssA;
+    return String(a.id).localeCompare(String(b.id));
+  };
+}
+
 function parearRodada(athletes: any[], historico: Set<string>): { pares: { p1: string; p2: string }[]; bye: string | null } {
   const sorted = [...athletes].sort((a, b) => (b.rating || 250) - (a.rating || 250));
 
@@ -311,6 +362,88 @@ function gerarPareamentoPorRating(athletes: any[], matchesTemporada: any[] = [])
   });
   const r2 = parearRodada(athletes, historico2);
 
+  return { rodada1: r1.pares, bye1: r1.bye, rodada2: r2.pares, bye2: r2.bye };
+}
+
+// ── Pareamento do Sistema B (sem rating) ──────────────────────────────────────
+function embaralhar<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+// Pareia uma rodada no Sistema B. `pareamento`: 'sorteio' (ordem aleatoria) ou 'grupos'
+// (ordena pela tabela de pontos e pareia posicoes proximas). Custo = penalidade de repeticao
+// (+ distancia de posicao no modo grupos). Bye com rotacao: prefere quem ainda nao teve bye.
+function parearRodadaB(athletes: any[], historico: Set<string>, pareamento: string, jaTeveBye: Set<string>): { pares: { p1: string; p2: string }[]; bye: string | null } {
+  const ordenados = (pareamento === "grupos")
+    ? [...athletes].sort((a, b) => (b.saldo_temp || 0) - (a.saldo_temp || 0))
+    : embaralhar(athletes);
+
+  let byeId: string | null = null;
+  let jogadores = ordenados;
+  if (ordenados.length % 2 !== 0) {
+    const candidatos = ordenados.filter(a => !jaTeveBye.has(a.id));
+    const escolhido = candidatos.length > 0
+      ? (pareamento === "grupos" ? candidatos[candidatos.length - 1] : candidatos[0])
+      : ordenados[ordenados.length - 1];
+    byeId = escolhido.id;
+    jogadores = ordenados.filter(a => a.id !== byeId);
+  }
+
+  const n = jogadores.length;
+  const PENAL_REPETICAO = 1e7;
+  function custo(i: number, j: number) {
+    const rep = jaSeEnfrentaram(jogadores[i].id, jogadores[j].id, historico) ? PENAL_REPETICAO : 0;
+    const dist = (pareamento === "grupos") ? Math.abs(i - j) : 0;
+    return rep + dist;
+  }
+
+  const usados = new Array(n).fill(false);
+  let melhorPares: { p1: string; p2: string }[] | null = null;
+  let melhorCusto = Infinity;
+  function resolver(pares: { p1: string; p2: string }[], custoAcc: number) {
+    if (custoAcc >= melhorCusto) return;
+    const i = usados.findIndex((u) => !u);
+    if (i === -1) { melhorCusto = custoAcc; melhorPares = pares; return; }
+    usados[i] = true;
+    const candidatos: { j: number; c: number }[] = [];
+    for (let j = 0; j < n; j++) {
+      if (j === i || usados[j]) continue;
+      candidatos.push({ j, c: custo(i, j) });
+    }
+    candidatos.sort((a, b) => a.c - b.c);
+    for (const { j, c } of candidatos) {
+      usados[j] = true;
+      resolver([...pares, { p1: jogadores[i].id, p2: jogadores[j].id }], custoAcc + c);
+      usados[j] = false;
+    }
+    usados[i] = false;
+  }
+  resolver([], 0);
+
+  return { pares: melhorPares || [], bye: byeId };
+}
+// Gera o par mensal (2 rodadas) no Sistema B, com rotacao de bye entre as duas.
+function gerarPareamentoB(athletes: any[], matchesTemporada: any[], pareamento: string) {
+  const historico = confrontosDaTemporada(matchesTemporada);
+  // Deriva "quem ja teve bye" (melhor esforco): por rodada, ativos que nao aparecem em partida.
+  const jaTeveBye = new Set<string>();
+  const rounds = [...new Set((matchesTemporada || []).map((m: any) => m.rodada))];
+  const idsAtivos = athletes.map(a => a.id);
+  for (const r of rounds) {
+    const naRodada = new Set<string>();
+    (matchesTemporada || []).filter((m: any) => m.rodada === r).forEach((m: any) => { naRodada.add(m.atleta1_id); naRodada.add(m.atleta2_id); });
+    for (const id of idsAtivos) if (!naRodada.has(id)) jaTeveBye.add(id);
+  }
+  const r1 = parearRodadaB(athletes, historico, pareamento, jaTeveBye);
+  const historico2 = new Set(historico);
+  r1.pares.forEach((par) => { const [a, b] = [par.p1, par.p2].sort(); historico2.add(`${a}|${b}`); });
+  const jaTeveBye2 = new Set(jaTeveBye);
+  if (r1.bye) jaTeveBye2.add(r1.bye);
+  const r2 = parearRodadaB(athletes, historico2, pareamento, jaTeveBye2);
   return { rodada1: r1.pares, bye1: r1.bye, rodada2: r2.pares, bye2: r2.bye };
 }
 
@@ -454,6 +587,8 @@ Deno.serve(async (req) => {
           return jsonResponse({ sucesso: false, erro: "round é obrigatório" }, 400);
         }
 
+        const sistema = await getSistema(circuitoId); // Fatia 2: ramifica pontuação/ranking do Sistema B
+
         const { data: partidasRodadaAnterior } = await supabase
           .from("partidas").select("id").eq("circuito_id", circuitoId).eq("rodada", round - 1).eq("validado", true).eq("calculado", false).eq("rejeitado", false);
         const { data: woRodadaAnterior } = await supabase
@@ -492,6 +627,21 @@ Deno.serve(async (req) => {
           const p2 = athletesMap[match.atleta2_id];
           if (!p1 || !p2) continue;
           const p1wins = match.placar1 > match.placar2;
+          if (sistema === "B") {
+            // Sistema B: pontos fixos — vencedor +2, perdedor +1. NAO mexe em rating.
+            athletesMap[match.atleta1_id] = {
+              ...p1, saldo_temp: (p1.saldo_temp || 0) + (p1wins ? 2 : 1),
+              vitorias: (p1.vitorias || 0) + (p1wins ? 1 : 0),
+              derrotas: (p1.derrotas || 0) + (p1wins ? 0 : 1),
+            };
+            athletesMap[match.atleta2_id] = {
+              ...p2, saldo_temp: (p2.saldo_temp || 0) + (p1wins ? 1 : 2),
+              vitorias: (p2.vitorias || 0) + (p1wins ? 0 : 1),
+              derrotas: (p2.derrotas || 0) + (p1wins ? 1 : 0),
+            };
+            infoPorPartida[match.id] = { favorito_id: null as any, diferenca_rating_momento: null as any };
+            continue;
+          }
           const favoritoId = p1.rating >= p2.rating ? p1.id : p2.id;
           const diferencaRatingMomento = Math.abs(p1.rating - p2.rating);
           const newR1 = calcElo(p1.rating, p2.rating, p1wins ? 1 : 0);
@@ -517,6 +667,7 @@ Deno.serve(async (req) => {
         }
 
         for (const w of wos) {
+          if (sistema === "B") continue; // W.O. do Sistema B: pontos tratados na Fatia 5 (aqui não aplica)
           const dataWo = w.admin_aprovado_em || new Date().toISOString();
           const benef = w.wo_beneficiario_id ? athletesMap[w.wo_beneficiario_id] : null;
           if (benef) {
@@ -547,9 +698,32 @@ Deno.serve(async (req) => {
         const idsComPartida = new Set<string>();
         (partidasTemporada ?? []).forEach((m: any) => { if (m.validado && !m.rejeitado) { idsComPartida.add(m.atleta1_id); idsComPartida.add(m.atleta2_id); } });
 
+        // Fatia 4: bye +1 (ponto de participação) no Sistema B — idempotente por rodada.
+        // Trava dupla p/ não premiar entrante tardio: só quando nº de ativos é ímpar E há exatamente 1 fora da rodada.
+        // Idempotência: só na 1ª passada (nenhuma partida da rodada ainda calculada).
+        if (sistema === "B") {
+          const { data: partidasDaRodada } = await supabase
+            .from("partidas").select("atleta1_id,atleta2_id,calculado,rejeitado")
+            .eq("circuito_id", circuitoId).eq("rodada", round);
+          const jaProcessadaAntes = (partidasDaRodada ?? []).some((p: any) => p.calculado);
+          if (!jaProcessadaAntes) {
+            const jogou = new Set<string>();
+            (partidasDaRodada ?? []).forEach((p: any) => { if (!p.rejeitado) { jogou.add(p.atleta1_id); jogou.add(p.atleta2_id); } });
+            const cfgBye = await getCfg(circuitoId, "financeiro_ativo");
+            const ativosBye = await getAtivosNoCircuito(circuitoId, !!cfgBye?.financeiro_ativo);
+            const foraDaRodada = (ativosBye || []).filter((a: any) => !jogou.has(a.id));
+            if ((ativosBye || []).length % 2 === 1 && foraDaRodada.length === 1) {
+              const byeId = foraDaRodada[0].id;
+              const b = athletesMap[byeId] || { ...foraDaRodada[0] };
+              athletesMap[byeId] = { ...b, saldo_temp: (b.saldo_temp || 0) + 1 };
+              idsComPartida.add(byeId); // ganhou ponto → entra no ranking desta rodada
+            }
+          }
+        }
+
         const rankingAtual = Object.values(athletesMap)
           .filter((a: any) => a.status === "ativo" && !a.pendente_circuito && idsComPartida.has(a.id))
-          .sort(cmpRankingDB(partidasTemporada ?? []));
+          .sort(sistema === "B" ? cmpRankingB(partidasTemporada ?? []) : cmpRankingDB(partidasTemporada ?? []));
 
         const dataSnapshot = new Date().toISOString();
         rankingAtual.forEach((a: any, i: number) => {
@@ -566,11 +740,19 @@ Deno.serve(async (req) => {
 
         for (const id of idsAlterados) {
           const a = athletesMap[id];
-          await writeAtleta(circuitoId, id, {
-            rating: a.rating, saldo_temp: a.saldo_temp, vitorias: a.vitorias, derrotas: a.derrotas,
-            rating_pico: a.rating_pico, rating_historico: a.rating_historico,
-            posicao_historico: a.posicao_historico,
-          });
+          if (sistema === "B") {
+            // Sistema B: grava só sazonais de pontos — nunca rating (identidade global).
+            await writeAtleta(circuitoId, id, {
+              saldo_temp: a.saldo_temp, vitorias: a.vitorias, derrotas: a.derrotas,
+              posicao_historico: a.posicao_historico,
+            });
+          } else {
+            await writeAtleta(circuitoId, id, {
+              rating: a.rating, saldo_temp: a.saldo_temp, vitorias: a.vitorias, derrotas: a.derrotas,
+              rating_pico: a.rating_pico, rating_historico: a.rating_historico,
+              posicao_historico: a.posicao_historico,
+            });
+          }
         }
 
         for (const m of pendentes) {
@@ -583,6 +765,7 @@ Deno.serve(async (req) => {
           if (error) throw error;
         }
         for (const w of wos) {
+          if (sistema === "B") continue; // W.O. do Sistema B nao e' consumido aqui — fica pendente ate a Fatia 5
           const { error } = await supabase.from("partidas").update({ calculado: true }).eq("id", w.id);
           if (error) throw error;
         }
@@ -684,7 +867,11 @@ Deno.serve(async (req) => {
         for (const a of ativos) {
           await writeAtleta(circuitoId, a.id, { chave: keyId });
         }
-        const { rodada1, rodada2 } = gerarPareamentoPorRating(ativos, []);
+        const sistemaIni = await getSistema(circuitoId); // Fatia 3: pareamento do Sistema B
+        const pareamentoIni = sistemaIni === "B" ? ((await getCfg(circuitoId, "pareamento"))?.pareamento || "sorteio") : null;
+        const { rodada1, rodada2 } = sistemaIni === "B"
+          ? gerarPareamentoB(ativos, [], pareamentoIni)
+          : gerarPareamentoPorRating(ativos, []);
         for (const pair of rodada1) {
           const mid = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
           const { error } = await supabase.from("partidas").insert({ id: mid, chave_id: keyId, rodada: 1, atleta1_id: pair.p1, atleta2_id: pair.p2, prazo: prazoA, circuito_id: circuitoId });
@@ -727,7 +914,11 @@ Deno.serve(async (req) => {
           mesRef = new Date(d1.getFullYear(), d1.getMonth() + parIndex, 1);
         }
         const { prazoA, prazoB } = calcularPrazos(mesRef);
-        const { rodada1, rodada2 } = gerarPareamentoPorRating(ativos, todasPartidas ?? []);
+        const sistemaAv = await getSistema(circuitoId); // Fatia 3: pareamento do Sistema B
+        const pareamentoAv = sistemaAv === "B" ? ((await getCfg(circuitoId, "pareamento"))?.pareamento || "sorteio") : null;
+        const { rodada1, rodada2 } = sistemaAv === "B"
+          ? gerarPareamentoB(ativos, todasPartidas ?? [], pareamentoAv)
+          : gerarPareamentoPorRating(ativos, todasPartidas ?? []);
         await supabase.from("chaves").update({ rodada_atual: rB }).eq("id", keyId);
         for (const pair of rodada1) {
           const mid = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -783,6 +974,8 @@ Deno.serve(async (req) => {
         const { id, matchId, aprovado, motivoRecusa, justificativa } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
         if (typeof aprovado !== "boolean") return jsonResponse({ sucesso: false, erro: "aprovado (boolean) é obrigatório" }, 400);
+        // Sistema B: fluxo de W.O. (pontos em vez de rejeição) chega na Fatia 5. Até lá, bloqueia p/ não mishandle.
+        if ((await getSistema(circuitoId)) === "B") return jsonResponse({ sucesso: false, erro: "W.O. no Sistema B ainda não habilitado (em breve)." }, 400);
         const now = new Date().toISOString();
         const { error: errSol } = await supabase.from("solicitacoes_wo").update({
           status: aprovado ? "aprovado" : "recusado", respondido_em: now, motivo_recusa: motivoRecusa || null,
@@ -898,6 +1091,8 @@ Deno.serve(async (req) => {
         const { matchId, tipo, faltosoId, beneficiarioId } = payload || {};
         if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
         if (!["justificado", "culposo", "a_favor"].includes(tipo)) return jsonResponse({ sucesso: false, erro: "tipo deve ser 'justificado', 'culposo' ou 'a_favor'" }, 400);
+        // Sistema B: fluxo de W.O. (pontos em vez de rejeição) chega na Fatia 5. Até lá, bloqueia p/ não mishandle.
+        if ((await getSistema(circuitoId)) === "B") return jsonResponse({ sucesso: false, erro: "W.O. no Sistema B ainda não habilitado (em breve)." }, 400);
         if (tipo === "justificado") {
           const { error } = await supabase.from("partidas").update({ rejeitado: true, motivo_rejeicao: "W.O. Justificado" }).eq("id", matchId);
           if (error) throw error;

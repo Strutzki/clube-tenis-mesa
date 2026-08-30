@@ -84,6 +84,10 @@ function setCircuitoAtivo(uuid) {
     CIRCUITO_ATIVO = uuid;
   }
 }
+// Sistema do circuito ativo ('A' rating / 'B' pontos). Setado no load do circuito.
+// Só afeta desempates de ranking do Sistema B; com 'A' (BH), tudo idêntico a hoje.
+let SISTEMA_ATIVO = "A";
+function setSistemaAtivo(s) { SISTEMA_ATIVO = (s === "B") ? "B" : "A"; }
 
 // rpId da biometria (WebAuthn) FIXADO no domínio-mãe: assim o passkey vale tanto no
 // apex (clubedotenisdemesabh.com.br) quanto no www, e sobrevive a trocas de subdomínio
@@ -1219,11 +1223,38 @@ function confrontoDireto(aId, bId, matches) {
   return av - bv;
 }
 
-// Comparador oficial do ranking da temporada (Regulamento Cap. 09):
-// 1) saldo de pontos · 2) vitórias · 3) confronto direto · 4) rating.
+// Aproveitamento (% de vitórias) e saldo de sets — desempates do Sistema B (Cap. 09 do reg. B).
+function aproveitamentoFrontB(a) {
+  const n = (a.wins||0) + (a.losses||0);
+  return n > 0 ? (a.wins||0) / n : 0;
+}
+function saldoSetsFrontB(id, matches) {
+  let s = 0;
+  (matches || []).forEach(m => {
+    if (m.rejeitado || !m.validated) return;
+    if (m.score1 == null || m.score2 == null) return;
+    if (m.p1Id === id) s += (m.score1 - m.score2);
+    else if (m.p2Id === id) s += (m.score2 - m.score1);
+  });
+  return s;
+}
+// Comparador oficial do ranking da temporada.
+// Sistema A (BH, Cap. 09): 1) saldo de pontos · 2) vitórias · 3) confronto direto · 4) rating.
+// Sistema B: 1) pontos · 2) MENOS W.O. injustificados · 3) confronto direto · 4) % aproveitamento · 5) saldo de sets · 6) id.
+// Ramifica pelo SISTEMA_ATIVO (setado no load do circuito). Para 'A' o caminho é idêntico ao de sempre.
 function cmpRanking(matches) {
   return (a, b) => {
     if ((b.saldoTemp||0) !== (a.saldoTemp||0)) return (b.saldoTemp||0) - (a.saldoTemp||0);
+    if (SISTEMA_ATIVO === "B") {
+      if ((a.woCulpososTemporada||0) !== (b.woCulpososTemporada||0)) return (a.woCulpososTemporada||0) - (b.woCulpososTemporada||0);
+      const h2hB = confrontoDireto(a.id, b.id, matches);
+      if (h2hB !== 0) return -h2hB;
+      const apA = aproveitamentoFrontB(a), apB = aproveitamentoFrontB(b);
+      if (apB !== apA) return apB - apA;
+      const ssA = saldoSetsFrontB(a.id, matches), ssB = saldoSetsFrontB(b.id, matches);
+      if (ssB !== ssA) return ssB - ssA;
+      return String(a.id).localeCompare(String(b.id));
+    }
     if ((b.wins||0) !== (a.wins||0)) return (b.wins||0) - (a.wins||0);
     const h2h = confrontoDireto(a.id, b.id, matches);
     if (h2h !== 0) return -h2h; // quem venceu o confronto direto vem primeiro
@@ -3675,6 +3706,7 @@ export default function App() {
         notificadoAdversario: s.notificado_adversario || false,
       }));
       if (myGen !== loadGenRef.current) return true; // load mais novo em andamento — descarta este (troca de circuito)
+      setSistemaAtivo(config?.[0]?.sistema || "A"); // Fatia 6: alinha o desempate de ranking ao sistema do circuito
       dispatch({ type:"LOAD_FROM_DB", payload:{
         athletes: athletesMapped, matches: matchesMapped,
         keys: keysMapped, phase: config?.[0]?.fase||"inscricoes",

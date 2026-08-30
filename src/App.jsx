@@ -1420,6 +1420,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
   const [erro, setErro] = useState(false);
   const [escolhido, setEscolhido] = useState(null);
   const [confirmado, setConfirmado] = useState(false);
+  const [verReg, setVerReg] = useState(false);
   useEffect(() => {
     let vivo = true;
     db.getCircuitosAbertos()
@@ -1452,6 +1453,8 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
   // Circuito escolhido (inclui o auto-selecionado quando só há um) -> confirmação com nome + selo.
   if (escolhido) {
     const sl = selo(escolhido.sistema);
+    // Regulamento do circuito escolhido (ramificado por sistema: A=rating v03-12 / B=pontos vB-01).
+    if (verReg) return <RegulamentoView onBack={() => setVerReg(false)} sistema={escolhido.sistema} />;
     return (
       <div style={{minHeight:"100vh",background:T.verde,fontFamily:T.sans,display:"flex",justifyContent:"center"}}>
         <div style={{width:"100%",maxWidth:390,padding:"20px 24px 40px",color:T.offwhite}}>
@@ -1465,6 +1468,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
             {(escolhido.cidade || escolhido.uf) && <div style={{fontSize:12,color:T.cinza,marginTop:4}}>{[escolhido.cidade, escolhido.uf].filter(Boolean).join(" · ")}</div>}
             <div style={{fontSize:12,color:"rgba(240,234,224,0.55)",marginTop:8}}>{sl.desc}</div>
           </div>
+          <button onClick={() => setVerReg(true)} style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>📋 Ver regulamento ({escolhido.sistema === "B" ? "vB-01 · pontos" : "v03-12 · rating"})</button>
           <button onClick={() => setConfirmado(true)} style={{width:"100%",background:T.terracota,color:T.verde,border:"none",borderRadius:12,padding:14,fontSize:15,fontWeight:800,cursor:"pointer"}}>Continuar para inscrição →</button>
         </div>
       </div>
@@ -1809,8 +1813,10 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
 
 
 
-// ── REGULAMENTO VIEW (regulamento v03-12) ─────────────────────────────────────
-function RegulamentoView({ onBack }) {
+// ── REGULAMENTO VIEW (v03-12 = Sistema A/rating · vB-01 = Sistema B/pontos) ────
+// Chamada sem `sistema` (ou "A") => regulamento do rating (BH, intocado).
+// `sistema="B"` => regulamento de pontos (vB-01).
+function RegulamentoView({ onBack, sistema }) {
   const [capAberto, setCapAberto] = useState(null);
 
   const s = {
@@ -2247,6 +2253,135 @@ function RegulamentoView({ onBack }) {
     return null;
   }
 
+  // ── Regulamento do Sistema B (pontos fixos · vB-01) ──────────────────────────
+  const CAPS_B = [
+    { id:1,  tag:"Cap. 01", titulo:"Como Funciona: O Ciclo do Ranking" },
+    { id:2,  tag:"Cap. 02", titulo:"Elegibilidade — Quem Pode Participar" },
+    { id:3,  tag:"Cap. 03", titulo:"Sistema de Pareamento" },
+    { id:4,  tag:"Cap. 04", titulo:"Reputação & Comprovação" },
+    { id:5,  tag:"Cap. 05", titulo:"Pontuação — Como se Ganham Pontos" },
+    { id:6,  tag:"Cap. 06", titulo:"Regras das Partidas" },
+    { id:7,  tag:"Cap. 07", titulo:"W.O., Faltas & Penalidades" },
+    { id:8,  tag:"Cap. 08", titulo:"Registro do Placar" },
+    { id:9,  tag:"Cap. 09", titulo:"Ranking, Desempate & Publicação" },
+    { id:10, tag:"Cap. 10", titulo:"Como Participar" },
+    { id:11, tag:"Cap. 11", titulo:"Valor da Temporada, Pagamento & Desistência" },
+    { id:12, tag:"Cap. 12", titulo:"Estrutura das Rodadas & Calendário" },
+    { id:13, tag:"Cap. 13", titulo:"Casos Omissos" },
+  ];
+  function ConteudoCapB({ id }) {
+    if (id===1) return (
+      <div>
+        <p style={s.p}>Este circuito funciona em <span style={s.dest}>pares mensais de rodadas</span>. No dia 1º de cada mês são publicados os <span style={s.dest}>dois confrontos do mês</span>. Vitória vale <span style={s.dest}>2 pontos</span>, derrota vale <span style={s.dest}>1 ponto</span> — toda partida jogada conta.</p>
+        <p style={s.p}>O <span style={s.dest}>ranking é a soma dos pontos</span> da temporada. Não há rating: o que vale é a tabela de pontos, que <span style={s.dest}>zera na virada da temporada</span>. Os pontos entram quando o administrador processa a rodada.</p>
+        <Tbl headers={["Etapa","1ª Rodada","2ª Rodada"]} rows={[
+          ["Janela para jogar e registrar","Dias 1 a 15","Dias 1 a 27"],
+          ["Conferência do admin","Dias 16 a 19","Dias 28 a 29"],
+          ["Ranking divulgado","Dia 20","Último dia do mês"],
+        ]}/>
+      </div>
+    );
+    if (id===2) return (
+      <div>
+        <p style={s.p}>Todos os inscritos começam a temporada em <span style={s.dest}>0 pontos</span> — não existe rating de entrada. A distinção entre federado e não-federado é apenas informativa no perfil e não altera a pontuação.</p>
+      </div>
+    );
+    if (id===3) return (
+      <div>
+        <p style={s.p}>O método de pareamento é escolhido na criação do circuito e vale para a temporada toda:</p>
+        <Ul items={[
+          "Sorteio aleatório: a cada rodada os confrontos são sorteados, sem repetir adversário na temporada.",
+          "Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos), também sem repetir adversário.",
+        ]}/>
+        <Box cor="#6a9d7a" titulo="🎟️ Bye (número ímpar de atletas)">
+          <p style={s.p}>Quando o número de atletas é ímpar, um atleta fica de fora na rodada (bye) e ganha <span style={s.dest}>1 ponto de participação</span>. O bye tem <span style={s.dest}>rotação</span>: ninguém recebe um segundo bye antes de todos terem recebido um.</p>
+        </Box>
+        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>Os dois confrontos do mês são fotografados no início do mês (antes de processar a 1ª rodada), então a faixa da 2ª rodada usa a tabela do começo do mês.</p>
+      </div>
+    );
+    if (id===4) return (
+      <div>
+        <p style={s.p}>Para dar confiança aos resultados, o Circuito adota um sistema simples de <span style={s.dest}>reputação por comprovação fotográfica</span> — totalmente opcional, mas recomendado. Uma foto do placar/local ajuda a resolver eventuais divergências.</p>
+      </div>
+    );
+    if (id===5) return (
+      <div>
+        <Box cor="#D85A30" titulo="🎯 Pontuação">
+          <Ul items={[
+            "Vitória: 2 pontos",
+            "Derrota: 1 ponto (perder jogando ainda pontua)",
+            "Bye: 1 ponto de participação",
+          ]}/>
+        </Box>
+        <p style={s.p}>Não há rating permanente — só a tabela de pontos da temporada, que zera na virada. Os pontos entram no processamento da rodada pelo administrador.</p>
+      </div>
+    );
+    if (id===6) return (
+      <div>
+        <p style={s.p}>As partidas seguem as regras oficiais do tênis de mesa: melhor de <span style={s.dest}>5 sets</span> (quem faz 3 primeiro), cada set até <span style={s.dest}>11 pontos</span> com 2 de diferença. Combine local e horário com o adversário dentro da janela da rodada.</p>
+      </div>
+    );
+    if (id===7) return (
+      <div>
+        <p style={s.p}>O procedimento de classificação do W.O. é o mesmo do Circuito (foto do local, print da conversa, prazo, decisão do admin). Muda só a consequência em pontos:</p>
+        <Tbl headers={["Situação","Ausente","Adversário"]} rows={[
+          ["W.O. injustificado","0","2"],
+          ["W.O. justificado e aprovado","1","2"],
+          ["Ambos injustificados","0","0"],
+          ["Ambos justificados","1","1"],
+        ]}/>
+        <Box cor="#c25a45" titulo="⛔ Suspensão">
+          <p style={s.p}>2 W.O. <span style={s.dest}>injustificados</span> na temporada levam à suspensão (justificados não contam). Há aviso formal no 1º injustificado.</p>
+        </Box>
+        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>Partida não registrada no prazo: sem comprovação vira duplo injustificado (0/0); com comprovação, o admin imputa o resultado.</p>
+      </div>
+    );
+    if (id===8) return (
+      <div>
+        <p style={s.p}>Os <span style={s.dest}>dois atletas registram o placar</span> no app. Se coincidirem, o resultado é confirmado; se divergirem, o administrador decide. Os pontos entram quando o admin <span style={s.dest}>processa a rodada</span> — registrar e computar são etapas separadas (transparência).</p>
+      </div>
+    );
+    if (id===9) return (
+      <div>
+        <p style={s.p}>O ranking é a <span style={s.dest}>soma dos pontos</span>, do maior para o menor. Em caso de empate, o desempate segue esta ordem:</p>
+        <Tbl headers={["Ordem","Critério de desempate"]} rows={[
+          ["1º","Total de pontos"],
+          ["2º","Menos W.O. injustificados (premia presença)"],
+          ["3º","Confronto direto"],
+          ["4º","% de aproveitamento (vitórias ÷ jogos)"],
+          ["5º","Saldo de sets"],
+          ["6º","Sorteio registrado pelo admin"],
+        ]}/>
+        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>Como o W.O. injustificado vem antes do confronto direto, um atleta pode ter vencido o duelo direto e ainda ficar atrás por ter faltado mais — é a escolha consciente de valorizar a presença.</p>
+      </div>
+    );
+    if (id===10) return (
+      <div>
+        <p style={s.p}>A inscrição é feita pelo próprio app. O atleta entra em <span style={s.dest}>0 pontos</span> e, após a aprovação do administrador, passa a ser pareado nas rodadas.</p>
+      </div>
+    );
+    if (id===11) return (
+      <div>
+        <p style={s.p}>Quando o circuito tem valor de temporada, ele é informado na inscrição/renovação. <span style={s.dest}>Abandono</span> durante a temporada leva a <span style={s.dest}>bloqueio de 1 temporada</span> (não há rating a debitar).</p>
+      </div>
+    );
+    if (id===12) return (
+      <div>
+        <p style={s.p}>Pares mensais de rodadas: no dia 1º saem os dois confrontos do mês. 1ª rodada até o <span style={s.dest}>dia 15</span>, 2ª rodada até o <span style={s.dest}>dia 27</span>. O número de etapas da temporada é configurável por circuito.</p>
+      </div>
+    );
+    if (id===13) return (
+      <div>
+        <p style={s.p}>Situações não previstas são resolvidas pelo administrador do circuito, com bom senso e em favor da integridade da competição. A decisão do administrador em casos omissos é final e pode motivar uma nova regra em versão futura.</p>
+        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Sistema B (pontos) · Regulamento vB-01</div>
+      </div>
+    );
+    return null;
+  }
+
+  const capsAtivos = sistema === "B" ? CAPS_B : caps;
+  const versaoLabel = sistema === "B" ? "vB-01" : "v03-12";
+
   return (
     <div style={s.wrap}>
       <div style={s.aviso}>
@@ -2257,13 +2392,13 @@ function RegulamentoView({ onBack }) {
         <div style={s.logoWrap}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
         <div style={{flex:1,marginLeft:10}}>
           <div style={{fontSize:14,fontWeight:800,color:"#fff"}}>Regulamento Oficial</div>
-          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · v03-12</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · {versaoLabel}</div>
         </div>
         <button style={s.backBtn} onClick={onBack}>← Voltar</button>
       </div>
       <div style={s.body}>
         <div style={{fontSize:12,color:"#7d9188",marginBottom:12,textAlign:"center"}}>Toque em cada capítulo para expandir</div>
-        {caps.map(cap => (
+        {capsAtivos.map(cap => (
           <div key={cap.id} style={s.capCard(capAberto===cap.id)} onClick={()=>setCapAberto(capAberto===cap.id?null:cap.id)}>
             <div style={s.capHeader}>
               <div>
@@ -2274,7 +2409,7 @@ function RegulamentoView({ onBack }) {
             </div>
             {capAberto===cap.id && (
               <div style={s.capBody} onClick={e=>e.stopPropagation()}>
-                <ConteudoCap id={cap.id}/>
+                {sistema === "B" ? <ConteudoCapB id={cap.id}/> : <ConteudoCap id={cap.id}/>}
               </div>
             )}
           </div>

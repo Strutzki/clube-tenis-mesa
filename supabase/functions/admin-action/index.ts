@@ -1207,7 +1207,7 @@ Deno.serve(async (req) => {
           desconto_global_pct: 0,
           percentual_entrada_meio: 80,
           ativo: true,
-          regulamento_versao: sistema === "A" ? "v03-12" : null,
+          regulamento_versao: sistema === "A" ? "v03-12" : "vB-01",
           inscricoes_abertas: false,
         };
         const { data: ins, error } = await supabase.from("circuitos").insert(novo).select("id, slug, nome_circuito, sistema, pareamento").single();

@@ -39,7 +39,15 @@ Ao apertar **"Inscreva-se"**, a PRIMEIRA coisa é **checar se há circuito abert
 
 > ⚠️ **TRAVA OPERACIONAL até a Fatia 5:** só o **BH** deve ficar com inscrições abertas. O `athlete-action` (INSCREVER) ainda NÃO revalida/roteia/carimba para circuito não-BH — isso é a Fatia 5. Não ligar o toggle "Inscrições abertas" em nenhum circuito não-BH antes disso.
 4. **Região.** Campo cidade/UF na inscrição + filtro por região + confirmação leve. *Verificar: mismatch não trava; só informa.*
-5. **Roteamento seguro do INSCREVER.** Front manda `circuitoId` escolhido; `athlete-action` **revalida** (existe + aberto + janela + vaga) antes de gravar. *Verificar: tentar inscrever num circuito fechado/inexistente → recusado no servidor.*
+5. **Roteamento seguro do INSCREVER. — ✅ FEITA (athlete-action v15, deployado).** Revalida no servidor: existe (404), ativo, `inscricoes_abertas`. Carimba `circ.regulamento_versao` (fallback constante). BH reconciliado v03-11→v03-12 antes; BH byte-idêntico (v03-12), data hash inalterado. Guardião: condições atendidas. `max_atletas` pulado de propósito (o teto é do backlog na promoção, não da inscrição). **Circuito fechado agora é recusado no servidor.**
+
+## Regulamento do Sistema B — ✅ FEITO (front) / edge pendente
+- `RegulamentoView` ramificada por `sistema`: A (v03-12, BH intocado) / B (vB-01, pontos) — 13 capítulos de pontos (ciclo, elegibilidade, pareamento+bye, pontuação V=2/D=1, W.O. por pontos, ranking+desempate, etc.).
+- Tela de confirmação da inscrição ganhou **"Ver regulamento"** que abre a versão certa (A/B) do circuito escolhido.
+- `CRIAR_CIRCUITO`: `regulamento_versao` do B = `vB-01` (era null) — **commitado no fonte, edge admin-action a deployar só quando for criar o 1º circuito B**.
+- Pendência cosmética: o texto do aceite dentro do `InscricaoForm` ainda cita "v03-12" fixo (o servidor carimba a versão certa; ajustar o texto por circuito é um retoque).
+
+> ✅ **TRAVA ATUALIZADA:** já é seguro abrir um circuito **Sistema A** não-BH para inscrição (servidor valida + carimba a versão dele). **Sistema B ainda NÃO:** `CRIAR_CIRCUITO` deixa `regulamento_versao=null` no B → carimbaria a constante A; e a `RegulamentoView` do front ainda mostra o regulamento do A. Antes de abrir um B: setar `vB-01` no CRIAR_CIRCUITO e cabear a RegulamentoView por sistema.
 6. **Janela e vagas.** Respeitar regra do último terço e `max_atletas` (cheio → não aparece como aberto, ou aparece como "fila de espera"). *Verificar: circuito cheio/fora da janela não recebe inscrição.*
 7. **(Opcional, depois) Captura de interesse** quando não há circuito na região — vira gancho de crescimento ("te aviso quando abrir perto de você").
 

@@ -113,6 +113,16 @@ Deno.serve(async (req) => {
         if (!nome) return jsonResponse({ sucesso: false, erro: "Nome é obrigatório." }, 400);
         if (telefone.length < 10) return jsonResponse({ sucesso: false, erro: "Telefone inválido." }, 400);
 
+        // Fatia 5: valida o circuito alvo NO SERVIDOR (não confia no circuitoId do cliente).
+        // A flag/versão vivem em `circuitos` p/ todos (inclusive BH). Fecha inscrição em
+        // circuito fechado/inexistente e carimba a versão do regulamento do próprio circuito.
+        const { data: circ, error: eCirc } = await supabase
+          .from("circuitos").select("ativo,inscricoes_abertas,regulamento_versao").eq("id", circuitoId).maybeSingle();
+        if (eCirc) throw eCirc;
+        if (!circ) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
+        if (!circ.ativo) return jsonResponse({ sucesso: false, erro: "Este circuito está inativo." }, 400);
+        if (!circ.inscricoes_abertas) return jsonResponse({ sucesso: false, erro: "As inscrições deste circuito estão fechadas no momento." }, 400);
+
         const federado = !!p.federado;
         let rating: number | null = 250;
         if (federado) {
@@ -132,7 +142,7 @@ Deno.serve(async (req) => {
           status: "pendente",
           aceite_regulamento: !!p.aceiteRegulamento,
           data_aceite_regulamento: p.aceiteRegulamento ? dataAceite : null,
-          versao_regulamento: VERSAO_REGULAMENTO,
+          versao_regulamento: circ.regulamento_versao || VERSAO_REGULAMENTO, // carimba a versão do circuito (fallback: constante)
           aceite_lgpd: !!p.aceiteLGPD,
           data_aceite_lgpd: p.aceiteLGPD ? dataAceite : null,
           inscrito_em: dataAceite,

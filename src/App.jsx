@@ -5784,7 +5784,7 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, circuitos,
       )}
 
       {state.phase === "etapa" && allCurrentValidated && hasNextRound && (
-        <AvancarParButton currentRound={currentRound} dispatch={dispatch} />
+        <AvancarParButton currentRound={currentRound} dispatch={dispatch} nomeCircuito={state.nomeCircuito} />
       )}
 
       {state.phase === "etapa" && temporadaCompleta && (
@@ -5913,7 +5913,7 @@ function NovaTemporadaPanel({ state, dispatch }) {
           style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div onClick={e=>e.stopPropagation()}
             style={{background:T.verdeCard,borderRadius:16,padding:22,maxWidth:380,width:"100%",border:"1px solid rgba(216,90,48,0.45)",boxShadow:"0 20px 50px rgba(0,0,0,0.5)"}}>
-            <div style={{fontSize:17,fontWeight:700,color:"#F0EAE0",marginBottom:12}}>⚠️ Virar para {nome}?</div>
+            <div style={{fontSize:17,fontWeight:700,color:"#F0EAE0",marginBottom:12}}>⚠️ Virar {state.nomeCircuito} para {nome}?</div>
             <div style={{fontSize:13,color:"#c9d4ce",marginBottom:18,lineHeight:1.6}}>
               Isto <b style={{color:"#e79b8c"}}>zera pontos, vitórias e derrotas</b> de <b>{ativos.length} atleta(s)</b>, <b>arquiva</b> e remove as partidas da temporada atual, e <b>carrega os pagamentos da próxima</b>. O rating é preservado. <b style={{color:"#e79b8c"}}>Esta ação não pode ser desfeita.</b>
             </div>
@@ -6043,6 +6043,7 @@ function RenovacaoCard({ state, dispatch, athlete }) {
 }
 
 function IniciarEtapaPanel({ state, dispatch }) {
+  const [confirmando, setConfirmando] = useState(false);
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
   const impar = ativos.length % 2 !== 0;
@@ -6071,9 +6072,19 @@ function IniciarEtapaPanel({ state, dispatch }) {
           style={{width:28,height:28,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:16,lineHeight:1}}>+</button>
         <span style={{fontSize:10,color:"#7d9188"}}>(sempre par — o mês publica 2 rodadas por vez)</span>
       </div>
-      <Btn onClick={()=>dispatch({type:"INICIAR_ETAPA",payload:{}})} color="#6a9d7a" full disabled={faltam > 0}>
-        🚀 Iniciar Etapa · Pareamento por Rating
-      </Btn>
+      {!confirmando ? (
+        <Btn onClick={()=>setConfirmando(true)} color="#6a9d7a" full disabled={faltam > 0}>
+          🚀 Iniciar Etapa · Pareamento por Rating
+        </Btn>
+      ) : (
+        <div>
+          <div style={{fontSize:12,color:"#F0EAE0",marginBottom:8}}>Iniciar a etapa do <b>{state.nomeCircuito}</b>? Pareia {ativos.length} atleta(s) e publica as 2 primeiras rodadas.</div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn small onClick={()=>{ dispatch({type:"INICIAR_ETAPA",payload:{}}); setConfirmando(false); }} color="#6a9d7a">Sim, iniciar no {state.nomeCircuito}</Btn>
+            <Btn small onClick={()=>setConfirmando(false)} color="#c25a45">Cancelar</Btn>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -6483,7 +6494,7 @@ function AdminEtapa({ state, dispatch }) {
 // Este é um comando à PARTE do processamento: processar o rating de uma rodada
 // NUNCA gera partidas. Só este botão publica o próximo par mensal (2 rodadas),
 // e de forma deliberada — para não ser confundido com "confirmar a rodada atual".
-function AvancarParButton({ currentRound, dispatch }) {
+function AvancarParButton({ currentRound, dispatch, nomeCircuito }) {
   const [confirmando, setConfirmando] = useState(false);
   const rA = currentRound + 1, rB = currentRound + 2;
   return (
@@ -6497,7 +6508,7 @@ function AvancarParButton({ currentRound, dispatch }) {
       ) : (
         <>
           <div style={{fontSize:12,color:"#F0EAE0",marginBottom:10}}>
-            Isto cria <b>2 rodadas novas</b> ({rA} e {rB}), com novos confrontos e prazos (dias 15 e 25 do próximo mês). Confirma a publicação?
+            Isto cria <b>2 rodadas novas</b> ({rA} e {rB}) no <b>{nomeCircuito}</b>, com novos confrontos e prazos (dias 15 e 27 do mês). Confirma a publicação?
           </div>
           <div style={{display:"flex",gap:8}}>
             <Btn small onClick={()=>{ dispatch({type:"AVANCAR_RODADA"}); setConfirmando(false); }} color="#6a9d7a">Sim, gerar Rodadas {rA} e {rB}</Btn>
@@ -6510,7 +6521,7 @@ function AvancarParButton({ currentRound, dispatch }) {
 }
 
 // ── PROCESSAR RATING DA RODADA (dupla confirmação) ────────────────────────────
-function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, naoResolvidos, dispatch }) {
+function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, naoResolvidos, dispatch, nomeCircuito }) {
   const [confirmando, setConfirmando] = useState(false);
   if (pendentes.length === 0) return null;
 
@@ -6556,7 +6567,7 @@ function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, n
             <>
               <div style={{fontSize:12,color:T.offwhite,marginBottom:10}}>
                 {liberado
-                  ? `Confirma o cálculo de rating para ${pendentes.length} partida(s) da Rodada ${round}? Essa ação não pode ser desfeita.`
+                  ? `Confirma o cálculo de rating da Rodada ${round} — Circuito ${nomeCircuito}? ${pendentes.length} partida(s). Essa ação não pode ser desfeita.`
                   : `O prazo desta rodada ainda não fechou. Tem certeza que quer calcular agora mesmo assim?`}
               </div>
               <div style={{display:"flex",gap:8}}>
@@ -6986,6 +6997,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
               bloqueadoPorRodadaAnterior={bloqueado}
               naoResolvidos={naoResolvidos}
               dispatch={dispatch}
+              nomeCircuito={state.nomeCircuito}
             />
           );
         })}

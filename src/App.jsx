@@ -6354,9 +6354,9 @@ function IniciarEtapaPanel({ state, dispatch }) {
         <button onClick={()=>dispatch({type:"DEFINIR_RODADAS",payload:{rodadas:Math.max(2,(state.rodadasPorTemporada||6)-2)}})}
           style={{width:28,height:28,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:16,lineHeight:1}}>−</button>
         <b style={{color:"#F0EAE0",minWidth:22,textAlign:"center"}}>{state.rodadasPorTemporada||6}</b>
-        <button onClick={()=>dispatch({type:"DEFINIR_RODADAS",payload:{rodadas:(state.rodadasPorTemporada||6)+2}})}
-          style={{width:28,height:28,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:16,lineHeight:1}}>+</button>
-        <span style={{fontSize:10,color:"#7d9188"}}>(sempre par — o mês publica 2 rodadas por vez)</span>
+        <button disabled={(state.rodadasPorTemporada||6) >= 6} onClick={()=>{ if ((state.rodadasPorTemporada||6) < 6) dispatch({type:"DEFINIR_RODADAS",payload:{rodadas:Math.min(6,(state.rodadasPorTemporada||6)+2)}}); }}
+          style={{width:28,height:28,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"#F0EAE0",cursor:(state.rodadasPorTemporada||6)>=6?"not-allowed":"pointer",opacity:(state.rodadasPorTemporada||6)>=6?0.4:1,fontSize:16,lineHeight:1}}>+</button>
+        <span style={{fontSize:10,color:"#7d9188"}}>(sempre par · máx. 6 rodadas = 3 meses)</span>
       </div>
       {!confirmando ? (
         <Btn onClick={()=>setConfirmando(true)} color="#6a9d7a" full disabled={faltam > 0}>

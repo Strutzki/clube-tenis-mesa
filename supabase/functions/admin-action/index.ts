@@ -1126,7 +1126,7 @@ Deno.serve(async (req) => {
 
       case "DEFINIR_RODADAS": {
         const { rodadas } = payload || {};
-        if (typeof rodadas !== "number" || rodadas < 2 || rodadas % 2 !== 0) return jsonResponse({ sucesso: false, erro: "rodadas deve ser um número par >= 2" }, 400);
+        if (typeof rodadas !== "number" || rodadas < 2 || rodadas > 6 || rodadas % 2 !== 0) return jsonResponse({ sucesso: false, erro: "rodadas deve ser par entre 2 e 6 (máx. 3 meses)" }, 400);
         await setCfg(circuitoId, { rodadas_por_temporada: rodadas });
         return jsonResponse({ sucesso: true });
       }
@@ -1178,7 +1178,7 @@ Deno.serve(async (req) => {
         const sistema = (p.sistema === "A" || p.sistema === "B") ? p.sistema : null;
         const pareamento = (p.pareamento === "sorteio" || p.pareamento === "grupos") ? p.pareamento : null;
         const maxAtletas = p.maxAtletas != null ? Math.max(10, Math.round(Number(p.maxAtletas) || 20)) : 20;
-        const rodadas = (p.rodadas != null && Number(p.rodadas) >= 2 && Number(p.rodadas) % 2 === 0) ? Math.round(Number(p.rodadas)) : 6;
+        const rodadas = (p.rodadas != null && Number(p.rodadas) >= 2 && Number(p.rodadas) % 2 === 0) ? Math.min(6, Math.round(Number(p.rodadas))) : 6;
 
         if (!nome) return jsonResponse({ sucesso: false, erro: "Nome do circuito é obrigatório." }, 400);
         if (slug.length < 2) return jsonResponse({ sucesso: false, erro: "Slug inválido — use ao menos 2 caracteres (letras, números ou hífen)." }, 400);

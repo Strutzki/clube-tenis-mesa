@@ -1448,6 +1448,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
       onBack={() => setConfirmado(false)}
       onSubmit={(p) => onSubmit({ ...p, circuitoId: escolhido.id })}
       athletes={athletes}
+      sistema={escolhido.sistema}
     />;
   }
   // Circuito escolhido (inclui o auto-selecionado quando só há um) -> confirmação com nome + selo.
@@ -1516,7 +1517,11 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
 }
 
 // ── FORMULÁRIO DE INSCRIÇÃO (público) ────────────────────────────────────────
-function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
+// `sistema` do circuito escolhido: sem sistema (ou "A") => textos do rating (BH, intocado);
+// "B" => textos do modelo de pontos (regulamento vB-01, sem rating).
+function InscricaoForm({ onBack, onSubmit, athletes = [], sistema }) {
+  const ehB = sistema === "B";
+  const versaoReg = ehB ? "vB-01" : "v03-12";
   const [step, setStep] = useState(1); // 1=dados, 2=lgpd, 3=regulamento, 4=sucesso
   const [enviando, setEnviando] = useState(false);
   const [erroSubmit, setErroSubmit] = useState("");
@@ -1578,9 +1583,14 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
         <div style={s.title}>📝 Inscrição — Dados Pessoais</div>
         <div style={s.sub}>Passo 1 de 3 · Seus dados de cadastro</div>
 
-        <div style={{...s.box("#D85A30"), marginTop:2, marginBottom:6}}>
-          <strong style={{color:"#F0EAE0"}}>Temporada 1 · modalidade piloto</strong><br/>
-          Nesta primeira temporada, o Circuito BH está aberto ao ranking <strong style={{color:"#F0EAE0"}}>masculino adulto (18+)</strong>. Outras categorias entram em breve.
+        <div style={{...s.box(ehB?"#6a9d7a":"#D85A30"), marginTop:2, marginBottom:6}}>
+          {ehB ? (<>
+            <strong style={{color:"#F0EAE0"}}>Circuito por pontos (Sistema B)</strong><br/>
+            Aqui não há rating: todos começam em <strong style={{color:"#F0EAE0"}}>0 pontos</strong>. Vitória vale 2, derrota vale 1 — o ranking é a soma dos pontos da temporada.
+          </>) : (<>
+            <strong style={{color:"#F0EAE0"}}>Temporada 1 · modalidade piloto</strong><br/>
+            Nesta primeira temporada, o Circuito BH está aberto ao ranking <strong style={{color:"#F0EAE0"}}>masculino adulto (18+)</strong>. Outras categorias entram em breve.
+          </>)}
         </div>
 
         <label style={s.label}>Nome completo *</label>
@@ -1599,6 +1609,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
         <label style={s.label}>Apelido (opcional)</label>
         <input style={s.input} value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="Como você gostaria de ser chamado?"/>
 
+        {!ehB && <>
         <label style={s.label}>É federado pela CBTM?</label>
         <select style={s.select} value={fed} onChange={e=>setFed(e.target.value)}>
           <option value="nao">Não sou federado</option>
@@ -1616,6 +1627,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
             </a>
             <br/>Pesquise seu nome e confira o rating na sua ficha.
           </div>
+        </>}
         </>}
 
         <div style={{...s.box("#9C6F3E"), marginTop:14}}>
@@ -1650,8 +1662,12 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
         <div style={{...s.box("#D85A30"), marginTop:8}}>
           <strong style={{color:"#D85A30", fontSize:13}}>Quais dados coletamos</strong><br/><br/>
           <strong style={{color:"#F0EAE0"}}>Nome completo e WhatsApp</strong> — para identificação, comunicação sobre suas partidas e publicação no ranking oficial do Circuito (no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa).<br/><br/>
-          <strong style={{color:"#F0EAE0"}}>Situação federativa e rating CBTM</strong> — para definir seu rating de entrada e garantir a integridade competitiva do Circuito.<br/><br/>
-          <strong style={{color:"#F0EAE0"}}>Histórico de partidas e resultados</strong> — para cálculo do ranking Rating e publicação no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa.
+          {ehB ? (
+            <><strong style={{color:"#F0EAE0"}}>Situação federativa</strong> — apenas informativa. No Sistema B você entra com 0 pontos, sem rating.<br/><br/></>
+          ) : (
+            <><strong style={{color:"#F0EAE0"}}>Situação federativa e rating CBTM</strong> — para definir seu rating de entrada e garantir a integridade competitiva do Circuito.<br/><br/></>
+          )}
+          <strong style={{color:"#F0EAE0"}}>Histórico de partidas e resultados</strong> — para cálculo do ranking {ehB ? "por pontos" : "Rating"} e publicação no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa.
         </div>
 
         <div style={{...s.box("#6a9d7a"), marginTop:8}}>
@@ -1714,7 +1730,18 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
           </>
         ) : (
           <div style={{maxHeight:340, overflowY:"auto", marginTop:10, paddingRight:4}}>
-            {[
+            {(ehB ? [
+              ["🏓 O Circuito","Circuito recreativo independente, não filiado à CBTM ou FMTMOP. Modelo por pontos, sem rating."],
+              ["👤 Elegibilidade","Todos começam a temporada em 0 pontos. Federados e não-federados entram igual — a federação é só informativa."],
+              ["⚙️ Formato","Pares mensais de rodadas, pareamento por sorteio ou por grupos (sem repetir adversário). Partidas em MD5 (melhor de 5 sets), 11 pontos por set."],
+              ["🎯 Pontuação","Vitória = 2 pontos · Derrota = 1 ponto · Folga (bye) = 1 ponto. O ranking é a soma dos pontos e zera a cada temporada."],
+              ["⏱ Prazos","1ª rodada até o dia 15, 2ª rodada até o dia 27. Registre o placar no app dentro da janela da rodada."],
+              ["🔴 W.O., Faltas & Penalidades","Ausência injustificada: 0 pts (adversário 2). Justificada e aprovada: 1 pt (adversário 2). 2 W.O. injustificados = suspensão."],
+              ["🚫 Fraude","Registro de resultado falso = banimento permanente do Circuito."],
+              ["🥇 Ranking & Desempate","Soma de pontos. Empate: menos W.O. injustificados → confronto direto → % de aproveitamento → saldo de sets → sorteio."],
+              ["💰 Valor","Quando houver, o valor da temporada é informado na inscrição. Abandono no meio da temporada = bloqueio de 1 temporada."],
+              ["📋 Disposições Gerais","Casos omissos decididos pelo administrador. O regulamento pode ser atualizado com aviso prévio."],
+            ] : [
               ["🏓 O Circuito","Circuito recreativo independente, não filiado à CBTM ou FMTMOP. Rating baseado na metodologia rating/CBTM apenas como referência técnica."],
               ["👤 Elegibilidade","Temporada 1 exclusiva para homens com 18 anos ou mais. Federados e não-federados são bem-vindos."],
               ["⚙️ Formato","Rodadas quinzenais com pareamento por rating. Partidas em MD5 (melhor de 5 sets), 11 pontos por set."],
@@ -1726,13 +1753,13 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
               ["💰 Valor","Valor por temporada, pago no início. Quem entra na 2ª etapa (Rodada 3) paga 80%. Valores e descontos divulgados a cada temporada."],
               ["⚖️ Atletas Federados CBTM","Verifique com sua federação e com o clube ao qual é filiado a conformidade com a Nota CBTM 183/2025 antes de participar."],
               ["📋 Disposições Gerais","Casos omissos decididos pelo administrador. O regulamento pode ser atualizado com aviso prévio."],
-            ].map(([t,d]) => (
+            ]).map(([t,d]) => (
               <div key={t} style={{background:T.verde,borderRadius:8,padding:"10px 12px",marginBottom:6,borderLeft:"2px solid rgba(216,90,48,0.3)"}}>
                 <div style={{fontSize:11,fontWeight:700,color:"#D85A30",marginBottom:3}}>{t}</div>
                 <div style={{fontSize:11,color:"#9db3a8",lineHeight:1.6}}>{d}</div>
               </div>
             ))}
-            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>Regulamento completo disponível na tela inicial · v03-12</div>
+            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>{ehB ? "Regulamento completo (vB-01) — use \"Ver regulamento\" na etapa anterior" : "Regulamento completo disponível na tela inicial · v03-12"}</div>
           </div>
         )}
 
@@ -1742,7 +1769,10 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
               {aceiteReg && <span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}
             </div>
             <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>
-              Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-12). Estou ciente do aviso sobre atletas federados pela CBTM.
+              {ehB
+                ? <>Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do regulamento de pontos (Sistema B · versão vB-01) deste circuito.</>
+                : <>Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-12). Estou ciente do aviso sobre atletas federados pela CBTM.</>
+              }
             </div>
           </div>
         )}
@@ -1798,7 +1828,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [] }) {
         <div style={{background:"rgba(74,222,128,0.08)", border:"1px solid rgba(74,222,128,0.2)", borderRadius:10, padding:"12px 14px", marginBottom:16, textAlign:"left"}}>
           <div style={{fontSize:11, fontWeight:700, color:"#6a9d7a", marginBottom:8}}>✓ Registrado com sucesso</div>
           <div style={{fontSize:11, color:"#7d9188", lineHeight:1.8}}>
-            📋 Aceite do regulamento v03-12<br/>
+            📋 Aceite do regulamento {versaoReg}<br/>
             🔒 Consentimento LGPD (Lei 13.709/2018)<br/>
             📅 Data/hora: {new Date().toLocaleString("pt-BR")}
           </div>

@@ -2314,6 +2314,7 @@ function RegulamentoView({ onBack, sistema }) {
     if (id===2) return (
       <div>
         <p style={s.p}>Todos os inscritos começam a temporada em <span style={s.dest}>0 pontos</span> — não existe rating de entrada. A distinção entre federado e não-federado é apenas informativa no perfil e não altera a pontuação.</p>
+        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>Quem entra com a temporada já em andamento também começa em 0 pontos — como o título é por pontos acumulados, há uma desvantagem matemática; o % de aproveitamento no desempate ajuda a equilibrar.</p>
       </div>
     );
     if (id===3) return (
@@ -2364,6 +2365,9 @@ function RegulamentoView({ onBack, sistema }) {
           <p style={s.p}>2 W.O. <span style={s.dest}>injustificados</span> na temporada levam à suspensão (justificados não contam). Há aviso formal no 1º injustificado.</p>
         </Box>
         <p style={{...s.p, fontSize:11, color:"#7d9188"}}>Partida não registrada no prazo: sem comprovação vira duplo injustificado (0/0); com comprovação, o admin imputa o resultado.</p>
+        <Box cor="#9C6F3E" titulo="🛠️ Em implementação">
+          <p style={s.p}>O tratamento automático de W.O. no app está sendo finalizado. Até lá, o administrador aplica as regras acima <span style={s.dest}>manualmente</span>.</p>
+        </Box>
       </div>
     );
     if (id===8) return (
@@ -7920,7 +7924,7 @@ function SolicitarWoModal({ m, athlete, adversario, dispatch, onClose }) {
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:380,background:T.verdeCard,borderRadius:18,padding:20,border:`1px solid ${T.bordaSuave}`,maxHeight:"88vh",overflowY:"auto",boxSizing:"border-box"}}>
         <div style={{fontFamily:T.serif,fontSize:20,color:T.offwhite,marginBottom:6}}>Não vou conseguir jogar</div>
         <div style={{fontSize:12,color:T.cinza,marginBottom:16,lineHeight:1.5}}>
-          Isso vira um pedido de <b style={{color:T.offwhite}}>W.O. Justificado</b> — o admin vai analisar. Se aprovado, a rodada é anulada e ninguém perde pontos.
+          Isso vira um pedido de <b style={{color:T.offwhite}}>W.O. Justificado</b> — o admin vai analisar. Se aprovado, {SISTEMA_ATIVO === "B" ? "o admin trata o resultado conforme o regulamento de pontos do circuito" : "a rodada é anulada e ninguém perde pontos"}.
         </div>
 
         {ds.urgent && (
@@ -8045,7 +8049,7 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
             📨 Solicitação de W.O. enviada
           </div>
           <div style={{fontSize:12,color:T.offwhite,lineHeight:1.5,marginBottom:10}}>"{minhaSolicitacaoWo.justificativa}"</div>
-          <div style={{fontSize:11,color:T.cinza,marginBottom:10}}>Aguardando análise do admin. Se aprovado, a rodada é anulada e ninguém perde pontos.</div>
+          <div style={{fontSize:11,color:T.cinza,marginBottom:10}}>Aguardando análise do admin. Se aprovado, {SISTEMA_ATIVO === "B" ? "o admin trata o resultado conforme o regulamento de pontos do circuito" : "a rodada é anulada e ninguém perde pontos"}.</div>
           <button onClick={()=>dispatch({type:"CANCELAR_SOLICITACAO_WO",payload:{id:minhaSolicitacaoWo.id}})}
             style={{fontFamily:T.mono,fontSize:10,letterSpacing:0.5,color:T.vermelho,background:"transparent",border:"none",cursor:"pointer",textDecoration:"underline",padding:0}}>
             Retirar solicitação

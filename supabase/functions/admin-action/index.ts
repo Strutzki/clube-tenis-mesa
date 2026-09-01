@@ -592,7 +592,7 @@ Deno.serve(async (req) => {
         const { data: partidasRodadaAnterior } = await supabase
           .from("partidas").select("id").eq("circuito_id", circuitoId).eq("rodada", round - 1).eq("validado", true).eq("calculado", false).eq("rejeitado", false);
         const { data: woRodadaAnterior } = await supabase
-          .from("partidas").select("id").eq("circuito_id", circuitoId).eq("rodada", round - 1).in("wo_tipo", ["culposo", "a_favor"]).eq("calculado", false).eq("rejeitado", false);
+          .from("partidas").select("id").eq("circuito_id", circuitoId).eq("rodada", round - 1).in("wo_tipo", ["culposo", "a_favor", "justificado"]).eq("calculado", false).eq("rejeitado", false);
 
         if (round % 2 === 0 && (((partidasRodadaAnterior?.length ?? 0) + (woRodadaAnterior?.length ?? 0)) > 0)) {
           return jsonResponse({ sucesso: false, erro: "A rodada anterior ainda tem resultados sem calcular." }, 409);
@@ -603,7 +603,7 @@ Deno.serve(async (req) => {
         if (errPend) throw errPend;
 
         const { data: wosRaw, error: errWo } = await supabase
-          .from("partidas").select("*").eq("circuito_id", circuitoId).eq("rodada", round).in("wo_tipo", ["culposo", "a_favor"]).eq("calculado", false).eq("rejeitado", false);
+          .from("partidas").select("*").eq("circuito_id", circuitoId).eq("rodada", round).in("wo_tipo", ["culposo", "a_favor", "justificado"]).eq("calculado", false).eq("rejeitado", false);
         if (errWo) throw errWo;
         const wos = wosRaw || [];
         const listaPend = pendentes || [];
@@ -666,8 +666,22 @@ Deno.serve(async (req) => {
           infoPorPartida[match.id] = { favorito_id: favoritoId, diferenca_rating_momento: diferencaRatingMomento };
         }
 
+        const idsWoB = new Set<string>();
         for (const w of wos) {
-          if (sistema === "B") continue; // W.O. do Sistema B: pontos tratados na Fatia 5 (aqui não aplica)
+          if (sistema === "B") {
+            // Fatia 5 — W.O. no Sistema B: NÃO anula. Adversário +2 (V+1); ausente +1 (justificado)
+            // ou +0 (culposo/a_favor), sempre D+1. O wo_culposos já foi contado no APLICAR/RESPONDER.
+            const benefB = w.wo_beneficiario_id ? athletesMap[w.wo_beneficiario_id] : null;
+            if (benefB) athletesMap[w.wo_beneficiario_id] = { ...benefB, saldo_temp: (benefB.saldo_temp || 0) + 2, vitorias: (benefB.vitorias || 0) + 1 };
+            const faltB = w.wo_faltoso_id ? athletesMap[w.wo_faltoso_id] : null;
+            if (faltB) {
+              const ptsFalt = (w.wo_tipo === "justificado") ? 1 : 0;
+              athletesMap[w.wo_faltoso_id] = { ...faltB, saldo_temp: (faltB.saldo_temp || 0) + ptsFalt, derrotas: (faltB.derrotas || 0) + 1 };
+            }
+            if (w.wo_beneficiario_id) idsWoB.add(w.wo_beneficiario_id);
+            if (w.wo_faltoso_id) idsWoB.add(w.wo_faltoso_id);
+            continue;
+          }
           const dataWo = w.admin_aprovado_em || new Date().toISOString();
           const benef = w.wo_beneficiario_id ? athletesMap[w.wo_beneficiario_id] : null;
           if (benef) {
@@ -697,6 +711,8 @@ Deno.serve(async (req) => {
         if (errPartidasTmp) throw errPartidasTmp;
         const idsComPartida = new Set<string>();
         (partidasTemporada ?? []).forEach((m: any) => { if (m.validado && !m.rejeitado) { idsComPartida.add(m.atleta1_id); idsComPartida.add(m.atleta2_id); } });
+        // Fatia 5: quem pontuou via W.O. no B entra no ranking desta rodada (a partida de W.O. não é "validada").
+        if (sistema === "B") idsWoB.forEach(id => idsComPartida.add(id));
 
         // Fatia 4: bye +1 (ponto de participação) no Sistema B — idempotente por rodada.
         // Trava dupla p/ não premiar entrante tardio: só quando nº de ativos é ímpar E há exatamente 1 fora da rodada.
@@ -765,7 +781,6 @@ Deno.serve(async (req) => {
           if (error) throw error;
         }
         for (const w of wos) {
-          if (sistema === "B") continue; // W.O. do Sistema B nao e' consumido aqui — fica pendente ate a Fatia 5
           const { error } = await supabase.from("partidas").update({ calculado: true }).eq("id", w.id);
           if (error) throw error;
         }
@@ -974,8 +989,7 @@ Deno.serve(async (req) => {
         const { id, matchId, aprovado, motivoRecusa, justificativa } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
         if (typeof aprovado !== "boolean") return jsonResponse({ sucesso: false, erro: "aprovado (boolean) é obrigatório" }, 400);
-        // Sistema B: fluxo de W.O. (pontos em vez de rejeição) chega na Fatia 5. Até lá, bloqueia p/ não mishandle.
-        if ((await getSistema(circuitoId)) === "B") return jsonResponse({ sucesso: false, erro: "W.O. no Sistema B ainda não habilitado (em breve)." }, 400);
+        const sistemaRw = await getSistema(circuitoId); // Fatia 5: no B, aprovado pontua (não anula)
         const now = new Date().toISOString();
         const { error: errSol } = await supabase.from("solicitacoes_wo").update({
           status: aprovado ? "aprovado" : "recusado", respondido_em: now, motivo_recusa: motivoRecusa || null,
@@ -983,10 +997,25 @@ Deno.serve(async (req) => {
         if (errSol) throw errSol;
         if (aprovado) {
           if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório quando aprovado" }, 400);
-          const { error: errMatch } = await supabase.from("partidas").update({
-            rejeitado: true, motivo_rejeicao: `W.O. Justificado — ${justificativa || ""}`.trim(),
-          }).eq("id", matchId);
-          if (errMatch) throw errMatch;
+          if (sistemaRw === "B") {
+            // Sistema B: W.O. justificado NÃO anula — pontua ausente 1 / adversário 2. Quem é quem vem da solicitação.
+            const { data: sol } = await supabase.from("solicitacoes_wo").select("atleta_id,adversario_id").eq("id", id).single();
+            const faltR = sol?.atleta_id || null;
+            let benefR = sol?.adversario_id || null;
+            if (!benefR && faltR) {
+              const { data: mt } = await supabase.from("partidas").select("atleta1_id,atleta2_id").eq("id", matchId).single();
+              if (mt) benefR = (mt.atleta1_id === faltR) ? mt.atleta2_id : mt.atleta1_id;
+            }
+            const { error: eMb } = await supabase.from("partidas").update({
+              wo_tipo: "justificado", wo_faltoso_id: faltR, wo_beneficiario_id: benefR, admin_aprovado_em: now, calculado: false,
+            }).eq("id", matchId);
+            if (eMb) throw eMb;
+          } else {
+            const { error: errMatch } = await supabase.from("partidas").update({
+              rejeitado: true, motivo_rejeicao: `W.O. Justificado — ${justificativa || ""}`.trim(),
+            }).eq("id", matchId);
+            if (errMatch) throw errMatch;
+          }
         }
         return jsonResponse({ sucesso: true });
       }
@@ -1091,8 +1120,28 @@ Deno.serve(async (req) => {
         const { matchId, tipo, faltosoId, beneficiarioId } = payload || {};
         if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
         if (!["justificado", "culposo", "a_favor"].includes(tipo)) return jsonResponse({ sucesso: false, erro: "tipo deve ser 'justificado', 'culposo' ou 'a_favor'" }, 400);
-        // Sistema B: fluxo de W.O. (pontos em vez de rejeição) chega na Fatia 5. Até lá, bloqueia p/ não mishandle.
-        if ((await getSistema(circuitoId)) === "B") return jsonResponse({ sucesso: false, erro: "W.O. no Sistema B ainda não habilitado (em breve)." }, 400);
+        // Sistema B (Fatia 5): W.O. NÃO anula — vira pontos no processamento (adversário +2; ausente +1 justificado / 0 injustificado).
+        if ((await getSistema(circuitoId)) === "B") {
+          if (!beneficiarioId) return jsonResponse({ sucesso: false, erro: "beneficiarioId é obrigatório" }, 400);
+          let faltIdB = faltosoId || null;
+          if ((tipo === "culposo" || tipo === "justificado") && !faltIdB) return jsonResponse({ sucesso: false, erro: "faltosoId é obrigatório" }, 400);
+          if (tipo === "a_favor" && !faltIdB) {
+            const { data: mt } = await supabase.from("partidas").select("atleta1_id,atleta2_id").eq("id", matchId).single();
+            if (mt) faltIdB = (mt.atleta1_id === beneficiarioId) ? mt.atleta2_id : mt.atleta1_id;
+          }
+          const nowB = new Date().toISOString();
+          const { error: eWoB } = await supabase.from("partidas").update({
+            wo_tipo: tipo, wo_faltoso_id: faltIdB, wo_beneficiario_id: beneficiarioId,
+            admin_aprovado_em: nowB, calculado: false,
+          }).eq("id", matchId);
+          if (eWoB) throw eWoB;
+          // culposo e a_favor contam como W.O. injustificado (suspensão + desempate); justificado não conta.
+          if ((tipo === "culposo" || tipo === "a_favor") && faltIdB) {
+            const { data: caB } = await supabase.from("circuito_atletas").select("wo_culposos_temporada").eq("circuito_id", circuitoId).eq("atleta_id", faltIdB).single();
+            await writeAtleta(circuitoId, faltIdB, { wo_culposos_temporada: ((caB?.wo_culposos_temporada) || 0) + 1 });
+          }
+          return jsonResponse({ sucesso: true });
+        }
         if (tipo === "justificado") {
           const { error } = await supabase.from("partidas").update({ rejeitado: true, motivo_rejeicao: "W.O. Justificado" }).eq("id", matchId);
           if (error) throw error;

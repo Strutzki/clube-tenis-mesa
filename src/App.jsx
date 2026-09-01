@@ -1372,11 +1372,11 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
         {/* parceria Tibhar — benefício de sócio (teste; TIBHAR_BANNER controla) */}
         {TIBHAR_BANNER && (
           <div style={{width:"100%",marginTop:14,background:"rgba(216,90,48,0.10)",border:"1px solid rgba(216,90,48,0.42)",borderRadius:16,padding:16,boxSizing:"border-box"}}>
-            <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:10}}>
-              <img src={TIBHAR_LOGO} alt="Tibhar" style={{height:15,display:"block",flexShrink:0}} onError={(e)=>{e.currentTarget.style.display="none";}}/>
-              <span style={{fontFamily:T.mono,fontSize:9,letterSpacing:1,textTransform:"uppercase",color:"rgba(240,234,224,0.6)"}}>Benefício de sócio</span>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:13}}>
+              <img src={TIBHAR_LOGO} alt="Tibhar" style={{height:27,display:"block",flexShrink:0}} onError={(e)=>{e.currentTarget.style.display="none";}}/>
+              <span style={{fontFamily:T.mono,fontSize:8.5,letterSpacing:1,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",textAlign:"right",flexShrink:0}}>Parceria oficial</span>
             </div>
-            <div style={{fontFamily:T.serif,fontSize:20,lineHeight:1.15,color:T.offwhite}}>{TIBHAR_PCT}% de desconto na <span style={{fontStyle:"italic",color:T.terracota}}>Tibhar</span></div>
+            <div style={{fontFamily:T.serif,fontSize:20,lineHeight:1.15,color:T.offwhite}}>Desconto de sócio na <span style={{fontStyle:"italic",color:T.terracota}}>Tibhar</span></div>
             <div style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0"}}>
               <span style={{flex:1,fontFamily:T.mono,fontWeight:700,fontSize:12,letterSpacing:0.5,color:T.offwhite,background:"rgba(0,0,0,0.22)",border:"1px dashed rgba(216,90,48,0.8)",borderRadius:8,padding:"7px 9px",textAlign:"center",overflow:"hidden",textOverflow:"ellipsis"}}>{TIBHAR_CUPOM}</span>
               <button onClick={(e)=>{const el=e.currentTarget;try{navigator.clipboard.writeText(TIBHAR_CUPOM);}catch(_){}el.textContent="Copiado!";setTimeout(()=>{el.textContent="Copiar";},1400);}} style={{fontFamily:T.mono,fontSize:11,color:T.offwhite,background:"rgba(240,234,224,0.10)",border:"1px solid rgba(240,234,224,0.22)",borderRadius:8,padding:"7px 12px",cursor:"pointer",flexShrink:0}}>Copiar</button>

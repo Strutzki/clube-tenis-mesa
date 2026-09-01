@@ -77,6 +77,42 @@ function scoreValido(n: unknown): boolean {
   return Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 99;
 }
 
+// ── CPF (identidade nacional) — helpers. Spec: ESPEC_CPF_SEGURANCA.md ─────────
+// O CPF cru NUNCA entra em SQL/log/URL: normaliza + valida DV em memória; só o HMAC
+// (hash) trafega pro banco. Pepper vem do Vault via RPC service-role-only.
+function cpfNormaliza(s: unknown): string | null {
+  const d = String(s ?? "").replace(/\D/g, "");
+  return d.length === 11 ? d : null;
+}
+function cpfDVValido(cpf: string): boolean {
+  if (!/^\d{11}$/.test(cpf)) return false;
+  if (/^(\d)\1{10}$/.test(cpf)) return false; // rejeita 000..., 111..., etc.
+  const dv = (base: string, pesoIni: number) => {
+    let soma = 0;
+    for (let i = 0; i < base.length; i++) soma += parseInt(base[i], 10) * (pesoIni - i);
+    const r = (soma * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  if (dv(cpf.slice(0, 9), 10) !== parseInt(cpf[9], 10)) return false;
+  return dv(cpf.slice(0, 10), 11) === parseInt(cpf[10], 10);
+}
+let _cpfPepper: string | null = null;
+async function getCpfPepper(): Promise<string> {
+  if (_cpfPepper) return _cpfPepper;
+  const { data, error } = await supabase.rpc("get_cpf_pepper");
+  if (error) throw error;
+  const pep = (typeof data === "string" ? data : (data as any)) as string;
+  if (!pep) throw new Error("pepper_indisponivel");
+  _cpfPepper = pep;
+  return pep;
+}
+async function cpfHmacHex(cpf: string, pepper: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(pepper), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(cpf));
+  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 Deno.serve(async (req) => {
   const origin = req.headers.get("Origin") || "";
   const CORS_HEADERS = {
@@ -123,6 +159,34 @@ Deno.serve(async (req) => {
         if (!circ.ativo) return jsonResponse({ sucesso: false, erro: "Este circuito está inativo." }, 400);
         if (!circ.inscricoes_abertas) return jsonResponse({ sucesso: false, erro: "As inscrições deste circuito estão fechadas no momento." }, 400);
 
+        // ── CPF (Fatia 3) — OPCIONAL e retrocompatível: sem CPF, o fluxo é idêntico ao de hoje.
+        const ipReq = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || null;
+        const temCpf = String(p.cpf ?? "").replace(/\D/g, "").length > 0;
+        let cpfHash: string | null = null;
+        let respCpfHash: string | null = null;
+        if (temCpf) {
+          const cpf = cpfNormaliza(p.cpf);
+          if (!cpf || !cpfDVValido(cpf)) return jsonResponse({ sucesso: false, erro: "cpf_invalido" }, 400);
+          // Rate-limit por IP (2ª camada; anti-oráculo de existência).
+          const desdeRl = new Date(Date.now() - 15 * 60_000).toISOString();
+          const { count: tentIp } = await supabase.from("tentativas_busca_cpf")
+            .select("*", { count: "exact", head: true }).gte("tentativa_em", desdeRl).eq("ip", ipReq);
+          if ((tentIp ?? 0) >= 12) return jsonResponse({ sucesso: false, erro: "muitas_tentativas" }, 429);
+          await supabase.from("tentativas_busca_cpf").insert({ ip: ipReq });
+          const pepper = await getCpfPepper();
+          cpfHash = await cpfHmacHex(cpf, pepper);
+          const { data: dd, error: eDd } = await supabase.rpc("dedup_por_cpf_hash", { p_hash: cpfHash });
+          if (eDd) throw eDd;
+          const existe = Array.isArray(dd) ? !!dd[0]?.existe : !!(dd as any)?.existe;
+          if (existe) return jsonResponse({ sucesso: false, erro: "cpf_duplicado" }, 409);
+          // Menor de idade: hash do CPF do responsável (se enviado). Nunca guarda o número.
+          if (p.responsavelCpf) {
+            const rc = cpfNormaliza(p.responsavelCpf);
+            if (!rc || !cpfDVValido(rc)) return jsonResponse({ sucesso: false, erro: "cpf_responsavel_invalido" }, 400);
+            respCpfHash = await cpfHmacHex(rc, pepper);
+          }
+        }
+
         const federado = !!p.federado;
         let rating: number | null = 250;
         if (federado) {
@@ -145,6 +209,7 @@ Deno.serve(async (req) => {
           versao_regulamento: circ.regulamento_versao || VERSAO_REGULAMENTO, // carimba a versão do circuito (fallback: constante)
           aceite_lgpd: !!p.aceiteLGPD,
           data_aceite_lgpd: p.aceiteLGPD ? dataAceite : null,
+          cpf_verificado: temCpf, // true só quando veio CPF válido e não-duplicado (doc gravado abaixo)
           inscrito_em: dataAceite,
         };
 
@@ -155,6 +220,28 @@ Deno.serve(async (req) => {
             return jsonResponse({ sucesso: false, erro: "telefone_duplicado" }, 409);
           }
           throw error;
+        }
+        // CPF (Fatia 3): grava o documento na tabela blindada. Corrida no cpf_hash UNIQUE
+        // (dedup passou mas outro inscreveu no meio) → desfaz o atleta recém-criado (sem órfão).
+        if (temCpf && novoAtleta?.id) {
+          const { error: eDoc } = await supabase.from("atleta_documento").insert({
+            atleta_id: novoAtleta.id,
+            cpf_hash: cpfHash,
+            cpf_consent_em: p.cpfConsent ? dataAceite : null,
+            cpf_consent_versao: p.cpfConsentVersao ? String(p.cpfConsentVersao) : null,
+            cpf_consent_ip: ipReq,
+            data_nascimento: p.dataNascimento || null,
+            responsavel_nome: p.responsavelNome ? String(p.responsavelNome) : null,
+            responsavel_cpf_hash: respCpfHash,
+          });
+          if (eDoc) {
+            await supabase.from("atletas").delete().eq("id", novoAtleta.id); // rollback do atleta
+            const md = String(eDoc.message || "");
+            if (md.includes("duplicate") || md.includes("unique") || md.includes("cpf_hash")) {
+              return jsonResponse({ sucesso: false, erro: "cpf_duplicado" }, 409);
+            }
+            return jsonResponse({ sucesso: false, erro: "falha_documento" }, 500);
+          }
         }
         // Dual-write: cria a participacao do atleta no circuito (membership + estado sazonal inicial).
         if (novoAtleta?.id) {

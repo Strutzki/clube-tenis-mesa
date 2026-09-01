@@ -77,6 +77,29 @@ const TIBHAR_PCT = 5;
 const TIBHAR_URL = "https://www.tibhar.com.br/produtos/";
 const TIBHAR_LOGO = "https://acdn-us.mitiendanube.com/stores/003/539/065/themes/common/logo-468536362-1691441810-62e4a86ef96d952f9d471db387149cc91691441810-320-0.png?0";
 
+// ── CPF (identidade nacional) — Fatia 4 front: máscara + DV no cliente. O servidor SEMPRE revalida. ──
+const CPF_CONSENT_VERSAO = "cpf-2026-08-v1";
+function cpfDVFront(cpf) {
+  const d = String(cpf || "").replace(/\D/g, "");
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const calc = (base, ini) => { let s = 0; for (let i = 0; i < base.length; i++) s += parseInt(base[i], 10) * (ini - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
+  return calc(d.slice(0, 9), 10) === parseInt(d[9], 10) && calc(d.slice(0, 10), 11) === parseInt(d[10], 10);
+}
+function cpfMascara(v) {
+  const d = String(v || "").replace(/\D/g, "").slice(0, 11);
+  return d.replace(/^(\d{3})(\d)/, "$1.$2").replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3").replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
+}
+function idadeDe(dataNasc) {
+  if (!dataNasc) return null;
+  const dob = new Date(dataNasc + "T00:00:00");
+  if (isNaN(dob.getTime())) return null;
+  const h = new Date();
+  let a = h.getFullYear() - dob.getFullYear();
+  const m = h.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && h.getDate() < dob.getDate())) a--;
+  return a;
+}
+
 // ── SUPABASE CONFIG ──────────────────────────────────────────
 const SUPA_URL = "https://eultwfzzlgcmcikobmmy.supabase.co";
 const SUPA_KEY = "sb_publishable_h0-_rOD0-ZPAIIkYm3xgcg_V1i-SZZN";
@@ -1555,6 +1578,16 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema }) {
   const [aceiteLGPD, setAceiteLGPD] = useState(false);
   const [aceiteReg, setAceiteReg] = useState(false);
   const [lerReg, setLerReg] = useState(false);
+  // CPF (Fatia 4): identidade nacional. DV no cliente; o servidor revalida e guarda só o hash.
+  const [cpf, setCpf] = useState("");
+  const [dataNasc, setDataNasc] = useState("");
+  const [respNome, setRespNome] = useState("");
+  const [respCpf, setRespCpf] = useState("");
+  const [aceiteCpf, setAceiteCpf] = useState(false);
+  const idade = idadeDe(dataNasc);
+  const ehMenor = idade != null && idade < 18;
+  const cpfOk = cpfDVFront(cpf);
+  const respCpfOk = cpfDVFront(respCpf);
   // Checagem de telefone duplicado — agora é uma busca assíncrona estreita
   // (não depende mais da lista inteira de atletas trazer telefone). Debounce
   // de 500ms pra não disparar uma consulta a cada tecla digitada.
@@ -1633,6 +1666,28 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema }) {
         <label style={s.label}>Apelido (opcional)</label>
         <input style={s.input} value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="Como você gostaria de ser chamado?"/>
 
+        <label style={s.label}>CPF *</label>
+        <input style={s.input} value={cpf} onChange={e=>setCpf(cpfMascara(e.target.value))} placeholder="000.000.000-00" inputMode="numeric"/>
+        {cpf.replace(/\D/g,"").length===11 && !cpfOk && (
+          <div style={{fontSize:11,color:"#c25a45",marginTop:4}}>CPF inválido — confira os números.</div>
+        )}
+
+        <label style={s.label}>Data de nascimento *</label>
+        <input style={s.input} value={dataNasc} onChange={e=>setDataNasc(e.target.value)} type="date"/>
+        {ehMenor && <>
+          <div style={{...s.box("#9C6F3E"), marginTop:10}}>
+            <strong style={{color:"#9C6F3E"}}>Menor de 18 anos</strong><br/>
+            O consentimento e o CPF do <strong style={{color:"#F0EAE0"}}>responsável legal</strong> são necessários.
+          </div>
+          <label style={s.label}>Nome do responsável *</label>
+          <input style={s.input} value={respNome} onChange={e=>setRespNome(e.target.value)} placeholder="Nome completo do responsável"/>
+          <label style={s.label}>CPF do responsável *</label>
+          <input style={s.input} value={respCpf} onChange={e=>setRespCpf(cpfMascara(e.target.value))} placeholder="000.000.000-00" inputMode="numeric"/>
+          {respCpf.replace(/\D/g,"").length===11 && !respCpfOk && (
+            <div style={{fontSize:11,color:"#c25a45",marginTop:4}}>CPF do responsável inválido.</div>
+          )}
+        </>}
+
         {!ehB && <>
         <label style={s.label}>É federado pela CBTM?</label>
         <select style={s.select} value={fed} onChange={e=>setFed(e.target.value)}>
@@ -1661,11 +1716,13 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema }) {
 
         {(() => {
           const telDupl = telDuplStatus === "duplicado";
-          const bloqueado = telDupl || telDuplStatus === "checking";
+          const menorIncompleto = ehMenor && (!respNome.trim() || !respCpfOk);
+          const faltando = !name.trim() || !phone.trim() || !cpfOk || !dataNasc || menorIncompleto;
+          const bloqueado = telDupl || telDuplStatus === "checking" || faltando;
           return (
-            <button style={s.btn(!name.trim()||!phone.trim()||bloqueado)}
-              onClick={()=>{ if(name.trim()&&phone.trim()&&!bloqueado) setStep(2); }}
-              disabled={!name.trim()||!phone.trim()||bloqueado}>
+            <button style={s.btn(bloqueado)}
+              onClick={()=>{ if(!bloqueado) setStep(2); }}
+              disabled={bloqueado}>
               {telDuplStatus === "checking" ? "Verificando telefone…" : "Continuar →"}
             </button>
           );
@@ -1700,7 +1757,8 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema }) {
           ✅ Comunicação via WhatsApp e Instagram<br/>
           ✅ Publicação do ranking, histórico de partidas e pontuação — dados não sensíveis, mostrados no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa<br/>
           ❌ Seus dados <strong style={{color:"#F0EAE0"}}>não são vendidos</strong> nem compartilhados com terceiros<br/>
-          ❌ <strong style={{color:"#F0EAE0"}}>Não coletamos</strong> CPF, endereço, e-mail ou dados financeiros
+          🔐 Coletamos seu <strong style={{color:"#F0EAE0"}}>CPF apenas como identidade</strong> — guardado de forma protegida (cifrada), nunca exibido a ninguém (detalhes abaixo)<br/>
+          ❌ <strong style={{color:"#F0EAE0"}}>Não coletamos</strong> endereço, e-mail ou dados financeiros
         </div>
 
         <div style={{...s.box("#9C6F3E"), marginTop:8}}>
@@ -1727,7 +1785,24 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema }) {
           </div>
         </div>
 
-        <button style={s.btn(!aceiteLGPD)} onClick={()=>{ if(aceiteLGPD) setStep(3); }} disabled={!aceiteLGPD}>
+        <div style={{...s.box("#D85A30"), marginTop:14}}>
+          <strong style={{color:"#D85A30", fontSize:13}}>CPF — identidade única na plataforma</strong><br/><br/>
+          Usamos seu CPF <strong style={{color:"#F0EAE0"}}>só para identificar você de forma única</strong> (evitar cadastro duplicado e manter a integridade do ranking). Ele é guardado de forma <strong style={{color:"#F0EAE0"}}>protegida (cifrada)</strong>, <strong style={{color:"#F0EAE0"}}>nunca é exibido</strong> a outros atletas nem ao organizador, e não é usado para nenhum outro fim.<br/><br/>
+          Controlador dos dados: <strong style={{color:"#F0EAE0"}}>Juliano Strutzki</strong> (pessoa física). Direitos (acesso, correção, exclusão): pelos canais do Clube — Instagram/WhatsApp @clubedotenisdemesa.
+        </div>
+
+        <div style={s.checkRow} onClick={()=>setAceiteCpf(v=>!v)}>
+          <div style={s.checkBox(aceiteCpf)}>
+            {aceiteCpf && <span style={{color:"#fff", fontSize:12, fontWeight:800}}>✓</span>}
+          </div>
+          <div style={{fontSize:12, color:"#9db3a8", lineHeight:1.6}}>
+            {ehMenor
+              ? <>Na condição de <strong style={{color:"#F0EAE0"}}>responsável legal</strong>, consinto com o uso do CPF do menor como identidade única na plataforma, conforme descrito.</>
+              : <><strong style={{color:"#F0EAE0"}}>Consinto</strong> com o uso do meu CPF como identidade única na plataforma, conforme descrito acima.</>}
+          </div>
+        </div>
+
+        <button style={s.btn(!aceiteLGPD||!aceiteCpf)} onClick={()=>{ if(aceiteLGPD&&aceiteCpf) setStep(3); }} disabled={!aceiteLGPD||!aceiteCpf}>
           Continuar →
         </button>
       </div>
@@ -1820,6 +1895,12 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema }) {
               rating: fed==="sim" && rating ? parseInt(rating) : (fed==="sim" ? null : 250),
               aceiteRegulamento: true,
               aceiteLGPD: true,
+              cpf: cpf.replace(/\D/g,""),
+              dataNascimento: dataNasc || null,
+              responsavelNome: ehMenor ? (respNome.trim() || null) : null,
+              responsavelCpf: ehMenor ? respCpf.replace(/\D/g,"") : null,
+              cpfConsent: true,
+              cpfConsentVersao: CPF_CONSENT_VERSAO,
               dataAceite: agora,
             }) : { ok: true };
           } catch(e) { r = { ok: false, erro: e?.message }; }
@@ -1828,6 +1909,10 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema }) {
             setErroSubmit(
               String(r.erro||"").includes("telefone_duplicado")
                 ? "Este telefone já está cadastrado. Se for você, volte e use “Sou atleta” para entrar."
+                : String(r.erro||"").includes("cpf_duplicado")
+                ? "Já existe um cadastro com esse CPF. Entre pela tela de acesso (“Sou atleta”)."
+                : (String(r.erro||"").includes("cpf_invalido") || String(r.erro||"").includes("cpf_responsavel"))
+                ? "CPF inválido. Volte ao passo 1 e confira os números."
                 : "Não foi possível enviar sua inscrição. Verifique sua conexão e tente de novo."
             );
             return; // permanece no passo 3
@@ -4245,6 +4330,12 @@ export default function App() {
           federado: p.federated, rating: p.rating,
           aceiteRegulamento: p.aceiteRegulamento || false,
           aceiteLGPD: p.aceiteLGPD || false,
+          cpf: p.cpf || undefined,
+          dataNascimento: p.dataNascimento || undefined,
+          responsavelNome: p.responsavelNome || undefined,
+          responsavelCpf: p.responsavelCpf || undefined,
+          cpfConsent: p.cpfConsent || false,
+          cpfConsentVersao: p.cpfConsentVersao || undefined,
           dataAceite: p.dataAceite || null,
           circuitoId: p.circuitoId || undefined, // inscrição no circuito escolhido (Fatia 3); ausente = circuito ativo
         });
@@ -4254,6 +4345,8 @@ export default function App() {
         if (String(e.message||"").includes("telefone_duplicado") || String(e.message||"").includes("atletas_telefone_unique") || String(e.message||"").includes("duplicate key")) {
           return { ok: false, erro: "telefone_duplicado" };
         }
+        if (String(e.message||"").includes("cpf_duplicado")) return { ok: false, erro: "cpf_duplicado" };
+        if (String(e.message||"").includes("cpf_invalido") || String(e.message||"").includes("cpf_responsavel")) return { ok: false, erro: "cpf_invalido" };
         throw e;
       }
       await loadFromSupabase();

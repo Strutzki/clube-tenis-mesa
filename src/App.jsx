@@ -1376,7 +1376,7 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
               <div style={{fontFamily:T.mono,fontSize:8.5,letterSpacing:1,textTransform:"uppercase",color:"rgba(240,234,224,0.5)",marginBottom:9}}>Parceria oficial</div>
               <img src={TIBHAR_LOGO} alt="Tibhar" style={{height:54,display:"block",flexShrink:0}} onError={(e)=>{e.currentTarget.style.display="none";}}/>
             </div>
-            <div style={{fontFamily:T.serif,fontSize:20,lineHeight:1.15,color:T.offwhite}}>Desconto de sócio na <span style={{fontStyle:"italic",color:T.terracota}}>Tibhar</span></div>
+            <div style={{fontFamily:T.serif,fontSize:20,lineHeight:1.15,color:T.offwhite}}>Desconto <span style={{fontStyle:"italic",color:T.terracota}}>exclusivo</span> para o Clube do Tênis de Mesa</div>
             <div style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0"}}>
               <span style={{flex:1,fontFamily:T.mono,fontWeight:700,fontSize:12,letterSpacing:0.5,color:T.offwhite,background:"rgba(0,0,0,0.22)",border:"1px dashed rgba(216,90,48,0.8)",borderRadius:8,padding:"7px 9px",textAlign:"center",overflow:"hidden",textOverflow:"ellipsis"}}>{TIBHAR_CUPOM}</span>
               <button onClick={(e)=>{const el=e.currentTarget;try{navigator.clipboard.writeText(TIBHAR_CUPOM);}catch(_){}el.textContent="Copiado!";setTimeout(()=>{el.textContent="Copiar";},1400);}} style={{fontFamily:T.mono,fontSize:11,color:T.offwhite,background:"rgba(240,234,224,0.10)",border:"1px solid rgba(240,234,224,0.22)",borderRadius:8,padding:"7px 12px",cursor:"pointer",flexShrink:0}}>Copiar</button>

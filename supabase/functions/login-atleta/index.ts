@@ -76,6 +76,35 @@ async function acharAtleta(tel: string): Promise<any | null> {
   return (data ?? []).find((a: any) => normTel(a.telefone) === alvo) ?? null;
 }
 
+// ── CPF backfill (reusa a fundação da spec de CPF; hash no edge, pepper no Vault) ──
+function cpfNormaliza(s: unknown): string | null {
+  const d = String(s ?? "").replace(/\D/g, "");
+  return d.length === 11 ? d : null;
+}
+function cpfDVValido(cpf: string): boolean {
+  if (!/^\d{11}$/.test(cpf)) return false;
+  if (/^(\d)\1{10}$/.test(cpf)) return false;
+  const dv = (base: string, ini: number) => { let s = 0; for (let i = 0; i < base.length; i++) s += parseInt(base[i], 10) * (ini - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
+  if (dv(cpf.slice(0, 9), 10) !== parseInt(cpf[9], 10)) return false;
+  return dv(cpf.slice(0, 10), 11) === parseInt(cpf[10], 10);
+}
+let _cpfPepper: string | null = null;
+async function getCpfPepper(): Promise<string> {
+  if (_cpfPepper) return _cpfPepper;
+  const { data, error } = await supabase.rpc("get_cpf_pepper");
+  if (error) throw error;
+  const pep = (typeof data === "string" ? data : (data as any)) as string;
+  if (!pep) throw new Error("pepper_indisponivel");
+  _cpfPepper = pep;
+  return pep;
+}
+async function cpfHmacHex(cpf: string, pepper: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(pepper), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(cpf));
+  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 Deno.serve(async (req) => {
   const origin = req.headers.get("Origin") || "";
   const CORS_HEADERS = {
@@ -143,6 +172,102 @@ Deno.serve(async (req) => {
       }).eq("id", a.id);
       const { data: full } = await supabase.from("atletas").select(COLS).eq("id", a.id).single();
       return jsonResponse({ sucesso: true, dados: { ok: true, atleta: full } });
+    }
+
+    // PARTICIPAR — atleta EXISTENTE entra num 2º circuito (Bloqueador estrutural 1).
+    // Autenticado por PIN; reusa o cadastro nacional (NÃO cria atleta/rating novo).
+    // Backfill de CPF aqui, se o atleta ainda não tiver. Spec: PLANO_PARTICIPAR.md.
+    if (acao === "PARTICIPAR") {
+      const p = body || {};
+      const ipReq = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || null;
+
+      // 1) Autentica: telefone + PIN (mesma trava de tentativas do LOGIN).
+      const a = await acharAtleta(telefone);
+      if (!a) return jsonResponse({ sucesso: false, erro: "cadastro_nao_encontrado" }, 404);
+      if (a.pin_bloqueado_ate && new Date(a.pin_bloqueado_ate) > new Date()) {
+        return jsonResponse({ sucesso: false, erro: "muitas_tentativas" }, 429);
+      }
+      if (!a.pin_hash) return jsonResponse({ sucesso: false, erro: "primeiro_acesso" }, 409);
+      if (!pin) return jsonResponse({ sucesso: false, erro: "precisa_pin" }, 401);
+      const okPin = await verifyPin(String(pin), a.pin_hash);
+      if (!okPin) {
+        const tent = (a.pin_tentativas || 0) + 1;
+        const upd = tent >= MAX_TENTATIVAS_PIN
+          ? { pin_tentativas: 0, pin_bloqueado_ate: new Date(Date.now() + BLOQUEIO_MINUTOS * 60000).toISOString() }
+          : { pin_tentativas: tent };
+        await supabase.from("atletas").update(upd).eq("id", a.id);
+        return jsonResponse({ sucesso: false, erro: "pin_incorreto" }, 401);
+      }
+      await supabase.from("atletas").update({ pin_tentativas: 0, pin_bloqueado_ate: null }).eq("id", a.id);
+      if (a.status !== "ativo") return jsonResponse({ sucesso: false, erro: "cadastro_inativo" }, 403);
+
+      // 2) Valida o circuito alvo (existe, ativo, inscrições abertas, não é o BH).
+      const circuitoId = p.circuitoId ? String(p.circuitoId) : "";
+      if (!circuitoId) return jsonResponse({ sucesso: false, erro: "circuitoId é obrigatório" }, 400);
+      const { data: circ } = await supabase.from("circuitos")
+        .select("slug,ativo,inscricoes_abertas,regulamento_versao").eq("id", circuitoId).maybeSingle();
+      if (!circ) return jsonResponse({ sucesso: false, erro: "circuito_nao_encontrado" }, 404);
+      if (circ.slug === "bh") return jsonResponse({ sucesso: false, erro: "bh_cadastro_direto" }, 400);
+      if (!circ.ativo) return jsonResponse({ sucesso: false, erro: "circuito_inativo" }, 400);
+      if (!circ.inscricoes_abertas) return jsonResponse({ sucesso: false, erro: "inscricoes_fechadas" }, 400);
+
+      // 3) Já é membro deste circuito?
+      const { data: mem } = await supabase.from("circuito_atletas")
+        .select("atleta_id").eq("circuito_id", circuitoId).eq("atleta_id", a.id).maybeSingle();
+      if (mem) return jsonResponse({ sucesso: false, erro: "ja_participa" }, 409);
+
+      const now = new Date().toISOString();
+
+      // 4) Backfill de CPF: só se o atleta ainda NÃO tem documento.
+      const { data: doc } = await supabase.from("atleta_documento").select("atleta_id").eq("atleta_id", a.id).maybeSingle();
+      if (!doc) {
+        const temCpf = String(p.cpf ?? "").replace(/\D/g, "").length > 0;
+        if (!temCpf) return jsonResponse({ sucesso: false, erro: "cpf_obrigatorio" }, 400);
+        if (!p.cpfConsent) return jsonResponse({ sucesso: false, erro: "cpf_consentimento_obrigatorio" }, 400);
+        const cpf = cpfNormaliza(p.cpf);
+        if (!cpf || !cpfDVValido(cpf)) return jsonResponse({ sucesso: false, erro: "cpf_invalido" }, 400);
+        const pepper = await getCpfPepper();
+        const cpfHash = await cpfHmacHex(cpf, pepper);
+        const { data: dd } = await supabase.rpc("dedup_por_cpf_hash", { p_hash: cpfHash });
+        const ex = Array.isArray(dd) ? dd[0] : dd;
+        if (ex?.existe && ex?.atleta_id && ex.atleta_id !== a.id) {
+          return jsonResponse({ sucesso: false, erro: "cpf_conflito" }, 409); // CPF é de outro cadastro
+        }
+        let respCpfHash: string | null = null;
+        if (p.responsavelCpf) {
+          const rc = cpfNormaliza(p.responsavelCpf);
+          if (!rc || !cpfDVValido(rc)) return jsonResponse({ sucesso: false, erro: "cpf_responsavel_invalido" }, 400);
+          respCpfHash = await cpfHmacHex(rc, pepper);
+        }
+        const { error: eDoc } = await supabase.from("atleta_documento").insert({
+          atleta_id: a.id, cpf_hash: cpfHash,
+          cpf_consent_em: now, cpf_consent_versao: p.cpfConsentVersao ? String(p.cpfConsentVersao) : null, cpf_consent_ip: ipReq,
+          data_nascimento: p.dataNascimento || null,
+          responsavel_nome: p.responsavelNome ? String(p.responsavelNome) : null, responsavel_cpf_hash: respCpfHash,
+        });
+        if (eDoc) {
+          const md = String(eDoc.message || "");
+          if (md.includes("duplicate") || md.includes("unique") || md.includes("cpf_hash")) {
+            return jsonResponse({ sucesso: false, erro: "cpf_conflito" }, 409);
+          }
+          return jsonResponse({ sucesso: false, erro: "falha_documento" }, 500);
+        }
+        await supabase.from("atletas").update({ cpf_verificado: true }).eq("id", a.id);
+      }
+
+      // 5) Cria o vínculo no circuito (pendente de inclusão pelo admin). NUNCA toca no rating nacional.
+      const { error: eMem } = await supabase.from("circuito_atletas").insert({
+        circuito_id: circuitoId, atleta_id: a.id,
+        status: "ativo", pendente_circuito: true, saldo_temp: 0, vitorias: 0, derrotas: 0,
+        aceite_regulamento: true, data_aceite_regulamento: now, versao_regulamento: circ.regulamento_versao || null,
+        inscrito_em: now,
+      });
+      if (eMem) {
+        const mm = String(eMem.message || "");
+        if (mm.includes("duplicate") || mm.includes("unique")) return jsonResponse({ sucesso: false, erro: "ja_participa" }, 409);
+        throw eMem;
+      }
+      return jsonResponse({ sucesso: true });
     }
 
     return jsonResponse({ sucesso: false, erro: `Ação desconhecida: ${acao}` }, 400);

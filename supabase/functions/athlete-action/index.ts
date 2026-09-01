@@ -159,9 +159,12 @@ Deno.serve(async (req) => {
         if (!circ.ativo) return jsonResponse({ sucesso: false, erro: "Este circuito está inativo." }, 400);
         if (!circ.inscricoes_abertas) return jsonResponse({ sucesso: false, erro: "As inscrições deste circuito estão fechadas no momento." }, 400);
 
-        // ── CPF (Fatia 3) — OPCIONAL e retrocompatível: sem CPF, o fluxo é idêntico ao de hoje.
+        // ── CPF (Fatia 5) — OBRIGATÓRIO no servidor (backstop; o front já exige). Decisão Juliano: exigir de todos já.
+        // (Atletas já cadastrados não passam por aqui — o backfill deles é fatia futura.)
         const ipReq = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || null;
         const temCpf = String(p.cpf ?? "").replace(/\D/g, "").length > 0;
+        if (!temCpf) return jsonResponse({ sucesso: false, erro: "cpf_obrigatorio" }, 400);
+        if (!p.cpfConsent) return jsonResponse({ sucesso: false, erro: "cpf_consentimento_obrigatorio" }, 400);
         let cpfHash: string | null = null;
         let respCpfHash: string | null = null;
         if (temCpf) {

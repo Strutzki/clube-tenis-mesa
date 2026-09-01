@@ -32,6 +32,7 @@ Tomada pelo Juliano. Três níveis de papel, um login só:
 
 ## Bloqueadores estruturais
 1. **Inscrição = 1 cadastro nacional (Modelo B).** "Participar" de um circuito novo não pode criar atleta/rating novo. Deve casar por telefone e **reusar o atleta + rating nacional**, criando só o vínculo por circuito (`circuito_atletas`: status/saldo/pendente). Hoje `INSCREVER` cria `atletas` com rating 250 — precisa de um caminho "atleta existente entra em novo circuito".
+   - **Também é o ponto de backfill do CPF (decisão Juliano):** quando um atleta atual (sem CPF) entrar num circuito novo, o "Participar" recolhe o CPF (INSCREVER já exige) e anexa `atleta_documento` ao atleta EXISTENTE — sem prompt separado, sem duplicar cadastro/rating. Dedup por CPF fecha duplicado nacional.
 2. **Papel duplo atleta↔organizador.** Hoje `isAdmin`/`currentAthlete`/`isVisitante` são exclusivos. Uma pessoa é as duas coisas. Definir a troca de modo (a partir do perfil/hub; não login separado).
 3. **Léxico do Modelo B.** Rating = "nacional" (só topo do hub/perfil). Posição/saldo = "neste circuito". Explicador único quando entra no 2º circuito. (Parcialmente refletido no mockup.)
 
@@ -51,3 +52,22 @@ Tomada pelo Juliano. Três níveis de papel, um login só:
 - Alto reuso: telas dentro do circuito (ranking/jogos/comunidade), ações de temporada do admin, motor de rating, inscrição, visitante/comunidade read-only, mensagens WhatsApp.
 - Novo: hub, descoberta/lista + busca por cidade, flag de visibilidade, roteamento de deep-link, trocador de contexto, troca de modo, superfície de pendência.
 - Fundação (já construída): `circuitos` + `circuito_atletas` + Modelo B no backend.
+
+## Painel de gestão / analytics (ideia do Juliano — a decidir, NÃO construir ainda)
+**Objetivo:** enxergar o uso do app — volume de acessos, de onde vêm (cidade/UF), quem acessa (visitante x atleta logado), telas/ações mais usadas, funil de inscrição (iniciadas x concluídas) e recorrência. Serve pra decisão de produto e pra priorizar onde abrir novos circuitos.
+
+**Sinais úteis:** acessos/sessões, visitantes únicos, geografia aproximada (via IP), dispositivo, origem do tráfego (Instagram/WhatsApp/link), inscrições iniciadas x concluídas, nº de atletas ativos, retorno de usuários.
+
+**⚠️ Privacidade (crítico — o projeto lida com CPF):**
+- IP e geolocalização **são dados pessoais** (LGPD). "Quem acessa" por atleta é **rastreamento** → exige base legal + transparência (atualizar a política de privacidade da inscrição pra cobrir métricas de uso).
+- Padrão recomendado: **privacy-first** — agregado/pseudônimo, IP usado só pra derivar cidade e depois descartado/anonimizado, retenção curta, e **NUNCA** cruzar com CPF / `atleta_documento`. Métrica não pode virar oráculo de identidade.
+- Menores: cuidado redobrado com qualquer rastreamento individual.
+
+**Abordagens possíveis:**
+- (a) **Analytics de terceiro privacy-first sem cookies** (ex.: Plausible/Umami) — rápido, LGPD-amigável, sem banner de cookie; porém o dado fica fora do Supabase e o "quem" logado não sai de graça.
+- (b) **Solução própria no Supabase** — tabela de eventos gravada pelo front/edge + geo por IP no servidor. Controle total e integra com atleta logado, mas é mais trabalho e concentra a responsabilidade LGPD em nós (tabela de eventos precisa da mesma blindagem: sem anon, retenção, anonimização).
+- (c) **Híbrido** — terceiro pro tráfego agregado + eventos próprios só do que o terceiro não vê (funil de inscrição, ações de atleta logado, já com consentimento).
+
+**Governança:** Guardião (privacidade/dados) + Advogado do Atleta revisam antes de construir — provável GO-com-condições (anonimização de IP, retenção definida, transparência na política, isolamento total do CPF).
+
+**Decisões a fechar antes de codar:** escopo (só agregado x incluir atividade por atleta); ferramenta (terceiro x próprio x híbrido); lista mínima de métricas (evitar over-collection — só o que vira decisão); janela de retenção; se o atleta logado ganha um "meu histórico de uso" (transparência a favor dele).

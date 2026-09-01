@@ -428,6 +428,19 @@ async function chamarLoginAtleta(acao, telefone, pin) {
   return data.dados || {};
 }
 
+// Participar de um 2º circuito (atleta EXISTENTE) — autentica por PIN no login-atleta
+// (ação PARTICIPAR). Reusa o cadastro nacional; faz o backfill de CPF quando falta.
+async function participarCircuito(payload) {
+  const res = await fetch(`${SUPA_URL}/functions/v1/login-atleta`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+    body: JSON.stringify({ acao: "PARTICIPAR", ...(payload || {}) }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.sucesso) throw new Error(data.erro || `Erro ${res.status} ao participar`);
+  return data.dados || {};
+}
+
 async function uploadComprovanteWo(matchId, blob) {
   const path = `wo-${matchId}-${Date.now()}.jpg`;
   const res = await fetch(`${SUPA_URL}/storage/v1/object/${COMPROVANTES_BUCKET}/${path}`, {
@@ -1496,6 +1509,8 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
       onSubmit={(p) => onSubmit({ ...p, circuitoId: escolhido.id })}
       athletes={athletes}
       sistema={escolhido.sistema}
+      circuitoId={escolhido.id}
+      circuitoNome={nomeCirc(escolhido)}
     />;
   }
   // Circuito escolhido (inclui o auto-selecionado quando só há um) -> confirmação com nome + selo.
@@ -1566,12 +1581,158 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
 // ── FORMULÁRIO DE INSCRIÇÃO (público) ────────────────────────────────────────
 // `sistema` do circuito escolhido: sem sistema (ou "A") => textos do rating (BH, intocado);
 // "B" => textos do modelo de pontos (regulamento vB-01, sem rating).
-function InscricaoForm({ onBack, onSubmit, athletes = [], sistema }) {
+// ── PARTICIPAR — atleta EXISTENTE entra num 2º circuito (reusa o cadastro nacional) ──
+// 2 fases: (1) telefone + PIN; (2) se o servidor pedir, coleta CPF (backfill) e reenvia.
+function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFechar }) {
+  const [fase, setFase] = useState("auth"); // auth | cpf | ok
+  const [tel, setTel] = useState(telefoneInicial);
+  const [pin, setPin] = useState("");
+  const [cpf, setCpf] = useState("");
+  const [dataNasc, setDataNasc] = useState("");
+  const [respNome, setRespNome] = useState("");
+  const [respCpf, setRespCpf] = useState("");
+  const [aceiteCpf, setAceiteCpf] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const idade = idadeDe(dataNasc);
+  const ehMenor = idade != null && idade < 18;
+  const cpfOk = cpfDVFront(cpf);
+  const respCpfOk = cpfDVFront(respCpf);
+
+  const box = { minHeight:"100vh", background:T.verde, fontFamily:T.sans, display:"flex", justifyContent:"center" };
+  const card = { width:"100%", maxWidth:390, padding:"24px 24px 40px", color:T.offwhite, boxSizing:"border-box" };
+  const label = { fontSize:11, fontWeight:700, color:"#9db3a8", textTransform:"uppercase", letterSpacing:0.8, display:"block", marginBottom:5, marginTop:14 };
+  const input = { background:T.verdeCard, border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:T.offwhite, padding:"11px 12px", fontSize:16, width:"100%", outline:"none", boxSizing:"border-box" };
+  const btn = (dis) => ({ background: dis?T.verdeCard:T.terracota, color: dis?"#7d9188":T.verde, border:"none", borderRadius:11, padding:"13px", fontSize:14, fontWeight:800, cursor: dis?"default":"pointer", width:"100%", marginTop:18 });
+
+  function traduz(e) {
+    const s = String(e || "");
+    if (s.includes("pin_incorreto")) return "PIN incorreto.";
+    if (s.includes("primeiro_acesso")) return "Você ainda não criou seu PIN. Entre em “Sou atleta” para criar e depois participe.";
+    if (s.includes("muitas_tentativas")) return "Muitas tentativas. Aguarde alguns minutos.";
+    if (s.includes("cadastro_nao_encontrado")) return "Não achamos um cadastro com esse telefone. Use “Inscreva-se”.";
+    if (s.includes("cadastro_inativo")) return "Seu cadastro não está ativo. Fale com o admin.";
+    if (s.includes("ja_participa")) return "Você já está nesse circuito.";
+    if (s.includes("cpf_conflito")) return "Esse CPF já está em outro cadastro. Fale com o admin.";
+    if (s.includes("cpf_invalido")) return "CPF inválido — confira os números.";
+    if (s.includes("inscricoes_fechadas")) return "As inscrições desse circuito fecharam.";
+    if (s.includes("circuito")) return "Circuito indisponível.";
+    return "Não foi possível concluir. Tente de novo.";
+  }
+
+  async function enviar(comCpf) {
+    if (enviando) return;
+    setErro(""); setEnviando(true);
+    try {
+      const payload = { telefone: tel.replace(/\D/g,""), pin, circuitoId };
+      if (comCpf) {
+        payload.cpf = cpf.replace(/\D/g,"");
+        payload.cpfConsent = true;
+        payload.cpfConsentVersao = CPF_CONSENT_VERSAO;
+        payload.dataNascimento = dataNasc || null;
+        if (ehMenor) { payload.responsavelNome = respNome.trim() || null; payload.responsavelCpf = respCpf.replace(/\D/g,""); }
+      }
+      await participarCircuito(payload);
+      setEnviando(false); setFase("ok");
+    } catch (e) {
+      setEnviando(false);
+      const s = String(e?.message || "");
+      if (s.includes("cpf_obrigatorio") || s.includes("cpf_consentimento")) { setFase("cpf"); setErro(""); return; }
+      setErro(traduz(s));
+    }
+  }
+
+  if (fase === "ok") return (
+    <div style={box}><div style={{...card, display:"flex", flexDirection:"column", justifyContent:"center", textAlign:"center"}}>
+      <div style={{fontSize:44, marginBottom:10}}>🎉</div>
+      <div style={{fontFamily:T.serif, fontSize:24, marginBottom:8}}>Participação enviada!</div>
+      <div style={{fontSize:13, color:T.cinza, lineHeight:1.6, marginBottom:24}}>Você entrou na fila do <strong style={{color:T.offwhite}}>{circuitoNome}</strong> reusando seu cadastro. O admin desse circuito vai te incluir em breve.</div>
+      <button onClick={onFechar} style={btn(false)}>Voltar</button>
+    </div></div>
+  );
+
+  return (
+    <div style={box}><div style={card}>
+      <button onClick={onFechar} style={{background:"none",border:"none",color:T.cinza,cursor:"pointer",fontSize:13,marginBottom:16}}>← Voltar</button>
+      <div style={{fontFamily:T.serif, fontSize:22, marginBottom:4}}>Participar do circuito</div>
+      <div style={{fontSize:12, color:T.cinza, marginBottom:8}}>{circuitoNome}</div>
+      <div style={{background:"rgba(106,157,122,0.12)", border:"1px solid rgba(106,157,122,0.4)", borderRadius:12, padding:12, fontSize:12, color:"rgba(240,234,224,0.85)", lineHeight:1.6}}>
+        Você já tem cadastro no Clube. Aqui você <strong style={{color:T.offwhite}}>reusa o mesmo cadastro</strong> (sem criar outro) e entra neste circuito. Confirme com seu PIN.
+      </div>
+
+      {fase === "auth" && <>
+        <label style={label}>WhatsApp (com DDD)</label>
+        <input style={input} value={tel} onChange={e=>setTel(e.target.value)} placeholder="31999999999" type="tel"/>
+        <label style={label}>Seu PIN</label>
+        <input style={input} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="••••" type="password" inputMode="numeric"/>
+        {erro && <div style={{fontSize:12,color:"#f8c4b4",marginTop:10}}>{erro}</div>}
+        <button style={btn(!tel.trim()||pin.length<4||enviando)} disabled={!tel.trim()||pin.length<4||enviando} onClick={()=>enviar(false)}>{enviando?"Confirmando…":"Participar →"}</button>
+      </>}
+
+      {fase === "cpf" && <>
+        <div style={{fontSize:12,color:T.cinza,marginTop:14,lineHeight:1.6}}>Falta só o seu <strong style={{color:T.offwhite}}>CPF</strong> pra completar seu cadastro nacional — usado só como identidade, guardado cifrado e nunca exibido a ninguém.</div>
+        <label style={label}>CPF</label>
+        <input style={input} value={cpf} onChange={e=>setCpf(cpfMascara(e.target.value))} placeholder="000.000.000-00" inputMode="numeric"/>
+        {cpf.replace(/\D/g,"").length===11 && !cpfOk && <div style={{fontSize:11,color:"#c25a45",marginTop:4}}>CPF inválido.</div>}
+        <label style={label}>Data de nascimento</label>
+        <input style={input} value={dataNasc} onChange={e=>setDataNasc(e.target.value)} type="date"/>
+        {ehMenor && <>
+          <label style={label}>Nome do responsável</label>
+          <input style={input} value={respNome} onChange={e=>setRespNome(e.target.value)} placeholder="Responsável legal"/>
+          <label style={label}>CPF do responsável</label>
+          <input style={input} value={respCpf} onChange={e=>setRespCpf(cpfMascara(e.target.value))} placeholder="000.000.000-00" inputMode="numeric"/>
+          {respCpf.replace(/\D/g,"").length===11 && !respCpfOk && <div style={{fontSize:11,color:"#c25a45",marginTop:4}}>CPF do responsável inválido.</div>}
+        </>}
+        <div onClick={()=>setAceiteCpf(v=>!v)} style={{display:"flex",gap:10,alignItems:"flex-start",marginTop:14,cursor:"pointer"}}>
+          <div style={{width:20,height:20,borderRadius:5,border:`1px solid ${aceiteCpf?T.terracota:"rgba(255,255,255,0.3)"}`,background:aceiteCpf?T.terracota:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{aceiteCpf && <span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}</div>
+          <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>{ehMenor?<>Como responsável legal, consinto com o uso do CPF do menor como identidade única na plataforma.</>:<>Consinto com o uso do meu CPF como identidade única na plataforma.</>}</div>
+        </div>
+        {erro && <div style={{fontSize:12,color:"#f8c4b4",marginTop:10}}>{erro}</div>}
+        {(() => { const menorInc = ehMenor && (!respNome.trim()||!respCpfOk); const dis = !cpfOk||!dataNasc||!aceiteCpf||menorInc||enviando; return (
+          <button style={btn(dis)} disabled={dis} onClick={()=>enviar(true)}>{enviando?"Enviando…":"Confirmar participação →"}</button>
+        ); })()}
+      </>}
+    </div></div>
+  );
+}
+
+// Gatilho B do "Participar": card na área do atleta logado, lista os outros circuitos abertos.
+function ParticiparOutroCircuito({ athlete }) {
+  const [lista, setLista] = useState(null);
+  const [sel, setSel] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    db.getCircuitosAbertos()
+      .then(cs => { if (vivo) setLista((Array.isArray(cs) ? cs : []).filter(c => c.slug !== "bh")); })
+      .catch(() => { if (vivo) setLista([]); });
+    return () => { vivo = false; };
+  }, []);
+  if (sel) return <ParticiparFlow circuitoId={sel.id} circuitoNome={sel.nome_exibicao || sel.nome_circuito} telefoneInicial={athlete?.telefone || ""} onFechar={() => setSel(null)} />;
+  if (!lista || lista.length === 0) return null; // nada a oferecer
+  return (
+    <div style={{background:T.verdeCard,border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:16,margin:"0 0 14px"}}>
+      <div style={{fontFamily:T.serif,fontSize:16,color:T.offwhite,marginBottom:2}}>Participar de outro circuito</div>
+      <div style={{fontSize:12,color:T.cinza,marginBottom:6,lineHeight:1.5}}>Entre em outro circuito aberto reusando o seu cadastro do Clube (sem cadastrar de novo).</div>
+      {lista.map(c => (
+        <button key={c.id} onClick={() => setSel(c)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",textAlign:"left",background:"rgba(216,90,48,0.1)",border:"1px solid rgba(216,90,48,0.35)",borderRadius:10,padding:"11px 13px",marginTop:8,cursor:"pointer",color:T.offwhite,fontFamily:T.sans}}>
+          <span>
+            <span style={{display:"block",fontWeight:700,fontSize:14}}>{c.nome_exibicao || c.nome_circuito}</span>
+            <span style={{display:"block",fontFamily:T.mono,fontSize:10,color:T.cinza,marginTop:2}}>{[c.cidade, c.uf].filter(Boolean).join(" · ")}{(c.cidade || c.uf) ? " · " : ""}{c.sistema === "B" ? "Pontos" : "Rating"}</span>
+          </span>
+          <span style={{color:T.terracota,fontWeight:800}}>→</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, circuitoNome }) {
   const ehB = sistema === "B";
   const versaoReg = ehB ? "vB-01" : "v03-12";
   const [step, setStep] = useState(1); // 1=dados, 2=lgpd, 3=regulamento, 4=sucesso
   const [enviando, setEnviando] = useState(false);
   const [erroSubmit, setErroSubmit] = useState("");
+  const [modoParticipar, setModoParticipar] = useState(false); // atleta existente → Participar
   const [name, setName] = useState(""), [phone, setPhone] = useState("");
   const [apelido, setApelido] = useState("");
   const [fed, setFed] = useState("nao"), [rating, setRating] = useState("");
@@ -1631,6 +1792,9 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema }) {
     </div>
   );
 
+  // Atleta que já tem cadastro → fluxo "Participar" (reusa a identidade, sem novo cadastro).
+  if (modoParticipar) return <ParticiparFlow circuitoId={circuitoId} circuitoNome={circuitoNome} telefoneInicial={phone} onFechar={() => setModoParticipar(false)} />;
+
   // ── STEP 1: Dados pessoais ──────────────────────────────────────────────────
   if (step === 1) return (
     <div style={s.wrap}>
@@ -1659,8 +1823,11 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema }) {
           <div style={{fontSize:11,color:"#7d9188",marginTop:4}}>Verificando…</div>
         )}
         {telDuplStatus === "duplicado" && (
-          <div style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#c25a45",marginTop:4}}>
-            ⚠️ Este número já possui uma inscrição cadastrada.
+          <div style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#c25a45",marginTop:4,lineHeight:1.6}}>
+            ⚠️ Este número já possui um cadastro.
+            {circuitoId && circuitoId !== CIRCUITO_BH_ID
+              ? <> Você já é do Clube — <span onClick={()=>setModoParticipar(true)} style={{color:T.terracota,fontWeight:800,cursor:"pointer",textDecoration:"underline"}}>participe deste circuito reusando seu cadastro →</span></>
+              : <> Se for você, volte e use “Sou atleta” para entrar.</>}
           </div>
         )}
         <label style={s.label}>Apelido (opcional)</label>
@@ -7666,7 +7833,7 @@ function VisitanteView({ state, tab, setTab }) {
 }
 
 function AthleteView({ state, dispatch, athlete, tab, setTab }) {
-  if (tab === "meus_jogos") return <><RenovacaoCard state={state} dispatch={dispatch} athlete={athlete} /><AthleteGames state={state} dispatch={dispatch} athlete={athlete} /></>;
+  if (tab === "meus_jogos") return <><RenovacaoCard state={state} dispatch={dispatch} athlete={athlete} /><ParticiparOutroCircuito athlete={athlete} /><AthleteGames state={state} dispatch={dispatch} athlete={athlete} /></>;
   if (tab === "ranking") return <RankingView state={state} currentAthleteId={athlete.id} />;
   if (tab === "tabela") return <TabelaView state={state} athlete={athlete} />;
   if (tab === "comunidade") return <ComunidadeView state={state} currentAthleteId={athlete.id} />;

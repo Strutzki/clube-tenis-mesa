@@ -70,6 +70,13 @@ const LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZAAAAGQCAYAAACAvzbM
 const ADMIN_USER = "Admin";
 const ADMIN_PASS = "2073";
 
+// ── Parceria Tibhar (benefício de sócio) — card na capa. TESTE: vira false pra remover 100%. ──
+const TIBHAR_BANNER = true;
+const TIBHAR_CUPOM = "CLUBEDOTENISDEMESA5";
+const TIBHAR_PCT = 5;
+const TIBHAR_URL = "https://www.tibhar.com.br/produtos/";
+const TIBHAR_LOGO = "https://acdn-us.mitiendanube.com/stores/003/539/065/themes/common/logo-468536362-1691441810-62e4a86ef96d952f9d471db387149cc91691441810-320-0.png?0";
+
 // ── SUPABASE CONFIG ──────────────────────────────────────────
 const SUPA_URL = "https://eultwfzzlgcmcikobmmy.supabase.co";
 const SUPA_KEY = "sb_publishable_h0-_rOD0-ZPAIIkYm3xgcg_V1i-SZZN";
@@ -1361,6 +1368,23 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
             <span style={{fontSize:19,color:"rgba(240,234,224,0.6)"}}>→</span>
           </button>
         </div>
+
+        {/* parceria Tibhar — benefício de sócio (teste; TIBHAR_BANNER controla) */}
+        {TIBHAR_BANNER && (
+          <div style={{width:"100%",marginTop:14,background:"rgba(216,90,48,0.10)",border:"1px solid rgba(216,90,48,0.42)",borderRadius:16,padding:16,boxSizing:"border-box"}}>
+            <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:10}}>
+              <img src={TIBHAR_LOGO} alt="Tibhar" style={{height:15,display:"block",flexShrink:0}} onError={(e)=>{e.currentTarget.style.display="none";}}/>
+              <span style={{fontFamily:T.mono,fontSize:9,letterSpacing:1,textTransform:"uppercase",color:"rgba(240,234,224,0.6)"}}>Benefício de sócio</span>
+            </div>
+            <div style={{fontFamily:T.serif,fontSize:20,lineHeight:1.15,color:T.offwhite}}>{TIBHAR_PCT}% de desconto na <span style={{fontStyle:"italic",color:T.terracota}}>Tibhar</span></div>
+            <div style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0"}}>
+              <span style={{flex:1,fontFamily:T.mono,fontWeight:700,fontSize:12,letterSpacing:0.5,color:T.offwhite,background:"rgba(0,0,0,0.22)",border:"1px dashed rgba(216,90,48,0.8)",borderRadius:8,padding:"7px 9px",textAlign:"center",overflow:"hidden",textOverflow:"ellipsis"}}>{TIBHAR_CUPOM}</span>
+              <button onClick={(e)=>{const el=e.currentTarget;try{navigator.clipboard.writeText(TIBHAR_CUPOM);}catch(_){}el.textContent="Copiado!";setTimeout(()=>{el.textContent="Copiar";},1400);}} style={{fontFamily:T.mono,fontSize:11,color:T.offwhite,background:"rgba(240,234,224,0.10)",border:"1px solid rgba(240,234,224,0.22)",borderRadius:8,padding:"7px 12px",cursor:"pointer",flexShrink:0}}>Copiar</button>
+            </div>
+            <a href={TIBHAR_URL} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",background:T.terracotaBtn,color:T.offwhite,borderRadius:12,padding:"13px 14px",fontFamily:T.serif,fontSize:16,textDecoration:"none",boxSizing:"border-box"}}>Comprar com {TIBHAR_PCT}% OFF <span style={{fontSize:17}}>→</span></a>
+            <div style={{fontFamily:T.mono,fontSize:8.5,letterSpacing:0.3,color:"rgba(240,234,224,0.42)",marginTop:9,textAlign:"center"}}>Use o cupom no carrinho do site da Tibhar.</div>
+          </div>
+        )}
 
         {/* administrador — acesso discreto */}
         <button onClick={()=>setMode("admin")} style={{display:"inline-flex",alignItems:"center",gap:7,marginTop:18,background:"none",border:"none",cursor:"pointer",fontFamily:T.mono,fontSize:10,letterSpacing:1.2,textTransform:"uppercase",color:"rgba(240,234,224,0.4)"}}>

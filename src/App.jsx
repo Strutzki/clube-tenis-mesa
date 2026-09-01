@@ -1372,9 +1372,9 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
         {/* parceria Tibhar — benefício de sócio (teste; TIBHAR_BANNER controla) */}
         {TIBHAR_BANNER && (
           <div style={{width:"100%",marginTop:14,background:"rgba(216,90,48,0.10)",border:"1px solid rgba(216,90,48,0.42)",borderRadius:16,padding:16,boxSizing:"border-box"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:13}}>
-              <img src={TIBHAR_LOGO} alt="Tibhar" style={{height:27,display:"block",flexShrink:0}} onError={(e)=>{e.currentTarget.style.display="none";}}/>
-              <span style={{fontFamily:T.mono,fontSize:8.5,letterSpacing:1,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",textAlign:"right",flexShrink:0}}>Parceria oficial</span>
+            <div style={{marginBottom:13}}>
+              <div style={{fontFamily:T.mono,fontSize:8.5,letterSpacing:1,textTransform:"uppercase",color:"rgba(240,234,224,0.5)",marginBottom:9}}>Parceria oficial</div>
+              <img src={TIBHAR_LOGO} alt="Tibhar" style={{height:54,display:"block",flexShrink:0}} onError={(e)=>{e.currentTarget.style.display="none";}}/>
             </div>
             <div style={{fontFamily:T.serif,fontSize:20,lineHeight:1.15,color:T.offwhite}}>Desconto de sócio na <span style={{fontStyle:"italic",color:T.terracota}}>Tibhar</span></div>
             <div style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0"}}>

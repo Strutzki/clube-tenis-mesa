@@ -237,6 +237,71 @@ async function pinValido(pin: string): Promise<{ ok: boolean; motivo?: string }>
   return { ok: true };
 }
 
+// ── Autorização por ORGANIZADOR (Papéis Fatia 2). O PIN global (super-admin) é INALTERADO. ──
+// Organizador = atleta (telefone+PIN) vinculado a um circuito em `circuito_organizadores`.
+// PIN via PBKDF2 (mesma cripto do login-atleta), com a trava de tentativas do atleta.
+function _b64(bytes: Uint8Array): string { return btoa(String.fromCharCode(...bytes)); }
+function _fromB64(s: string): Uint8Array { return Uint8Array.from(atob(s), (c) => c.charCodeAt(0)); }
+async function _deriveBits(pin: string, salt: Uint8Array, iter: number): Promise<Uint8Array> {
+  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: iter, hash: "SHA-256" }, km, 256);
+  return new Uint8Array(bits);
+}
+async function _verifyPin(pin: string, stored: string): Promise<boolean> {
+  try {
+    const [alg, iterStr, saltB64, hashB64] = stored.split("$");
+    if (alg !== "pbkdf2") return false;
+    const hash = await _deriveBits(pin, _fromB64(saltB64), parseInt(iterStr));
+    const esperado = _b64(hash);
+    if (esperado.length !== hashB64.length) return false;
+    let diff = 0; for (let i = 0; i < esperado.length; i++) diff |= esperado.charCodeAt(i) ^ hashB64.charCodeAt(i);
+    return diff === 0;
+  } catch { return false; }
+}
+async function autenticarOrganizador(telefone: string, pin: string): Promise<{ atletaId?: string; bloqueado?: boolean }> {
+  const alvo = String(telefone || "").replace(/\D/g, "");
+  if (alvo.length < 10 || !pin) return {};
+  const { data } = await supabase.from("atletas").select("id,telefone,pin_hash,pin_tentativas,pin_bloqueado_ate,status");
+  const a = (data ?? []).find((x: any) => String(x.telefone || "").replace(/\D/g, "") === alvo);
+  if (!a || !a.pin_hash || a.status !== "ativo") return {};
+  if (a.pin_bloqueado_ate && new Date(a.pin_bloqueado_ate) > new Date()) return { bloqueado: true };
+  const ok = await _verifyPin(String(pin), a.pin_hash);
+  if (!ok) {
+    const tent = (a.pin_tentativas || 0) + 1;
+    const upd = tent >= 5 ? { pin_tentativas: 0, pin_bloqueado_ate: new Date(Date.now() + 15 * 60000).toISOString() } : { pin_tentativas: tent };
+    await supabase.from("atletas").update(upd).eq("id", a.id);
+    return {};
+  }
+  await supabase.from("atletas").update({ pin_tentativas: 0, pin_bloqueado_ate: null }).eq("id", a.id);
+  return { atletaId: a.id };
+}
+async function ehOrganizadorDe(atletaId: string, circuitoId: string): Promise<boolean> {
+  const { data } = await supabase.from("circuito_organizadores").select("atleta_id").eq("atleta_id", atletaId).eq("circuito_id", circuitoId).maybeSingle();
+  return !!data;
+}
+// ALLOWLIST das ações do organizador (default-deny: o que não está aqui é só super-admin,
+// ex.: CRIAR_CIRCUITO, NOVA_TEMPORADA, SALVAR_ADMIN_BIO_CRED, EDITAR_ATLETA, LISTAR_TELEFONES).
+const ACOES_ORG = new Set([
+  "INICIAR_ETAPA","AVANCAR_RODADA","PROCESSAR_RODADA",
+  "VALIDATE_RESULT","ADMIN_IMPUTAR_RESULTADO","DESFAZER_VALIDACAO","MARCAR_RESULTADO_COMUNICADO",
+  "APLICAR_WO","RESPONDER_WO","MARCAR_WO_NOTIFICADO",
+  "INSCRICAO_VALIDAR","INCLUIR_NO_CIRCUITO","RECUSAR_CIRCUITO","ARQUIVAR_ATLETA","EXCLUIR_ATLETA","DEFINIR_DESCONTO_ATLETA",
+  "DEFINIR_INSCRICOES_ABERTAS","DEFINIR_RODADAS","DEFINIR_AUTO_VALIDAR","DEFINIR_CONFIG_CIRCUITO","DEFINIR_FINANCEIRO",
+  "ABRIR_PROXIMA_TEMPORADA","CANCELAR_PROXIMA",
+  "REGISTRAR_PAGAMENTO","ESTORNAR_PAGAMENTO","EDITAR_PAGAMENTO","LISTAR_PAGAMENTOS","LISTAR_MENSAGENS","REGISTRAR_MENSAGEM_ENVIADA",
+]);
+// ESCOPO POR RECURSO: ações que recebem um matchId/atletaId precisam confirmar que o
+// recurso pertence ao circuito do organizador (senão ele tocaria outro circuito/BH).
+const ORG_MATCH_FIELD: Record<string, string> = {
+  VALIDATE_RESULT: "matchId", ADMIN_IMPUTAR_RESULTADO: "matchId", DESFAZER_VALIDACAO: "matchId",
+  MARCAR_RESULTADO_COMUNICADO: "matchId", APLICAR_WO: "matchId", RESPONDER_WO: "matchId",
+};
+const ORG_MATCH_OPCIONAL = new Set(["RESPONDER_WO"]); // matchId só quando aprovado
+const ORG_MEMBRO_FIELD: Record<string, string> = {
+  INSCRICAO_VALIDAR: "id", INCLUIR_NO_CIRCUITO: "id", RECUSAR_CIRCUITO: "id", ARQUIVAR_ATLETA: "id",
+  EXCLUIR_ATLETA: "id", DEFINIR_DESCONTO_ATLETA: "atletaId", REGISTRAR_PAGAMENTO: "atletaId",
+};
+
 function confrontosDaTemporada(partidas: any[]): Set<string> {
   const set = new Set<string>();
   partidas.forEach((m) => {
@@ -520,14 +585,50 @@ Deno.serve(async (req) => {
   let body: any;
   try { body = await req.json(); } catch { return jsonResponse({ sucesso: false, erro: "JSON inválido" }, 400); }
 
-  const { pin, acao, payload } = body || {};
-  if (!pin || !acao) return jsonResponse({ sucesso: false, erro: "pin e acao são obrigatórios" }, 400);
-
-  const check = await pinValido(String(pin));
-  if (!check.ok) return jsonResponse({ sucesso: false, erro: check.motivo }, 401);
+  const { pin, acao, payload, orgTelefone, orgPin } = body || {};
+  if (!acao) return jsonResponse({ sucesso: false, erro: "acao é obrigatória" }, 400);
 
   // Circuito alvo: o que o app enviar, ou BH por padrao (transicao single-tenant).
   const circuitoId = (payload && payload.circuitoId) ? String(payload.circuitoId) : await bhId();
+
+  // AUTH (Papéis Fatia 2): super-admin (PIN global — INALTERADO) OU organizador (telefone+PIN).
+  let ehSuper = false;
+  let orgAtletaId: string | null = null;
+  if (orgTelefone && orgPin) {
+    const r = await autenticarOrganizador(String(orgTelefone), String(orgPin));
+    if (r.bloqueado) return jsonResponse({ sucesso: false, erro: "Muitas tentativas. Aguarde alguns minutos." }, 429);
+    if (!r.atletaId) return jsonResponse({ sucesso: false, erro: "Telefone ou PIN incorretos." }, 401);
+    orgAtletaId = r.atletaId;
+  } else {
+    if (!pin) return jsonResponse({ sucesso: false, erro: "pin e acao são obrigatórios" }, 400);
+    const check = await pinValido(String(pin));
+    if (!check.ok) return jsonResponse({ sucesso: false, erro: check.motivo }, 401);
+    ehSuper = true;
+  }
+
+  // Organizador: allowlist + escopo por circuito + escopo por RECURSO (partida/atleta do circuito dele).
+  if (!ehSuper) {
+    if (!ACOES_ORG.has(acao)) return jsonResponse({ sucesso: false, erro: "Ação disponível apenas para o super-admin." }, 403);
+    if (!(await ehOrganizadorDe(orgAtletaId!, circuitoId))) return jsonResponse({ sucesso: false, erro: "Você não organiza este circuito." }, 403);
+    const pl = payload || {};
+    const mf = ORG_MATCH_FIELD[acao];
+    if (mf) {
+      const mid = pl[mf];
+      if (mid) {
+        const { data: pm } = await supabase.from("partidas").select("circuito_id").eq("id", mid).maybeSingle();
+        if (!pm || pm.circuito_id !== circuitoId) return jsonResponse({ sucesso: false, erro: "Partida não é do seu circuito." }, 403);
+      } else if (!ORG_MATCH_OPCIONAL.has(acao)) {
+        return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
+      }
+    }
+    const bf = ORG_MEMBRO_FIELD[acao];
+    if (bf) {
+      const aid = pl[bf];
+      if (!aid) return jsonResponse({ sucesso: false, erro: "id do atleta é obrigatório" }, 400);
+      const { data: mm } = await supabase.from("circuito_atletas").select("atleta_id").eq("circuito_id", circuitoId).eq("atleta_id", aid).maybeSingle();
+      if (!mm) return jsonResponse({ sucesso: false, erro: "Atleta não é do seu circuito." }, 403);
+    }
+  }
 
   try {
     switch (acao) {
@@ -1374,6 +1475,46 @@ Deno.serve(async (req) => {
 
       case "LISTAR_MENSAGENS": {
         const { data, error } = await supabase.from("mensagens_enviadas").select("*").eq("circuito_id", circuitoId).order("enviado_em", { ascending: false }).limit(200);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true, dados: data });
+      }
+
+      // Papéis Fatia 3 — só super-admin (não está na ACOES_ORG, então o organizador é barrado).
+      // Nomeia/remove/lista organizador de um circuito. Não permite organizador no BH.
+      case "NOMEAR_ORGANIZADOR": {
+        const p = payload || {};
+        let aId: string | null = p.atletaId ? String(p.atletaId) : null;
+        let nomeAtleta: string | null = null;
+        if (!aId && p.telefone) {
+          const tel = String(p.telefone).replace(/\D/g, "");
+          const { data } = await supabase.from("atletas").select("id,telefone,status,nome");
+          const a = (data ?? []).find((x: any) => String(x.telefone || "").replace(/\D/g, "") === tel);
+          if (!a) return jsonResponse({ sucesso: false, erro: "Atleta não encontrado por esse telefone." }, 404);
+          if (a.status !== "ativo") return jsonResponse({ sucesso: false, erro: "Atleta não está ativo." }, 400);
+          aId = a.id; nomeAtleta = a.nome;
+        }
+        if (!aId) return jsonResponse({ sucesso: false, erro: "Informe telefone ou atletaId." }, 400);
+        const bhN = await bhId();
+        if (circuitoId === bhN) return jsonResponse({ sucesso: false, erro: "O BH é administrado pelo super-admin, sem organizador." }, 400);
+        const { data: circN } = await supabase.from("circuitos").select("id").eq("id", circuitoId).maybeSingle();
+        if (!circN) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
+        const { error } = await supabase.from("circuito_organizadores")
+          .upsert({ circuito_id: circuitoId, atleta_id: aId, papel: "organizador" }, { onConflict: "circuito_id,atleta_id" });
+        if (error) throw error;
+        return jsonResponse({ sucesso: true, dados: { atletaId: aId, nome: nomeAtleta } });
+      }
+
+      case "REMOVER_ORGANIZADOR": {
+        const { atletaId } = payload || {};
+        if (!atletaId) return jsonResponse({ sucesso: false, erro: "atletaId é obrigatório" }, 400);
+        const { error } = await supabase.from("circuito_organizadores").delete().eq("circuito_id", circuitoId).eq("atleta_id", atletaId);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
+      case "LISTAR_ORGANIZADORES": {
+        const { data, error } = await supabase.from("circuito_organizadores")
+          .select("atleta_id, criado_em, atletas!inner(nome, telefone)").eq("circuito_id", circuitoId);
         if (error) throw error;
         return jsonResponse({ sucesso: true, dados: data });
       }

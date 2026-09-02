@@ -270,6 +270,39 @@ Deno.serve(async (req) => {
       return jsonResponse({ sucesso: true });
     }
 
+    // LOGIN_ORGANIZADOR — Papéis Fatia 3. Autentica telefone+PIN (mesma trava do LOGIN)
+    // e devolve SÓ os circuitos que a pessoa organiza (join circuito_organizadores→circuitos).
+    // Não devolve o atleta, nem PIN, nem nada sensível. Front usa pra travar o painel no circuito.
+    if (acao === "LOGIN_ORGANIZADOR") {
+      const a = await acharAtleta(telefone);
+      if (!a) return jsonResponse({ sucesso: false, erro: "cadastro_nao_encontrado" }, 404);
+      if (a.pin_bloqueado_ate && new Date(a.pin_bloqueado_ate) > new Date()) {
+        return jsonResponse({ sucesso: false, erro: "muitas_tentativas" }, 429);
+      }
+      if (!a.pin_hash) return jsonResponse({ sucesso: false, erro: "primeiro_acesso" }, 409);
+      if (!pin) return jsonResponse({ sucesso: false, erro: "precisa_pin" }, 401);
+      const okPin = await verifyPin(String(pin), a.pin_hash);
+      if (!okPin) {
+        const tent = (a.pin_tentativas || 0) + 1;
+        const upd = tent >= MAX_TENTATIVAS_PIN
+          ? { pin_tentativas: 0, pin_bloqueado_ate: new Date(Date.now() + BLOQUEIO_MINUTOS * 60000).toISOString() }
+          : { pin_tentativas: tent };
+        await supabase.from("atletas").update(upd).eq("id", a.id);
+        return jsonResponse({ sucesso: false, erro: "pin_incorreto" }, 401);
+      }
+      await supabase.from("atletas").update({ pin_tentativas: 0, pin_bloqueado_ate: null }).eq("id", a.id);
+      if (a.status !== "ativo") return jsonResponse({ sucesso: false, erro: "cadastro_inativo" }, 403);
+
+      const { data: vinc } = await supabase.from("circuito_organizadores")
+        .select("circuito_id, circuitos!inner(id,slug,nome_circuito,sistema,pareamento,ativo)")
+        .eq("atleta_id", a.id);
+      const circuitos = (vinc ?? [])
+        .map((v: any) => v.circuitos)
+        .filter((c: any) => c && c.ativo && c.slug !== "bh")
+        .map((c: any) => ({ id: c.id, slug: c.slug, nome: c.nome_circuito, sistema: c.sistema, pareamento: c.pareamento }));
+      return jsonResponse({ sucesso: true, dados: { ok: true, circuitos } });
+    }
+
     return jsonResponse({ sucesso: false, erro: `Ação desconhecida: ${acao}` }, 400);
   } catch (e) {
     console.error(e);

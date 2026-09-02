@@ -478,6 +478,15 @@ function clearPinCache() {
   try { sessionStorage.removeItem(PIN_SESSAO_KEY); } catch(e) {}
 }
 
+// ── CREDENCIAL DE ORGANIZADOR (Papéis Fatia 3) — telefone+PIN do organizador ──
+// Guardada só em sessionStorage (some ao fechar a aba), como o PIN do super-admin.
+// Presença = "modo organizador": o painel fica PRESO ao circuito dele; toda ação
+// vai ao admin-action como (orgTelefone+orgPin), que valida o vínculo no servidor.
+const ORG_SESSAO_KEY = "ctm_org_sessao";
+function getOrgCred() { try { return JSON.parse(sessionStorage.getItem(ORG_SESSAO_KEY) || "null"); } catch(e) { return null; } }
+function setOrgCred(o) { try { sessionStorage.setItem(ORG_SESSAO_KEY, JSON.stringify(o)); } catch(e) {} }
+function clearOrgCred() { try { sessionStorage.removeItem(ORG_SESSAO_KEY); } catch(e) {} }
+
 // ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-12, Cap. 05) ──────
 // Tabela Básica de Cálculo do Rating do Manual Tênis de Mesa Brasil (item 1.7.2.4.5)
 // Valores por faixa de diferença de rating. Usados sempre com peso 1 (rodada
@@ -1341,8 +1350,8 @@ function deadlineStatus(dateStr) {
 }
 
 // ── LOGIN SCREEN ─────────────────────────────────────────────────────────────
-function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscricao }) {
-  const [mode, setMode] = useState("select"); // select | admin | athlete | inscricao | regulamento
+function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscricao, onOrganizadorLogin }) {
+  const [mode, setMode] = useState("select"); // select | admin | athlete | inscricao | regulamento | organizador
   const [user, setUser] = useState(""), [pass, setPass] = useState("");
   const [err, setErr] = useState("");
 
@@ -1450,7 +1459,12 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
       err={err} setErr={setErr}
       doAdmin={doAdmin}
       onBack={()=>setMode("select")}
+      onOrganizador={()=>setMode("organizador")}
     />
+  );
+
+  if (mode === "organizador") return (
+    <OrganizadorLogin s={s} LOGO={LOGO} onBack={()=>setMode("admin")} onOrganizadorLogin={onOrganizadorLogin} />
   );
 
   if (mode === "athlete") return (
@@ -3641,7 +3655,7 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
 }
 
 // ── ADMIN LOGIN COM BIOMETRIA ─────────────────────────────────────────────────
-function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setErr, doAdmin, onBack }) {
+function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setErr, doAdmin, onBack, onOrganizador }) {
   const [biometriaDisp, setBiometriaDisp] = useState(false);
   const [biometriaAtiva, setBiometriaAtiva] = useState(false);
   const [biometriaStatus, setBiometriaStatus] = useState(""); // "", "cadastrando", "ok", "erro"
@@ -3827,6 +3841,91 @@ function AdminLoginBiometria({ s, LOGO, user, setUser, pass, setPass, err, setEr
           <div style={{textAlign:"center",fontSize:10,color:"#4a5d56",marginTop:12}}>
             Biometria não disponível neste dispositivo
           </div>
+        )}
+
+        {/* Papéis Fatia 3: organizador de circuito entra por telefone + PIN de atleta */}
+        {onOrganizador && (
+          <div onClick={onOrganizador} style={{marginTop:16,textAlign:"center",fontSize:12,color:T.cinza,cursor:"pointer"}}>
+            Organizo um circuito →
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── LOGIN DE ORGANIZADOR (Papéis Fatia 3) ─────────────────────────────────────
+// Organizador = um atleta com telefone + PIN que administra um circuito não-BH.
+// Autentica em login-atleta (LOGIN_ORGANIZADOR), que devolve só os circuitos dele.
+// O painel abre PRESO ao circuito; toda ação vai com a credencial do organizador.
+function OrganizadorLogin({ s, LOGO, onBack, onOrganizadorLogin }) {
+  const [tel, setTel] = useState("");
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState("");
+  const [carregando, setCarregando] = useState(false);
+  const [opcoes, setOpcoes] = useState(null); // lista de circuitos quando > 1
+
+  async function entrar() {
+    setErr(""); setCarregando(true);
+    try {
+      const res = await fetch(`${SUPA_URL}/functions/v1/login-atleta`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json", "Authorization":`Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+        body: JSON.stringify({ acao: "LOGIN_ORGANIZADOR", telefone: tel, pin }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.sucesso) {
+        const mapa = { pin_incorreto:"PIN incorreto.", cadastro_nao_encontrado:"Telefone não encontrado.", muitas_tentativas:"Muitas tentativas. Aguarde alguns minutos.", primeiro_acesso:"Você ainda não definiu um PIN. Entre como atleta primeiro.", precisa_pin:"Digite seu PIN.", cadastro_inativo:"Cadastro inativo." };
+        setErr(mapa[data.erro] || "Não foi possível entrar.");
+        setCarregando(false);
+        return;
+      }
+      const circs = (data.dados && data.dados.circuitos) || [];
+      if (circs.length === 0) { setErr("Você não organiza nenhum circuito ainda."); setCarregando(false); return; }
+      if (circs.length === 1) { concluir(circs[0]); return; }
+      setOpcoes(circs); setCarregando(false);
+    } catch (e) {
+      setErr("Falha de conexão. Tente de novo."); setCarregando(false);
+    }
+  }
+  function concluir(circ) {
+    onOrganizadorLogin({ telefone: tel.replace(/\D/g,""), pin, circuitoId: circ.id, nome: circ.nome, sistema: circ.sistema });
+  }
+
+  return (
+    <div style={s.wrap}>
+      <div style={s.logo}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
+      <div style={s.card}>
+        <button style={s.back} onClick={onBack}>← Voltar</button>
+        <div style={s.title}>Acesso Organizador</div>
+        <br/>
+        {!opcoes ? (
+          <>
+            <label style={s.label}>Telefone (com DDD)</label>
+            <input style={s.input} value={tel} onChange={e=>setTel(e.target.value)} placeholder="(31) 99999-9999" type="tel" inputMode="numeric" onKeyDown={e=>e.key==="Enter"&&entrar()}/>
+            <label style={s.label}>PIN</label>
+            <input style={{...s.input,marginBottom:10,letterSpacing:8,fontSize:22,textAlign:"center",fontWeight:800}}
+              type="tel" inputMode="numeric" maxLength={6}
+              value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,6))}
+              placeholder="····" onKeyDown={e=>e.key==="Enter"&&entrar()}/>
+            <button style={s.btn()} onClick={entrar} disabled={carregando}>{carregando?"Entrando…":"Entrar"}</button>
+            {err && <div style={s.err}>🔒 {err}</div>}
+            <div style={{marginTop:14,fontSize:11,color:"#4a5d56",textAlign:"center"}}>
+              É o mesmo telefone e PIN que você usa como atleta.
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{fontSize:13,color:T.offwhite,marginBottom:12}}>Você organiza mais de um circuito. Escolha qual gerenciar:</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {opcoes.map(c => (
+                <div key={c.id} onClick={()=>concluir(c)} style={{border:`1.5px solid ${T.bordaSuave}`,borderRadius:10,padding:"10px 12px",cursor:"pointer"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{c.nome}</div>
+                  <div style={{fontSize:11,color:T.cinza}}>{c.slug} · Sistema {c.sistema}</div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -4150,9 +4249,17 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem("ctm_sessao") || "{}"); } catch { return {}; }
   })();
 
-  const [isAdmin, setIsAdmin] = useState(sessaoSalva.isAdmin || false);
+  // Papéis Fatia 3: se era organizador mas a credencial da aba sumiu (aba reaberta),
+  // não restaura o admin — manda re-logar (o organizador não tem o PIN global).
+  const [isAdmin, setIsAdmin] = useState(() => {
+    if (sessaoSalva.orgMode && !getOrgCred()) return false;
+    return sessaoSalva.isAdmin || false;
+  });
   const [currentAthlete, setCurrentAthlete] = useState(sessaoSalva.athleteId ? {id: sessaoSalva.athleteId} : null);
   const [isVisitante, setIsVisitante] = useState(sessaoSalva.isVisitante || false);
+  // Papéis Fatia 3: modo organizador. null = super-admin (PIN); objeto = organizador
+  // { telefone, pin, circuitoId, nome, sistema }. Restaura da sessão da aba.
+  const [modoOrg, setModoOrg] = useState(() => getOrgCred());
   const [mostrarBoasVindasVisitante, setMostrarBoasVindasVisitante] = useState(false);
   const [tab, setTab] = useState(sessaoSalva.tab || "dashboard");
   const [dbStatus, setDbStatus] = useState("loading");
@@ -4160,6 +4267,9 @@ export default function App() {
   // A2: seletor de circuito (super-admin). Default BH; NÃO persiste (recarrega no BH).
   const [circuitos, setCircuitos] = useState([]);
   const [circuitoSelId, setCircuitoSelId] = useState(() => {
+    // Papéis Fatia 3: no modo organizador, o circuito fica TRAVADO no dele.
+    const oc = getOrgCred();
+    if (oc && oc.circuitoId) { setCircuitoAtivo(oc.circuitoId); return oc.circuitoId; }
     // A2: restaura o circuito selecionado da sessão (persiste entre reloads). Default BH.
     const s = sessaoSalva.circuitoSelId;
     if (typeof s === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) {
@@ -4188,9 +4298,10 @@ export default function App() {
       isVisitante,
       tab,
       circuitoSelId,
+      orgMode: !!modoOrg, // Papéis Fatia 3: marca modo organizador (a credencial vive só na aba)
     };
     localStorage.setItem("ctm_sessao", JSON.stringify(sessao));
-  }, [isAdmin, currentAthlete, isVisitante, tab, circuitoSelId]);
+  }, [isAdmin, currentAthlete, isVisitante, tab, circuitoSelId, modoOrg]);
 
   // ── Carregar dados do Supabase ao iniciar ──────────────────
   useEffect(() => { loadFromSupabase(); }, []);
@@ -4351,6 +4462,26 @@ export default function App() {
   // confirmação de novo automaticamente, em vez de continuar tentando com um
   // PIN que já sabemos que está errado.
   async function chamarAdminAction(acao, payload) {
+    // Papéis Fatia 3: modo organizador — manda (orgTelefone+orgPin) em vez do PIN
+    // global, e TRAVA o circuitoId no dele. O servidor revalida o vínculo e o
+    // escopo por recurso (allowlist + partida/atleta do circuito). Nunca envia o PIN global.
+    const cred = getOrgCred();
+    if (cred && cred.telefone && cred.pin && cred.circuitoId) {
+      const res = await fetch(`${SUPA_URL}/functions/v1/admin-action`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPA_KEY}`,
+          "apikey": SUPA_KEY,
+        },
+        body: JSON.stringify({ orgTelefone: cred.telefone, orgPin: cred.pin, acao, payload: { ...(payload || {}), circuitoId: cred.circuitoId } }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.sucesso) {
+        throw new Error(data.erro || `Erro ${res.status} ao executar ${acao}`);
+      }
+      return data.dados;
+    }
     const pin = await obterPin();
     const res = await fetch(`${SUPA_URL}/functions/v1/admin-action`, {
       method: "POST",
@@ -4717,19 +4848,25 @@ export default function App() {
       onVisitante={() => { setIsVisitante(true); setTab("ranking"); setMostrarBoasVindasVisitante(true); }}
       athletes={state.athletes}
       onInscricao={p => dispatchAndSync({type:"INSCRICAO_ADD", payload:p})}
+      onOrganizadorLogin={(cred) => {
+        setOrgCred(cred); setModoOrg(cred);
+        setCircuitoAtivo(cred.circuitoId); setCircuitoSelId(cred.circuitoId);
+        setIsAdmin(true); setTab("dashboard");
+        loadFromSupabase();
+      }}
     />
   );
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
+      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); setModoOrg(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
-          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} />
+          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} modoOrg={modoOrg} />
         ) : isVisitante ? (
           <VisitanteView state={state} tab={tab} setTab={setTab} />
         ) : (
@@ -5707,8 +5844,8 @@ const Badge = ({label, color="#D85A30"}) => (
 );
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
-function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, dbStatus }) {
-  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} />;
+function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, dbStatus, modoOrg }) {
+  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} modoOrg={modoOrg} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
@@ -6147,7 +6284,87 @@ function CriarCircuitoCard({ chamarAdminAction }) {
   );
 }
 
-function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, circuitos, circuitoSelId, trocarCircuito, dbStatus }) {
+// Papéis Fatia 3 (super-admin): nomear / listar / remover o organizador de um
+// circuito não-BH. Só aparece pro super-admin e pra circuito ≠ BH (o card já é
+// renderizado só nesse caso). As ações são super-admin-only no servidor (403 pra organizador).
+function GerenciarOrganizadoresCard({ chamarAdminAction, circuitoSelId }) {
+  const [aberto, setAberto] = useState(false);
+  const [lista, setLista] = useState(null); // null = ainda não carregou
+  const [tel, setTel] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function carregar() {
+    try { const d = await chamarAdminAction("LISTAR_ORGANIZADORES", {}); setLista(Array.isArray(d) ? d : []); }
+    catch (e) { setMsg(e.message || "Erro ao listar."); setLista([]); }
+  }
+  function abrir() { setAberto(true); setMsg(""); if (lista === null) carregar(); }
+  async function nomear() {
+    const t = tel.replace(/\D/g, "");
+    if (t.length < 10) { setMsg("Telefone inválido."); return; }
+    setBusy(true); setMsg("");
+    try {
+      const d = await chamarAdminAction("NOMEAR_ORGANIZADOR", { telefone: t });
+      setTel(""); setMsg(`✓ ${d && d.nome ? d.nome : "Organizador"} nomeado.`);
+      await carregar();
+    } catch (e) { setMsg(e.message || "Erro ao nomear."); }
+    finally { setBusy(false); }
+  }
+  async function remover(atletaId) {
+    setBusy(true); setMsg("");
+    try { await chamarAdminAction("REMOVER_ORGANIZADOR", { atletaId }); await carregar(); }
+    catch (e) { setMsg(e.message || "Erro ao remover."); }
+    finally { setBusy(false); }
+  }
+
+  const inp = { width:"100%", boxSizing:"border-box", background:"#182420", border:`1px solid ${T.borda}`, borderRadius:8, color:T.offwhite, padding:"10px 12px", fontSize:14, fontFamily:T.sans, marginTop:6 };
+  return (
+    <Card style={{marginBottom:16, border:`1px solid ${T.bordaSuave}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>👥 Organizadores</div>
+          <div style={{fontSize:12,color:T.cinza,marginTop:2}}>Quem gerencia este circuito</div>
+        </div>
+        <Btn small onClick={()=>aberto?setAberto(false):abrir()} color={T.terracotaBtn}>{aberto?"Fechar":"Gerenciar"}</Btn>
+      </div>
+      {aberto && (
+        <div style={{marginTop:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.6}}>Nomear por telefone</div>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+            <input value={tel} onChange={e=>setTel(e.target.value)} placeholder="(31) 99999-9999" type="tel" inputMode="numeric" style={{...inp, flex:1}}/>
+            <Btn small onClick={nomear} disabled={busy} color={T.terracotaBtn}>{busy?"…":"Nomear"}</Btn>
+          </div>
+          <div style={{fontSize:11,color:T.madeira,marginTop:6}}>O organizador precisa já ser atleta ativo (mesmo telefone e PIN que usa como atleta).</div>
+
+          <div style={{marginTop:16,fontSize:11,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.6}}>Organizadores atuais</div>
+          {lista === null ? (
+            <div style={{fontSize:12,color:T.cinza,marginTop:8}}>Carregando…</div>
+          ) : lista.length === 0 ? (
+            <div style={{fontSize:12,color:T.cinza,marginTop:8}}>Nenhum organizador ainda. O circuito é gerenciado só pelo super-admin.</div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
+              {lista.map(o => {
+                const at = o.atletas || {};
+                return (
+                  <div key={o.atleta_id} style={{border:`1px solid ${T.bordaSuave}`,borderRadius:10,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{at.nome || "—"}</div>
+                      <div style={{fontSize:11,color:T.cinza}}>{at.telefone || ""}</div>
+                    </div>
+                    <Btn small onClick={()=>remover(o.atleta_id)} disabled={busy} color={T.bordaSuave}>Remover</Btn>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {msg && <div style={{fontSize:12.5,color: msg.startsWith("✓")?T.verde2:T.madeira,marginTop:12}}>{msg}</div>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, circuitos, circuitoSelId, trocarCircuito, dbStatus, modoOrg }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
@@ -6250,8 +6467,21 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, circuitos,
 
   return (
     <div>
-      <SeletorCircuito circuitos={circuitos} circuitoSelId={circuitoSelId} trocar={trocarCircuito} carregando={dbStatus==="loading"} />
-      <CriarCircuitoCard chamarAdminAction={chamarAdminAction} />
+      {modoOrg ? (
+        <Card style={{marginBottom:16, border:`1.5px solid ${T.terracota}`, background:"rgba(216,90,48,0.08)"}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8}}>Você é organizador de</div>
+          <div style={{fontSize:16,fontWeight:800,color:T.offwhite,marginTop:2}}>{modoOrg.nome || state.nomeCircuito}</div>
+          <div style={{fontSize:11,color:T.madeira,marginTop:6}}>Você gerencia só este circuito. Ações de outros circuitos e do BH ficam bloqueadas.</div>
+        </Card>
+      ) : (
+        <>
+          <SeletorCircuito circuitos={circuitos} circuitoSelId={circuitoSelId} trocar={trocarCircuito} carregando={dbStatus==="loading"} />
+          <CriarCircuitoCard chamarAdminAction={chamarAdminAction} />
+          {circuitoSelId !== CIRCUITO_BH_ID && (
+            <GerenciarOrganizadoresCard chamarAdminAction={chamarAdminAction} circuitoSelId={circuitoSelId} />
+          )}
+        </>
+      )}
       <SecTitle>Visão Geral</SecTitle>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
         {[

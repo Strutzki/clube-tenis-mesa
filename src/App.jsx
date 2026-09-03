@@ -1192,12 +1192,6 @@ function reducer(state, action) {
       return { ...state, athletes: athletesBase, keys, matches: [...state.matches, ...newMatches] };
     }
 
-    case "DEFINIR_RODADAS": {
-      // Define quantas rodadas a temporada tem (par, mínimo 2 — o mês publica 2 por vez).
-      const n = action.payload?.rodadas;
-      if (typeof n !== "number" || n < 2 || n % 2 !== 0) return state;
-      return { ...state, rodadasPorTemporada: n };
-    }
 
     case "DEFINIR_AUTO_VALIDAR": {
       return { ...state, autoValidarPlacar: !!action.payload?.ligado };
@@ -4695,9 +4689,6 @@ export default function App() {
         console.warn("Registro de mensagem no histórico falhou (seguindo mesmo assim):", e.message);
       }
     }
-    else if (action.type === "DEFINIR_RODADAS") {
-      await chamarAdminAction("DEFINIR_RODADAS", { rodadas: action.payload.rodadas });
-    }
     else if (action.type === "DEFINIR_AUTO_VALIDAR") {
       await chamarAdminAction("DEFINIR_AUTO_VALIDAR", { ligado: action.payload.ligado });
     }
@@ -6897,14 +6888,10 @@ function IniciarEtapaPanel({ state, dispatch }) {
         {ativos.length} atleta(s) ativo(s){impar && faltam===0 ? " · número ímpar: um atleta terá folga (bye) por rodada" : ""}
         {faltam > 0 && ` · faltam ${faltam} pra atingir o mínimo de ${MINIMO} (Cap. 13 do regulamento)`}
       </div>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,fontSize:12,color:"#9db3a8",flexWrap:"wrap"}}>
-        <span>Rodadas por temporada:</span>
-        <button onClick={()=>dispatch({type:"DEFINIR_RODADAS",payload:{rodadas:Math.max(2,(state.rodadasPorTemporada||6)-2)}})}
-          style={{width:28,height:28,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:16,lineHeight:1}}>−</button>
-        <b style={{color:"#F0EAE0",minWidth:22,textAlign:"center"}}>{state.rodadasPorTemporada||6}</b>
-        <button disabled={(state.rodadasPorTemporada||6) >= 6} onClick={()=>{ if ((state.rodadasPorTemporada||6) < 6) dispatch({type:"DEFINIR_RODADAS",payload:{rodadas:Math.min(6,(state.rodadasPorTemporada||6)+2)}}); }}
-          style={{width:28,height:28,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"#F0EAE0",cursor:(state.rodadasPorTemporada||6)>=6?"not-allowed":"pointer",opacity:(state.rodadasPorTemporada||6)>=6?0.4:1,fontSize:16,lineHeight:1}}>+</button>
-        <span style={{fontSize:10,color:"#7d9188"}}>(sempre par · máx. 6 rodadas = 3 meses)</span>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,fontSize:12,color:"#9db3a8",flexWrap:"wrap"}}>
+        <span>Temporada:</span>
+        <b style={{color:"#F0EAE0"}}>6 rodadas</b>
+        <span style={{fontSize:10,color:"#7d9188"}}>(3 meses · 2 rodadas por mês · Cap. 13)</span>
       </div>
       {!confirmando ? (
         <Btn onClick={()=>setConfirmando(true)} color="#6a9d7a" full disabled={faltam > 0}>

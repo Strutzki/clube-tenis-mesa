@@ -76,6 +76,18 @@ async function acharAtleta(tel: string): Promise<any | null> {
   return (data ?? []).find((a: any) => normTel(a.telefone) === alvo) ?? null;
 }
 
+// Hub multi-circuito: circuitos ATIVOS onde o atleta é membro (inclui BH via espelho).
+// Service role, então enxerga circuitos privados também. Só campos públicos de identidade.
+async function circuitosDoAtleta(atletaId: string): Promise<any[]> {
+  const { data } = await supabase.from("circuito_atletas")
+    .select("status, circuitos!inner(id,slug,nome_circuito,sistema,publico,ativo)")
+    .eq("atleta_id", atletaId).eq("status", "ativo");
+  return (data ?? [])
+    .map((v: any) => v.circuitos)
+    .filter((c: any) => c && c.ativo)
+    .map((c: any) => ({ id: c.id, slug: c.slug, nome: c.nome_circuito, sistema: c.sistema, publico: c.publico }));
+}
+
 // ── CPF backfill (reusa a fundação da spec de CPF; hash no edge, pepper no Vault) ──
 function cpfNormaliza(s: unknown): string | null {
   const d = String(s ?? "").replace(/\D/g, "");
@@ -153,7 +165,8 @@ Deno.serve(async (req) => {
 
       await supabase.from("atletas").update({ pin_tentativas: 0, pin_bloqueado_ate: null }).eq("id", a.id);
       const { data: full } = await supabase.from("atletas").select(COLS).eq("id", a.id).single();
-      return jsonResponse({ sucesso: true, dados: { encontrado: true, ok: true, atleta: full } });
+      const circuitosLogin = await circuitosDoAtleta(a.id);
+      return jsonResponse({ sucesso: true, dados: { encontrado: true, ok: true, atleta: full, circuitos: circuitosLogin } });
     }
 
     if (acao === "DEFINIR_PIN") {
@@ -171,7 +184,8 @@ Deno.serve(async (req) => {
         pin_hash: h, pin_definido_em: new Date().toISOString(), pin_tentativas: 0, pin_bloqueado_ate: null,
       }).eq("id", a.id);
       const { data: full } = await supabase.from("atletas").select(COLS).eq("id", a.id).single();
-      return jsonResponse({ sucesso: true, dados: { ok: true, atleta: full } });
+      const circuitosNovo = await circuitosDoAtleta(a.id);
+      return jsonResponse({ sucesso: true, dados: { ok: true, atleta: full, circuitos: circuitosNovo } });
     }
 
     // PARTICIPAR — atleta EXISTENTE entra num 2º circuito (Bloqueador estrutural 1).

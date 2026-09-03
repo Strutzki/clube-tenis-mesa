@@ -213,7 +213,7 @@ const db = {
   updateConfig: (data) => supaFetch("configuracao?id=eq.1", { method:"PATCH", body: JSON.stringify(data) }),
 
   // Circuitos com inscrições abertas (leitura pública — só campos públicos). Fatia 2/inscrição por circuito.
-  getCircuitosAbertos: () => supaFetch(`circuitos?select=id,slug,nome_circuito,nome_exibicao,cidade,uf,sistema&ativo=eq.true&inscricoes_abertas=eq.true&order=nome_circuito.asc`),
+  getCircuitosAbertos: () => supaFetch(`circuitos?select=id,slug,nome_circuito,nome_exibicao,cidade,uf,sistema&ativo=eq.true&inscricoes_abertas=eq.true&publico=eq.true&order=nome_circuito.asc`),
 
   // Histórico de mensagens de WhatsApp enviadas
   getMensagensEnviadas: () => supaFetch("mensagens_enviadas?order=enviado_em.desc&limit=200"),
@@ -330,6 +330,38 @@ function mapAtletaFromCircuito(ca) {
     inscrito_em: ca.inscrito_em, historico: ca.historico, posicao_historico: ca.posicao_historico,
     // wo_culposos_temporada NAO vem no read publico -> mapAtletaFromDb faz ||0 (paridade com hoje)
   });
+}
+
+// Adapta um item de ranking do PORTEIRO (circuito-dados, formato achatado) para o
+// formato de circuito_atletas que o mapAtletaFromCircuito espera. Usado só em circuito privado.
+function porteiroRankingToCa(p) {
+  return {
+    status: p.status, pendente_circuito: p.pendente_circuito, chave: p.chave,
+    saldo_temp: p.saldo_temp, vitorias: p.vitorias, derrotas: p.derrotas,
+    vitorias_total: p.vitorias_total, derrotas_total: p.derrotas_total,
+    historico: p.historico, posicao_historico: p.posicao_historico,
+    atletas: {
+      id: p.id, nome: p.nome, apelido: p.apelido, federado: p.federado,
+      rating: p.rating, rating_inicial: p.rating_inicial, foto_url: p.foto_url,
+      estilo_jogo: p.estilo_jogo, rating_pico: p.rating_pico, rating_historico: p.rating_historico,
+    },
+  };
+}
+// Busca ranking + jogos de um circuito pelo porteiro (service-role no servidor, respeita
+// a regra aberto/privado). cred = { telefone, pin } | null. Retorna { ranking, partidas } ou null.
+async function fetchCircuitoPorteiro(circuitoId, cred) {
+  try {
+    const body = { circuitoId };
+    if (cred && cred.telefone && cred.pin) { body.telefone = cred.telefone; body.pin = cred.pin; }
+    const res = await fetch(`${SUPA_URL}/functions/v1/circuito-dados`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.sucesso) return null;
+    return data.dados; // { circuito, ranking, partidas }
+  } catch (e) { return null; }
 }
 
 // Busca UM atleta pelo telefone, sem precisar da lista inteira (e sem PIN —
@@ -486,6 +518,14 @@ const ORG_SESSAO_KEY = "ctm_org_sessao";
 function getOrgCred() { try { return JSON.parse(sessionStorage.getItem(ORG_SESSAO_KEY) || "null"); } catch(e) { return null; } }
 function setOrgCred(o) { try { sessionStorage.setItem(ORG_SESSAO_KEY, JSON.stringify(o)); } catch(e) {} }
 function clearOrgCred() { try { sessionStorage.removeItem(ORG_SESSAO_KEY); } catch(e) {} }
+
+// ── CREDENCIAL DO ATLETA (hub multi-circuito) — telefone+PIN pra ler circuito PRIVADO ──
+// Só na aba (sessionStorage), como a do organizador. Guardada no login do atleta e usada
+// pelo porteiro (circuito-dados) quando o circuito ativo é privado. Circuito aberto não usa.
+const ATLETA_SESSAO_KEY = "ctm_atleta_sessao";
+function getAtletaCred() { try { return JSON.parse(sessionStorage.getItem(ATLETA_SESSAO_KEY) || "null"); } catch(e) { return null; } }
+function setAtletaCred(o) { try { sessionStorage.setItem(ATLETA_SESSAO_KEY, JSON.stringify(o)); } catch(e) {} }
+function clearAtletaCred() { try { sessionStorage.removeItem(ATLETA_SESSAO_KEY); } catch(e) {} }
 
 // ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-12, Cap. 05) ──────
 // Tabela Básica de Cálculo do Rating do Manual Tênis de Mesa Brasil (item 1.7.2.4.5)
@@ -4073,6 +4113,9 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
       if (!d.atleta) { setErr("Não consegui entrar. Tente de novo."); return; }
       const found = mapAtletaFromDb(d.atleta);
       if (found.status !== "ativo") { setErr("Seu cadastro ainda não foi aprovado pelo admin."); return; }
+      // Hub multi-circuito: guarda a credencial (só na aba) pra ler circuito PRIVADO pelo porteiro,
+      // e a lista de circuitos do atleta (pro switcher). Circuito só-BH não muda nada.
+      setAtletaCred({ telefone: clean, pin: pinLimpo, circuitos: Array.isArray(d.circuitos) ? d.circuitos : [] });
       let jaTemBioNesteAparelho = bioCredId && String(bioAtletaId) === String(found.id);
       // Reidrata a biometria a partir do servidor se este aparelho perdeu o
       // localStorage mas o atleta já tinha credencial cadastrada (Correção B).
@@ -4329,8 +4372,19 @@ export default function App() {
       let solicitacoesWoLog = [];
       try { solicitacoesWoLog = await db.getSolicitacoesWo(); }
       catch(e) { console.warn("Solicitações de W.O. indisponíveis (migration pendente?):", e.message); }
-      const athletesMapped = (atletas||[]).map(mapAtletaFromCircuito).sort((a,b)=>(b.rating||0)-(a.rating||0));
-      const matchesMapped = (partidas||[]).map(m => ({
+      // Circuito privado (não-BH): o anon não enxerga ranking/jogos (RLS). Busca pelo
+      // PORTEIRO com a credencial do atleta (se houver). BH e circuitos abertos NÃO passam
+      // por aqui — seguem exatamente o caminho anon de sempre (footprint-zero).
+      let atletasEf = atletas, partidasEf = partidas;
+      if (config?.[0]?.publico === false && CIRCUITO_ATIVO !== CIRCUITO_BH_ID) {
+        const dadosPort = await fetchCircuitoPorteiro(CIRCUITO_ATIVO, getAtletaCred() || getOrgCred());
+        if (dadosPort) {
+          atletasEf = (dadosPort.ranking || []).map(porteiroRankingToCa);
+          partidasEf = dadosPort.partidas || [];
+        }
+      }
+      const athletesMapped = (atletasEf||[]).map(mapAtletaFromCircuito).sort((a,b)=>(b.rating||0)-(a.rating||0));
+      const matchesMapped = (partidasEf||[]).map(m => ({
         id: m.id, keyId: m.chave_id, round: m.rodada,
         p1Id: m.atleta1_id, p2Id: m.atleta2_id,
         score1: m.placar1, score2: m.placar2,
@@ -4850,7 +4904,7 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); setModoOrg(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
+      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); clearAtletaCred(); setModoOrg(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>
@@ -4861,7 +4915,7 @@ export default function App() {
         ) : isVisitante ? (
           <VisitanteView state={state} tab={tab} setTab={setTab} />
         ) : (
-          <AthleteView state={state} dispatch={dispatchAndSync} athlete={currentAthlete} tab={tab} setTab={setTab} />
+          <AthleteView state={state} dispatch={dispatchAndSync} athlete={currentAthlete} tab={tab} setTab={setTab} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} />
         )}
       </div>
 
@@ -8049,12 +8103,60 @@ function VisitanteView({ state, tab, setTab }) {
   return <RankingView state={state} currentAthleteId={null} />;
 }
 
-function AthleteView({ state, dispatch, athlete, tab, setTab }) {
-  if (tab === "meus_jogos") return <><RenovacaoCard state={state} dispatch={dispatch} athlete={athlete} /><ParticiparOutroCircuito athlete={athlete} /><AthleteGames state={state} dispatch={dispatch} athlete={athlete} /></>;
-  if (tab === "ranking") return <RankingView state={state} currentAthleteId={athlete.id} />;
-  if (tab === "tabela") return <TabelaView state={state} athlete={athlete} />;
-  if (tab === "comunidade") return <ComunidadeView state={state} currentAthleteId={athlete.id} />;
-  return null;
+function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, trocarCircuito, dbStatus }) {
+  const hub = <HubCircuitosAtleta circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} />;
+  let content = null;
+  if (tab === "meus_jogos") content = <><RenovacaoCard state={state} dispatch={dispatch} athlete={athlete} /><ParticiparOutroCircuito athlete={athlete} /><AthleteGames state={state} dispatch={dispatch} athlete={athlete} /></>;
+  else if (tab === "ranking") content = <RankingView state={state} currentAthleteId={athlete.id} />;
+  else if (tab === "tabela") content = <TabelaView state={state} athlete={athlete} />;
+  else if (tab === "comunidade") content = <ComunidadeView state={state} currentAthleteId={athlete.id} />;
+  return <>{hub}{content}</>;
+}
+
+// Hub multi-circuito: switcher entre os circuitos do atleta. Só aparece com >1 circuito.
+// A lista vem da credencial da aba (guardada no login). Trocar reusa o mesmo trocarCircuito
+// do admin (recarrega os dados; circuito privado passa pelo porteiro com a credencial do atleta).
+function HubCircuitosAtleta({ circuitoSelId, trocarCircuito, dbStatus }) {
+  const [aberto, setAberto] = useState(false);
+  const cred = getAtletaCred();
+  const circuitos = (cred && Array.isArray(cred.circuitos)) ? cred.circuitos : [];
+  if (circuitos.length <= 1 || typeof trocarCircuito !== "function") return null;
+  const carregando = dbStatus === "loading";
+  const atual = circuitos.find(c => c.id === circuitoSelId);
+  const nomeAtual = atual ? atual.nome : "…";
+  return (
+    <Card style={{marginBottom:14, border:`1.5px solid ${T.terracota}`, background:"rgba(216,90,48,0.08)"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8}}>Circuito</div>
+          <div style={{fontSize:15,fontWeight:800,color:T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {nomeAtual}{atual && atual.publico === false ? " 🔒" : ""}
+          </div>
+        </div>
+        <Btn small onClick={()=>!carregando && setAberto(v=>!v)} color={T.terracotaBtn} disabled={carregando}>{carregando?"…":"Trocar"}</Btn>
+      </div>
+      {aberto && (
+        <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
+          {circuitos.map(c => {
+            const sel = c.id === circuitoSelId;
+            return (
+              <div key={c.id} onClick={()=>{ setAberto(false); if(!sel) trocarCircuito({ id: c.id }); }} style={{
+                border:`1.5px solid ${sel?T.terracota:T.bordaSuave}`, borderRadius:10, padding:"9px 12px", cursor: sel?"default":"pointer",
+                background: sel ? "rgba(216,90,48,0.10)" : "transparent", display:"flex", justifyContent:"space-between", alignItems:"center",
+              }}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{c.nome}{c.publico === false ? " 🔒" : ""}</div>
+                  <div style={{fontSize:11,color:T.cinza}}>Sistema {c.sistema}</div>
+                </div>
+                {sel && <span style={{fontSize:11,color:T.terracota,fontWeight:700}}>atual</span>}
+              </div>
+            );
+          })}
+          <div style={{fontSize:10.5,color:T.madeira}}>Trocar recarrega o ranking e os jogos do circuito escolhido.</div>
+        </div>
+      )}
+    </Card>
+  );
 }
 
 // ── AVATAR EDITÁVEL (upload de foto de perfil do atleta) ──────────────────────

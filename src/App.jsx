@@ -4313,13 +4313,19 @@ export default function App() {
   // { telefone, pin, circuitoId, nome, sistema }. Restaura da sessão da aba.
   const [modoOrg, setModoOrg] = useState(() => getOrgCred());
   const [mostrarBoasVindasVisitante, setMostrarBoasVindasVisitante] = useState(false);
-  // Hub: atleta em >1 circuito escolhe qual abrir logo após o login (só nesse momento,
-  // não a cada reload). Quem tem 1 circuito entra direto (nada muda).
-  const [escolherCircuito, setEscolherCircuito] = useState(false);
-  // Lista de circuitos do atleta logado (pro switcher e pra escolha). Populada SEMPRE que
-  // há atleta logado — no login por PIN vem da credencial (inclui privados); na sessão
-  // restaurada/biometria, busca os PÚBLICOS via anon (privado só com PIN na sessão).
-  const [circuitosAtleta, setCircuitosAtleta] = useState([]);
+  // Lista de circuitos do atleta logado (pro switcher e pra escolha). Já inicia com a lista
+  // guardada no aparelho (localStorage), pra a tela de escolha aparecer sem piscar; o efeito
+  // reidrata pela sessão (token) ao abrir — lista completa, inclui privados.
+  const [circuitosAtleta, setCircuitosAtleta] = useState(() => {
+    const c = getAtletaCred();
+    return (c && Array.isArray(c.circuitos)) ? c.circuitos : [];
+  });
+  // Hub: a tela "Seus circuitos" aparece SEMPRE que o app abre com o atleta em >1 circuito
+  // (login novo OU sessão restaurada). Com 1 circuito, entra direto (nada muda).
+  const [escolherCircuito, setEscolherCircuito] = useState(() => {
+    const c = getAtletaCred();
+    return !!(sessaoSalva.athleteId && c && Array.isArray(c.circuitos) && c.circuitos.length > 1);
+  });
   const [tab, setTab] = useState(sessaoSalva.tab || "dashboard");
   const [dbStatus, setDbStatus] = useState("loading");
   const [dbMsg, setDbMsg] = useState("");

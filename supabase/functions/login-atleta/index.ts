@@ -67,6 +67,33 @@ async function verifyPin(pin: string, stored: string): Promise<boolean> {
   } catch { return false; }
 }
 
+// ── "Continuar conectado": token de sessão do atleta (guardamos só o hash) ──
+const SESSAO_DIAS = 90;
+function novoToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return b64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function sha256hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function emitirSessao(atletaId: string): Promise<string> {
+  const token = novoToken();
+  const hash = await sha256hex(token);
+  const expira = new Date(Date.now() + SESSAO_DIAS * 24 * 60 * 60 * 1000).toISOString();
+  await supabase.from("atleta_sessao").insert({ atleta_id: atletaId, token_hash: hash, expira_em: expira });
+  return token;
+}
+async function atletaPorToken(token: unknown): Promise<string | null> {
+  if (!token || typeof token !== "string") return null;
+  const hash = await sha256hex(token);
+  const { data } = await supabase.from("atleta_sessao").select("id,atleta_id,expira_em").eq("token_hash", hash).maybeSingle();
+  if (!data) return null;
+  if (new Date(data.expira_em) < new Date()) { await supabase.from("atleta_sessao").delete().eq("id", data.id); return null; }
+  await supabase.from("atleta_sessao").update({ ultimo_uso_em: new Date().toISOString() }).eq("id", data.id);
+  return data.atleta_id;
+}
+
 async function acharAtleta(tel: string): Promise<any | null> {
   const alvo = normTel(tel);
   if (alvo.length < 10) return null;
@@ -166,7 +193,8 @@ Deno.serve(async (req) => {
       await supabase.from("atletas").update({ pin_tentativas: 0, pin_bloqueado_ate: null }).eq("id", a.id);
       const { data: full } = await supabase.from("atletas").select(COLS).eq("id", a.id).single();
       const circuitosLogin = await circuitosDoAtleta(a.id);
-      return jsonResponse({ sucesso: true, dados: { encontrado: true, ok: true, atleta: full, circuitos: circuitosLogin } });
+      const tokenLogin = await emitirSessao(a.id);
+      return jsonResponse({ sucesso: true, dados: { encontrado: true, ok: true, atleta: full, circuitos: circuitosLogin, token: tokenLogin } });
     }
 
     if (acao === "DEFINIR_PIN") {
@@ -185,7 +213,8 @@ Deno.serve(async (req) => {
       }).eq("id", a.id);
       const { data: full } = await supabase.from("atletas").select(COLS).eq("id", a.id).single();
       const circuitosNovo = await circuitosDoAtleta(a.id);
-      return jsonResponse({ sucesso: true, dados: { ok: true, atleta: full, circuitos: circuitosNovo } });
+      const tokenNovo = await emitirSessao(a.id);
+      return jsonResponse({ sucesso: true, dados: { ok: true, atleta: full, circuitos: circuitosNovo, token: tokenNovo } });
     }
 
     // PARTICIPAR — atleta EXISTENTE entra num 2º circuito (Bloqueador estrutural 1).
@@ -315,6 +344,27 @@ Deno.serve(async (req) => {
         .filter((c: any) => c && c.ativo && c.slug !== "bh")
         .map((c: any) => ({ id: c.id, slug: c.slug, nome: c.nome_circuito, sistema: c.sistema, pareamento: c.pareamento }));
       return jsonResponse({ sucesso: true, dados: { ok: true, circuitos } });
+    }
+
+    // SESSAO — reidrata o atleta a partir do token salvo (reabrir o app, sem PIN).
+    // Devolve o atleta + circuitos (inclui privados, pois o token prova a identidade).
+    if (acao === "SESSAO") {
+      const atletaId = await atletaPorToken(body?.token);
+      if (!atletaId) return jsonResponse({ sucesso: false, erro: "sessao_invalida" }, 401);
+      const { data: full } = await supabase.from("atletas").select(COLS).eq("id", atletaId).single();
+      if (!full || full.status !== "ativo") return jsonResponse({ sucesso: false, erro: "cadastro_inativo" }, 403);
+      const circs = await circuitosDoAtleta(atletaId);
+      return jsonResponse({ sucesso: true, dados: { ok: true, atleta: full, circuitos: circs } });
+    }
+
+    // LOGOUT_SESSAO — revoga o token (logout de verdade). Best-effort.
+    if (acao === "LOGOUT_SESSAO") {
+      const t = body?.token;
+      if (t && typeof t === "string") {
+        const hash = await sha256hex(t);
+        await supabase.from("atleta_sessao").delete().eq("token_hash", hash);
+      }
+      return jsonResponse({ sucesso: true });
     }
 
     return jsonResponse({ sucesso: false, erro: `Ação desconhecida: ${acao}` }, 400);

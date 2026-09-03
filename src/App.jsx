@@ -352,7 +352,8 @@ function porteiroRankingToCa(p) {
 async function fetchCircuitoPorteiro(circuitoId, cred) {
   try {
     const body = { circuitoId };
-    if (cred && cred.telefone && cred.pin) { body.telefone = cred.telefone; body.pin = cred.pin; }
+    if (cred && cred.token) body.sessionToken = cred.token;                       // atleta: token de sessão
+    else if (cred && cred.telefone && cred.pin) { body.telefone = cred.telefone; body.pin = cred.pin; } // organizador: telefone+PIN
     const res = await fetch(`${SUPA_URL}/functions/v1/circuito-dados`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
@@ -522,10 +523,24 @@ function clearOrgCred() { try { sessionStorage.removeItem(ORG_SESSAO_KEY); } cat
 // ── CREDENCIAL DO ATLETA (hub multi-circuito) — telefone+PIN pra ler circuito PRIVADO ──
 // Só na aba (sessionStorage), como a do organizador. Guardada no login do atleta e usada
 // pelo porteiro (circuito-dados) quando o circuito ativo é privado. Circuito aberto não usa.
+// "Continuar conectado": guarda { telefone, token, circuitos } no localStorage (persiste
+// entre reaberturas). NÃO guarda o PIN — o token de sessão prova a identidade e abre até
+// circuito privado; é revogável no logout e expira no servidor.
 const ATLETA_SESSAO_KEY = "ctm_atleta_sessao";
-function getAtletaCred() { try { return JSON.parse(sessionStorage.getItem(ATLETA_SESSAO_KEY) || "null"); } catch(e) { return null; } }
-function setAtletaCred(o) { try { sessionStorage.setItem(ATLETA_SESSAO_KEY, JSON.stringify(o)); } catch(e) {} }
-function clearAtletaCred() { try { sessionStorage.removeItem(ATLETA_SESSAO_KEY); } catch(e) {} }
+function getAtletaCred() { try { return JSON.parse(localStorage.getItem(ATLETA_SESSAO_KEY) || "null"); } catch(e) { return null; } }
+function setAtletaCred(o) { try { localStorage.setItem(ATLETA_SESSAO_KEY, JSON.stringify(o)); } catch(e) {} }
+function clearAtletaCred() { try { localStorage.removeItem(ATLETA_SESSAO_KEY); } catch(e) {} }
+// Revoga o token de sessão no servidor (logout de verdade). Best-effort.
+function revogarSessaoAtleta() {
+  try {
+    const c = getAtletaCred();
+    if (c && c.token) fetch(`${SUPA_URL}/functions/v1/login-atleta`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+      body: JSON.stringify({ acao: "LOGOUT_SESSAO", token: c.token }),
+    }).catch(() => {});
+  } catch(e) {}
+}
 
 // ── SISTEMA DE RATING — TABELA OFICIAL CBTM (Regulamento v03-12, Cap. 05) ──────
 // Tabela Básica de Cálculo do Rating do Manual Tênis de Mesa Brasil (item 1.7.2.4.5)
@@ -4113,9 +4128,9 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
       if (!d.atleta) { setErr("Não consegui entrar. Tente de novo."); return; }
       const found = mapAtletaFromDb(d.atleta);
       if (found.status !== "ativo") { setErr("Seu cadastro ainda não foi aprovado pelo admin."); return; }
-      // Hub multi-circuito: guarda a credencial (só na aba) pra ler circuito PRIVADO pelo porteiro,
-      // e a lista de circuitos do atleta (pro switcher). Circuito só-BH não muda nada.
-      setAtletaCred({ telefone: clean, pin: pinLimpo, circuitos: Array.isArray(d.circuitos) ? d.circuitos : [] });
+      // "Continuar conectado": guarda telefone + TOKEN de sessão + lista de circuitos (localStorage).
+      // O token (não o PIN) abre circuito privado ao reabrir o app; é revogável no logout.
+      setAtletaCred({ telefone: clean, token: d.token || null, circuitos: Array.isArray(d.circuitos) ? d.circuitos : [] });
       let jaTemBioNesteAparelho = bioCredId && String(bioAtletaId) === String(found.id);
       // Reidrata a biometria a partir do servidor se este aparelho perdeu o
       // localStorage mas o atleta já tinha credencial cadastrada (Correção B).
@@ -4301,6 +4316,10 @@ export default function App() {
   // Hub: atleta em >1 circuito escolhe qual abrir logo após o login (só nesse momento,
   // não a cada reload). Quem tem 1 circuito entra direto (nada muda).
   const [escolherCircuito, setEscolherCircuito] = useState(false);
+  // Lista de circuitos do atleta logado (pro switcher e pra escolha). Populada SEMPRE que
+  // há atleta logado — no login por PIN vem da credencial (inclui privados); na sessão
+  // restaurada/biometria, busca os PÚBLICOS via anon (privado só com PIN na sessão).
+  const [circuitosAtleta, setCircuitosAtleta] = useState([]);
   const [tab, setTab] = useState(sessaoSalva.tab || "dashboard");
   const [dbStatus, setDbStatus] = useState("loading");
   const [dbMsg, setDbMsg] = useState("");
@@ -4345,6 +4364,45 @@ export default function App() {
 
   // ── Carregar dados do Supabase ao iniciar ──────────────────
   useEffect(() => { loadFromSupabase(); }, []);
+
+  // Hub: mantém a lista de circuitos do atleta atualizada sempre que há atleta logado.
+  // Credencial da aba (login por PIN) tem a lista completa (com privados). Sem ela
+  // (sessão restaurada/biometria), busca os circuitos PÚBLICOS do atleta via anon.
+  useEffect(() => {
+    if (!currentAthlete?.id) { setCircuitosAtleta([]); return; }
+    const cred = getAtletaCred();
+    // Mostra a lista guardada na hora (pode estar levemente desatualizada).
+    if (cred && Array.isArray(cred.circuitos) && cred.circuitos.length) setCircuitosAtleta(cred.circuitos);
+    let vivo = true;
+    if (cred && cred.token) {
+      // Reidrata pela sessão (token): lista COMPLETA (inclui privados) e revalida a sessão.
+      fetch(`${SUPA_URL}/functions/v1/login-atleta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+        body: JSON.stringify({ acao: "SESSAO", token: cred.token }),
+      }).then(r => r.json()).then(res => {
+        if (!vivo) return;
+        if (res.sucesso && res.dados) {
+          const circs = res.dados.circuitos || [];
+          setCircuitosAtleta(circs);
+          setAtletaCred({ ...cred, circuitos: circs });
+        } else if (res.erro === "sessao_invalida") {
+          clearAtletaCred(); setCircuitosAtleta([]);
+        }
+      }).catch(() => {});
+    } else {
+      // Sem token (ex.: login antigo por biometria): mostra os circuitos PÚBLICOS via anon.
+      supaFetch(`circuito_atletas?atleta_id=eq.${currentAthlete.id}&status=eq.ativo&select=circuito_id,circuitos(id,nome_circuito,sistema,publico,ativo)`)
+        .then(rows => {
+          if (!vivo) return;
+          const list = (rows || []).map(r => r.circuitos).filter(c => c && c.ativo)
+            .map(c => ({ id: c.id, nome: c.nome_circuito, sistema: c.sistema, publico: c.publico }));
+          setCircuitosAtleta(list);
+        })
+        .catch(() => {});
+    }
+    return () => { vivo = false; };
+  }, [currentAthlete?.id]);
 
   // ── Pedir armazenamento persistente ────────────────────────
   // Sem isso, o navegador (Chrome/Android inclusive) pode descartar o
@@ -4912,7 +4970,7 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); clearAtletaCred(); setModoOrg(null); setEscolherCircuito(false); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
+      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); revogarSessaoAtleta(); clearAtletaCred(); setModoOrg(null); setEscolherCircuito(false); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>
@@ -4923,9 +4981,9 @@ export default function App() {
         ) : isVisitante ? (
           <VisitanteView state={state} tab={tab} setTab={setTab} />
         ) : escolherCircuito ? (
-          <EscolhaCircuito onEscolher={(c)=>{ setEscolherCircuito(false); if (c && c.id && c.id !== CIRCUITO_ATIVO) trocarCircuito({ id: c.id }); }} />
+          <EscolhaCircuito circuitos={circuitosAtleta} onEscolher={(c)=>{ setEscolherCircuito(false); if (c && c.id && c.id !== CIRCUITO_ATIVO) trocarCircuito({ id: c.id }); }} />
         ) : (
-          <AthleteView state={state} dispatch={dispatchAndSync} athlete={currentAthlete} tab={tab} setTab={setTab} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} />
+          <AthleteView state={state} dispatch={dispatchAndSync} athlete={currentAthlete} tab={tab} setTab={setTab} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} circuitosAtleta={circuitosAtleta} />
         )}
       </div>
 
@@ -8113,8 +8171,8 @@ function VisitanteView({ state, tab, setTab }) {
   return <RankingView state={state} currentAthleteId={null} />;
 }
 
-function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, trocarCircuito, dbStatus }) {
-  const hub = <HubCircuitosAtleta circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} />;
+function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, trocarCircuito, dbStatus, circuitosAtleta }) {
+  const hub = <HubCircuitosAtleta circuitos={circuitosAtleta} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} />;
   let content = null;
   if (tab === "meus_jogos") content = <><RenovacaoCard state={state} dispatch={dispatch} athlete={athlete} /><ParticiparOutroCircuito athlete={athlete} /><AthleteGames state={state} dispatch={dispatch} athlete={athlete} /></>;
   else if (tab === "ranking") content = <RankingView state={state} currentAthleteId={athlete.id} />;
@@ -8125,9 +8183,7 @@ function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, tro
 
 // Tela de escolha de circuito, logo após o login, pra atleta em >1 circuito.
 // A lista vem da credencial da aba (guardada no login). Escolher abre o circuito.
-function EscolhaCircuito({ onEscolher }) {
-  const cred = getAtletaCred();
-  const circuitos = (cred && Array.isArray(cred.circuitos)) ? cred.circuitos : [];
+function EscolhaCircuito({ circuitos = [], onEscolher }) {
   return (
     <div>
       <div style={{fontSize:11,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8,margin:"6px 0 4px"}}>Seus circuitos</div>
@@ -8153,10 +8209,8 @@ function EscolhaCircuito({ onEscolher }) {
 // Hub multi-circuito: switcher entre os circuitos do atleta. Só aparece com >1 circuito.
 // A lista vem da credencial da aba (guardada no login). Trocar reusa o mesmo trocarCircuito
 // do admin (recarrega os dados; circuito privado passa pelo porteiro com a credencial do atleta).
-function HubCircuitosAtleta({ circuitoSelId, trocarCircuito, dbStatus }) {
+function HubCircuitosAtleta({ circuitos = [], circuitoSelId, trocarCircuito, dbStatus }) {
   const [aberto, setAberto] = useState(false);
-  const cred = getAtletaCred();
-  const circuitos = (cred && Array.isArray(cred.circuitos)) ? cred.circuitos : [];
   if (circuitos.length <= 1 || typeof trocarCircuito !== "function") return null;
   const carregando = dbStatus === "loading";
   const atual = circuitos.find(c => c.id === circuitoSelId);

@@ -4298,6 +4298,9 @@ export default function App() {
   // { telefone, pin, circuitoId, nome, sistema }. Restaura da sessão da aba.
   const [modoOrg, setModoOrg] = useState(() => getOrgCred());
   const [mostrarBoasVindasVisitante, setMostrarBoasVindasVisitante] = useState(false);
+  // Hub: atleta em >1 circuito escolhe qual abrir logo após o login (só nesse momento,
+  // não a cada reload). Quem tem 1 circuito entra direto (nada muda).
+  const [escolherCircuito, setEscolherCircuito] = useState(false);
   const [tab, setTab] = useState(sessaoSalva.tab || "dashboard");
   const [dbStatus, setDbStatus] = useState("loading");
   const [dbMsg, setDbMsg] = useState("");
@@ -4889,7 +4892,12 @@ export default function App() {
   if (!isAdmin && !currentAthlete && !isVisitante) return (
     <LoginScreen
       onLogin={() => { setIsAdmin(true); setTab("dashboard"); }}
-      onAthleteLogin={a => { setCurrentAthlete(a); setTab("meus_jogos"); }}
+      onAthleteLogin={a => {
+        setCurrentAthlete(a); setTab("meus_jogos");
+        const cred = getAtletaCred();
+        const circs = (cred && Array.isArray(cred.circuitos)) ? cred.circuitos : [];
+        setEscolherCircuito(circs.length > 1); // >1 circuito: mostra a escolha; senão entra direto
+      }}
       onVisitante={() => { setIsVisitante(true); setTab("ranking"); setMostrarBoasVindasVisitante(true); }}
       athletes={state.athletes}
       onInscricao={p => dispatchAndSync({type:"INSCRICAO_ADD", payload:p})}
@@ -4904,7 +4912,7 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); clearAtletaCred(); setModoOrg(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
+      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); clearAtletaCred(); setModoOrg(null); setEscolherCircuito(false); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>
@@ -4914,12 +4922,14 @@ export default function App() {
           <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} modoOrg={modoOrg} />
         ) : isVisitante ? (
           <VisitanteView state={state} tab={tab} setTab={setTab} />
+        ) : escolherCircuito ? (
+          <EscolhaCircuito onEscolher={(c)=>{ setEscolherCircuito(false); if (c && c.id && c.id !== CIRCUITO_ATIVO) trocarCircuito({ id: c.id }); }} />
         ) : (
           <AthleteView state={state} dispatch={dispatchAndSync} athlete={currentAthlete} tab={tab} setTab={setTab} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} />
         )}
       </div>
 
-      <BottomNav isAdmin={isAdmin} isVisitante={isVisitante} tab={tab} setTab={setTab} />
+      {!(currentAthlete && escolherCircuito) && <BottomNav isAdmin={isAdmin} isVisitante={isVisitante} tab={tab} setTab={setTab} />}
     </div>
   );
 }
@@ -8111,6 +8121,33 @@ function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, tro
   else if (tab === "tabela") content = <TabelaView state={state} athlete={athlete} />;
   else if (tab === "comunidade") content = <ComunidadeView state={state} currentAthleteId={athlete.id} />;
   return <>{hub}{content}</>;
+}
+
+// Tela de escolha de circuito, logo após o login, pra atleta em >1 circuito.
+// A lista vem da credencial da aba (guardada no login). Escolher abre o circuito.
+function EscolhaCircuito({ onEscolher }) {
+  const cred = getAtletaCred();
+  const circuitos = (cred && Array.isArray(cred.circuitos)) ? cred.circuitos : [];
+  return (
+    <div>
+      <div style={{fontSize:11,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8,margin:"6px 0 4px"}}>Seus circuitos</div>
+      <div style={{fontSize:13,color:T.cinza,marginBottom:14}}>Você participa de mais de um circuito. Escolha qual quer abrir — dá pra trocar depois.</div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {circuitos.map(c => (
+          <div key={c.id} onClick={()=>onEscolher(c)} style={{
+            border:`1.5px solid ${T.bordaSuave}`, borderRadius:12, padding:"14px 16px", cursor:"pointer",
+            background:T.verdeCard, display:"flex", justifyContent:"space-between", alignItems:"center", gap:10,
+          }}>
+            <div>
+              <div style={{fontSize:15,fontWeight:800,color:T.offwhite}}>{c.nome}{c.publico === false ? " 🔒" : ""}</div>
+              <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>Sistema {c.sistema}{c.publico === false ? " · privado" : ""}</div>
+            </div>
+            <span style={{fontSize:18,color:T.terracota,fontWeight:700}}>→</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // Hub multi-circuito: switcher entre os circuitos do atleta. Só aparece com >1 circuito.

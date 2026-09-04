@@ -4541,20 +4541,24 @@ export default function App() {
     }
   }
 
-  // A2: carrega os circuitos ativos (pro seletor) quando o admin loga.
+  // A2: carrega os circuitos (pro seletor) quando o admin loga.
+  // Inclui inativos (encerrados) — o super-admin precisa vê-los pra reativar/excluir.
+  async function recarregarCircuitos() {
+    try {
+      const cs = await supaFetch("circuitos?select=id,slug,nome_circuito,sistema,ativo&order=ativo.desc,nome_circuito.asc");
+      if (!Array.isArray(cs)) return cs;
+      setCircuitos(cs);
+      // Auto-cura: se o circuito restaurado da sessão não existe mais, volta pro BH.
+      if (circuitoSelId !== CIRCUITO_BH_ID && !cs.some(c => c.id === circuitoSelId)) {
+        setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); loadFromSupabase();
+      }
+      return cs;
+    } catch { return null; }
+  }
   useEffect(() => {
     if (!isAdmin) return;
     let vivo = true;
-    supaFetch("circuitos?select=id,slug,nome_circuito,sistema&ativo=eq.true&order=nome_circuito.asc")
-      .then(cs => {
-        if (!vivo || !Array.isArray(cs)) return;
-        setCircuitos(cs);
-        // Auto-cura: se o circuito restaurado da sessão não existe mais, volta pro BH.
-        if (circuitoSelId !== CIRCUITO_BH_ID && !cs.some(c => c.id === circuitoSelId)) {
-          setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); loadFromSupabase();
-        }
-      })
-      .catch(() => {});
+    recarregarCircuitos().then(() => { if (!vivo) return; });
     return () => { vivo = false; };
   }, [isAdmin]);
 
@@ -5002,7 +5006,7 @@ export default function App() {
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
-          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} modoOrg={modoOrg} />
+          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} />
         ) : isVisitante ? (
           visitanteCirc ? (
             <VisitanteView state={state} tab={tab} setTab={setTab} nomeCircuito={visitanteCirc.nome_exibicao || visitanteCirc.nome_circuito} onVoltar={()=>{ setVisitanteCirc(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
@@ -5986,8 +5990,8 @@ const Badge = ({label, color="#D85A30"}) => (
 );
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
-function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, dbStatus, modoOrg }) {
-  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} modoOrg={modoOrg} />;
+function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
+  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
@@ -6273,7 +6277,7 @@ function SeletorCircuito({ circuitos, circuitoSelId, trocar, carregando }) {
                 background: sel ? "rgba(216,90,48,0.10)" : "transparent", display:"flex", justifyContent:"space-between", alignItems:"center",
               }}>
                 <div>
-                  <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{c.nome_circuito}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{c.nome_circuito}{c.ativo===false && <span style={{fontSize:10,fontWeight:700,color:T.madeira,marginLeft:6}}>· encerrado</span>}</div>
                   <div style={{fontSize:11,color:T.cinza}}>{c.slug} · Sistema {c.sistema}</div>
                 </div>
                 {sel && <span style={{fontSize:11,color:T.terracota,fontWeight:700}}>atual</span>}
@@ -6506,7 +6510,110 @@ function GerenciarOrganizadoresCard({ chamarAdminAction, circuitoSelId }) {
   );
 }
 
-function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, circuitos, circuitoSelId, trocarCircuito, dbStatus, modoOrg }) {
+// Cancelar circuito (super-admin, circuito ≠ BH). Dois níveis:
+//  • Encerrar / Reativar — reversível (só liga/desliga o "ativo").
+//  • Excluir de vez — só se o circuito nunca rodou (sem jogos/histórico); pede o nome digitado.
+// Todas as ações são super-admin-only no servidor (403 pro organizador) e o BH é sempre barrado.
+function CancelarCircuitoCard({ chamarAdminAction, circuitos, circuitoSelId, recarregarCircuitos, voltarParaBH }) {
+  const [aberto, setAberto] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [confirmEncerrar, setConfirmEncerrar] = useState(false);
+  const [modoExcluir, setModoExcluir] = useState(false);
+  const [nomeDigitado, setNomeDigitado] = useState("");
+
+  const circAtual = (circuitos || []).find(c => c.id === circuitoSelId);
+  const encerrado = circAtual && circAtual.ativo === false;
+  const nomeCirc = circAtual ? circAtual.nome_circuito : "";
+
+  function fechar() { setAberto(false); setConfirmEncerrar(false); setModoExcluir(false); setNomeDigitado(""); setMsg(""); }
+
+  async function encerrar() {
+    setBusy(true); setMsg("");
+    try { await chamarAdminAction("ENCERRAR_CIRCUITO", {}); await recarregarCircuitos(); setConfirmEncerrar(false); setMsg("✓ Circuito encerrado. Ficou invisível e com inscrições fechadas."); }
+    catch (e) { setMsg(e.message || "Erro ao encerrar."); }
+    finally { setBusy(false); }
+  }
+  async function reativar() {
+    setBusy(true); setMsg("");
+    try { await chamarAdminAction("REATIVAR_CIRCUITO", {}); await recarregarCircuitos(); setMsg("✓ Circuito reativado."); }
+    catch (e) { setMsg(e.message || "Erro ao reativar."); }
+    finally { setBusy(false); }
+  }
+  async function excluir() {
+    setBusy(true); setMsg("");
+    try {
+      await chamarAdminAction("EXCLUIR_CIRCUITO", {});
+      setModoExcluir(false); setNomeDigitado("");
+      if (voltarParaBH) await voltarParaBH();
+      await recarregarCircuitos();
+      // O card some (voltou pro BH); nada mais a mostrar.
+    }
+    catch (e) { setMsg(e.message || "Erro ao excluir."); setBusy(false); }
+  }
+
+  const inp = { width:"100%", boxSizing:"border-box", background:"#182420", border:`1px solid ${T.borda}`, borderRadius:8, color:T.offwhite, padding:"10px 12px", fontSize:14, fontFamily:T.sans, marginTop:6 };
+
+  return (
+    <Card style={{marginBottom:16, border:`1px solid rgba(194,90,69,0.35)`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>⚠️ Encerrar ou excluir</div>
+          <div style={{fontSize:12,color:T.cinza,marginTop:2}}>{encerrado ? "Este circuito está encerrado" : "Tirar este circuito do ar"}</div>
+        </div>
+        <Btn small onClick={()=>aberto?fechar():setAberto(true)} color={T.bordaSuave}>{aberto?"Fechar":"Abrir"}</Btn>
+      </div>
+
+      {aberto && (
+        <div style={{marginTop:14}}>
+          {encerrado ? (
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:12.5,color:T.cinza,lineHeight:1.5,marginBottom:10}}>Reativar deixa o circuito visível de novo. As inscrições continuam fechadas até você reabri-las na aba de configuração.</div>
+              <Btn small onClick={reativar} disabled={busy} color={T.verde2}>{busy?"…":"Reativar circuito"}</Btn>
+            </div>
+          ) : (
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:12.5,color:T.cinza,lineHeight:1.5,marginBottom:10}}>Encerrar deixa o circuito <strong>invisível</strong> e fecha as inscrições, mas guarda tudo (atletas, jogos, histórico). Dá pra reativar quando quiser. É o caminho certo pra um circuito que já rodou.</div>
+              {!confirmEncerrar ? (
+                <Btn small onClick={()=>{ setConfirmEncerrar(true); setMsg(""); }} disabled={busy} color={T.terracotaBtn}>Encerrar circuito</Btn>
+              ) : (
+                <div style={{border:`1px solid ${T.bordaSuave}`,borderRadius:10,padding:12}}>
+                  <div style={{fontSize:12.5,color:T.offwhite,marginBottom:10}}>Encerrar <strong>{nomeCirc}</strong> agora?</div>
+                  <div style={{display:"flex",gap:8}}>
+                    <Btn small onClick={encerrar} disabled={busy} color={T.terracotaBtn}>{busy?"…":"Sim, encerrar"}</Btn>
+                    <Btn small onClick={()=>setConfirmEncerrar(false)} disabled={busy} color={T.bordaSuave}>Cancelar</Btn>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{borderTop:`1px solid ${T.bordaSuave}`,paddingTop:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#c25a45",textTransform:"uppercase",letterSpacing:0.6}}>Excluir de vez</div>
+            <div style={{fontSize:12,color:T.cinza,lineHeight:1.5,margin:"6px 0 10px"}}>Apaga o circuito para sempre. Só funciona se ele <strong>nunca teve jogos</strong> — um circuito que já rodou não pode ser apagado (encerre em vez disso). Não afeta o cadastro global dos atletas.</div>
+            {!modoExcluir ? (
+              <Btn small onClick={()=>{ setModoExcluir(true); setNomeDigitado(""); setMsg(""); }} disabled={busy} color="#c25a45">Excluir de vez…</Btn>
+            ) : (
+              <div style={{border:`1px solid rgba(194,90,69,0.4)`,borderRadius:10,padding:12}}>
+                <div style={{fontSize:12.5,color:T.offwhite,marginBottom:2}}>Digite o nome do circuito para confirmar:</div>
+                <div style={{fontSize:12,color:T.madeira,marginBottom:2}}><code>{nomeCirc}</code></div>
+                <input value={nomeDigitado} onChange={e=>setNomeDigitado(e.target.value)} placeholder={nomeCirc} style={inp}/>
+                <div style={{display:"flex",gap:8,marginTop:10}}>
+                  <Btn small onClick={excluir} disabled={busy || nomeDigitado.trim() !== nomeCirc} color="#c25a45">{busy?"Excluindo…":"Excluir para sempre"}</Btn>
+                  <Btn small onClick={()=>{ setModoExcluir(false); setNomeDigitado(""); }} disabled={busy} color={T.bordaSuave}>Cancelar</Btn>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {msg && <div style={{fontSize:12.5,color: msg.startsWith("✓")?T.verde2:T.madeira,marginTop:12}}>{msg}</div>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
@@ -6621,6 +6728,15 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, circuitos,
           <CriarCircuitoCard chamarAdminAction={chamarAdminAction} />
           {circuitoSelId !== CIRCUITO_BH_ID && (
             <GerenciarOrganizadoresCard chamarAdminAction={chamarAdminAction} circuitoSelId={circuitoSelId} />
+          )}
+          {circuitoSelId !== CIRCUITO_BH_ID && (
+            <CancelarCircuitoCard
+              chamarAdminAction={chamarAdminAction}
+              circuitos={circuitos}
+              circuitoSelId={circuitoSelId}
+              recarregarCircuitos={recarregarCircuitos}
+              voltarParaBH={() => trocarCircuito({ id: CIRCUITO_BH_ID })}
+            />
           )}
         </>
       )}

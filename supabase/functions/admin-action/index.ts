@@ -1517,6 +1517,48 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true, dados: data });
       }
 
+      // Cancelar circuito (só super-admin, fora da ACOES_ORG). O BH nunca pode ser cancelado.
+      case "ENCERRAR_CIRCUITO": {
+        const bhE = await bhId();
+        if (circuitoId === bhE) return jsonResponse({ sucesso: false, erro: "O circuito de BH não pode ser encerrado." }, 400);
+        const { data: circE } = await supabase.from("circuitos").select("id").eq("id", circuitoId).maybeSingle();
+        if (!circE) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
+        const { error } = await supabase.from("circuitos").update({ ativo: false, inscricoes_abertas: false }).eq("id", circuitoId);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
+      case "REATIVAR_CIRCUITO": {
+        const { data: circR } = await supabase.from("circuitos").select("id").eq("id", circuitoId).maybeSingle();
+        if (!circR) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
+        const { error } = await supabase.from("circuitos").update({ ativo: true }).eq("id", circuitoId);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
+      // Excluir de vez — SÓ circuito sem jogos/histórico (evita apagar dados de um circuito que rodou).
+      case "EXCLUIR_CIRCUITO": {
+        const bhX = await bhId();
+        if (circuitoId === bhX) return jsonResponse({ sucesso: false, erro: "O circuito de BH não pode ser excluído." }, 400);
+        const { data: circX } = await supabase.from("circuitos").select("id").eq("id", circuitoId).maybeSingle();
+        if (!circX) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
+        const { count: nPart } = await supabase.from("partidas").select("*", { count: "exact", head: true }).eq("circuito_id", circuitoId);
+        const { count: nHist } = await supabase.from("partidas_historico").select("*", { count: "exact", head: true }).eq("circuito_id", circuitoId);
+        if ((nPart ?? 0) > 0 || (nHist ?? 0) > 0) {
+          return jsonResponse({ sucesso: false, erro: "Este circuito tem jogos ou histórico. Encerre em vez de excluir." }, 409);
+        }
+        // Apaga vínculos residuais (para um circuito sem jogos, quase tudo está vazio) e o circuito.
+        await supabase.from("mensagens_enviadas").delete().eq("circuito_id", circuitoId);
+        await supabase.from("pagamentos").delete().eq("circuito_id", circuitoId);
+        await supabase.from("solicitacoes_wo").delete().eq("circuito_id", circuitoId);
+        await supabase.from("chaves").delete().eq("circuito_id", circuitoId);
+        await supabase.from("circuito_atletas").delete().eq("circuito_id", circuitoId);
+        await supabase.from("circuito_organizadores").delete().eq("circuito_id", circuitoId);
+        const { error } = await supabase.from("circuitos").delete().eq("id", circuitoId);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
       default:
         return jsonResponse({ sucesso: false, erro: `Ação desconhecida: ${acao}` }, 400);
     }

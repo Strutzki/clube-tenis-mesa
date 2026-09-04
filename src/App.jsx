@@ -4385,6 +4385,18 @@ export default function App() {
   // ── Carregar dados do Supabase ao iniciar ──────────────────
   useEffect(() => { loadFromSupabase(); }, []);
 
+  // Visitante: carrega a vitrine (todos os circuitos ativos) sempre que o modo
+  // visitante está ligado — cobre o clique em "Visitante" E o refresh (que restaura
+  // isVisitante da sessão). Sem isso, a lista some ao recarregar a página.
+  useEffect(() => {
+    if (!isVisitante) return;
+    let vivo = true;
+    supaFetch("circuitos?select=id,slug,nome_circuito,nome_exibicao,sistema,publico&ativo=eq.true&order=publico.desc,nome_circuito.asc")
+      .then(cs => { if (vivo) setCircuitosVisitante(Array.isArray(cs) ? cs : []); })
+      .catch(() => { if (vivo) setCircuitosVisitante([]); });
+    return () => { vivo = false; };
+  }, [isVisitante]);
+
   // Hub: mantém a lista de circuitos do atleta atualizada sempre que há atleta logado.
   // Credencial da aba (login por PIN) tem a lista completa (com privados). Sem ela
   // (sessão restaurada/biometria), busca os circuitos PÚBLICOS do atleta via anon.
@@ -4990,9 +5002,7 @@ export default function App() {
         // aparecem com cadeado + aviso (nunca carrega dados de circuito privado).
         setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID);
         setVisitanteCirc(null); setIsVisitante(true); setTab("ranking");
-        supaFetch("circuitos?select=id,slug,nome_circuito,nome_exibicao,sistema,publico&ativo=eq.true&order=publico.desc,nome_circuito.asc")
-          .then(cs => setCircuitosVisitante(Array.isArray(cs) ? cs : []))
-          .catch(() => setCircuitosVisitante([]));
+        // A lista da vitrine é carregada pelo efeito abaixo (também cobre o refresh).
       }}
       athletes={state.athletes}
       onInscricao={p => dispatchAndSync({type:"INSCRICAO_ADD", payload:p})}

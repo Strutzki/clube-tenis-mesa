@@ -4522,8 +4522,12 @@ export default function App() {
         inscricoesAbertas: config?.[0]?.inscricoes_abertas || false,
       }});
       // Restaurar atleta completo da sessão após carregar do banco
-      if (sessaoSalva.athleteId) {
-        const atletaCompleto = athletesMapped.find(a => a.id === sessaoSalva.athleteId);
+      // Restaura o atleta pela sessão ATUAL (não a cópia de quando o app abriu): o SAIR
+      // limpa a sessão, então após sair NÃO restaura (não fica preso na tela do atleta,
+      // e o visitante não "vira" o atleta ao abrir um circuito).
+      const sessAgora = (() => { try { return JSON.parse(localStorage.getItem("ctm_sessao") || "{}"); } catch { return {}; } })();
+      if (sessAgora.athleteId) {
+        const atletaCompleto = athletesMapped.find(a => a.id === sessAgora.athleteId);
         if (atletaCompleto) setCurrentAthlete(atletaCompleto);
         else { setCurrentAthlete(null); localStorage.removeItem("ctm_sessao"); }
       }
@@ -4991,7 +4995,7 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); setModoOrg(null); setEscolherCircuito(false); setVisitanteCirc(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); loadFromSupabase(); }} />
+      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); setModoOrg(null); setEscolherCircuito(false); setVisitanteCirc(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>

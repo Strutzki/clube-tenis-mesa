@@ -6423,7 +6423,7 @@ function CriarCircuitoCard({ chamarAdminAction }) {
                         <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>{o.d}</div>
                       </div>
                     ))}
-                    <div style={{fontSize:11,color:T.madeira,marginTop:8}}>⚠️ O Sistema B ainda não é operável (motor e regulamento em construção). O circuito é criado, mas ainda não roda.</div>
+                    <div style={{fontSize:11,color:T.madeira,marginTop:8}}>O Sistema B já funciona: pontos fixos (vitória 2, derrota 1), pareamento por {pareamento === "grupos" ? "faixa de posição" : "sorteio"} a cada rodada e W.O. tratado pelo organizador. O sistema trava na criação e não muda depois.</div>
                   </div>
                 )}
 

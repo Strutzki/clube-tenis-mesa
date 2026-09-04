@@ -4316,7 +4316,10 @@ export default function App() {
   // Visitante: vitrine de circuitos. circuitosVisitante = lista de todos os ativos;
   // visitanteCirc = circuito público que ele abriu (null = mostrando a lista).
   const [circuitosVisitante, setCircuitosVisitante] = useState([]);
-  const [visitanteCirc, setVisitanteCirc] = useState(null);
+  // Refresh mantém o circuito que o visitante abriu (some da lista antes desta correção).
+  const [visitanteCirc, setVisitanteCirc] = useState(
+    (sessaoSalva.isVisitante && sessaoSalva.visitanteCirc && sessaoSalva.visitanteCirc.id) ? sessaoSalva.visitanteCirc : null
+  );
   // Lista de circuitos do atleta logado (pro switcher e pra escolha). Já inicia com a lista
   // guardada no aparelho (localStorage), pra a tela de escolha aparecer sem piscar; o efeito
   // reidrata pela sessão (token) ao abrir — lista completa, inclui privados.
@@ -4366,13 +4369,18 @@ export default function App() {
       isAdmin,
       athleteId: currentAthlete?.id || null,
       isVisitante,
+      // Visitante: guarda o circuito aberto (só campos de exibição) pra o refresh manter a tela.
+      visitanteCirc: visitanteCirc ? {
+        id: visitanteCirc.id, slug: visitanteCirc.slug, nome_circuito: visitanteCirc.nome_circuito,
+        nome_exibicao: visitanteCirc.nome_exibicao, sistema: visitanteCirc.sistema, publico: visitanteCirc.publico,
+      } : null,
       tab,
       circuitoSelId,
       orgMode: !!modoOrg, // Papéis Fatia 3: marca modo organizador (a credencial vive só na aba)
       escolherCircuito, // hub: lembra se está na tela de escolha (refresh mantém)
     };
     localStorage.setItem("ctm_sessao", JSON.stringify(sessao));
-  }, [isAdmin, currentAthlete, isVisitante, tab, circuitoSelId, modoOrg, escolherCircuito]);
+  }, [isAdmin, currentAthlete, isVisitante, visitanteCirc, tab, circuitoSelId, modoOrg, escolherCircuito]);
 
   // ── Carregar dados do Supabase ao iniciar ──────────────────
   useEffect(() => { loadFromSupabase(); }, []);

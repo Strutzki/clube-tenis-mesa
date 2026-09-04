@@ -4320,10 +4320,13 @@ export default function App() {
     const c = getAtletaCred();
     return (c && Array.isArray(c.circuitos)) ? c.circuitos : [];
   });
-  // Hub: a tela "Seus circuitos" aparece no LOGIN (por PIN ou digital), quando o atleta
-  // está em >1 circuito. Reabrir/refresh NÃO força a escolha — mantém o último circuito
-  // com o switcher no topo (menos irritante). Trocar é sempre possível pelo switcher.
-  const [escolherCircuito, setEscolherCircuito] = useState(false);
+  // Hub: a tela "Seus circuitos" aparece no LOGIN (por PIN ou digital) e ao tocar em
+  // "Trocar circuito". O estado é LEMBRADO na sessão — refresh mantém a tela em que você
+  // estava (escolha OU circuito), sem te jogar pra outro lugar.
+  const [escolherCircuito, setEscolherCircuito] = useState(() => {
+    const c = getAtletaCred();
+    return !!(sessaoSalva.escolherCircuito && sessaoSalva.athleteId && c && Array.isArray(c.circuitos) && c.circuitos.length > 1);
+  });
   const [tab, setTab] = useState(sessaoSalva.tab || "dashboard");
   const [dbStatus, setDbStatus] = useState("loading");
   const [dbMsg, setDbMsg] = useState("");
@@ -4362,9 +4365,10 @@ export default function App() {
       tab,
       circuitoSelId,
       orgMode: !!modoOrg, // Papéis Fatia 3: marca modo organizador (a credencial vive só na aba)
+      escolherCircuito, // hub: lembra se está na tela de escolha (refresh mantém)
     };
     localStorage.setItem("ctm_sessao", JSON.stringify(sessao));
-  }, [isAdmin, currentAthlete, isVisitante, tab, circuitoSelId, modoOrg]);
+  }, [isAdmin, currentAthlete, isVisitante, tab, circuitoSelId, modoOrg, escolherCircuito]);
 
   // ── Carregar dados do Supabase ao iniciar ──────────────────
   useEffect(() => { loadFromSupabase(); }, []);
@@ -4980,12 +4984,6 @@ export default function App() {
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>
 
-      {currentAthlete && (() => { const _c = getAtletaCred(); return (
-        <div style={{padding:"2px 16px",fontSize:9,color:"#4a5d56",fontFamily:"monospace"}}>
-          dbg hubE · circ={_c && Array.isArray(_c.circuitos) ? _c.circuitos.length : (_c ? "?" : "nulo")} · tok={_c && _c.token ? 1 : 0} · sw={circuitosAtleta.length} · esc={escolherCircuito ? 1 : 0}
-        </div>
-      ); })()}
-
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
           <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} modoOrg={modoOrg} />
@@ -4994,7 +4992,7 @@ export default function App() {
         ) : escolherCircuito ? (
           <EscolhaCircuito circuitos={circuitosAtleta} onEscolher={(c)=>{ setEscolherCircuito(false); if (c && c.id && c.id !== CIRCUITO_ATIVO) trocarCircuito({ id: c.id }); }} />
         ) : (
-          <AthleteView state={state} dispatch={dispatchAndSync} athlete={currentAthlete} tab={tab} setTab={setTab} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} circuitosAtleta={circuitosAtleta} />
+          <AthleteView state={state} dispatch={dispatchAndSync} athlete={currentAthlete} tab={tab} setTab={setTab} circuitoSelId={circuitoSelId} circuitosAtleta={circuitosAtleta} onVoltarLista={()=>setEscolherCircuito(true)} />
         )}
       </div>
 
@@ -8182,8 +8180,8 @@ function VisitanteView({ state, tab, setTab }) {
   return <RankingView state={state} currentAthleteId={null} />;
 }
 
-function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, trocarCircuito, dbStatus, circuitosAtleta }) {
-  const hub = <HubCircuitosAtleta circuitos={circuitosAtleta} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} />;
+function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, circuitosAtleta, onVoltarLista }) {
+  const hub = <HubCircuitosAtleta circuitos={circuitosAtleta} circuitoSelId={circuitoSelId} onVoltarLista={onVoltarLista} />;
   let content = null;
   if (tab === "meus_jogos") content = <><RenovacaoCard state={state} dispatch={dispatch} athlete={athlete} /><ParticiparOutroCircuito athlete={athlete} /><AthleteGames state={state} dispatch={dispatch} athlete={athlete} /></>;
   else if (tab === "ranking") content = <RankingView state={state} currentAthleteId={athlete.id} />;
@@ -8220,43 +8218,24 @@ function EscolhaCircuito({ circuitos = [], onEscolher }) {
 // Hub multi-circuito: switcher entre os circuitos do atleta. Só aparece com >1 circuito.
 // A lista vem da credencial da aba (guardada no login). Trocar reusa o mesmo trocarCircuito
 // do admin (recarrega os dados; circuito privado passa pelo porteiro com a credencial do atleta).
-function HubCircuitosAtleta({ circuitos = [], circuitoSelId, trocarCircuito, dbStatus }) {
-  const [aberto, setAberto] = useState(false);
-  if (circuitos.length <= 1 || typeof trocarCircuito !== "function") return null;
-  const carregando = dbStatus === "loading";
+function HubCircuitosAtleta({ circuitos = [], circuitoSelId, onVoltarLista }) {
+  if (circuitos.length <= 1 || typeof onVoltarLista !== "function") return null;
   const atual = circuitos.find(c => c.id === circuitoSelId);
   const nomeAtual = atual ? atual.nome : "…";
   return (
     <Card style={{marginBottom:14, border:`1.5px solid ${T.terracota}`, background:"rgba(216,90,48,0.08)"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-        <div style={{minWidth:0}}>
-          <div style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8}}>Circuito</div>
-          <div style={{fontSize:15,fontWeight:800,color:T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-            {nomeAtual}{atual && atual.publico === false ? " 🔒" : ""}
+        <div style={{minWidth:0,display:"flex",alignItems:"center",gap:8}}>
+          <span onClick={onVoltarLista} style={{fontSize:18,color:T.terracota,cursor:"pointer",fontWeight:700,lineHeight:1}} title="Voltar aos meus circuitos">←</span>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8}}>Circuito</div>
+            <div style={{fontSize:15,fontWeight:800,color:T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+              {nomeAtual}{atual && atual.publico === false ? " 🔒" : ""}
+            </div>
           </div>
         </div>
-        <Btn small onClick={()=>!carregando && setAberto(v=>!v)} color={T.terracotaBtn} disabled={carregando}>{carregando?"…":"Trocar"}</Btn>
+        <Btn small onClick={onVoltarLista} color={T.terracotaBtn}>Trocar circuito</Btn>
       </div>
-      {aberto && (
-        <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
-          {circuitos.map(c => {
-            const sel = c.id === circuitoSelId;
-            return (
-              <div key={c.id} onClick={()=>{ setAberto(false); if(!sel) trocarCircuito({ id: c.id }); }} style={{
-                border:`1.5px solid ${sel?T.terracota:T.bordaSuave}`, borderRadius:10, padding:"9px 12px", cursor: sel?"default":"pointer",
-                background: sel ? "rgba(216,90,48,0.10)" : "transparent", display:"flex", justifyContent:"space-between", alignItems:"center",
-              }}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{c.nome}{c.publico === false ? " 🔒" : ""}</div>
-                  <div style={{fontSize:11,color:T.cinza}}>Sistema {c.sistema}</div>
-                </div>
-                {sel && <span style={{fontSize:11,color:T.terracota,fontWeight:700}}>atual</span>}
-              </div>
-            );
-          })}
-          <div style={{fontSize:10.5,color:T.madeira}}>Trocar recarrega o ranking e os jogos do circuito escolhido.</div>
-        </div>
-      )}
     </Card>
   );
 }

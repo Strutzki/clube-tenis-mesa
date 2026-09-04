@@ -4545,7 +4545,7 @@ export default function App() {
   // Inclui inativos (encerrados) — o super-admin precisa vê-los pra reativar/excluir.
   async function recarregarCircuitos() {
     try {
-      const cs = await supaFetch("circuitos?select=id,slug,nome_circuito,sistema,ativo&order=ativo.desc,nome_circuito.asc");
+      const cs = await supaFetch("circuitos?select=id,slug,nome_circuito,sistema,ativo,publico&order=ativo.desc,nome_circuito.asc");
       if (!Array.isArray(cs)) return cs;
       setCircuitos(cs);
       // Auto-cura: se o circuito restaurado da sessão não existe mais, volta pro BH.
@@ -6510,6 +6510,54 @@ function GerenciarOrganizadoresCard({ chamarAdminAction, circuitoSelId }) {
   );
 }
 
+// Visibilidade pro visitante (público/privado). Só muda quem enxerga o ranking —
+// não toca em jogos/rating. Pode ser trocado a qualquer momento, inclusive no meio
+// da temporada. O BH é sempre público (o servidor recusa torná-lo privado).
+function VisibilidadeCircuitoCard({ chamarAdminAction, circuitos, circuitoSelId, recarregarCircuitos }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const circAtual = (circuitos || []).find(c => c.id === circuitoSelId);
+  const publico = !circAtual || circAtual.publico !== false; // default = público
+
+  async function alternar() {
+    setBusy(true); setMsg("");
+    const novo = !publico;
+    try {
+      await chamarAdminAction("DEFINIR_PUBLICO", { publico: novo });
+      await recarregarCircuitos();
+      setMsg(novo
+        ? "✓ Agora é público. O visitante já vê o ranking e os jogos."
+        : "✓ Agora é privado. Some da vitrine do visitante; só quem participa vê.");
+    } catch (e) { setMsg("✗ " + (e.message || "Não foi possível mudar a visibilidade.")); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <Card style={{marginBottom:16, border:`1px solid ${T.bordaSuave}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{publico ? "🌐 Público" : "🔒 Privado"}</div>
+          <div style={{fontSize:12,color:T.cinza,marginTop:2,lineHeight:1.4}}>
+            {publico ? "O visitante vê o ranking e os jogos deste circuito." : "Só quem participa vê. O visitante encontra só o cadeado."}
+          </div>
+        </div>
+        <Btn small onClick={alternar} disabled={busy} color={T.terracotaBtn}>
+          {busy ? "…" : (publico ? "Tornar privado" : "Tornar público")}
+        </Btn>
+      </div>
+      <div style={{fontSize:10.5,color:T.madeira,marginTop:8}}>Pode trocar quando quiser, inclusive no meio da temporada. Não afeta jogos nem rating.</div>
+      {msg && (
+        <div style={{
+          fontSize:12.5, fontWeight:600, lineHeight:1.5, marginTop:12, padding:"9px 12px", borderRadius:9,
+          color: msg.startsWith("✓") ? T.verde2 : T.vermelho,
+          background: msg.startsWith("✓") ? "rgba(106,157,122,0.12)" : "rgba(194,90,69,0.12)",
+          border: `1px solid ${msg.startsWith("✓") ? "rgba(106,157,122,0.4)" : "rgba(194,90,69,0.4)"}`,
+        }}>{msg}</div>
+      )}
+    </Card>
+  );
+}
+
 // Cancelar circuito (super-admin, circuito ≠ BH). Dois níveis:
 //  • Encerrar / Reativar — reversível (só liga/desliga o "ativo").
 //  • Excluir de vez — só se o circuito nunca rodou (sem jogos/histórico); pede o nome digitado.
@@ -6735,6 +6783,14 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, circuitos,
           <CriarCircuitoCard chamarAdminAction={chamarAdminAction} />
           {circuitoSelId !== CIRCUITO_BH_ID && (
             <GerenciarOrganizadoresCard chamarAdminAction={chamarAdminAction} circuitoSelId={circuitoSelId} />
+          )}
+          {circuitoSelId !== CIRCUITO_BH_ID && (
+            <VisibilidadeCircuitoCard
+              chamarAdminAction={chamarAdminAction}
+              circuitos={circuitos}
+              circuitoSelId={circuitoSelId}
+              recarregarCircuitos={recarregarCircuitos}
+            />
           )}
           {circuitoSelId !== CIRCUITO_BH_ID && (
             <CancelarCircuitoCard

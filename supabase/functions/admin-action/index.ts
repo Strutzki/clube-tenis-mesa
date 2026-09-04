@@ -286,7 +286,7 @@ const ACOES_ORG = new Set([
   "VALIDATE_RESULT","ADMIN_IMPUTAR_RESULTADO","DESFAZER_VALIDACAO","MARCAR_RESULTADO_COMUNICADO",
   "APLICAR_WO","RESPONDER_WO","MARCAR_WO_NOTIFICADO",
   "INSCRICAO_VALIDAR","INCLUIR_NO_CIRCUITO","RECUSAR_CIRCUITO","ARQUIVAR_ATLETA","EXCLUIR_ATLETA","DEFINIR_DESCONTO_ATLETA",
-  "DEFINIR_INSCRICOES_ABERTAS","DEFINIR_RODADAS","DEFINIR_AUTO_VALIDAR","DEFINIR_CONFIG_CIRCUITO","DEFINIR_FINANCEIRO",
+  "DEFINIR_INSCRICOES_ABERTAS","DEFINIR_PUBLICO","DEFINIR_RODADAS","DEFINIR_AUTO_VALIDAR","DEFINIR_CONFIG_CIRCUITO","DEFINIR_FINANCEIRO",
   "ABRIR_PROXIMA_TEMPORADA","CANCELAR_PROXIMA",
   "REGISTRAR_PAGAMENTO","ESTORNAR_PAGAMENTO","EDITAR_PAGAMENTO","LISTAR_PAGAMENTOS","LISTAR_MENSAGENS","REGISTRAR_MENSAGEM_ENVIADA",
 ]);
@@ -1292,6 +1292,18 @@ Deno.serve(async (req) => {
         const { abertas } = payload || {};
         if (typeof abertas !== "boolean") return jsonResponse({ sucesso: false, erro: "abertas (boolean) é obrigatório" }, 400);
         const { error } = await supabase.from("circuitos").update({ inscricoes_abertas: abertas }).eq("id", circuitoId);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
+      // Visibilidade pro visitante (público/privado). Só muda a leitura (RLS + porteiro),
+      // nunca toca em jogos/rating. O BH é sempre público — não pode virar privado.
+      case "DEFINIR_PUBLICO": {
+        const { publico } = payload || {};
+        if (typeof publico !== "boolean") return jsonResponse({ sucesso: false, erro: "publico (boolean) é obrigatório" }, 400);
+        const bhPub = await bhId();
+        if (circuitoId === bhPub && publico === false) return jsonResponse({ sucesso: false, erro: "O circuito de BH é sempre público." }, 400);
+        const { error } = await supabase.from("circuitos").update({ publico }).eq("id", circuitoId);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
       }

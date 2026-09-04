@@ -4965,7 +4965,13 @@ export default function App() {
         const circs = (cred && Array.isArray(cred.circuitos)) ? cred.circuitos : [];
         setEscolherCircuito(circs.length > 1); // >1 circuito: mostra a escolha; senão entra direto
       }}
-      onVisitante={() => { setIsVisitante(true); setTab("ranking"); setMostrarBoasVindasVisitante(true); }}
+      onVisitante={() => {
+        // Visitante SÓ vê circuito público: força o BH e recarrega, pra nunca herdar
+        // dados de um circuito privado que estivessem no estado (segurança).
+        setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID);
+        setIsVisitante(true); setTab("ranking"); setMostrarBoasVindasVisitante(true);
+        loadFromSupabase();
+      }}
       athletes={state.athletes}
       onInscricao={p => dispatchAndSync({type:"INSCRICAO_ADD", payload:p})}
       onOrganizadorLogin={(cred) => {
@@ -4979,7 +4985,7 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); setModoOrg(null); setEscolherCircuito(false); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
+      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); setModoOrg(null); setEscolherCircuito(false); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); loadFromSupabase(); }} />
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>

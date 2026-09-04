@@ -6530,26 +6530,26 @@ function CancelarCircuitoCard({ chamarAdminAction, circuitos, circuitoSelId, rec
 
   async function encerrar() {
     setBusy(true); setMsg("");
-    try { await chamarAdminAction("ENCERRAR_CIRCUITO", {}); await recarregarCircuitos(); setConfirmEncerrar(false); setMsg("✓ Circuito encerrado. Ficou invisível e com inscrições fechadas."); }
-    catch (e) { setMsg(e.message || "Erro ao encerrar."); }
+    try { await chamarAdminAction("ENCERRAR_CIRCUITO", {}); await recarregarCircuitos(); setConfirmEncerrar(false); setMsg(`✓ "${nomeCirc}" encerrado. Ficou invisível e com inscrições fechadas.`); }
+    catch (e) { setMsg("✗ " + (e.message || "Não foi possível encerrar.")); }
     finally { setBusy(false); }
   }
   async function reativar() {
     setBusy(true); setMsg("");
-    try { await chamarAdminAction("REATIVAR_CIRCUITO", {}); await recarregarCircuitos(); setMsg("✓ Circuito reativado."); }
-    catch (e) { setMsg(e.message || "Erro ao reativar."); }
+    try { await chamarAdminAction("REATIVAR_CIRCUITO", {}); await recarregarCircuitos(); setMsg(`✓ "${nomeCirc}" reativado.`); }
+    catch (e) { setMsg("✗ " + (e.message || "Não foi possível reativar.")); }
     finally { setBusy(false); }
   }
   async function excluir() {
     setBusy(true); setMsg("");
     try {
       await chamarAdminAction("EXCLUIR_CIRCUITO", {});
-      setModoExcluir(false); setNomeDigitado("");
-      if (voltarParaBH) await voltarParaBH();
-      await recarregarCircuitos();
-      // O card some (voltou pro BH); nada mais a mostrar.
+      setModoExcluir(false); setNomeDigitado(""); setBusy(false);
+      // Mostra o retorno ANTES de sair — o card ainda está montado neste circuito.
+      setMsg(`✓ "${nomeCirc}" foi excluído para sempre. Voltando para o BH…`);
+      setTimeout(async () => { await recarregarCircuitos(); if (voltarParaBH) await voltarParaBH(); }, 1800);
     }
-    catch (e) { setMsg(e.message || "Erro ao excluir."); setBusy(false); }
+    catch (e) { setMsg("✗ " + (e.message || "Não foi possível excluir.")); setBusy(false); }
   }
 
   const inp = { width:"100%", boxSizing:"border-box", background:"#182420", border:`1px solid ${T.borda}`, borderRadius:8, color:T.offwhite, padding:"10px 12px", fontSize:14, fontFamily:T.sans, marginTop:6 };
@@ -6606,7 +6606,14 @@ function CancelarCircuitoCard({ chamarAdminAction, circuitos, circuitoSelId, rec
             )}
           </div>
 
-          {msg && <div style={{fontSize:12.5,color: msg.startsWith("✓")?T.verde2:T.madeira,marginTop:12}}>{msg}</div>}
+          {msg && (
+            <div style={{
+              fontSize:12.5, fontWeight:600, lineHeight:1.5, marginTop:14, padding:"10px 12px", borderRadius:9,
+              color: msg.startsWith("✓") ? T.verde2 : T.vermelho,
+              background: msg.startsWith("✓") ? "rgba(106,157,122,0.12)" : "rgba(194,90,69,0.12)",
+              border: `1px solid ${msg.startsWith("✓") ? "rgba(106,157,122,0.4)" : "rgba(194,90,69,0.4)"}`,
+            }}>{msg}</div>
+          )}
         </div>
       )}
     </Card>

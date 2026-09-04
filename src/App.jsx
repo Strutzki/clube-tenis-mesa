@@ -4313,6 +4313,10 @@ export default function App() {
   // { telefone, pin, circuitoId, nome, sistema }. Restaura da sessão da aba.
   const [modoOrg, setModoOrg] = useState(() => getOrgCred());
   const [mostrarBoasVindasVisitante, setMostrarBoasVindasVisitante] = useState(false);
+  // Visitante: vitrine de circuitos. circuitosVisitante = lista de todos os ativos;
+  // visitanteCirc = circuito público que ele abriu (null = mostrando a lista).
+  const [circuitosVisitante, setCircuitosVisitante] = useState([]);
+  const [visitanteCirc, setVisitanteCirc] = useState(null);
   // Lista de circuitos do atleta logado (pro switcher e pra escolha). Já inicia com a lista
   // guardada no aparelho (localStorage), pra a tela de escolha aparecer sem piscar; o efeito
   // reidrata pela sessão (token) ao abrir — lista completa, inclui privados.
@@ -4966,11 +4970,13 @@ export default function App() {
         setEscolherCircuito(circs.length > 1); // >1 circuito: mostra a escolha; senão entra direto
       }}
       onVisitante={() => {
-        // Visitante SÓ vê circuito público: força o BH e recarrega, pra nunca herdar
-        // dados de um circuito privado que estivessem no estado (segurança).
+        // Visitante: vitrine de TODOS os circuitos ativos. Abertos ele explora; fechados
+        // aparecem com cadeado + aviso (nunca carrega dados de circuito privado).
         setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID);
-        setIsVisitante(true); setTab("ranking"); setMostrarBoasVindasVisitante(true);
-        loadFromSupabase();
+        setVisitanteCirc(null); setIsVisitante(true); setTab("ranking");
+        supaFetch("circuitos?select=id,slug,nome_circuito,nome_exibicao,sistema,publico&ativo=eq.true&order=publico.desc,nome_circuito.asc")
+          .then(cs => setCircuitosVisitante(Array.isArray(cs) ? cs : []))
+          .catch(() => setCircuitosVisitante([]));
       }}
       athletes={state.athletes}
       onInscricao={p => dispatchAndSync({type:"INSCRICAO_ADD", payload:p})}
@@ -4985,7 +4991,7 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); setModoOrg(null); setEscolherCircuito(false); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); loadFromSupabase(); }} />
+      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); setModoOrg(null); setEscolherCircuito(false); setVisitanteCirc(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); loadFromSupabase(); }} />
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>
@@ -4994,7 +5000,11 @@ export default function App() {
         {isAdmin ? (
           <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} dbStatus={dbStatus} modoOrg={modoOrg} />
         ) : isVisitante ? (
-          <VisitanteView state={state} tab={tab} setTab={setTab} />
+          visitanteCirc ? (
+            <VisitanteView state={state} tab={tab} setTab={setTab} nomeCircuito={visitanteCirc.nome_exibicao || visitanteCirc.nome_circuito} onVoltar={()=>{ setVisitanteCirc(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
+          ) : (
+            <VisitanteCircuitos circuitos={circuitosVisitante} onAbrir={(c)=>{ setCircuitoAtivo(c.id); setCircuitoSelId(c.id); setVisitanteCirc(c); setTab("ranking"); loadFromSupabase(); }} />
+          )
         ) : escolherCircuito ? (
           <EscolhaCircuito circuitos={circuitosAtleta} onEscolher={(c)=>{ setEscolherCircuito(false); if (c && c.id && c.id !== CIRCUITO_ATIVO) trocarCircuito({ id: c.id }); }} />
         ) : (
@@ -5002,7 +5012,7 @@ export default function App() {
         )}
       </div>
 
-      {!(currentAthlete && escolherCircuito) && <BottomNav isAdmin={isAdmin} isVisitante={isVisitante} tab={tab} setTab={setTab} />}
+      {!(currentAthlete && escolherCircuito) && !(isVisitante && !visitanteCirc) && <BottomNav isAdmin={isAdmin} isVisitante={isVisitante} tab={tab} setTab={setTab} />}
     </div>
   );
 }
@@ -8181,9 +8191,60 @@ function MatchCard({ m, state, admin=false, currentAthleteId }) {
 // ── ATHLETE VIEW ──────────────────────────────────────────────────────────────
 // Modo Visitante: só as telas públicas (ranking e comunidade), sem login.
 // currentAthleteId null em ambas — nenhum destaque de "é você" (não há você).
-function VisitanteView({ state, tab, setTab }) {
-  if (tab === "comunidade") return <ComunidadeView state={state} currentAthleteId={null} somenteAtletas={true} />;
-  return <RankingView state={state} currentAthleteId={null} />;
+function VisitanteView({ state, tab, setTab, nomeCircuito, onVoltar }) {
+  const topo = onVoltar ? (
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+      <span onClick={onVoltar} style={{fontSize:18,color:T.terracota,cursor:"pointer",fontWeight:700,lineHeight:1}} title="Ver todos os circuitos">←</span>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8}}>Circuito</div>
+        <div style={{fontSize:15,fontWeight:800,color:T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeCircuito || "Circuito"}</div>
+      </div>
+    </div>
+  ) : null;
+  const content = tab === "comunidade"
+    ? <ComunidadeView state={state} currentAthleteId={null} somenteAtletas={true} />
+    : <RankingView state={state} currentAthleteId={null} />;
+  return <>{topo}{content}</>;
+}
+
+// Vitrine de circuitos pro VISITANTE. Abertos → explora (onAbrir); fechados → cadeado + aviso.
+function VisitanteCircuitos({ circuitos = [], onAbrir }) {
+  const [aviso, setAviso] = useState(null); // id do circuito privado clicado
+  const nomeDe = (c) => c.nome_exibicao || c.nome_circuito;
+  return (
+    <div>
+      <div style={{fontSize:11,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8,margin:"6px 0 4px"}}>Circuitos</div>
+      <div style={{fontSize:13,color:T.cinza,marginBottom:14}}>Explore os circuitos abertos. Os fechados são só para quem participa.</div>
+      {circuitos.length === 0 ? (
+        <Card><div style={{fontSize:13,color:T.cinza,textAlign:"center",padding:20}}>Nenhum circuito disponível no momento.</div></Card>
+      ) : (
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {circuitos.map(c => {
+            const aberto = c.publico !== false;
+            return (
+              <div key={c.id}>
+                <div onClick={()=> aberto ? onAbrir(c) : setAviso(a => a === c.id ? null : c.id)} style={{
+                  border:`1.5px solid ${aberto ? T.bordaSuave : "rgba(255,255,255,0.06)"}`, borderRadius:12, padding:"14px 16px", cursor:"pointer",
+                  background: aberto ? T.verdeCard : "rgba(255,255,255,0.02)", display:"flex", justifyContent:"space-between", alignItems:"center", gap:10,
+                }}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:15,fontWeight:800,color: aberto ? T.offwhite : T.cinza}}>{nomeDe(c)}{aberto ? "" : " 🔒"}</div>
+                    <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>Sistema {c.sistema}{aberto ? "" : " · fechado"}</div>
+                  </div>
+                  <span style={{fontSize:16,color: aberto ? T.terracota : T.cinza,fontWeight:700}}>{aberto ? "→" : "🔒"}</span>
+                </div>
+                {aviso === c.id && !aberto && (
+                  <div style={{fontSize:12,color:T.madeira,background:"rgba(216,90,48,0.08)",border:`1px solid ${T.bordaSuave}`,borderRadius:10,padding:"10px 12px",marginTop:6}}>
+                    🔒 Este circuito é fechado. Só quem participa consegue ver o ranking e os jogos.
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, circuitosAtleta, onVoltarLista }) {

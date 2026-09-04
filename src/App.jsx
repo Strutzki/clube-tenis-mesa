@@ -4392,9 +4392,10 @@ export default function App() {
           const circs = res.dados.circuitos || [];
           setCircuitosAtleta(circs);
           setAtletaCred({ ...cred, circuitos: circs });
-        } else if (res.erro === "sessao_invalida") {
-          clearAtletaCred(); setCircuitosAtleta([]);
         }
+        // Se a revalidação falhar (rede, token expirado/revogado), NÃO apaga a lista
+        // guardada — o switcher/escolha seguem funcionando com o que está salvo.
+        // (Abrir um circuito privado pode pedir novo login; o resto continua.)
       }).catch(() => {});
     } else {
       // Sem token (ex.: login antigo por biometria): mostra os circuitos PÚBLICOS via anon.
@@ -4980,6 +4981,12 @@ export default function App() {
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
       <DbBar/>
+
+      {currentAthlete && (() => { const _c = getAtletaCred(); return (
+        <div style={{padding:"2px 16px",fontSize:9,color:"#4a5d56",fontFamily:"monospace"}}>
+          dbg hubE · circ={_c && Array.isArray(_c.circuitos) ? _c.circuitos.length : (_c ? "?" : "nulo")} · tok={_c && _c.token ? 1 : 0} · sw={circuitosAtleta.length} · esc={escolherCircuito ? 1 : 0}
+        </div>
+      ); })()}
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (

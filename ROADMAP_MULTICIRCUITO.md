@@ -61,6 +61,9 @@ Ordem sugerida. Cada item é footprint-zero pro BH e segue o rito de revisão.
 ### 5. Piloto real
 - Abrir **um 2º circuito de verdade** (Sistema B, outra cidade), rodar uma temporada curta com atletas reais, caçar bugs de operação. É o teste que nenhum harness substitui.
 
+### 6. Despachos do Dia (alavanca operacional) — proposto
+- Tela única que agrega tudo que precisa de ação no dia (inscrições, validações, W.O., processar, mensagens, pagamentos), **por papel**: super-admin vê todos os circuitos; organizador só o dele. + lembrete no celular. Spec em `PLANO_DESPACHOS.md`. É o que torna "tocar muitos circuitos" viável na prática.
+
 ---
 
 ## 💰 Falta para COMERCIALIZAR (vender o produto)

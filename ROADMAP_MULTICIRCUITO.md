@@ -51,7 +51,8 @@ Ordem sugerida. Cada item é footprint-zero pro BH e segue o rito de revisão.
 
 ### 3. Admin de circuito não-BH (fechar o ciclo do organizador)
 - Confirmar/ajustar as telas do admin para um circuito **não-BH**: aprovar inscrições, incluir do backlog, processar rodada, virar temporada. Boa parte já é escopada por `circuitoId`, mas precisa de um passe de teste ponta-a-ponta num circuito real.
-- **Virada de temporada (`NOVA_TEMPORADA`) para não-BH** (hoje é só BH).
+- ✅ **Virada de temporada (`NOVA_TEMPORADA`) para não-BH — FEITA e PROVADA AO VIVO (04/09/2026).** admin-action v53 + RPC escopado; testada num circuito descartável com BH byte-idêntico. Ramo do BH intocado (global). Ver GOVERNANCA_AGENTES.md.
+- Falta o passe de teste das demais telas admin num não-BH (aprovar inscrição, backlog, processar rodada) — em grande parte já escopado; confirmar no piloto.
 
 ### 4. Inscrição — fatias que faltam
 - **Região (Fatia 4):** cidade/UF + filtro por região + confirmação leve (mostrar circuitos perto do atleta).

@@ -1152,7 +1152,71 @@ Deno.serve(async (req) => {
 
       case "NOVA_TEMPORADA": {
         if (circuitoId !== await bhId()) {
-          return jsonResponse({ sucesso: false, erro: "Virada de temporada multi-circuito ainda não habilitada." }, 400);
+          // ── Ramo NÃO-BH: virada de temporada ESCOPADA por circuito_id ──
+          // (o ramo do BH abaixo fica INTOCADO — decisão do Juliano). Tudo aqui
+          // opera só sobre circuito_atletas/partidas/chaves DESTE circuito.
+          const sistemaNova = await getSistema(circuitoId);
+          const { data: membrosCa, error: errMembros } = await supabase
+            .from("circuito_atletas").select("*, atletas!inner(*)")
+            .eq("circuito_id", circuitoId).eq("status", "ativo");
+          if (errMembros) throw errMembros;
+          const membrosNova = (membrosCa || []).map(mergeAtletaCircuito);
+          const { data: partidasCirc, error: errPc } = await supabase
+            .from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado")
+            .eq("circuito_id", circuitoId);
+          if (errPc) throw errPc;
+          const idsComPartidaN = new Set<string>();
+          (partidasCirc ?? []).forEach((m: any) => { if (m.validado && !m.rejeitado) { idsComPartidaN.add(m.atleta1_id); idsComPartidaN.add(m.atleta2_id); } });
+          const cmpNova = sistemaNova === "B" ? cmpRankingB(partidasCirc ?? []) : cmpRankingDB(partidasCirc ?? []);
+          const rankingNova = membrosNova.filter((a: any) => !a.pendente_circuito && idsComPartidaN.has(a.id)).sort(cmpNova);
+          const posFinalN: Record<string, number> = {};
+          rankingNova.forEach((a: any, i: number) => { posFinalN[a.id] = i + 1; });
+          const cfgN = await getCfg(circuitoId, "temporada_numero,temporada_ano,proxima_aberta,proxima_nome,proxima_data_inicio,proxima_rotulo,proxima_valor_cheio,proxima_valor_desconto");
+          const numN = cfgN?.temporada_numero || 1;
+          const anoN = cfgN?.temporada_ano || new Date().getFullYear();
+          const rotuloN = `${numN}/${anoN}`;
+          for (const a of membrosNova) {
+            const histN = posFinalN[a.id]
+              ? [{ temporada: rotuloN, pos: posFinalN[a.id] }, ...(a.historico || [])]
+              : (a.historico || []);
+            await writeAtleta(circuitoId, a.id, {
+              vitorias_total: (a.vitorias_total || 0) + (a.vitorias || 0),
+              derrotas_total: (a.derrotas_total || 0) + (a.derrotas || 0),
+              saldo_temp: 0, vitorias: 0, derrotas: 0, chave: null,
+              wo_culposos_temporada: 0,
+              pagamento_confirmado: a.pagamento_proxima_confirmado || false,
+              pagamento_proxima_confirmado: false,
+              quer_renovar: false, renovacao_em: null,
+              historico: histN,
+            });
+          }
+          const { error: errArqN } = await supabase.rpc("arquivar_partidas_temporada_circuito", { p_rotulo: rotuloN, p_circuito: circuitoId });
+          if (errArqN) throw errArqN;
+          await supabase.from("partidas").delete().eq("circuito_id", circuitoId);
+          await supabase.from("chaves").delete().eq("circuito_id", circuitoId);
+          const proxNumN = numN >= 3 ? 1 : numN + 1;
+          const proxAnoN = numN >= 3 ? anoN + 1 : anoN;
+          const updCfgN: Record<string, unknown> = {
+            fase: "inscricoes", temporada_numero: proxNumN, temporada_ano: proxAnoN,
+            proxima_aberta: false, proxima_nome: null, proxima_data_inicio: null, proxima_rotulo: null,
+            proxima_valor_cheio: null, proxima_valor_desconto: null,
+          };
+          const pNovaN = payload || {};
+          if (cfgN?.proxima_aberta) {
+            if (cfgN.proxima_nome) updCfgN.nome_circuito = cfgN.proxima_nome;
+            updCfgN.data_inicio_temporada = cfgN.proxima_data_inicio || null;
+            if (cfgN.proxima_valor_cheio != null) {
+              updCfgN.valor_temporada = cfgN.proxima_valor_cheio;
+              updCfgN.desconto_global_pct = (cfgN.proxima_valor_desconto != null && cfgN.proxima_valor_cheio > 0)
+                ? Math.max(0, Math.min(100, Math.round((1 - cfgN.proxima_valor_desconto / cfgN.proxima_valor_cheio) * 100)))
+                : 0;
+            }
+          } else {
+            if (typeof pNovaN.nome === "string" && pNovaN.nome.trim()) updCfgN.nome_circuito = pNovaN.nome.trim();
+            if (pNovaN.dataInicio !== undefined) updCfgN.data_inicio_temporada = pNovaN.dataInicio || null;
+          }
+          await setCfg(circuitoId, updCfgN);
+          return jsonResponse({ sucesso: true, dados: { temporadaNumero: proxNumN, temporadaAno: proxAnoN, arquivadas: rotuloN } });
         }
         const { data: ativos, error: errAtivos } = await supabase.from("atletas").select("*").eq("status", "ativo");
         if (errAtivos) throw errAtivos;
@@ -1161,7 +1225,9 @@ Deno.serve(async (req) => {
         const temporadaNumero = config?.temporada_numero || 1;
         const temporadaAno = config?.temporada_ano || new Date().getFullYear();
         const rotuloTemporada = `${temporadaNumero}/${temporadaAno}`;
-        const { data: partidasTemporada, error: errPartidasTmp } = await supabase.from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado");
+        // Escopado por circuito_id: o ranking final do BH usa só as partidas do BH
+        // (evita contar um jogo de um atleta do BH em outro circuito).
+        const { data: partidasTemporada, error: errPartidasTmp } = await supabase.from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado").eq("circuito_id", circuitoId);
         if (errPartidasTmp) throw errPartidasTmp;
         const idsComPartida = new Set<string>();
         (partidasTemporada ?? []).forEach((m: any) => { if (m.validado && !m.rejeitado) { idsComPartida.add(m.atleta1_id); idsComPartida.add(m.atleta2_id); } });
@@ -1184,10 +1250,12 @@ Deno.serve(async (req) => {
           };
           await writeAtleta(circuitoId, a.id, updNova);
         }
-        const { error: errArq } = await supabase.rpc("arquivar_partidas_temporada", { p_rotulo: rotuloTemporada });
+        // Escopado por circuito_id (no ramo do BH, circuitoId === bhId). Resultado idêntico
+        // pro BH (todas as suas partidas/chaves têm circuito_id=BH), mas nunca toca outro circuito.
+        const { error: errArq } = await supabase.rpc("arquivar_partidas_temporada_circuito", { p_rotulo: rotuloTemporada, p_circuito: circuitoId });
         if (errArq) throw errArq;
-        await supabase.from("partidas").delete().neq("id", "__none__");
-        await supabase.from("chaves").delete().neq("id", "__none__");
+        await supabase.from("partidas").delete().eq("circuito_id", circuitoId);
+        await supabase.from("chaves").delete().eq("circuito_id", circuitoId);
         const proximoNumero = temporadaNumero >= 3 ? 1 : temporadaNumero + 1;
         const proximoAno = temporadaNumero >= 3 ? temporadaAno + 1 : temporadaAno;
         const updConfig: Record<string, unknown> = {

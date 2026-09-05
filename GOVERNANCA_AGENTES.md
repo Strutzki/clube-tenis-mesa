@@ -12,6 +12,7 @@ Regra permanente: **nenhuma fase do desenvolvimento do multi-circuito vai a prod
 | Regras e motor da competição (rating, pontos B, pareamento, bye, W.O., desempates, virada de temporada) | **Guardião do Regulamento e do Motor** (+ supervisor) — GO/NO-GO |
 | Dados pessoais, base legal, consentimento, LGPD, menores, retenção, controlador, comunicações | **Guardião Jurídico / LGPD** (+ supervisor) — GO/NO-GO |
 | Prontidão de deploy: compilação (sem compilar no sandbox), grants de coluna, migração reversível, cache/bundle, rollback | **Guardião de Confiabilidade / Deploy** (+ supervisor) — GO/NO-GO de deploy |
+| Acervo/documentação: regulamento, marca, planos, versões, índice, CHANGELOG; drift entre docs e realidade | **Curador do Projeto** (+ supervisor) — curador, sem veto de código |
 
 Mudanças que cruzam áreas → mais de um agente.
 
@@ -23,6 +24,7 @@ Mudanças que cruzam áreas → mais de um agente.
 - Regras e motor da competição: `guardiao-regulamento` (Opus) + `supervisor-regulamento` (Opus) — **novo**
 - Jurídico/LGPD: `guardiao-juridico` (Opus) + `supervisor-juridico` (Sonnet) — **novo**
 - Confiabilidade/deploy: `guardiao-confiabilidade` (Sonnet) + `supervisor-confiabilidade` (Sonnet) — **novo**
+- Curador do acervo/docs: `curador-projeto` (Sonnet) + `supervisor-curador` (Sonnet) — **novo** (curador, sem veto de código; mantém `INDICE_PROJETO.md` + `CHANGELOG.md`)
 
 ## Rito por fase (checklist)
 1. **Análise de risco** escrita (PLANO_*.md).

@@ -6058,7 +6058,7 @@ function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones,
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
-  if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} />;
+  if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} />;
   if (tab === "historico") return <AdminHistorico key={circuitoSelId} state={state} />;
   if (tab === "mensagens") return <AdminMensagens key={circuitoSelId} state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "financeiro") return <AdminFinanceiro key={circuitoSelId} state={state} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} />;
@@ -8023,7 +8023,7 @@ function ComprovanteBotao({ path, urlComprovante }) {
   );
 }
 
-function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlComprovante, anonimizarAtleta }) {
+function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta }) {
   // Precisa de telefone pra notificar via WhatsApp depois de decidir um W.O.
   useEffect(() => { garantirTelefones(); }, []);
 
@@ -8084,15 +8084,40 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
     return `https://wa.me/55${telefone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`;
   }
 
-  // ── Resumo "Precisa de você" — diz, em português claro, QUAL é a pendência e
-  //    O QUE fazer, e leva direto pra seção certa. Só lista o que exige ação.
+  // ── Resumo "Precisa de você" — só o que É AÇÃO SUA AGORA. Nem toda partida
+  //    validada é "processar": o rating só fecha quando o prazo da rodada passa
+  //    (ou a rodada anterior já foi processada) E todas as partidas da rodada
+  //    estão resolvidas. E "resultado incompleto" só vira ação sua quando o
+  //    prazo já venceu — dentro do prazo é espera normal pelo atleta.
+  const agora = new Date();
+  // Rodadas GENUINAMENTE prontas pra processar (mesma regra do botão de processar):
+  const rodadasProntas = [...new Set(calculoPendente.map(m => m.round))].filter(round => {
+    const ehSegundaDoPar = round % 2 === 0;
+    const bloqueado = ehSegundaDoPar && state.matches.some(m => m.round === round - 1 && m.validated && !m.calculado && !m.rejeitado);
+    const naoResolvidos = state.matches.filter(m => m.round === round && !m.validated && !m.rejeitado && !ehWo(m)).length;
+    if (bloqueado || naoResolvidos > 0) return false;
+    const prazo = calculoPendente.find(m => m.round === round)?.deadline;
+    const liberado = ehSegundaDoPar ? true : (prazo ? agora >= new Date(prazo) : true);
+    return liberado;
+  }).sort((a, b) => a - b);
+  // Jogos sem placar cujo prazo JÁ venceu — aí sim o admin precisa cobrar/lançar/W.O.
+  const incompletosVencidos = incomplete.filter(m => {
+    const temAlgum = m.p1Submitted || m.p2Submitted;
+    const prazo = temAlgum ? m.scoreDeadline : m.deadline;
+    return prazo && agora > new Date(prazo);
+  });
+
+  // Inscrições novas aguardando aprovação — ação do admin, mas na aba Inscrições.
+  const inscricoesNovas = state.athletes.filter(a => a.status === "pendente");
+
   const irPara = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior:"smooth", block:"start" }); };
   const resumo = [
+    inscricoesNovas.length && { icon:"📝", txt:`${inscricoesNovas.length} inscrição(ões) nova(s)`, acao:"Aprovar", cor:"#9C6F3E", tab:"inscricoes" },
     pedidosExclusao.length && { icon:"🗑️", txt:`${pedidosExclusao.length} pedido(s) de exclusão de dados`, acao:"Finalizar", cor:T.vermelho, id:"pend-exclusao" },
     pendentesWo.length && { icon:"📨", txt:`${pendentesWo.length} solicitação(ões) de W.O.`, acao:"Aprovar ou recusar", cor:T.madeira, id:"pend-wo" },
-    waiting.length && { icon:"🔔", txt:`${waiting.length} placar(es) enviado(s)`, acao:"Validar ou rejeitar", cor:T.verde2, id:"pend-validar" },
-    calculoPendente.length && { icon:"🧮", txt:`${calculoPendente.length} partida(s) confirmada(s)`, acao:"Processar a rodada", cor:T.terracota, id:"pend-calculo" },
-    incomplete.length && { icon:"⏳", txt:`${incomplete.length} resultado(s) incompleto(s)`, acao:"Cobrar / lançar placar", cor:T.madeira, id:"pend-incompleto" },
+    waiting.length && { icon:"🔔", txt:`${waiting.length} placar(es) para conferir`, acao:"Validar ou rejeitar", cor:T.verde2, id:"pend-validar" },
+    rodadasProntas.length && { icon:"🧮", txt: rodadasProntas.length === 1 ? `Rodada ${rodadasProntas[0]} pronta (prazo fechou)` : `${rodadasProntas.length} rodadas prontas pra fechar`, acao:"Processar rating", cor:T.terracota, id:"pend-calculo" },
+    incompletosVencidos.length && { icon:"⏰", txt:`${incompletosVencidos.length} jogo(s) sem placar com prazo vencido`, acao:"Cobrar / lançar / W.O.", cor:T.vermelho, id:"pend-incompleto" },
   ].filter(Boolean);
 
   return (
@@ -8103,7 +8128,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
           <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>Toque num item pra ir direto até ele e resolver.</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {resumo.map(r => (
-              <button key={r.id} onClick={()=>irPara(r.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,width:"100%",textAlign:"left",background:"rgba(0,0,0,0.15)",border:`1px solid ${r.cor}44`,borderRadius:10,padding:"10px 12px",cursor:"pointer",color:T.offwhite}}>
+              <button key={r.id || r.tab} onClick={()=> r.tab ? setTab(r.tab) : irPara(r.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,width:"100%",textAlign:"left",background:"rgba(0,0,0,0.15)",border:`1px solid ${r.cor}44`,borderRadius:10,padding:"10px 12px",cursor:"pointer",color:T.offwhite}}>
                 <span style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
                   <span style={{fontSize:16}}>{r.icon}</span>
                   <span style={{fontSize:12.5,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.txt}</span>
@@ -8373,7 +8398,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
       </>}
 
       {resumo.length === 0 && (
-        <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:20}}>Nenhuma pendência no momento. 🎉</div></Card>
+        <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:20}}>✓ Nada precisa de você agora. 🎉<div style={{fontSize:11,color:"#5E7569",marginTop:6}}>Se houver rodadas abaixo, elas estão só aguardando o prazo fechar.</div></div></Card>
       )}
 
       <SecTitle>⚙️ Ajustes do circuito</SecTitle>

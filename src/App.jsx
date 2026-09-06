@@ -1594,6 +1594,12 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
             {(escolhido.cidade || escolhido.uf) && <div style={{fontSize:12,color:T.cinza,marginTop:4}}>{[escolhido.cidade, escolhido.uf].filter(Boolean).join(" · ")}</div>}
             <div style={{fontSize:12,color:"rgba(240,234,224,0.55)",marginTop:8}}>{sl.desc}</div>
           </div>
+          {lista && lista.length > 1 && (escolhido.cidade || escolhido.uf) && (
+            <div style={{background:"rgba(156,111,62,0.12)",border:"1px solid rgba(156,111,62,0.4)",borderRadius:10,padding:"10px 12px",marginBottom:14}}>
+              <div style={{fontSize:12.5,color:T.offwhite,fontWeight:700,marginBottom:3}}>📍 Jogos presenciais em {[escolhido.cidade, escolhido.uf].filter(Boolean).join("/")}</div>
+              <div style={{fontSize:11.5,color:T.cinza,lineHeight:1.5}}>As partidas deste circuito são disputadas pessoalmente nessa região. Confirme que você consegue jogar aí antes de continuar — se a região não for a sua, o organizador não vai aprovar a inscrição.</div>
+            </div>
+          )}
           <button onClick={() => setVerReg(true)} style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>📋 Ver regulamento ({escolhido.sistema === "B" ? "vB-01 · pontos" : "v03-12 · rating"})</button>
           <button onClick={() => setConfirmado(true)} style={{width:"100%",background:T.terracota,color:T.verde,border:"none",borderRadius:12,padding:14,fontSize:15,fontWeight:800,cursor:"pointer"}}>Continuar para inscrição →</button>
         </div>

@@ -5045,6 +5045,15 @@ export default function App() {
     />
   );
 
+  // Contadores das abas do admin (do circuito selecionado). Só o que exige ação:
+  // "Inscr." = inscrições aguardando aprovação; "Pend." = partidas aguardando
+  // validação + solicitações de W.O. em aberto.
+  const adminBadges = isAdmin ? {
+    inscricoes: state.athletes.filter(a => a.status === "pendente").length,
+    pendencias: state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado).length
+      + (state.solicitacoesWo?.filter(s => s.status === "pendente").length || 0),
+  } : null;
+
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
       <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); setModoOrg(null); setEscolherCircuito(false); setVisitanteCirc(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
@@ -5068,7 +5077,7 @@ export default function App() {
         )}
       </div>
 
-      {!(currentAthlete && escolherCircuito) && !(isVisitante && !visitanteCirc) && <BottomNav isAdmin={isAdmin} isVisitante={isVisitante} tab={tab} setTab={setTab} />}
+      {!(currentAthlete && escolherCircuito) && !(isVisitante && !visitanteCirc) && <BottomNav isAdmin={isAdmin} isVisitante={isVisitante} tab={tab} setTab={setTab} badges={adminBadges} />}
     </div>
   );
 }
@@ -5131,7 +5140,7 @@ const IconComunidade = ({ ativo }) => {
   );
 };
 
-function BottomNav({ isAdmin, isVisitante, tab, setTab }) {
+function BottomNav({ isAdmin, isVisitante, tab, setTab, badges }) {
   const adminTabs = [
     {id:"dashboard",  label:"Início",  icon:"🏠"},
     {id:"inscricoes", label:"Inscr.",  icon:"📝"},
@@ -5164,13 +5173,17 @@ function BottomNav({ isAdmin, isVisitante, tab, setTab }) {
     }}>
       {isAdmin ? adminTabs.map(t => {
         const ativo = tab === t.id;
+        const n = badges && badges[t.id] ? badges[t.id] : 0; // pendências desta aba
         return (
           <div key={t.id} onClick={()=>setTab(t.id)} style={{
             flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6,
             cursor:"pointer", position:"relative",
           }}>
             {ativo && <div style={{position:"absolute",top:-10,width:34,height:3,borderRadius:2,background:T.terracota}}/>}
-            <span style={{fontSize:17, lineHeight:1}}>{t.icon}</span>
+            <div style={{position:"relative", lineHeight:1}}>
+              <span style={{fontSize:17, lineHeight:1}}>{t.icon}</span>
+              {n > 0 && <span style={{position:"absolute",top:-7,right:-11,minWidth:15,height:15,padding:"0 4px",borderRadius:8,background:T.terracota,color:"#fff",fontSize:9.5,fontWeight:800,fontFamily:T.sans,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 0 1.5px #1C2B27"}}>{n > 9 ? "9+" : n}</span>}
+            </div>
             <span style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:0.6,textTransform:"uppercase",color: ativo ? T.terracota : "rgba(240,234,224,0.5)",whiteSpace:"nowrap"}}>{t.label}</span>
           </div>
         );
@@ -6720,7 +6733,7 @@ function CancelarCircuitoCard({ chamarAdminAction, circuitos, circuitoSelId, rec
 // Super-admin vê todos os circuitos; organizador só o dele (o agregador decide pelo login).
 // Só leitura: mostra as contagens e leva para a tela certa. As ações continuam nas telas existentes.
 function DespachosDoDiaCard({ fetchDespachos, chamarAdminAction, loadFromSupabase, trocarCircuito, setTab, modoOrg }) {
-  const [aberto, setAberto] = useState(false);
+  const [aberto, setAberto] = useState(true); // tela inicial do admin: já abre mostrando o que precisa de ação
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState("");
@@ -6734,6 +6747,8 @@ function DespachosDoDiaCard({ fetchDespachos, chamarAdminAction, loadFromSupabas
     catch (e) { setErro(e.message || "Erro ao carregar os despachos."); }
     finally { setCarregando(false); }
   }
+  // Carrega uma vez ao abrir o painel (aberto por padrão) — sem precisar de toque.
+  useEffect(() => { carregar(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   function toggle() { if (aberto) { setAberto(false); return; } setAberto(true); if (!dados) carregar(); }
 
   // Fatia 2 — processar a rodada pronta, escopada no circuito. Confirma antes (mexe no rating).

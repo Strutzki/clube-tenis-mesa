@@ -4650,6 +4650,26 @@ export default function App() {
     return data.dados;
   }
 
+  // Despachos do Dia (Fatia 1) — chama o agregador de leitura. Super-admin (PIN) recebe
+  // todos os circuitos; organizador (telefone+PIN) só os dele. Só leitura, sem escrita.
+  async function fetchDespachos() {
+    const cred = getOrgCred();
+    const body = (cred && cred.telefone && cred.pin && cred.circuitoId)
+      ? { orgTelefone: cred.telefone, orgPin: cred.pin }
+      : { pin: await obterPin() };
+    const res = await fetch(`${SUPA_URL}/functions/v1/despachos-do-dia`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.sucesso) {
+      if (res.status === 401) clearPinCache();
+      throw new Error(data.erro || `Erro ${res.status} ao carregar os despachos`);
+    }
+    return data.dados;
+  }
+
   // Ações do ATLETA (sem PIN) — a escrita passa pela Edge Function athlete-action,
   // que valida no servidor e força os campos inegociáveis. Fecha a escrita direta
   // com a chave pública (nenhuma gravação de atleta vai mais direto na tabela).
@@ -5024,7 +5044,7 @@ export default function App() {
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
-          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} />
+          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} />
         ) : isVisitante ? (
           visitanteCirc ? (
             <VisitanteView state={state} tab={tab} setTab={setTab} nomeCircuito={visitanteCirc.nome_exibicao || visitanteCirc.nome_circuito} onVoltar={()=>{ setVisitanteCirc(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
@@ -6008,8 +6028,8 @@ const Badge = ({label, color="#D85A30"}) => (
 );
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
-function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
-  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} />;
+function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
+  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
@@ -6686,7 +6706,80 @@ function CancelarCircuitoCard({ chamarAdminAction, circuitos, circuitoSelId, rec
   );
 }
 
-function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
+// Despachos do Dia (Fatia 1) — card que agrega, por circuito, o que precisa de ação.
+// Super-admin vê todos os circuitos; organizador só o dele (o agregador decide pelo login).
+// Só leitura: mostra as contagens e leva para a tela certa. As ações continuam nas telas existentes.
+function DespachosDoDiaCard({ fetchDespachos, trocarCircuito, setTab, modoOrg }) {
+  const [aberto, setAberto] = useState(false);
+  const [dados, setDados] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  async function carregar() {
+    setCarregando(true); setErro("");
+    try { setDados(await fetchDespachos()); }
+    catch (e) { setErro(e.message || "Erro ao carregar os despachos."); }
+    finally { setCarregando(false); }
+  }
+  function toggle() { if (aberto) { setAberto(false); return; } setAberto(true); if (!dados) carregar(); }
+
+  const CATS = [
+    { k:"validar", label:"validar", cor:"#9C6F3E", tab:"pendencias" },
+    { k:"processar", label:"processar", cor:"#c25a45", tab:"pendencias" },
+    { k:"wo", label:"W.O.", cor:"#9C6F3E", tab:"pendencias" },
+    { k:"inscricoes", label:"inscrições", cor:"#D85A30", tab:"dashboard" },
+    { k:"backlog", label:"backlog", cor:"#9C6F3E", tab:"dashboard" },
+    { k:"divulgar", label:"divulgar", cor:"#25d366", tab:"mensagens" },
+  ];
+  const totalGeral = dados?.totais?.total || 0;
+  const comPend = (dados?.circuitos || []).filter(c => c.total > 0);
+
+  function abrirCirc(c, tab) {
+    if (!modoOrg && trocarCircuito) trocarCircuito({ id: c.id });
+    setTab(tab || "pendencias");
+  }
+
+  return (
+    <Card style={{marginBottom:16, border:`1.5px solid ${T.terracota}`, background:"rgba(216,90,48,0.06)"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:13,fontWeight:800,color:T.offwhite}}>📋 Despachos do dia</div>
+          <div style={{fontSize:12,color:T.cinza,marginTop:2}}>{modoOrg ? "O que precisa de você no seu circuito" : "O que precisa de você, em todos os circuitos"}</div>
+        </div>
+        <Btn small onClick={toggle} color={T.terracotaBtn}>{aberto ? "Fechar" : "Abrir"}</Btn>
+      </div>
+      {aberto && (
+        <div style={{marginTop:14}}>
+          {carregando ? <div style={{fontSize:12,color:T.cinza}}>Carregando…</div>
+          : erro ? <div style={{fontSize:12.5,color:T.vermelho}}>{erro}</div>
+          : !dados ? null
+          : totalGeral === 0 ? <div style={{fontSize:13,color:T.verde2,fontWeight:600}}>✓ Tudo em dia — nenhum despacho pendente. 🎉</div>
+          : (
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{fontSize:11,color:T.madeira}}>{totalGeral} {totalGeral===1?"item":"itens"} aguardando em {comPend.length} {comPend.length===1?"circuito":"circuitos"}.</div>
+              {comPend.map(c => (
+                <div key={c.id} style={{border:`1px solid ${T.bordaSuave}`,borderRadius:10,padding:"10px 12px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:8}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nome}</div>
+                    <Btn small onClick={()=>abrirCirc(c,"pendencias")} color={T.bordaSuave}>Abrir →</Btn>
+                  </div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {CATS.filter(cat => (c.counts[cat.k]||0) > 0).map(cat => (
+                      <span key={cat.k} onClick={()=>abrirCirc(c,cat.tab)} style={{fontSize:11,fontWeight:700,color:cat.cor,background:`${cat.cor}18`,border:`1px solid ${cat.cor}44`,borderRadius:20,padding:"3px 9px",cursor:"pointer"}}>{cat.label}: {c.counts[cat.k]}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <Btn small onClick={carregar} color={T.bordaSuave} disabled={carregando}>{carregando?"…":"Atualizar"}</Btn>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespachos, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
@@ -6789,6 +6882,7 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, circuitos,
 
   return (
     <div>
+      <DespachosDoDiaCard fetchDespachos={fetchDespachos} trocarCircuito={trocarCircuito} setTab={setTab} modoOrg={modoOrg} />
       {modoOrg ? (
         <Card style={{marginBottom:16, border:`1.5px solid ${T.terracota}`, background:"rgba(216,90,48,0.08)"}}>
           <div style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8}}>Você é organizador de</div>

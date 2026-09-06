@@ -4,6 +4,7 @@ Histórico do que foi a produção. Mantido pelo agente `curador-projeto`. Mais 
 Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ## 2026-09-05
+- **Despachos do Dia — Fatia 1** — novo edge `despachos-do-dia` (agregador só-leitura; super-admin vê todos os circuitos, organizador só os dele; devolve contagens por circuito, sem dado pessoal) + card "📋 Despachos do dia" no painel admin (mostra por circuito o que precisa de ação e leva à tela certa). Consultas provadas contra o BH (4 a processar, 2 backlog). Verificação ponta-a-ponta ao vivo com o PIN do Juliano.
 - **Regulamento v03-12 (Sistema A) publicado como documento** — `docs/REGULAMENTO_TENIS_DE_MESA_v03-12.md`, extraído fielmente do texto do app (com 2ª rodada no **dia 27**). Preenche a lacuna do "regulamento vigente ausente do projeto". Os PDFs antigos (v03-4, v03-11, com dia 25) ficam superados — devem ser removidos/marcados no projeto.
 - **Despachos do Dia (proposta)** — mini-spec em `PLANO_DESPACHOS.md` + item no roadmap. Tela única de ações do dia, agregada por papel (super-admin = todos os circuitos; organizador = o dele) + lembrete no celular. Ainda não iniciado.
 - **Virada de temporada do BH escopada** — admin-action **v54**. O ramo do BH também passou a arquivar/deletar só por `circuito_id` (resultado idêntico pro BH; nunca toca outro circuito). Resolve a pendência do delete global. Leitura do ranking do BH também escopada.

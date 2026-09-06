@@ -5052,6 +5052,8 @@ export default function App() {
     inscricoes: state.athletes.filter(a => a.status === "pendente").length,
     pendencias: state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado).length
       + (state.solicitacoesWo?.filter(s => s.status === "pendente").length || 0),
+    // "Msgs" = mensagens (todas as categorias) ainda não enviadas neste par mensal.
+    mensagens: todasMensagensPendentes(state, {}).length,
   } : null;
 
   return (
@@ -8082,35 +8084,38 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
     return `https://wa.me/55${telefone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`;
   }
 
+  // ── Resumo "Precisa de você" — diz, em português claro, QUAL é a pendência e
+  //    O QUE fazer, e leva direto pra seção certa. Só lista o que exige ação.
+  const irPara = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior:"smooth", block:"start" }); };
+  const resumo = [
+    pedidosExclusao.length && { icon:"🗑️", txt:`${pedidosExclusao.length} pedido(s) de exclusão de dados`, acao:"Finalizar", cor:T.vermelho, id:"pend-exclusao" },
+    pendentesWo.length && { icon:"📨", txt:`${pendentesWo.length} solicitação(ões) de W.O.`, acao:"Aprovar ou recusar", cor:T.madeira, id:"pend-wo" },
+    waiting.length && { icon:"🔔", txt:`${waiting.length} placar(es) enviado(s)`, acao:"Validar ou rejeitar", cor:T.verde2, id:"pend-validar" },
+    calculoPendente.length && { icon:"🧮", txt:`${calculoPendente.length} partida(s) confirmada(s)`, acao:"Processar a rodada", cor:T.terracota, id:"pend-calculo" },
+    incomplete.length && { icon:"⏳", txt:`${incomplete.length} resultado(s) incompleto(s)`, acao:"Cobrar / lançar placar", cor:T.madeira, id:"pend-incompleto" },
+  ].filter(Boolean);
+
   return (
     <div>
-      <Card style={{border:`1px solid ${state.autoValidarPlacar?"rgba(106,157,122,0.35)":"rgba(255,255,255,0.08)"}`,marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>⚡ Auto-validação de placar</div>
-            <div style={{fontSize:11,color:"#7d9188",lineHeight:1.5}}>Quando os dois atletas enviam o mesmo placar, valida sozinho. Divergências e W.O. continuam com você. Dá pra desfazer até o cálculo da rodada.</div>
+      {resumo.length > 0 && (
+        <Card style={{border:`1.5px solid ${T.terracota}`, background:"rgba(216,90,48,0.06)", marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:800,color:T.offwhite,marginBottom:2}}>🚩 Precisa de você ({resumo.length})</div>
+          <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>Toque num item pra ir direto até ele e resolver.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {resumo.map(r => (
+              <button key={r.id} onClick={()=>irPara(r.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,width:"100%",textAlign:"left",background:"rgba(0,0,0,0.15)",border:`1px solid ${r.cor}44`,borderRadius:10,padding:"10px 12px",cursor:"pointer",color:T.offwhite}}>
+                <span style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
+                  <span style={{fontSize:16}}>{r.icon}</span>
+                  <span style={{fontSize:12.5,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.txt}</span>
+                </span>
+                <span style={{fontFamily:T.mono,fontSize:9.5,fontWeight:800,letterSpacing:0.5,textTransform:"uppercase",color:r.cor,border:`1px solid ${r.cor}`,borderRadius:20,padding:"4px 9px",whiteSpace:"nowrap"}}>{r.acao} →</span>
+              </button>
+            ))}
           </div>
-          <button onClick={()=>dispatch({type:"DEFINIR_AUTO_VALIDAR",payload:{ligado:!state.autoValidarPlacar}})}
-            style={{padding:"8px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.2)",background:state.autoValidarPlacar?"#6a9d7a":"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>
-            {state.autoValidarPlacar ? "✓ Ligada" : "Desligada"}
-          </button>
-        </div>
-      </Card>
-
-      <Card style={{border:`1px solid ${state.inscricoesAbertas?"rgba(106,157,122,0.35)":"rgba(255,255,255,0.08)"}`,marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>📝 Inscrições abertas</div>
-            <div style={{fontSize:11,color:"#7d9188",lineHeight:1.5}}>Quando ligada, este circuito aceita novas inscrições de atletas. Desligue para pausar a entrada (lotado, temporada avançada, etc.).</div>
-          </div>
-          <button onClick={()=>dispatch({type:"DEFINIR_INSCRICOES_ABERTAS",payload:{abertas:!state.inscricoesAbertas}})}
-            style={{padding:"8px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.2)",background:state.inscricoesAbertas?"#6a9d7a":"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>
-            {state.inscricoesAbertas ? "✓ Abertas" : "Fechadas"}
-          </button>
-        </div>
-      </Card>
-
+        </Card>
+      )}
       {pedidosExclusao.length > 0 && <>
+        <div id="pend-exclusao"/>
         <SecTitle>🗑️ Pedidos de exclusão de dados ({pedidosExclusao.length})</SecTitle>
         <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
           O atleta pediu a exclusão dos dados (LGPD). Finalizar anonimiza o cadastro e o remove do circuito — as partidas e o histórico dos adversários são preservados. Não dá pra desfazer.
@@ -8136,6 +8141,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
         ))}
       </>}
       {pendentesWo.length > 0 && <>
+        <div id="pend-wo"/>
         <SecTitle>📨 Solicitações de W.O. ({pendentesWo.length})</SecTitle>
         <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
           O atleta sinalizou que não vai conseguir jogar (W.O. Justificado — Cap. 07). Aprovar anula a rodada pra ambos, sem perda de pontos.
@@ -8241,7 +8247,9 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
       </>}
 
       {waiting.length > 0 && <>
+        <div id="pend-validar"/>
         <SecTitle>🔔 Aguardando Validação ({waiting.length})</SecTitle>
+        <div style={{fontSize:11,color:"#7d9188",marginBottom:10,lineHeight:1.5}}>Os dois atletas enviaram o placar. Confira: se bater, toque <b>Validar</b>; se estiver errado, <b>Rejeitar</b> (com o motivo). Divergentes você resolve lançando o placar certo.</div>
         {waiting.map(m => {
           const p1 = state.athletes.find(a=>a.id===m.p1Id);
           const p2 = state.athletes.find(a=>a.id===m.p2Id);
@@ -8278,6 +8286,7 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
       </>}
 
       {calculoPendente.length > 0 && <>
+        <div id="pend-calculo"/>
         <SecTitle>🧮 Aguardando Cálculo de Rating ({calculoPendente.length})</SecTitle>
         <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
           O placar já está confirmado — o rating/saldo só é aplicado depois que o prazo da rodada correspondente fecha.
@@ -8337,7 +8346,9 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
       </>}
 
       {incomplete.length > 0 && <>
+        <div id="pend-incompleto"/>
         <SecTitle>⏳ Resultado Incompleto ({incomplete.length})</SecTitle>
+        <div style={{fontSize:11,color:"#7d9188",marginBottom:10,lineHeight:1.5}}>Falta um dos atletas (ou os dois) enviar o placar. Cobre pelo WhatsApp, ou lance você mesmo o resultado, ou registre um W.O. se alguém não jogou.</div>
         {incomplete.map(m => {
           const p1 = state.athletes.find(a=>a.id===m.p1Id);
           const p2 = state.athletes.find(a=>a.id===m.p2Id);
@@ -8361,9 +8372,36 @@ function AdminPendencias({ state, dispatch, telefones, garantirTelefones, urlCom
         })}
       </>}
 
-      {waiting.length === 0 && incomplete.length === 0 && pendentesWo.length === 0 && (
+      {resumo.length === 0 && (
         <Card><div style={{fontSize:13,color:"#7d9188",textAlign:"center",padding:20}}>Nenhuma pendência no momento. 🎉</div></Card>
       )}
+
+      <SecTitle>⚙️ Ajustes do circuito</SecTitle>
+      <Card style={{border:`1px solid ${state.autoValidarPlacar?"rgba(106,157,122,0.35)":"rgba(255,255,255,0.08)"}`,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>⚡ Auto-validação de placar</div>
+            <div style={{fontSize:11,color:"#7d9188",lineHeight:1.5}}>Quando os dois atletas enviam o mesmo placar, valida sozinho. Divergências e W.O. continuam com você. Dá pra desfazer até o cálculo da rodada.</div>
+          </div>
+          <button onClick={()=>dispatch({type:"DEFINIR_AUTO_VALIDAR",payload:{ligado:!state.autoValidarPlacar}})}
+            style={{padding:"8px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.2)",background:state.autoValidarPlacar?"#6a9d7a":"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>
+            {state.autoValidarPlacar ? "✓ Ligada" : "Desligada"}
+          </button>
+        </div>
+      </Card>
+
+      <Card style={{border:`1px solid ${state.inscricoesAbertas?"rgba(106,157,122,0.35)":"rgba(255,255,255,0.08)"}`,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0"}}>📝 Inscrições abertas</div>
+            <div style={{fontSize:11,color:"#7d9188",lineHeight:1.5}}>Quando ligada, este circuito aceita novas inscrições de atletas. Desligue para pausar a entrada (lotado, temporada avançada, etc.).</div>
+          </div>
+          <button onClick={()=>dispatch({type:"DEFINIR_INSCRICOES_ABERTAS",payload:{abertas:!state.inscricoesAbertas}})}
+            style={{padding:"8px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.2)",background:state.inscricoesAbertas?"#6a9d7a":"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>
+            {state.inscricoesAbertas ? "✓ Abertas" : "Fechadas"}
+          </button>
+        </div>
+      </Card>
     </div>
   );
 }

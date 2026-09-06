@@ -214,6 +214,8 @@ const db = {
 
   // Circuitos com inscrições abertas (leitura pública — só campos públicos). Fatia 2/inscrição por circuito.
   getCircuitosAbertos: () => supaFetch(`circuitos?select=id,slug,nome_circuito,nome_exibicao,cidade,uf,sistema&ativo=eq.true&inscricoes_abertas=eq.true&publico=eq.true&order=nome_circuito.asc`),
+  // Fatia 6: mesma lista de abertos, porém com info de vagas (ativos, max, cheio) via RPC seguro.
+  getCircuitosAbertosVagas: () => supaFetch(`rpc/circuitos_abertos_vagas`, { method: "POST", body: "{}" }),
 
   // Histórico de mensagens de WhatsApp enviadas
   getMensagensEnviadas: () => supaFetch("mensagens_enviadas?order=enviado_em.desc&limit=200"),
@@ -1546,7 +1548,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
   const [verReg, setVerReg] = useState(false);
   useEffect(() => {
     let vivo = true;
-    db.getCircuitosAbertos()
+    db.getCircuitosAbertosVagas()
       .then(cs => {
         if (!vivo) return;
         const arr = Array.isArray(cs) ? cs : [];
@@ -1593,6 +1595,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
             </div>
             {(escolhido.cidade || escolhido.uf) && <div style={{fontSize:12,color:T.cinza,marginTop:4}}>{[escolhido.cidade, escolhido.uf].filter(Boolean).join(" · ")}</div>}
             <div style={{fontSize:12,color:"rgba(240,234,224,0.55)",marginTop:8}}>{sl.desc}</div>
+            {escolhido.cheio && <div style={{fontSize:11.5,color:"#e8b04a",marginTop:8,fontWeight:700}}>🎟️ Fila de espera — circuito cheio. Sua inscrição entra na fila; você é chamado se abrir vaga.</div>}
           </div>
           {lista && lista.length > 1 && (escolhido.cidade || escolhido.uf) && (
             <div style={{background:"rgba(156,111,62,0.12)",border:"1px solid rgba(156,111,62,0.4)",borderRadius:10,padding:"10px 12px",marginBottom:14}}>
@@ -1639,6 +1642,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
               </div>
               {(c.cidade || c.uf) && <div style={{fontSize:12,color:T.cinza,marginTop:3}}>{[c.cidade, c.uf].filter(Boolean).join(" · ")}</div>}
               <div style={{fontSize:11,color:"rgba(240,234,224,0.5)",marginTop:6}}>{sl.desc}</div>
+              {c.cheio && <div style={{fontSize:10.5,color:"#e8b04a",marginTop:6,fontWeight:700}}>🎟️ Fila de espera — circuito cheio</div>}
             </button>
           );
         })}

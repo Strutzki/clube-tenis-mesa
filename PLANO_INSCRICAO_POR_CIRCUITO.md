@@ -52,7 +52,7 @@ Ao apertar **"Inscreva-se"**, a PRIMEIRA coisa é **checar se há circuito abert
   - **P2 (desempate final):** mantido — "sorteio do admin" é a regra oficial pra um empate real de 6º nível (raríssimo); a ordem-de-id do código é só o desempate estável de exibição. Sem conflito.
 
 > ✅ **TRAVA ATUALIZADA:** já é seguro abrir um circuito **Sistema A** não-BH para inscrição (servidor valida + carimba a versão dele). **Sistema B ainda NÃO:** `CRIAR_CIRCUITO` deixa `regulamento_versao=null` no B → carimbaria a constante A; e a `RegulamentoView` do front ainda mostra o regulamento do A. Antes de abrir um B: setar `vB-01` no CRIAR_CIRCUITO e cabear a RegulamentoView por sistema.
-6. **Janela e vagas.** Respeitar regra do último terço e `max_atletas` (cheio → não aparece como aberto, ou aparece como "fila de espera"). *Verificar: circuito cheio/fora da janela não recebe inscrição.*
+6. **Janela e vagas. — ✅ FEITA (no arquivo local).** RPC `circuitos_abertos_vagas()` (SECURITY DEFINER, grant anon/authenticated) devolve os abertos + `ativos`/`max_atletas`/`cheio`; a seleção passou a lê-la (`db.getCircuitosAbertosVagas`). Circuito cheio ganha selo "🎟️ Fila de espera" no card e na confirmação — **display-only**: a inscrição segue e vira fila, porque o teto é aplicado na promoção do backlog, não na inscrição (decisão da Fatia 5, "max_atletas pulado de propósito"). Footprint-zero: BH não está cheio (14/20). **Falta `atualizar.sh`.**
 7. **(Opcional, depois) Captura de interesse** quando não há circuito na região — vira gancho de crescimento ("te aviso quando abrir perto de você").
 
 ## Footprint-zero pro BH (prova)

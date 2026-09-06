@@ -1,0 +1,22 @@
+{
+  "motivo": "Remoção do circuito de teste demo-juliano (contaminava o roster do BH via atletas.status='ativo'). Backup para reversibilidade.",
+  "data": "2026-09-06",
+  "preservado": "Conta do Juliano (atleta acf9b43a-d80f-4adb-9149-adb453d540c3) — membro do BH; removido só o vínculo com o demo.",
+  "circuito": {"id":"aead99c0-bb00-40fd-ba13-5d019106674e","slug":"demo-juliano","nome_circuito":"Circuito Demo (privado)","sistema":"A","ativo":false,"fase":"etapa","temporada_numero":1,"temporada_ano":2026,"regulamento_versao":"v03-12","max_atletas":20,"publico":true,"criado_em":"2026-09-03T21:50:13.281922+00:00"},
+  "circuito_atletas": [
+    {"id":"fff90cff-1496-42dd-91bd-3886f2a63b88","atleta_id":"acf9b43a-d80f-4adb-9149-adb453d540c3","nome":"Juliano","status":"ativo","saldo_temp":8,"vitorias":1,"derrotas":0,"inscrito_em":"2026-09-03T21:50:38.984284+00:00"},
+    {"id":"9829e2b3-93a6-450e-8279-df7be807c206","atleta_id":"a7142373-838e-4896-86df-b1d14d44052f","nome":"Ana Demo","status":"ativo","saldo_temp":-13,"vitorias":0,"derrotas":2,"inscrito_em":"2026-09-03T21:50:38.984284+00:00"},
+    {"id":"4fd1a1d8-0e4d-4bd1-86ed-1b7d25437dce","atleta_id":"1ad6f4d6-7407-419f-9f14-a1d3f5e81d5e","nome":"Bruno Demo","status":"ativo","saldo_temp":5,"vitorias":1,"derrotas":0,"inscrito_em":"2026-09-03T21:50:38.984284+00:00"}
+  ],
+  "partidas": [
+    {"id":"m_demo_1","rodada":1,"atleta1_id":"acf9b43a-d80f-4adb-9149-adb453d540c3","atleta2_id":"a7142373-838e-4896-86df-b1d14d44052f","placar1":3,"placar2":1,"validado":true,"calculado":true,"circuito_id":"aead99c0-bb00-40fd-ba13-5d019106674e","criado_em":"2026-09-03T21:50:38.984284+00:00"},
+    {"id":"m_demo_2","rodada":1,"atleta1_id":"1ad6f4d6-7407-419f-9f14-a1d3f5e81d5e","atleta2_id":"a7142373-838e-4896-86df-b1d14d44052f","placar1":3,"placar2":2,"validado":true,"calculado":true,"circuito_id":"aead99c0-bb00-40fd-ba13-5d019106674e","criado_em":"2026-09-03T21:50:38.984284+00:00"}
+  ],
+  "atletas_removidos": [
+    {"id":"a7142373-838e-4896-86df-b1d14d44052f","nome":"Ana Demo","telefone":"31900000101","rating":420,"rating_inicial":420,"status":"ativo","pin_hash":"pbkdf2$100000$i8sXECbOBKRo75OUDEQDxw==$PDAmuHquQrDpqzzoJm+Zt2gzPr2CB4qJIoW+xmWeytY=","pin_definido_em":"2026-09-03T22:30:26.908+00:00","versao_regulamento":"v03-publico","inscrito_em":"2026-09-03T21:50:13.281922+00:00"},
+    {"id":"1ad6f4d6-7407-419f-9f14-a1d3f5e81d5e","nome":"Bruno Demo","telefone":"31900000102","rating":310,"rating_inicial":310,"status":"ativo","pin_hash":null,"versao_regulamento":"v03-publico","inscrito_em":"2026-09-03T21:50:13.281922+00:00"}
+  ],
+  "atleta_documento_demo": [],
+  "atleta_sessao_demo": [],
+  "invariantes_bh_antes": {"atletas_sem_demo":"7d349e910c937b4c6c5edc1f0df3f75a","bh_circuito_atletas":"05fc7d590eb2cd0392ab6bbaa3df4693"}
+}

@@ -6029,7 +6029,7 @@ const Badge = ({label, color="#D85A30"}) => (
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
 function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
-  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} />;
+  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
@@ -6709,11 +6709,14 @@ function CancelarCircuitoCard({ chamarAdminAction, circuitos, circuitoSelId, rec
 // Despachos do Dia (Fatia 1) — card que agrega, por circuito, o que precisa de ação.
 // Super-admin vê todos os circuitos; organizador só o dele (o agregador decide pelo login).
 // Só leitura: mostra as contagens e leva para a tela certa. As ações continuam nas telas existentes.
-function DespachosDoDiaCard({ fetchDespachos, trocarCircuito, setTab, modoOrg }) {
+function DespachosDoDiaCard({ fetchDespachos, chamarAdminAction, loadFromSupabase, trocarCircuito, setTab, modoOrg }) {
   const [aberto, setAberto] = useState(false);
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState("");
+  const [confirmProc, setConfirmProc] = useState(null); // id do circuito aguardando confirmação
+  const [processando, setProcessando] = useState(null); // id em processamento
+  const [msg, setMsg] = useState("");
 
   async function carregar() {
     setCarregando(true); setErro("");
@@ -6722,6 +6725,19 @@ function DespachosDoDiaCard({ fetchDespachos, trocarCircuito, setTab, modoOrg })
     finally { setCarregando(false); }
   }
   function toggle() { if (aberto) { setAberto(false); return; } setAberto(true); if (!dados) carregar(); }
+
+  // Fatia 2 — processar a rodada pronta, escopada no circuito. Confirma antes (mexe no rating).
+  async function processar(c) {
+    setProcessando(c.id); setErro(""); setMsg("");
+    try {
+      if (!modoOrg && trocarCircuito) await trocarCircuito({ id: c.id }); // super-admin: foca no circuito certo
+      const r = await chamarAdminAction("PROCESSAR_RODADA", { round: c.processarRodada });
+      if (loadFromSupabase) await loadFromSupabase(); // atualiza o estado do circuito focado
+      await carregar(); // atualiza as contagens
+      setMsg(`✓ Rodada ${c.processarRodada} de "${c.nome}" processada (${r?.processadas ?? 0} resultado(s)).`);
+    } catch (e) { setErro(e.message || "Erro ao processar."); }
+    finally { setProcessando(null); setConfirmProc(null); }
+  }
 
   const CATS = [
     { k:"validar", label:"validar", cor:"#9C6F3E", tab:"pendencias" },
@@ -6768,8 +6784,24 @@ function DespachosDoDiaCard({ fetchDespachos, trocarCircuito, setTab, modoOrg })
                       <span key={cat.k} onClick={()=>abrirCirc(c,cat.tab)} style={{fontSize:11,fontWeight:700,color:cat.cor,background:`${cat.cor}18`,border:`1px solid ${cat.cor}44`,borderRadius:20,padding:"3px 9px",cursor:"pointer"}}>{cat.label}: {c.counts[cat.k]}</span>
                     ))}
                   </div>
+                  {c.processarPronta && c.processarRodada != null && (
+                    <div style={{marginTop:10}}>
+                      {confirmProc === c.id ? (
+                        <div style={{border:`1px solid ${T.bordaSuave}`,borderRadius:8,padding:10}}>
+                          <div style={{fontSize:12,color:T.offwhite,marginBottom:8}}>Processar a <strong>rodada {c.processarRodada}</strong> de <strong>{c.nome}</strong>? Isso calcula o rating/pontos e não pode ser desfeito.</div>
+                          <div style={{display:"flex",gap:8}}>
+                            <Btn small onClick={()=>processar(c)} disabled={processando===c.id} color="#6a9d7a">{processando===c.id?"Processando…":"Sim, processar"}</Btn>
+                            <Btn small onClick={()=>setConfirmProc(null)} disabled={processando===c.id} color={T.bordaSuave}>Cancelar</Btn>
+                          </div>
+                        </div>
+                      ) : (
+                        <Btn small onClick={()=>{ setConfirmProc(c.id); setMsg(""); }} color="#6a9d7a">⚙️ Processar rodada {c.processarRodada}</Btn>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
+              {msg && <div style={{fontSize:12.5,fontWeight:600,color: msg.startsWith("✓")?T.verde2:T.vermelho,padding:"8px 10px",borderRadius:8,background: msg.startsWith("✓")?"rgba(106,157,122,0.12)":"rgba(194,90,69,0.12)"}}>{msg}</div>}
               <Btn small onClick={carregar} color={T.bordaSuave} disabled={carregando}>{carregando?"…":"Atualizar"}</Btn>
             </div>
           )}
@@ -6779,7 +6811,7 @@ function DespachosDoDiaCard({ fetchDespachos, trocarCircuito, setTab, modoOrg })
   );
 }
 
-function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespachos, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
+function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
@@ -6882,7 +6914,7 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
 
   return (
     <div>
-      <DespachosDoDiaCard fetchDespachos={fetchDespachos} trocarCircuito={trocarCircuito} setTab={setTab} modoOrg={modoOrg} />
+      <DespachosDoDiaCard fetchDespachos={fetchDespachos} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} trocarCircuito={trocarCircuito} setTab={setTab} modoOrg={modoOrg} />
       {modoOrg ? (
         <Card style={{marginBottom:16, border:`1.5px solid ${T.terracota}`, background:"rgba(216,90,48,0.08)"}}>
           <div style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8}}>Você é organizador de</div>

@@ -3,6 +3,9 @@
 Histórico do que foi a produção. Mantido pelo agente `curador-projeto`. Mais recente no topo.
 Formato: **data — o quê** (versão do edge/regulamento, notas).
 
+## 2026-09-06
+- **Despachos do Dia — Fatia 2 (agir na hora)** — agregador v2 devolve a rodada pronta pra processar por circuito (`processarRodada` + `processarPronta`); card ganhou botão "⚙️ Processar rodada N" com confirmação, escopado no circuito (super-admin foca via trocarCircuito; organizador no dele). Trava de segurança: só aparece se a rodada estiver 100% resolvida (o BH, com rodada incompleta, não mostra botão). Teste ao vivo num circuito B descartável, BH comparado por hash de competição.
+
 ## 2026-09-05
 - **Despachos do Dia — Fatia 1** — novo edge `despachos-do-dia` (agregador só-leitura; super-admin vê todos os circuitos, organizador só os dele; devolve contagens por circuito, sem dado pessoal) + card "📋 Despachos do dia" no painel admin (mostra por circuito o que precisa de ação e leva à tela certa). Consultas provadas contra o BH (4 a processar, 2 backlog). Verificação ponta-a-ponta ao vivo com o PIN do Juliano.
 - **Regulamento v03-12 (Sistema A) publicado como documento** — `docs/REGULAMENTO_TENIS_DE_MESA_v03-12.md`, extraído fielmente do texto do app (com 2ª rodada no **dia 27**). Preenche a lacuna do "regulamento vigente ausente do projeto". Os PDFs antigos (v03-4, v03-11, com dia 25) ficam superados — devem ser removidos/marcados no projeto.

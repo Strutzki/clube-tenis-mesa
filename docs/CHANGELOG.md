@@ -4,6 +4,7 @@ Histórico do que foi a produção. Mantido pelo agente `curador-projeto`. Mais 
 Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ## 2026-09-06
+- **Despachos do Dia — Fatia 3 (lembrete), MVP** — tarefa agendada do Claude ("Despacho do dia", dias de semana 8h) que consulta o banco e envia por notificação o resumo das pendências por circuito (só contagens, sem dado pessoal). Roda com o app do Claude aberto/na próxima abertura — não é servidor 24/7. Push nativo dentro do app fica como evolução futura.
 - **Despachos do Dia — Fatia 2 (agir na hora)** — agregador v2 devolve a rodada pronta pra processar por circuito (`processarRodada` + `processarPronta`); card ganhou botão "⚙️ Processar rodada N" com confirmação, escopado no circuito (super-admin foca via trocarCircuito; organizador no dele). Trava de segurança: só aparece se a rodada estiver 100% resolvida (o BH, com rodada incompleta, não mostra botão). Teste ao vivo num circuito B descartável, BH comparado por hash de competição.
 
 ## 2026-09-05

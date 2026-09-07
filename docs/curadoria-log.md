@@ -1,3 +1,13 @@
+## 2026-09-07 — PONTO DE RETOMADA (parada do dia)
+**Pendente de publicar (rodar `atualizar.sh`):** rótulos do modo organizador (front) + docs. O `atualizar.sh` agora testa o build antes de publicar (rede de segurança).
+**Edge `admin-action` — fonte à frente do que está no ar:** tem a revisão de acesso do organizador (removidos EXCLUIR_ATLETA, ABRIR/CANCELAR próxima, DEFINIR_RODADAS da allowlist) + as ações de cobrança da plataforma (LER/DEFINIR_COBRANCA_PLATAFORMA). **Não deployado de propósito** — deploya junto com o 1º circuito vendido (inerte hoje, sem organizador em produção). Live segue na versão anterior.
+**Já no ar e verificado hoje:** vazamento de preço fechado (login-atleta v6 + revoke anon), despachos v3/v4 (só ações do dia), cobranças/config inertes, remoção do circuito demo (BH byte-idêntico).
+
+### Retomar por aqui (fatias mapeadas, footprint-zero, revisão dos Guardiões)
+1. **Financeiro por circuito** — flag `org_ve_financeiro` (padrão OFF) + toggle do super-admin; torna condicionais os itens financeiros do organizador (config financeira, pagamentos) e esconde a aba "Pagam." quando OFF. Ref: `ORGANIZADOR_ACESSO_COMPARATIVO.md`.
+2. **Desfazer processamento (C)** — desfazer o cálculo de uma rodada até a virada, recalculando; com harness provando reprodução exata do rating e BH byte-idêntico. Ref: mesmo doc.
+3. **Pagamentos (Asaas) — backlog** — aguardando conta Sandbox + chave + revisão jurídica das minutas. Ref: `PLATAFORMA_BACKLOG.md`, `PLANO_PAGAMENTOS_FATIA5_INTEGRACAO.md`.
+
 # curadoria-log — registro do Curador do Projeto
 
 ## 2026-09-06 — Consolidação da documentação (dedup raiz × docs/)

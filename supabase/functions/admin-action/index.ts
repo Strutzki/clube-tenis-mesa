@@ -285,11 +285,17 @@ const ACOES_ORG = new Set([
   "INICIAR_ETAPA","AVANCAR_RODADA","PROCESSAR_RODADA",
   "VALIDATE_RESULT","ADMIN_IMPUTAR_RESULTADO","DESFAZER_VALIDACAO","MARCAR_RESULTADO_COMUNICADO",
   "APLICAR_WO","RESPONDER_WO","MARCAR_WO_NOTIFICADO",
-  "INSCRICAO_VALIDAR","INCLUIR_NO_CIRCUITO","RECUSAR_CIRCUITO","ARQUIVAR_ATLETA","EXCLUIR_ATLETA","DEFINIR_DESCONTO_ATLETA",
-  "DEFINIR_INSCRICOES_ABERTAS","DEFINIR_PUBLICO","DEFINIR_RODADAS","DEFINIR_AUTO_VALIDAR","DEFINIR_CONFIG_CIRCUITO","DEFINIR_FINANCEIRO",
-  "ABRIR_PROXIMA_TEMPORADA","CANCELAR_PROXIMA",
+  "INSCRICAO_VALIDAR","INCLUIR_NO_CIRCUITO","RECUSAR_CIRCUITO","ARQUIVAR_ATLETA","DEFINIR_DESCONTO_ATLETA",
+  "DEFINIR_INSCRICOES_ABERTAS","DEFINIR_PUBLICO","DEFINIR_AUTO_VALIDAR","DEFINIR_CONFIG_CIRCUITO",
+  // Financeiro (config + pagamentos): decisão do Juliano = "depende do financeiro por circuito".
+  // Ficam aqui por ora; a Fatia do 'financeiro por circuito' vai torná-los CONDICIONAIS ao flag
+  // `org_ve_financeiro` do circuito (padrão desligado). TODO: gate condicional.
+  "DEFINIR_FINANCEIRO",
   "REGISTRAR_PAGAMENTO","ESTORNAR_PAGAMENTO","EDITAR_PAGAMENTO","LISTAR_PAGAMENTOS","LISTAR_MENSAGENS","REGISTRAR_MENSAGEM_ENVIADA",
 ]);
+// Revisão de acesso do organizador (07/09/2026, validado item a item com o Juliano):
+// TIRADOS do organizador (só super-admin): EXCLUIR_ATLETA, ABRIR_PROXIMA_TEMPORADA, CANCELAR_PROXIMA.
+// DEFINIR_RODADAS saiu da lista (rodadas são fixas em 6; a ação já recusa de qualquer forma).
 // ESCOPO POR RECURSO: ações que recebem um matchId/atletaId precisam confirmar que o
 // recurso pertence ao circuito do organizador (senão ele tocaria outro circuito/BH).
 const ORG_MATCH_FIELD: Record<string, string> = {

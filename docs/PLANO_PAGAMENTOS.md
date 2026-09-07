@@ -61,6 +61,11 @@ Dois casos, conforme quem administra o circuito:
 3. **A parte fixa é um compromisso antes de saber quantos atletas virão.** Pra baixar a barreira de um organizador novo, considere **fixo baixo** (ou **1ª temporada grátis/simbólica**) + variável "paga conforme cresce". Você pode subir o fixo depois que o modelo provar valor.
 4. **Reembolso do fixo** se o circuito for cancelado no meio da temporada — definir (ex.: proporcional, ou não-reembolsável após o início).
 
+### Regra da taxa por atleta (decisão do Juliano, 07/09/2026)
+- A **taxa da plataforma é por atleta inscrito/ativo no circuito**, **independente** de o atleta receber desconto ou isenção na taxa do circuito. Isento também conta.
+- O cálculo (Fatia 2) já reflete isso: usa o valor-base do circuito (ou o fixo por atleta) × nº de atletas ativos — **não** subtrai o desconto individual. (Ajuste pendente só no rótulo do preview do card: "atletas pagos" → "atletas no circuito".)
+- **Consequência no split (Fatia 5):** pra atleta que paga, a fatia da plataforma sai por split do pagamento dele. Pra atleta **isento** (paga 0), não há pagamento pra dividir → essa taxa por-atleta é **cobrada do organizador à parte** (junto com a taxa fixa). Ou seja, o organizador arca com a taxa de plataforma dos isentos que ele concedeu.
+
 ### Fluxos de dinheiro no Caso 2 (resumo)
 - Atleta → paga a inscrição → **split**: maior parte pro **organizador**, sua fatia por-atleta pra **você**.
 - Organizador → paga a **parte fixa por temporada** direto pra você (assinatura/cobrança separada).

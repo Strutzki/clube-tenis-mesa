@@ -5117,7 +5117,7 @@ export default function App() {
         )}
       </div>
 
-      {!(currentAthlete && escolherCircuito) && !(isVisitante && !visitanteCirc) && <BottomNav isAdmin={isAdmin} isVisitante={isVisitante} tab={tab} setTab={setTab} badges={adminBadges} />}
+      {!(currentAthlete && escolherCircuito) && !(isVisitante && !visitanteCirc) && <BottomNav isAdmin={isAdmin} isVisitante={isVisitante} tab={tab} setTab={setTab} badges={adminBadges} modoOrg={modoOrg} />}
     </div>
   );
 }
@@ -5180,16 +5180,19 @@ const IconComunidade = ({ ativo }) => {
   );
 };
 
-function BottomNav({ isAdmin, isVisitante, tab, setTab, badges }) {
+function BottomNav({ isAdmin, isVisitante, tab, setTab, badges, modoOrg }) {
+  // No modo organizador, rótulos mais diretos pro dia a dia dele (o super-admin
+  // mantém os nomes curtos habituais).
+  const org = !!modoOrg;
   const adminTabs = [
-    {id:"dashboard",  label:"Início",  icon:"🏠"},
-    {id:"inscricoes", label:"Inscr.",  icon:"📝"},
-    {id:"etapa",      label:"Etapa",   icon:"🏓"},
-    {id:"ranking",    label:"Ranking", icon:"🏆"},
-    {id:"pendencias", label:"Pend.",   icon:"⚠️"},
-    {id:"historico",  label:"Hist.",   icon:"📋"},
-    {id:"mensagens",  label:"Msgs",    icon:"💬"},
-    {id:"financeiro", label:"$",       icon:"💰"},
+    {id:"dashboard",  label:"Início",                    icon:"🏠"},
+    {id:"inscricoes", label:"Inscr.",                    icon:"📝"},
+    {id:"etapa",      label:org?"Rodada":"Etapa",        icon:"🏓"},
+    {id:"ranking",    label:"Ranking",                   icon:"🏆"},
+    {id:"pendencias", label:org?"A fazer":"Pend.",       icon:"⚠️"},
+    {id:"historico",  label:"Hist.",                     icon:"📋"},
+    {id:"mensagens",  label:org?"Avisos":"Msgs",         icon:"💬"},
+    {id:"financeiro", label:org?"Pagam.":"$",            icon:"💰"},
   ];
   const athleteTabs = [
     {id:"meus_jogos", label:"Jogos",      Icon:IconJogos},

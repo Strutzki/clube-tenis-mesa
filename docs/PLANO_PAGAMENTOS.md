@@ -144,9 +144,9 @@ Com *split*, quando o atleta paga a inscrição, o gateway **divide automaticame
 
 Ordem sugerida. As primeiras são **inertes** (config sem valor = desligado) — não cobram nada, não tocam o BH.
 
-1. **Fundação parametrizada (inerte).** Config de cobrança por circuito, sem valores: Caso 1 já tem `valor_temporada` (atleta); Caso 2 ganha campos novos em `circuitos` — taxa fixa da plataforma por temporada + taxa por atleta (fixo ou %) — tudo `null`/desligado por padrão. Só admin lê (nada exposto ao anon). BH (Caso 1) intocado.
-2. **Cálculo (função pura, testável).** Dado o config + nº de atletas pagos, computa "quanto a plataforma recebe / quanto o organizador recebe / total". Sem mover dinheiro — só preview no admin. Harness de teste.
-3. **Admin: definir valores.** Telas pra o Juliano/organizador preencher os números quando quiser (segue desligado até preencher).
+1. **Fundação parametrizada (inerte). — ✅ FEITA.** Colunas em `circuitos` (`cobranca_plataforma_ativa`, `taxa_plataforma_temporada_cent`, `taxa_plataforma_por_atleta_tipo/valor`), desligadas por padrão, sem grant ao anon. BH (Caso 1) intocado.
+2. **Cálculo (função pura, testável). — ✅ FEITA.** `calcularCobrancaPlataforma` provada em 7 cenários (harness).
+3. **Admin: definir valores + preview. — ✅ FEITA (front + edge no fonte).** Card "💳 Cobrança da plataforma" (super-admin, ≠ BH) + ações `LER/DEFINIR_COBRANCA_PLATAFORMA`. **Edge a deployar (v55) quando houver o 1º circuito vendido.** Só grava config.
 4. **Jurídico em paralelo.** Termos do organizador (B2B) + política de privacidade atualizada (pagamento é novo tratamento). Guardião Jurídico/LGPD.
 5. **Integração do gateway (Asaas) — cobrança real.** Conta/KYC, criar cobrança (Pix Automático), **webhook assinado** confirma pagamento (server-to-server), split automático da fatia da plataforma. Aqui é que dinheiro se move — Guardião de Segurança obrigatório, e só liga depois do jurídico.
 6. **Recorrência por temporada + inadimplência.** Renovação automática, retenção (atleta não pago não é pareado — regra já existe), estorno.

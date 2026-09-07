@@ -1376,6 +1376,43 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true });
       }
 
+      // ── Monetização Fatia 3 (só super-admin; fora da ACOES_ORG → organizador barrado) ──
+      // Config da COBRANÇA DA PLATAFORMA de um circuito VENDIDO (Caso 2). O BH (Caso 1,
+      // circuito próprio) não tem essa cobrança. Só grava config — NÃO cobra nada ainda.
+      case "LER_COBRANCA_PLATAFORMA": {
+        const { data, error } = await supabase.from("circuitos")
+          .select("cobranca_plataforma_ativa,taxa_plataforma_temporada_cent,taxa_plataforma_por_atleta_tipo,taxa_plataforma_por_atleta_valor,valor_temporada")
+          .eq("id", circuitoId).maybeSingle();
+        if (error) throw error;
+        if (!data) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
+        return jsonResponse({ sucesso: true, dados: data });
+      }
+
+      case "DEFINIR_COBRANCA_PLATAFORMA": {
+        const bhCob = await bhId();
+        if (circuitoId === bhCob) return jsonResponse({ sucesso: false, erro: "O BH é circuito próprio — não tem cobrança de plataforma." }, 400);
+        const { ativa, fixoTemporadaCent, porAtletaTipo, porAtletaValor } = payload || {};
+        if (typeof ativa !== "boolean") return jsonResponse({ sucesso: false, erro: "ativa (boolean) é obrigatório" }, 400);
+        const fixo = (fixoTemporadaCent === null || fixoTemporadaCent === undefined || fixoTemporadaCent === "") ? null : Math.floor(Number(fixoTemporadaCent));
+        if (fixo !== null && (!Number.isFinite(fixo) || fixo < 0)) return jsonResponse({ sucesso: false, erro: "Taxa fixa inválida." }, 400);
+        const tipo = (porAtletaTipo === "fixo" || porAtletaTipo === "pct") ? porAtletaTipo : null;
+        const valorRaw = (porAtletaValor === null || porAtletaValor === undefined || porAtletaValor === "") ? null : Math.floor(Number(porAtletaValor));
+        if (valorRaw !== null && (!Number.isFinite(valorRaw) || valorRaw < 0)) return jsonResponse({ sucesso: false, erro: "Valor por atleta inválido." }, 400);
+        // Coerência: valor por atleta só vale com tipo; sem tipo, zera o valor (e vice-versa).
+        const valor = tipo === null ? null : valorRaw;
+        const { data: circCob } = await supabase.from("circuitos").select("id").eq("id", circuitoId).maybeSingle();
+        if (!circCob) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
+        const updCob = {
+          cobranca_plataforma_ativa: ativa,
+          taxa_plataforma_temporada_cent: fixo,
+          taxa_plataforma_por_atleta_tipo: valor === null ? null : tipo,
+          taxa_plataforma_por_atleta_valor: valor,
+        };
+        const { error } = await supabase.from("circuitos").update(updCob).eq("id", circuitoId);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true, dados: updCob });
+      }
+
       // Guarda o handle (credId) da biometria do ADMIN (protegido pelo PIN, ja checado
       // no topo do handler). NAO e' segredo. Permite recuperar a biometria do admin
       // depois que o navegador limpa o localStorage. Config global (admin unico).

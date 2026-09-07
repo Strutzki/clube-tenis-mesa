@@ -6610,6 +6610,129 @@ function GerenciarOrganizadoresCard({ chamarAdminAction, circuitoSelId }) {
 // Visibilidade pro visitante (público/privado). Só muda quem enxerga o ranking —
 // não toca em jogos/rating. Pode ser trocado a qualquer momento, inclusive no meio
 // da temporada. O BH é sempre público (o servidor recusa torná-lo privado).
+// Monetização Fatia 3 — só super-admin, circuito ≠ BH. Define a cobrança da
+// PLATAFORMA de um circuito vendido (fixo por temporada + por atleta fixo/%),
+// com preview ao vivo (calcularCobrancaPlataforma). Fica DESLIGADO até salvar.
+// Nada é cobrado aqui — só grava config (a cobrança real é a Fatia 5, com gateway).
+function CobrancaPlataformaCard({ chamarAdminAction, circuitoSelId, ativosCount = 0 }) {
+  const [aberto, setAberto] = useState(false);
+  const [carregado, setCarregado] = useState(false);
+  const [carregando, setCarregando] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [ativa, setAtiva] = useState(false);
+  const [fixo, setFixo] = useState("");   // R$ (string)
+  const [tipo, setTipo] = useState("");   // "" | "fixo" | "pct"
+  const [valor, setValor] = useState(""); // R$ (fixo) ou % (pct)
+  const [valorTemporadaCent, setValorTemporadaCent] = useState(0);
+  const [nSim, setNSim] = useState(ativosCount > 0 ? ativosCount : 10);
+
+  const num = (s) => { const v = parseFloat(String(s).replace(",", ".")); return Number.isFinite(v) ? v : 0; };
+  const fmtR = (c) => "R$ " + ((Number(c) || 0) / 100).toFixed(2).replace(".", ",");
+  const fixoCent = fixo === "" ? null : Math.round(num(fixo) * 100);
+  const valorStore = tipo === "" || valor === "" ? null : (tipo === "pct" ? Math.round(num(valor) * 100) : Math.round(num(valor) * 100));
+
+  async function carregar() {
+    setCarregando(true); setMsg("");
+    try {
+      const r = await chamarAdminAction("LER_COBRANCA_PLATAFORMA", {});
+      const d = (r && r.dados) || {};
+      setAtiva(!!d.cobranca_plataforma_ativa);
+      setFixo(d.taxa_plataforma_temporada_cent != null ? String(d.taxa_plataforma_temporada_cent / 100) : "");
+      setTipo(d.taxa_plataforma_por_atleta_tipo || "");
+      setValor(d.taxa_plataforma_por_atleta_valor != null ? String(d.taxa_plataforma_por_atleta_valor / 100) : "");
+      setValorTemporadaCent(Number(d.valor_temporada) || 0);
+      setCarregado(true);
+    } catch (e) { setMsg("✗ " + (e.message || "Erro ao carregar.")); }
+    finally { setCarregando(false); }
+  }
+  function toggle() { if (aberto) { setAberto(false); return; } setAberto(true); if (!carregado) carregar(); }
+
+  async function salvar() {
+    setSalvando(true); setMsg("");
+    try {
+      await chamarAdminAction("DEFINIR_COBRANCA_PLATAFORMA", {
+        ativa, fixoTemporadaCent: fixoCent, porAtletaTipo: tipo || null, porAtletaValor: valorStore,
+      });
+      setMsg("✓ Config de cobrança salva. (Nada é cobrado ainda — só guardado.)");
+    } catch (e) { setMsg("✗ " + (e.message || "Não foi possível salvar.")); }
+    finally { setSalvando(false); }
+  }
+
+  const prev = calcularCobrancaPlataforma({
+    ativa, valorTemporadaCent, nAtletas: nSim,
+    fixoTemporadaCent: fixoCent || 0, porAtletaTipo: tipo || null, porAtletaValor: valorStore || 0,
+  });
+  const inp = { background:T.verde, border:`1px solid ${T.bordaSuave}`, borderRadius:8, color:T.offwhite, padding:"8px 10px", fontSize:13, width:"100%", outline:"none", boxSizing:"border-box" };
+  const lbl = { fontSize:11, color:T.cinza, marginBottom:4, marginTop:10 };
+
+  return (
+    <Card style={{marginBottom:16, border:`1px solid ${T.bordaSuave}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>💳 Cobrança da plataforma</div>
+          <div style={{fontSize:12,color:T.cinza,marginTop:2,lineHeight:1.4}}>Quanto este circuito (vendido) paga à plataforma: fixo por temporada + por atleta. Desligado até você preencher.</div>
+        </div>
+        <Btn small onClick={toggle} color={T.terracotaBtn}>{aberto ? "Fechar" : "Configurar"}</Btn>
+      </div>
+      {aberto && (
+        <div style={{marginTop:14}}>
+          {carregando ? <div style={{fontSize:12,color:T.cinza}}>Carregando…</div> : (
+            <>
+              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,color:T.offwhite}}>
+                <input type="checkbox" checked={ativa} onChange={e=>setAtiva(e.target.checked)} />
+                Cobrança da plataforma ativa
+              </label>
+
+              <div style={lbl}>Taxa fixa por temporada (R$)</div>
+              <input style={inp} value={fixo} onChange={e=>setFixo(e.target.value)} placeholder="ex.: 50,00 — deixe vazio p/ nenhuma" inputMode="decimal" disabled={!ativa}/>
+
+              <div style={lbl}>Cobrança por atleta</div>
+              <select style={inp} value={tipo} onChange={e=>setTipo(e.target.value)} disabled={!ativa}>
+                <option value="">Nenhuma</option>
+                <option value="fixo">Valor fixo por atleta (R$)</option>
+                <option value="pct">Percentual do valor da temporada (%)</option>
+              </select>
+              {tipo && (
+                <>
+                  <div style={lbl}>{tipo === "pct" ? "Percentual (%)" : "Valor por atleta (R$)"}</div>
+                  <input style={inp} value={valor} onChange={e=>setValor(e.target.value)} placeholder={tipo === "pct" ? "ex.: 5" : "ex.: 5,00"} inputMode="decimal" disabled={!ativa}/>
+                </>
+              )}
+
+              <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${T.bordaSuave}`}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.offwhite,marginBottom:6}}>Simulação</div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontSize:12,color:T.cinza}}>com</span>
+                  <input style={{...inp,width:70}} value={nSim} onChange={e=>setNSim(Math.max(0,Math.floor(num(e.target.value))))} inputMode="numeric"/>
+                  <span style={{fontSize:12,color:T.cinza}}>atletas pagos · valor/temporada {fmtR(valorTemporadaCent)}</span>
+                </div>
+                <div style={{fontSize:12.5,color:T.offwhite,lineHeight:1.7}}>
+                  Receita dos atletas: <b>{fmtR(prev.receitaAtletasCent)}</b><br/>
+                  Plataforma (fixo {fmtR(prev.plataformaFixoCent)} + por atleta {fmtR(prev.plataformaPorAtletaCent)}): <b style={{color:T.terracota}}>{fmtR(prev.plataformaTotalCent)}</b><br/>
+                  Organizador recebe (via split): <b>{fmtR(prev.organizadorBrutoCent)}</b>{prev.plataformaFixoCent > 0 && <> · líquido após o fixo: <b style={{color: prev.organizadorLiquidoCent < 0 ? T.vermelho : T.verde2}}>{fmtR(prev.organizadorLiquidoCent)}</b></>}
+                </div>
+                {prev.organizadorLiquidoCent < 0 && <div style={{fontSize:11,color:T.vermelho,marginTop:6}}>⚠️ Com poucos atletas, o fixo deixa o organizador no negativo. Considere fixo menor.</div>}
+              </div>
+
+              <div style={{marginTop:14}}>
+                <Btn small onClick={salvar} disabled={salvando} color="#6a9d7a">{salvando ? "Salvando…" : "Salvar config"}</Btn>
+              </div>
+            </>
+          )}
+          {msg && (
+            <div style={{fontSize:12.5,fontWeight:600,lineHeight:1.5,marginTop:12,padding:"9px 12px",borderRadius:9,
+              color: msg.startsWith("✓") ? T.verde2 : T.vermelho,
+              background: msg.startsWith("✓") ? "rgba(106,157,122,0.12)" : "rgba(194,90,69,0.12)",
+              border: `1px solid ${msg.startsWith("✓") ? "rgba(106,157,122,0.4)" : "rgba(194,90,69,0.4)"}`,
+            }}>{msg}</div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function VisibilidadeCircuitoCard({ chamarAdminAction, circuitos, circuitoSelId, recarregarCircuitos }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -6995,6 +7118,13 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
               circuitos={circuitos}
               circuitoSelId={circuitoSelId}
               recarregarCircuitos={recarregarCircuitos}
+            />
+          )}
+          {circuitoSelId !== CIRCUITO_BH_ID && (
+            <CobrancaPlataformaCard
+              chamarAdminAction={chamarAdminAction}
+              circuitoSelId={circuitoSelId}
+              ativosCount={ativos.length}
             />
           )}
           {circuitoSelId !== CIRCUITO_BH_ID && (
@@ -8660,6 +8790,31 @@ function VisitanteView({ state, tab, setTab, nomeCircuito, onVoltar }) {
 // Rótulo do sistema para o usuário final (visitante/atleta): "A"/"B" são códigos
 // internos; na tela mostramos "Rating" (A) e "Pontos" (B).
 const rotuloSistema = (s) => (s === "B" ? "Pontos" : "Rating");
+
+// ── Monetização · Fatia 2: CÁLCULO (função pura, não move dinheiro) ───────────
+// Dado o config da cobrança da plataforma (Caso 2 — circuito vendido) e o nº de
+// atletas PAGOS, devolve a repartição em centavos. Se a cobrança da plataforma
+// está desligada (Caso 1 — circuito próprio, ex.: BH), a plataforma leva 0 e o
+// organizador leva tudo. Tudo parametrizado — os VALORES são preenchidos depois.
+//   porAtletaTipo: 'fixo' (valor em centavos por atleta) | 'pct' (valor em basis
+//   points: 500 = 5,00% do valor da temporada por atleta) | null (desligado).
+function calcularCobrancaPlataforma({ ativa = false, valorTemporadaCent = 0, nAtletas = 0, fixoTemporadaCent = 0, porAtletaTipo = null, porAtletaValor = 0 } = {}) {
+  const n = Math.max(0, Math.floor(Number(nAtletas) || 0));
+  const valorAtleta = Math.max(0, Math.floor(Number(valorTemporadaCent) || 0));
+  const receitaAtletas = valorAtleta * n; // o que os atletas pagam ao circuito
+  if (!ativa) {
+    return { ativa: false, receitaAtletasCent: receitaAtletas, plataformaFixoCent: 0, plataformaPorAtletaCent: 0, plataformaTotalCent: 0, organizadorBrutoCent: receitaAtletas, organizadorLiquidoCent: receitaAtletas };
+  }
+  const fixo = Math.max(0, Math.floor(Number(fixoTemporadaCent) || 0));
+  let porAtletaUnit = 0;
+  if (porAtletaTipo === "fixo") porAtletaUnit = Math.max(0, Math.floor(Number(porAtletaValor) || 0));
+  else if (porAtletaTipo === "pct") porAtletaUnit = Math.round(valorAtleta * Math.max(0, Number(porAtletaValor) || 0) / 10000);
+  const plataformaPorAtleta = porAtletaUnit * n;           // variável — sai do pagamento do atleta (split)
+  const plataformaTotal = fixo + plataformaPorAtleta;       // fixo (cobrado à parte) + variável
+  const organizadorBruto = Math.max(0, receitaAtletas - plataformaPorAtleta); // cai pro organizador via split
+  const organizadorLiquido = organizadorBruto - fixo;       // depois de pagar o fixo (pode ficar negativo com poucos atletas)
+  return { ativa: true, receitaAtletasCent: receitaAtletas, plataformaFixoCent: fixo, plataformaPorAtletaCent: plataformaPorAtleta, plataformaTotalCent: plataformaTotal, organizadorBrutoCent: organizadorBruto, organizadorLiquidoCent: organizadorLiquido };
+}
 
 function VisitanteCircuitos({ circuitos = [], onAbrir }) {
   const [aviso, setAviso] = useState(null); // id do circuito privado clicado

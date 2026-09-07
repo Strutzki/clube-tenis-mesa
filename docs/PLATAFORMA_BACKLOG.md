@@ -71,3 +71,22 @@ Tomada pelo Juliano. Três níveis de papel, um login só:
 **Governança:** Guardião (privacidade/dados) + Advogado do Atleta revisam antes de construir — provável GO-com-condições (anonimização de IP, retenção definida, transparência na política, isolamento total do CPF).
 
 **Decisões a fechar antes de codar:** escopo (só agregado x incluir atividade por atleta); ferramenta (terceiro x próprio x híbrido); lista mínima de métricas (evitar over-collection — só o que vira decisão); janela de retenção; se o atleta logado ganha um "meu histórico de uso" (transparência a favor dele).
+
+---
+
+## BACKLOG — Pagamentos (Fatia 5b+) · PARADO aguardando ação do Juliano (07/09/2026)
+
+A fase de pagamentos está **desenhada e com a fundação pronta**; a integração real ficou parada por depender de coisas que só o Juliano faz.
+
+**Já feito (no ar / inerte, footprint-zero):**
+- Estratégia + modelo decidido (`PLANO_PAGAMENTOS.md`): Caso 1 = único por atleta/temporada; Caso 2 = fixo por temporada + variável por atleta (split). Gateway = Asaas; meio = Pix Automático; valores parametrizados.
+- Fatia 1 (config em `circuitos`, desligada), Fatia 2 (cálculo `calcularCobrancaPlataforma`, provado), Fatia 3 (card "Cobrança da plataforma" + preview; edge a deployar quando houver circuito vendido), Fatia 4 (minutas jurídicas), Fatia 5 design + **5a** (tabela `cobrancas` inerte + `asaas_wallet_id`).
+
+**Próximos passos (bloqueiam o go-live) — ação do Juliano:**
+1. **Criar a conta Asaas Sandbox** (separada da de produção) e **gerar a chave de API** (prefixo `$aact_hmlg_...`), e me passar por canal privado. Depois dos testes, revogar/rotacionar a chave.
+2. **Revisão jurídica** das minutas `TERMOS_ORGANIZADOR.md` + `POLITICA_PRIVACIDADE.md`.
+3. (Para o Caso 2) cada organizador com carteira Asaas (wallet id) pro split.
+
+**Quando o sandbox estiver pronto (comigo):**
+- 5b `criar-cobranca` (sandbox) → 5c `webhook-asaas` (assinado, idempotente) → 5d split (Caso 2) → 5e recorrência/Pix Automático + inadimplência → 5f go-live (produção, só após sandbox provado + jurídico + OK do Juliano).
+- Detalhe técnico em `PLANO_PAGAMENTOS_FATIA5_INTEGRACAO.md`.

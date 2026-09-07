@@ -367,6 +367,17 @@ Deno.serve(async (req) => {
       return jsonResponse({ sucesso: true });
     }
 
+    // PRECO — preço/isenção da temporada do PRÓPRIO atleta, autenticado pelo token de
+    // sessão. Fecha o vazamento: a função de preço não responde mais a qualquer anônimo
+    // que saiba um id (os ids são públicos no ranking); só o dono da sessão vê o seu preço.
+    if (acao === "PRECO") {
+      const atletaId = await atletaPorToken(body?.token);
+      if (!atletaId) return jsonResponse({ sucesso: false, erro: "sessao_invalida" }, 401);
+      const { data: preco, error: ePreco } = await supabase.rpc("preco_temporada_atleta", { p_id: atletaId });
+      if (ePreco) return jsonResponse({ sucesso: false, erro: "erro_preco" }, 500);
+      return jsonResponse({ sucesso: true, dados: preco });
+    }
+
     return jsonResponse({ sucesso: false, erro: `Ação desconhecida: ${acao}` }, 400);
   } catch (e) {
     console.error(e);

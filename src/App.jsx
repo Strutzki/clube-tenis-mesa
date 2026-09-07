@@ -423,23 +423,27 @@ async function buscarAdminBioCredIds() {
   } catch (e) { return []; }
 }
 
-// Preço da temporada do PRÓPRIO atleta, via função SECURITY DEFINER — assim o
-// desconto/isenção individual não precisa trafegar na lista pública de atletas
-// (dado financeiro individual fica fora do broadcast). Devolve { financeiro_ativo,
-// isento, desconto_pct, valor_base_cent, preco_final_cent } ou null.
-async function buscarPrecoTemporada(id) {
+// Preço/isenção da temporada do PRÓPRIO atleta — AUTENTICADO pelo token de sessão
+// (ação PRECO do login-atleta). O servidor deriva o atleta do token; não confia no id
+// vindo do cliente. Fecha o vazamento (dado financeiro individual não fica mais acessível
+// a qualquer anônimo que saiba um id público do ranking). Sem sessão → null (não expõe).
+// Devolve { isento, valor_base_cent, preco_final_cent } ou null.
+async function buscarPrecoTemporada() {
   try {
-    const res = await fetch(`${SUPA_URL}/rest/v1/rpc/preco_temporada_atleta`, {
+    const cred = getAtletaCred();
+    if (!cred || !cred.token) return null;
+    const res = await fetch(`${SUPA_URL}/functions/v1/login-atleta`, {
       method: "POST",
       headers: {
         "apikey": SUPA_KEY,
         "Authorization": `Bearer ${SUPA_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ p_id: id }),
+      body: JSON.stringify({ acao: "PRECO", token: cred.token }),
     });
     if (!res.ok) return null;
-    return await res.json();
+    const data = await res.json().catch(() => ({}));
+    return (data && data.sucesso) ? data.dados : null;
   } catch { return null; }
 }
 

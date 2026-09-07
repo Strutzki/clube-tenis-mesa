@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Pasta temporaria criada pelo CLI do Supabase
+supabase/.temp/

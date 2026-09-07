@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** Concluido (Fatias 1-6), incluindo regiao e vagas.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # Inscrição por circuito / região — mini-spec
 
 **Objetivo:** o atleta clica em "Inscreva-se", vê os circuitos **com inscrições abertas na sua região**, escolhe um e se inscreve nele (fica pendente → o admin daquele circuito aprova). Resolve o buraco de hoje (a inscrição sempre cai no BH).

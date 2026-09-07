@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** Concluido. O seletor de circuito no painel do admin esta no ar.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # Fase A2 — Seletor de circuito (transitar e administrar) · Plano
 
 **Objetivo:** o super-admin (PIN atual) transita entre o BH e os circuitos criados no A1 e administra cada um. **Footprint-zero pro BH:** com o BH selecionado, o app é byte-idêntico a hoje.

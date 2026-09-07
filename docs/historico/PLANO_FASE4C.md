@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** Concluido. O app le do circuito ativo.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # Fase 4C — App lê do circuito ativo · Análise de risco + plano
 
 **Objetivo:** o app passa a carregar os dados lendo de `circuito_atletas`/`circuitos` do **circuito ativo** (fixo em BH, sem seletor ainda), em vez de ler direto de `atletas`/`configuracao`. É a última peça da migração de leitura — sem ela o app nunca exibe um circuito ≠ BH. **Footprint-zero:** pro BH, as tabelas novas devolvem os mesmos dados (dual-write com 0 divergências + prova da Fase 0).

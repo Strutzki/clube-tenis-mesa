@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** Concluido. A acao PARTICIPAR esta no ar no login-atleta.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # "Participar" — atleta existente entra em 2º circuito (Bloqueador estrutural 1)
 
 ## Objetivo

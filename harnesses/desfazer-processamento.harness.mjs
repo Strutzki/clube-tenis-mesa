@@ -1,3 +1,10 @@
+// ⚠️ ATENCAO — este harness NAO testa o motor. Ele REESCREVE a logica do motor
+// aqui dentro (inclusive com uma tabela de rating propria, diferente da tabela
+// real da CBTM que esta no admin-action). Serve para provar que a ESTRATEGIA do
+// recalculo e reversivel — e isso ele prova bem, 240/240. Mas continua verde
+// mesmo se o motor de producao quebrar.
+// Para testar o motor de verdade: `npm run teste` (ver testes/README.md).
+//
 // Harness Guardião: prova que "desfazer processamento" via RECÁLCULO reproduz EXATAMENTE
 // o estado anterior. Espelha a lógica do PROCESSAR_RODADA (ramo A rating + ramo B pontos).
 // calcElo real é tabela inteira determinística — aqui uso uma tabela determinística equivalente.

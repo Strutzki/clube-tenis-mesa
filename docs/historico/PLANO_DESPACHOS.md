@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** Concluido (Fatias 1-3). A funcao despachos-do-dia esta no ar. Push nativo ficou de fora, de proposito.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # Despachos do Dia — mini-spec
 
 **Objetivo:** uma tela única onde quem administra vê e resolve tudo que precisa de ação no dia, **agregado de todos os circuitos que a pessoa gerencia**, priorizado. Reduz o operacional e destrava tocar muitos circuitos. Estado: proposta (05/09/2026).

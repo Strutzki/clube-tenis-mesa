@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** Concluido. A escrita dupla esta no ar e continua valendo — ver CLAUDE.md.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # Fase 4B — Parte acoplada (dual-write) · Análise de risco + plano
 
 **Objetivo:** tornar o motor e a config multi-circuito (Modelo B: identidade/rating compartilhados, estado sazonal por circuito), **sem congelar nem alterar o circuito do BH em andamento.**

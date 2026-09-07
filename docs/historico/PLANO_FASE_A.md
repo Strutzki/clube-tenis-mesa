@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** Concluido. CRIAR_CIRCUITO e o formulario 'Novo circuito' estao no ar.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # Fase A — CRIAR_CIRCUITO + Seletor (4D) · Análise de risco + plano
 
 **Objetivo:** você (super-admin, pelo PIN atual) cria um 2º circuito e transita entre ele e o BH no app — a plataforma "aparece" ponta a ponta, **sem mexer em autenticação** (organizador terceiro = Fase B). Footprint-zero pro BH.

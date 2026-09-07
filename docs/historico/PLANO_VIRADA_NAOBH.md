@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** Concluido. NOVA_TEMPORADA escopada por circuito (v53 nao-BH, v54 BH), provada ao vivo.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # Virada de temporada para circuitos não-BH — análise de risco + plano
 
 **Objetivo:** `NOVA_TEMPORADA` passar a funcionar em qualquer circuito (hoje recusa != BH), **escopado por `circuito_id`**, sem jamais tocar dados de outro circuito. Fecha o ciclo do admin não-BH e destrava o piloto.

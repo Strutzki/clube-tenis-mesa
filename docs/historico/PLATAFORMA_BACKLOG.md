@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** As decisoes deste arquivo (CPF como identidade, papeis) foram tomadas e implementadas. O que sobrou de aberto esta no docs/ROADMAP.md.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # Plataforma nacional — decisões a fechar antes do FRONT (Fase 4C+)
 
 Achados da revisão supervisionada (Designer + Advogado do Atleta) sobre o conceito. NÃO bloqueiam a Fase 0 (prova de isolamento, backend), mas precisam estar decididos antes de mexer no app.

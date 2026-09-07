@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** Concluido. O motor do Sistema B esta no ar, validado em 400 temporadas simuladas.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # Motor do Sistema B — plano de design
 
 **Objetivo:** um circuito Sistema B (pontos fixos) roda de verdade — pareia, pontua e ranqueia por pontos. **Prioridade absoluta: footprint-zero pro BH.** Tudo ramifica em `sistema === 'B'`; o caminho do Sistema A (BH) fica **byte-idêntico**.

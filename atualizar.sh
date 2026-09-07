@@ -29,6 +29,26 @@ fi
 # ============================================================
 echo "🧪 Testando o app antes de publicar..."
 
+# ============================================================
+# 🧪 A BATERIA — roda o motor de verdade (o admin-action que vai pro ar)
+# contra um banco de mentira e confere os numeros que o regulamento manda.
+# Se uma regra da competicao quebrar, para aqui e NADA e publicado.
+# Detalhe em testes/README.md.
+# ============================================================
+if [ -d testes ]; then
+    if ! npm run teste --silent; then
+        echo ""
+        echo "❌ A BATERIA DE TESTES FALHOU — alguma regra da competicao quebrou (veja acima)."
+        echo "   🛡️  NADA foi publicado. O site atual continua no ar, intacto."
+        echo ""
+        read -p "Pressione Enter para fechar..."
+        exit 1
+    fi
+    echo "✅ Bateria passou."
+    echo ""
+fi
+
+
 if ! command -v npm >/dev/null 2>&1; then
     echo "❌ 'npm' não encontrado. Instale o Node.js (nodejs.org) e rode de novo."
     echo ""
@@ -54,6 +74,28 @@ fi
 echo "✅ Teste passou — o app compila sem erros."
 echo ""
 
+# ============================================================
+# 👀 O QUE VAI SUBIR — antes o script mandava TUDO que estivesse na
+# pasta, sem mostrar. Agora ele lista e espera voce confirmar. Assim
+# arquivo temporario ou teste esquecido nao viaja junto por acidente.
+# ============================================================
+echo "📦 Estes arquivos vao subir:"
+echo ""
+git status --short
+echo ""
+read -p "Confirma? (digite S para publicar, qualquer outra coisa cancela): " RESPOSTA
+case "$RESPOSTA" in
+    [Ss]) ;;
+    *)
+        echo ""
+        echo "🚫 Cancelado. Nada foi publicado; o site atual continua no ar."
+        echo ""
+        read -p "Pressione Enter para fechar..."
+        exit 0
+        ;;
+esac
+
+echo ""
 echo "📦 Preparando arquivos..."
 git add .
 

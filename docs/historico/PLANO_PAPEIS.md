@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** Concluido nas Fatias 1-3 (organizador por circuito, no ar). A Fatia 4 — aposentar o PIN global do super-admin — nunca foi feita e continua aberta no ROADMAP.md.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # Papéis e autorização — organizador por circuito (Bloqueador 2)
 
 ## Objetivo

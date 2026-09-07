@@ -1,3 +1,6 @@
+> **HISTÓRICO — não é o que fazer a seguir.** Substituido pelo docs/ROADMAP.md, que incorporou o conteudo vigente deste arquivo.
+> O que vale hoje está em `docs/ROADMAP.md`. Guardado em 07/09/2026 porque registra *por que* as decisões foram tomadas.
+
 # Roadmap — do multi-circuito à comercialização
 
 Mapa do caminho até (A) o multi-circuito funcionar de ponta a ponta e (B) o produto poder ser vendido. Estado em 01/09/2026.

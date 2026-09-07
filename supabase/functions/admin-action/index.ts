@@ -296,6 +296,11 @@ const ACOES_ORG = new Set([
 // Revisão de acesso do organizador (07/09/2026, validado item a item com o Juliano):
 // TIRADOS do organizador (só super-admin): EXCLUIR_ATLETA, ABRIR_PROXIMA_TEMPORADA, CANCELAR_PROXIMA.
 // DEFINIR_RODADAS saiu da lista (rodadas são fixas em 6; a ação já recusa de qualquer forma).
+// AÇÕES FINANCEIRAS: ficam na allowlist, mas só valem pro organizador se o super-admin ligou
+// `org_ve_financeiro` no circuito dele (padrão OFF). Gate condicional no enforcement abaixo.
+const FINANCEIRO_ACOES = new Set([
+  "DEFINIR_FINANCEIRO","REGISTRAR_PAGAMENTO","ESTORNAR_PAGAMENTO","EDITAR_PAGAMENTO","LISTAR_PAGAMENTOS",
+]);
 // ESCOPO POR RECURSO: ações que recebem um matchId/atletaId precisam confirmar que o
 // recurso pertence ao circuito do organizador (senão ele tocaria outro circuito/BH).
 const ORG_MATCH_FIELD: Record<string, string> = {
@@ -616,6 +621,11 @@ Deno.serve(async (req) => {
   if (!ehSuper) {
     if (!ACOES_ORG.has(acao)) return jsonResponse({ sucesso: false, erro: "Ação disponível apenas para o super-admin." }, 403);
     if (!(await ehOrganizadorDe(orgAtletaId!, circuitoId))) return jsonResponse({ sucesso: false, erro: "Você não organiza este circuito." }, 403);
+    // Financeiro por circuito: ações financeiras só passam se o super-admin ligou o flag.
+    if (FINANCEIRO_ACOES.has(acao)) {
+      const { data: cfFin } = await supabase.from("circuitos").select("org_ve_financeiro").eq("id", circuitoId).maybeSingle();
+      if (!cfFin?.org_ve_financeiro) return jsonResponse({ sucesso: false, erro: "O financeiro deste circuito é gerido pela plataforma." }, 403);
+    }
     const pl = payload || {};
     const mf = ORG_MATCH_FIELD[acao];
     if (mf) {
@@ -1382,16 +1392,37 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true });
       }
 
+      // Financeiro por circuito: liga/desliga se o ORGANIZADOR vê e gere o financeiro do
+      // circuito dele. Só super-admin (fora da ACOES_ORG). BH não tem organizador terceiro.
+      case "DEFINIR_ORG_VE_FINANCEIRO": {
+        const bhFin = await bhId();
+        if (circuitoId === bhFin) return jsonResponse({ sucesso: false, erro: "O BH não tem organizador terceiro." }, 400);
+        const { ver } = payload || {};
+        if (typeof ver !== "boolean") return jsonResponse({ sucesso: false, erro: "ver (boolean) é obrigatório" }, 400);
+        const { error } = await supabase.from("circuitos").update({ org_ve_financeiro: ver }).eq("id", circuitoId);
+        if (error) throw error;
+        return jsonResponse({ sucesso: true });
+      }
+
       // ── Monetização Fatia 3 (só super-admin; fora da ACOES_ORG → organizador barrado) ──
       // Config da COBRANÇA DA PLATAFORMA de um circuito VENDIDO (Caso 2). O BH (Caso 1,
       // circuito próprio) não tem essa cobrança. Só grava config — NÃO cobra nada ainda.
       case "LER_COBRANCA_PLATAFORMA": {
-        const { data, error } = await supabase.from("circuitos")
-          .select("cobranca_plataforma_ativa,taxa_plataforma_temporada_cent,taxa_plataforma_por_atleta_tipo,taxa_plataforma_por_atleta_valor,valor_temporada")
-          .eq("id", circuitoId).maybeSingle();
-        if (error) throw error;
-        if (!data) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
-        return jsonResponse({ sucesso: true, dados: data });
+        // Config de cobrança vive em `circuito_cobranca` (tabela PRIVADA, sem anon) — não
+        // em `circuitos` (que o app lê com SELECT * pelo anon). O valor da temporada fica em circuitos.
+        const { data: circ, error: eC } = await supabase.from("circuitos").select("id,valor_temporada").eq("id", circuitoId).maybeSingle();
+        if (eC) throw eC;
+        if (!circ) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
+        const { data: cob } = await supabase.from("circuito_cobranca")
+          .select("cobranca_plataforma_ativa,taxa_plataforma_temporada_cent,taxa_plataforma_por_atleta_tipo,taxa_plataforma_por_atleta_valor")
+          .eq("circuito_id", circuitoId).maybeSingle();
+        return jsonResponse({ sucesso: true, dados: {
+          cobranca_plataforma_ativa: cob?.cobranca_plataforma_ativa ?? false,
+          taxa_plataforma_temporada_cent: cob?.taxa_plataforma_temporada_cent ?? null,
+          taxa_plataforma_por_atleta_tipo: cob?.taxa_plataforma_por_atleta_tipo ?? null,
+          taxa_plataforma_por_atleta_valor: cob?.taxa_plataforma_por_atleta_valor ?? null,
+          valor_temporada: circ.valor_temporada,
+        } });
       }
 
       case "DEFINIR_COBRANCA_PLATAFORMA": {
@@ -1409,12 +1440,14 @@ Deno.serve(async (req) => {
         const { data: circCob } = await supabase.from("circuitos").select("id").eq("id", circuitoId).maybeSingle();
         if (!circCob) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
         const updCob = {
+          circuito_id: circuitoId,
           cobranca_plataforma_ativa: ativa,
           taxa_plataforma_temporada_cent: fixo,
           taxa_plataforma_por_atleta_tipo: valor === null ? null : tipo,
           taxa_plataforma_por_atleta_valor: valor,
+          atualizado_em: new Date().toISOString(),
         };
-        const { error } = await supabase.from("circuitos").update(updCob).eq("id", circuitoId);
+        const { error } = await supabase.from("circuito_cobranca").upsert(updCob, { onConflict: "circuito_id" });
         if (error) throw error;
         return jsonResponse({ sucesso: true, dados: updCob });
       }

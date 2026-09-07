@@ -3986,7 +3986,7 @@ function OrganizadorLogin({ s, LOGO, onBack, onOrganizadorLogin }) {
     }
   }
   function concluir(circ) {
-    onOrganizadorLogin({ telefone: tel.replace(/\D/g,""), pin, circuitoId: circ.id, nome: circ.nome, sistema: circ.sistema });
+    onOrganizadorLogin({ telefone: tel.replace(/\D/g,""), pin, circuitoId: circ.id, nome: circ.nome, sistema: circ.sistema, veFinanceiro: !!circ.veFinanceiro });
   }
 
   return (
@@ -4613,7 +4613,7 @@ export default function App() {
   // Inclui inativos (encerrados) — o super-admin precisa vê-los pra reativar/excluir.
   async function recarregarCircuitos() {
     try {
-      const cs = await supaFetch("circuitos?select=id,slug,nome_circuito,sistema,ativo,publico&order=ativo.desc,nome_circuito.asc");
+      const cs = await supaFetch("circuitos?select=id,slug,nome_circuito,sistema,ativo,publico,org_ve_financeiro&order=ativo.desc,nome_circuito.asc");
       if (!Array.isArray(cs)) return cs;
       setCircuitos(cs);
       // Auto-cura: se o circuito restaurado da sessão não existe mais, volta pro BH.
@@ -5193,7 +5193,7 @@ function BottomNav({ isAdmin, isVisitante, tab, setTab, badges, modoOrg }) {
     {id:"historico",  label:"Hist.",                     icon:"📋"},
     {id:"mensagens",  label:org?"Avisos":"Msgs",         icon:"💬"},
     {id:"financeiro", label:org?"Pagam.":"$",            icon:"💰"},
-  ];
+  ].filter(t => t.id !== "financeiro" || !org || !!(modoOrg && modoOrg.veFinanceiro)); // financeiro por circuito: organizador só vê se o super-admin ligou
   const athleteTabs = [
     {id:"meus_jogos", label:"Jogos",      Icon:IconJogos},
     {id:"ranking",    label:"Ranking",    Icon:IconRanking},
@@ -6785,6 +6785,38 @@ function VisibilidadeCircuitoCard({ chamarAdminAction, circuitos, circuitoSelId,
   );
 }
 
+// Financeiro por circuito (super-admin, ≠ BH): liga/desliga se o ORGANIZADOR vê e gere o
+// financeiro (aba de pagamentos + ações financeiras). Padrão OFF (a plataforma cuida do dinheiro).
+function FinanceiroOrgCard({ chamarAdminAction, circuitos, circuitoSelId, recarregarCircuitos }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const circAtual = (circuitos || []).find(c => c.id === circuitoSelId);
+  const ver = !!(circAtual && circAtual.org_ve_financeiro);
+  async function alternar() {
+    setBusy(true); setMsg("");
+    try {
+      await chamarAdminAction("DEFINIR_ORG_VE_FINANCEIRO", { ver: !ver });
+      await recarregarCircuitos();
+      setMsg(!ver ? "✓ O organizador agora vê e gere o financeiro deste circuito." : "✓ O financeiro deste circuito volta a ser só seu — o organizador não vê a aba de pagamentos.");
+    } catch (e) { setMsg("✗ " + (e.message || "Não foi possível mudar.")); }
+    finally { setBusy(false); }
+  }
+  return (
+    <Card style={{marginBottom:16, border:`1px solid ${T.bordaSuave}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>💰 Financeiro do organizador</div>
+          <div style={{fontSize:12,color:T.cinza,marginTop:2,lineHeight:1.4}}>
+            {ver ? "O organizador vê a aba de pagamentos e gere o dinheiro deste circuito." : "O financeiro é gerido por você (a plataforma). O organizador não vê a aba de pagamentos."}
+          </div>
+        </div>
+        <Btn small onClick={alternar} disabled={busy} color={T.terracotaBtn}>{busy ? "…" : (ver ? "Tirar do organizador" : "Dar ao organizador")}</Btn>
+      </div>
+      {msg && (<div style={{fontSize:12.5,fontWeight:600,lineHeight:1.5,marginTop:12,padding:"9px 12px",borderRadius:9,color: msg.startsWith("✓") ? T.verde2 : T.vermelho, background: msg.startsWith("✓") ? "rgba(106,157,122,0.12)" : "rgba(194,90,69,0.12)", border:`1px solid ${msg.startsWith("✓") ? "rgba(106,157,122,0.4)" : "rgba(194,90,69,0.4)"}`}}>{msg}</div>)}
+    </Card>
+  );
+}
+
 // Cancelar circuito (super-admin, circuito ≠ BH). Dois níveis:
 //  • Encerrar / Reativar — reversível (só liga/desliga o "ativo").
 //  • Excluir de vez — só se o circuito nunca rodou (sem jogos/histórico); pede o nome digitado.
@@ -7121,6 +7153,14 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
           )}
           {circuitoSelId !== CIRCUITO_BH_ID && (
             <VisibilidadeCircuitoCard
+              chamarAdminAction={chamarAdminAction}
+              circuitos={circuitos}
+              circuitoSelId={circuitoSelId}
+              recarregarCircuitos={recarregarCircuitos}
+            />
+          )}
+          {circuitoSelId !== CIRCUITO_BH_ID && (
+            <FinanceiroOrgCard
               chamarAdminAction={chamarAdminAction}
               circuitos={circuitos}
               circuitoSelId={circuitoSelId}

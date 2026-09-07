@@ -337,12 +337,12 @@ Deno.serve(async (req) => {
       if (a.status !== "ativo") return jsonResponse({ sucesso: false, erro: "cadastro_inativo" }, 403);
 
       const { data: vinc } = await supabase.from("circuito_organizadores")
-        .select("circuito_id, circuitos!inner(id,slug,nome_circuito,sistema,pareamento,ativo)")
+        .select("circuito_id, circuitos!inner(id,slug,nome_circuito,sistema,pareamento,ativo,org_ve_financeiro)")
         .eq("atleta_id", a.id);
       const circuitos = (vinc ?? [])
         .map((v: any) => v.circuitos)
         .filter((c: any) => c && c.ativo && c.slug !== "bh")
-        .map((c: any) => ({ id: c.id, slug: c.slug, nome: c.nome_circuito, sistema: c.sistema, pareamento: c.pareamento }));
+        .map((c: any) => ({ id: c.id, slug: c.slug, nome: c.nome_circuito, sistema: c.sistema, pareamento: c.pareamento, veFinanceiro: !!c.org_ve_financeiro }));
       return jsonResponse({ sucesso: true, dados: { ok: true, circuitos } });
     }
 

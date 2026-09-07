@@ -6480,8 +6480,8 @@ function CriarCircuitoCard({ chamarAdminAction }) {
                 <div style={{marginTop:16}}>
                   <div style={lbl}>Sistema de pontuação (trava)</div>
                   {[
-                    {id:"A", t:"A — Rating / CBTM", d:"Pontos variáveis pela diferença de rating. Rating permanente. Igual ao BH."},
-                    {id:"B", t:"B — Pontos fixos", d:"Vitória 2, derrota 1. Sem rating. A partida sempre conta."},
+                    {id:"A", t:"A — Rating / CBTM", d:"O atleta entra com o rating da CBTM, que sobe ou desce conforme os resultados no circuito. Cada partida vale mais ou menos pela diferença de rating."},
+                    {id:"B", t:"B — Pontos fixos", d:"Vitória vale 2, derrota vale 1. Sem rating: todos começam em 0 e o ranking é a soma dos pontos da temporada."},
                   ].map(o => (
                     <div key={o.id} onClick={()=>{ setSistema(o.id); if(o.id==="A") setPareamento(null); }} style={optCard(sistema===o.id)}>
                       <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{o.t}</div>

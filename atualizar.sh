@@ -22,6 +22,38 @@ if git diff --quiet && git diff --cached --quiet; then
     exit 0
 fi
 
+# ============================================================
+# 🛡️ REDE DE SEGURANÇA — testa o app ANTES de publicar.
+# Se o app tiver um erro que quebra o build, NADA é enviado e o
+# site atual continua no ar, intacto. Evita publicar quebrado pra todos.
+# ============================================================
+echo "🧪 Testando o app antes de publicar..."
+
+if ! command -v npm >/dev/null 2>&1; then
+    echo "❌ 'npm' não encontrado. Instale o Node.js (nodejs.org) e rode de novo."
+    echo ""
+    read -p "Pressione Enter para fechar..."
+    exit 1
+fi
+
+if [ ! -d node_modules ]; then
+    echo "📥 Instalando dependências (só na 1ª vez, pode demorar um pouco)..."
+    npm install || { echo "❌ Falha ao instalar dependências."; echo ""; read -p "Pressione Enter para fechar..."; exit 1; }
+fi
+
+if ! npm run build; then
+    echo ""
+    echo "❌ O TESTE FALHOU — tem um erro no app (veja as mensagens acima)."
+    echo "   🛡️  NADA foi publicado. O site atual continua no ar, intacto."
+    echo "   Corrija o erro e rode este atualizador de novo."
+    echo ""
+    read -p "Pressione Enter para fechar..."
+    exit 1
+fi
+
+echo "✅ Teste passou — o app compila sem erros."
+echo ""
+
 echo "📦 Preparando arquivos..."
 git add .
 

@@ -1540,6 +1540,26 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
 // Ao apertar "Inscreva-se", checa PRIMEIRO se há circuito com inscrições abertas.
 // 0 -> mensagem (sem formulário); 1 -> auto-seleciona; vários -> lista com selo de sistema.
 // Fallback: se a leitura falhar, não trava — cai no formulário do circuito ativo (BH).
+// Aviso honesto sobre O QUE a inscrição significa AGORA, conforme a fase do circuito
+// (Cap. 11 do regulamento). Toda inscrição passa por aprovação do admin e cai na fila;
+// aqui a gente só deixa claro em qual temporada ela provavelmente vai valer.
+function avisoFaseInscricao(circ) {
+  if (!circ || !circ.fase) return null;
+  const num = circ.temporada_numero || 1;
+  const rpt = circ.rodadas_por_temporada || 6;
+  const rod = circ.rodada_atual || 0;
+  const base = "Toda inscrição passa por aprovação do admin.";
+  if (circ.fase === "inscricoes") {
+    return { cor:"#6a9d7a", titulo:`Pré-temporada · Temporada ${num}`, texto:`Você entra na Temporada ${num} assim que o admin aprovar sua inscrição. ${base}` };
+  }
+  // fase "etapa" = temporada em andamento. Último terço = 2 últimas rodadas de 6 (Cap. 11).
+  const ultimoTerco = rod > 0 && rod > (rpt * 2) / 3;
+  if (ultimoTerco) {
+    return { cor:"#c9922e", titulo:"Temporada na reta final", texto:`A Temporada ${num} está na última etapa e não recebe mais entradas. Sua inscrição vale para a PRÓXIMA temporada, após aprovação do admin. ${base}` };
+  }
+  return { cor:"#9C6F3E", titulo:`Temporada ${num} em andamento`, texto:`A temporada já começou — sua inscrição fica na fila e o admin te inclui no próximo par permitido. ${base}` };
+}
+
 function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
   const [lista, setLista] = useState(null); // null = carregando
   const [erro, setErro] = useState(false);
@@ -1576,6 +1596,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
       sistema={escolhido.sistema}
       circuitoId={escolhido.id}
       circuitoNome={nomeCirc(escolhido)}
+      circ={escolhido}
     />;
   }
   // Circuito escolhido (inclui o auto-selecionado quando só há um) -> confirmação com nome + selo.
@@ -1603,6 +1624,12 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
               <div style={{fontSize:11.5,color:T.cinza,lineHeight:1.5}}>As partidas deste circuito são disputadas pessoalmente nessa região. Confirme que você consegue jogar aí antes de continuar — se a região não for a sua, o organizador não vai aprovar a inscrição.</div>
             </div>
           )}
+          {(() => { const av = avisoFaseInscricao(escolhido); return av ? (
+            <div style={{background:`${av.cor}1e`,border:`1px solid ${av.cor}`,borderRadius:10,padding:"11px 13px",marginBottom:14}}>
+              <div style={{fontSize:12.5,color:T.offwhite,fontWeight:800,marginBottom:3}}>🗓️ {av.titulo}</div>
+              <div style={{fontSize:11.5,color:T.cinza,lineHeight:1.5}}>{av.texto}</div>
+            </div>
+          ) : null; })()}
           <button onClick={() => setVerReg(true)} style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>📋 Ver regulamento ({escolhido.sistema === "B" ? "vB-01 · pontos" : "v03-12 · rating"})</button>
           <button onClick={() => setConfirmado(true)} style={{width:"100%",background:T.terracota,color:T.verde,border:"none",borderRadius:12,padding:14,fontSize:15,fontWeight:800,cursor:"pointer"}}>Continuar para inscrição →</button>
         </div>
@@ -1799,7 +1826,7 @@ function ParticiparOutroCircuito({ athlete }) {
   );
 }
 
-function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, circuitoNome }) {
+function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, circuitoNome, circ }) {
   const ehB = sistema === "B";
   const versaoReg = ehB ? "vB-01" : "v03-12";
   const [step, setStep] = useState(1); // 1=dados, 2=lgpd, 3=regulamento, 4=sucesso
@@ -1886,6 +1913,13 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
             Nesta primeira temporada, o Circuito BH está aberto ao ranking <strong style={{color:"#F0EAE0"}}>masculino adulto (18+)</strong>. Outras categorias entram em breve.
           </>)}
         </div>
+
+        {(() => { const av = avisoFaseInscricao(circ); return av ? (
+          <div style={{background:`${av.cor}1e`,border:`1px solid ${av.cor}`,borderRadius:10,padding:"11px 13px",marginBottom:8}}>
+            <div style={{fontSize:12.5,color:"#F0EAE0",fontWeight:800,marginBottom:3}}>🗓️ {av.titulo}</div>
+            <div style={{fontSize:11.5,color:"#9db3a8",lineHeight:1.5}}>{av.texto}</div>
+          </div>
+        ) : null; })()}
 
         <label style={s.label}>Nome completo *</label>
         <input style={s.input} value={name} onChange={e=>setName(e.target.value)} placeholder="Seu nome completo"/>

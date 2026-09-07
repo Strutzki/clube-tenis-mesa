@@ -1,3 +1,11 @@
+# curadoria-log — registro do Curador do Projeto
+
+## 2026-09-06 — Consolidação da documentação (dedup raiz × docs/)
+- **Problema:** ~20 `.md` estavam duplicados na raiz do repo E em `docs/` (a base canônica sincronizada com o projeto do Claude via GitHub). Risco de editar a cópia errada e divergir (aconteceu: `PLANO_INSCRICAO` mais novo na raiz; `CHANGELOG`/`GOVERNANCA`/`ROADMAP` mais novos em `docs/`).
+- **Ação:** antes de remover, comparei cada par. Sincronizei o único que estava mais novo na raiz (`PLANO_INSCRICAO_POR_CIRCUITO.md` → `docs/`). Removi as 22 duplicatas da raiz (19 idênticas + CHANGELOG/GOVERNANCA/ROADMAP obsoletas na raiz) e o stub superado `INDICE_PROJETO.md`. Mantido só `README.md` na raiz (é o README do código Vite, não é doc de projeto).
+- **Resultado:** raiz do repo sem docs de projeto soltos; `docs/` segue com os 42 `.md` canônicos + `docs/backups/`. Fonte única de verdade documental = `docs/` (→ projeto do Claude). Nada perdido.
+- **Follow-up opcional:** algumas referências internas ainda citam caminhos antigos (`claude/INDICE.md`, `claude/curadoria-log.md`); alinhar aos nomes reais em `docs/` numa próxima passada. `LEIA-ME.md` diz "40 documentos" (hoje 42) — atualizar quando conveniente.
+
 # Log de Curadoria
 
 Registro do que o `curador-projeto` revisou, quando, e o que mudou em cada documento. Mais recente no topo. Antes de reescrever qualquer doc, consultar `claude/INDICE.md`.

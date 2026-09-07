@@ -39,30 +39,29 @@ Mapa do caminho até (A) o multi-circuito funcionar de ponta a ponta e (B) o pro
 
 ## 🚧 Falta para o MULTI-CIRCUITO ficar completo
 
-Ordem sugerida. Cada item é footprint-zero pro BH e segue o rito de revisão.
+> **Atualização 06/09/2026:** os itens 1–4 e 6 abaixo estão **✅ FEITOS**. O multi-circuito está funcional de ponta a ponta no código; o que resta é o **Piloto real** (item 5, ação do Juliano). Ver detalhes por item.
 
-### 1. Papéis e autorização — Fatias 2-3 (crítico, em andamento)
-- **Fatia 2 (enforcement):** `admin-action` aceita o caminho do organizador (telefone+PIN) **ao lado do PIN global** e valida `circuito_organizadores` por ação. Super-admin (PIN global) segue podendo tudo. *A mudança mais sensível — revisão ação a ação + teste ao vivo.*
-- **Fatia 3 (front):** troca de modo "atleta ↔ organizador" no perfil; painel do organizador preso ao circuito dele.
-- **Fatia 4 (opcional/depois):** aposentar o PIN global e migrar o super-admin pra sua conta de atleta — só quando você confirmar.
+### 1. Papéis e autorização — Fatias 2-3 — ✅ FEITO
+- **Fatia 2 (enforcement):** ✅ `admin-action` aceita o organizador (telefone+PIN) ao lado do PIN global, validando `circuito_organizadores` por ação (v49).
+- **Fatia 3 (front):** ✅ modo "atleta ↔ organizador"; painel preso ao circuito do organizador; UI de nomear/remover/listar (super-admin).
+- **Fatia 4 (opcional/depois):** aposentar o PIN global e migrar o super-admin pra conta de atleta — só quando você confirmar. (Não começado, opcional.)
 
-### 2. Acesso do atleta a múltiplos circuitos (hub)
-- Hoje o login do atleta cai no BH. Falta: quando a pessoa está em >1 circuito, **ver e trocar** entre os circuitos dela (ranking/jogos/comunidade por circuito). É o que fecha a experiência do atleta multi-circuito.
+### 2. Acesso do atleta a múltiplos circuitos (hub) — ✅ FEITO
+- ✅ Switcher `HubCircuitosAtleta` (aparece com >1 circuito); leitura por circuito via porteiro (circuito privado) ou anon (aberto); "continuar conectado" por token de sessão. login-atleta v5, circuito-dados v2.
 
-### 3. Admin de circuito não-BH (fechar o ciclo do organizador)
-- Confirmar/ajustar as telas do admin para um circuito **não-BH**: aprovar inscrições, incluir do backlog, processar rodada, virar temporada. Boa parte já é escopada por `circuitoId`, mas precisa de um passe de teste ponta-a-ponta num circuito real.
-- ✅ **Virada de temporada (`NOVA_TEMPORADA`) para não-BH — FEITA e PROVADA AO VIVO (04/09/2026).** admin-action v53 + RPC escopado; testada num circuito descartável com BH byte-idêntico. Ramo do BH intocado (global). Ver GOVERNANCA_AGENTES.md.
-- Falta o passe de teste das demais telas admin num não-BH (aprovar inscrição, backlog, processar rodada) — em grande parte já escopado; confirmar no piloto.
+### 3. Admin de circuito não-BH — ✅ FEITO E AUDITADO (06/09/2026)
+- ✅ **Virada de temporada (`NOVA_TEMPORADA`) para não-BH E BH — provada ao vivo** (v53 não-BH + v54 BH escopado). RPC `arquivar_partidas_temporada_circuito` escopado.
+- ✅ **Passe de teste "admin não-BH" (06/09/2026):** auditoria de escopo de TODAS as ações mutantes do `admin-action` — cada `delete`/`update`/RPC destrutivo é filtrado por `circuito_id`. Confirmado ainda que o fluxo de inscrição/aprovação não-BH grava `status` **só em `circuito_atletas`** (SEASONAL_COLS), nunca na tabela global `atletas` → atleta de circuito não-BH **não vaza** pro roster do BH. Achado colateral (semente de teste legada contaminando o BH) resolvido: circuito `demo-juliano` removido, BH provado byte-idêntico. Ver GOVERNANCA_AGENTES.md.
 
-### 4. Inscrição — fatias que faltam
-- **Região (Fatia 4):** cidade/UF + filtro por região + confirmação leve (mostrar circuitos perto do atleta).
-- **Janela e vagas (Fatia 6):** regra do último terço + `max_atletas` (cheio → fila de espera ou não aparece).
+### 4. Inscrição — ✅ FEITO (fatias 1–6)
+- ✅ **Região (Fatia 4):** aviso de jogos presenciais por cidade/UF na confirmação (informativo; organizador é o gate real).
+- ✅ **Janela e vagas (Fatia 6):** RPC `circuitos_abertos_vagas()`; circuito cheio marca "🎟️ fila de espera" (o teto é aplicado na promoção do backlog, não na inscrição).
 
-### 5. Piloto real
-- Abrir **um 2º circuito de verdade** (Sistema B, outra cidade), rodar uma temporada curta com atletas reais, caçar bugs de operação. É o teste que nenhum harness substitui.
+### 5. Piloto real — ⬅️ **PRÓXIMO (ação do Juliano)**
+- Abrir **um 2º circuito de verdade** (Sistema B, outra cidade), rodar uma temporada curta com atletas reais, caçar bugs de operação. É o teste que nenhum harness substitui. O código e o dado já estão destravados (item 3).
 
-### 6. Despachos do Dia (alavanca operacional) — proposto
-- Tela única que agrega tudo que precisa de ação no dia (inscrições, validações, W.O., processar, mensagens, pagamentos), **por papel**: super-admin vê todos os circuitos; organizador só o dele. + lembrete no celular. Spec em `PLANO_DESPACHOS.md`. É o que torna "tocar muitos circuitos" viável na prática.
+### 6. Despachos do Dia — ✅ FEITO (Fatias 1–3)
+- ✅ Agregador `despachos-do-dia` (só-leitura, por papel) + card no admin com processar-na-hora + lembrete diário agendado. Push nativo no app fica como evolução futura.
 
 ---
 
@@ -96,10 +95,10 @@ Depende de 1-3 acima prontos + o piloto. São frentes novas.
 ---
 
 ## Sequência recomendada (resumo)
-1. **Papéis Fatia 2-3** (organizador funcional) →
-2. **Acesso do atleta multi-circuito (hub)** + **admin não-BH testado** →
-3. **Região + vagas** (fecha a inscrição) →
-4. **Piloto real** (2º circuito) →
+1. ✅ **Papéis Fatia 2-3** (organizador funcional) →
+2. ✅ **Acesso do atleta multi-circuito (hub)** + **admin não-BH testado/auditado** →
+3. ✅ **Região + vagas** (inscrição fechada) →
+4. ⬅️ **Piloto real** (2º circuito) — **VOCÊ ESTÁ AQUI** (ação do Juliano) →
 5. **Pagamento/planos + onboarding de organizador** (destrava a venda) →
 6. **Legal/marca + analytics + suporte** (pronto pra comercializar).
 

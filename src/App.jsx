@@ -4014,7 +4014,7 @@ function OrganizadorLogin({ s, LOGO, onBack, onOrganizadorLogin }) {
               {opcoes.map(c => (
                 <div key={c.id} onClick={()=>concluir(c)} style={{border:`1.5px solid ${T.bordaSuave}`,borderRadius:10,padding:"10px 12px",cursor:"pointer"}}>
                   <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{c.nome}</div>
-                  <div style={{fontSize:11,color:T.cinza}}>{c.slug} · Sistema {c.sistema}</div>
+                  <div style={{fontSize:11,color:T.cinza}}>{c.slug} · Sistema {rotuloSistema(c.sistema)}</div>
                 </div>
               ))}
             </div>
@@ -6375,7 +6375,7 @@ function SeletorCircuito({ circuitos, circuitoSelId, trocar, carregando }) {
               }}>
                 <div>
                   <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{c.nome_circuito}{c.ativo===false && <span style={{fontSize:10,fontWeight:700,color:T.madeira,marginLeft:6}}>· encerrado</span>}</div>
-                  <div style={{fontSize:11,color:T.cinza}}>{c.slug} · Sistema {c.sistema}</div>
+                  <div style={{fontSize:11,color:T.cinza}}>{c.slug} · Sistema {rotuloSistema(c.sistema)}</div>
                 </div>
                 {sel && <span style={{fontSize:11,color:T.terracota,fontWeight:700}}>atual</span>}
               </div>

@@ -8657,6 +8657,10 @@ function VisitanteView({ state, tab, setTab, nomeCircuito, onVoltar }) {
 }
 
 // Vitrine de circuitos pro VISITANTE. Abertos → explora (onAbrir); fechados → cadeado + aviso.
+// Rótulo do sistema para o usuário final (visitante/atleta): "A"/"B" são códigos
+// internos; na tela mostramos "Rating" (A) e "Pontos" (B).
+const rotuloSistema = (s) => (s === "B" ? "Pontos" : "Rating");
+
 function VisitanteCircuitos({ circuitos = [], onAbrir }) {
   const [aviso, setAviso] = useState(null); // id do circuito privado clicado
   const nomeDe = (c) => c.nome_exibicao || c.nome_circuito;
@@ -8678,7 +8682,7 @@ function VisitanteCircuitos({ circuitos = [], onAbrir }) {
                 }}>
                   <div style={{minWidth:0}}>
                     <div style={{fontSize:15,fontWeight:800,color: aberto ? T.offwhite : T.cinza}}>{nomeDe(c)}{aberto ? "" : " 🔒"}</div>
-                    <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>Sistema {c.sistema}{aberto ? "" : " · fechado"}</div>
+                    <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>Sistema {rotuloSistema(c.sistema)}{aberto ? "" : " · fechado"}</div>
                   </div>
                   <span style={{fontSize:16,color: aberto ? T.terracota : T.cinza,fontWeight:700}}>{aberto ? "→" : "🔒"}</span>
                 </div>
@@ -8721,7 +8725,7 @@ function EscolhaCircuito({ circuitos = [], onEscolher }) {
           }}>
             <div>
               <div style={{fontSize:15,fontWeight:800,color:T.offwhite}}>{c.nome}{c.publico === false ? " 🔒" : ""}</div>
-              <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>Sistema {c.sistema}{c.publico === false ? " · privado" : ""}</div>
+              <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>Sistema {rotuloSistema(c.sistema)}{c.publico === false ? " · privado" : ""}</div>
             </div>
             <span style={{fontSize:18,color:T.terracota,fontWeight:700}}>→</span>
           </div>

@@ -47,6 +47,59 @@ Não estavam em plano nenhum; apareceram ao mapear o banco e o repositório em
 - **0.6 — RPC `arquivar_partidas_temporada` virou código morto** depois que a
   virada passou a usar a versão escopada por circuito. Restringir ou remover.
 
+## Onda 0.5 — O que os guardiões abriram em 07-08/09/2026
+
+Tudo isto saiu de revisões supervisionadas destes dois dias, não de suposição.
+Cada item diz o que é, por que importa e quando morde.
+
+- **0.5.1 — As decisões de permissão do organizador não estão no ar.** ⬅️ *a mais séria*
+  Em 07/09 o Juliano decidiu, item a item, tirar do organizador: `EXCLUIR_ATLETA`,
+  `ABRIR_PROXIMA_TEMPORADA`, `CANCELAR_PROXIMA` e `DEFINIR_RODADAS`; e criar o
+  portão `org_ve_financeiro` (padrão desligado) para as ações de dinheiro. Isso
+  está no repositório e **não foi publicado** — a produção ainda concede tudo
+  aquilo. Hoje é inofensivo: **zero organizadores cadastrados**. Vira falha de
+  autorização no minuto em que existir o primeiro. **Publicar antes de nomear
+  qualquer organizador.** Achado do Supervisor de Segurança.
+
+- **0.5.2 — A conferência de senha devolve telefones.** O login do admin confere
+  a senha chamando `LISTAR_ORGANIZADORES`, que devolve `nome` e `telefone` dos
+  organizadores. Hoje volta vazio (zero organizadores). Criar uma ação
+  `VERIFICAR_PIN` que só responde sim ou não. Cuidado de ordem: a função tem de
+  subir **antes** do app que a chama.
+
+- **0.5.3 — Teto de 200 mensagens.** `LISTAR_MENSAGENS` lê no máximo 200 linhas;
+  só agosto gravou 165. Quando o teto estourar, mensagem antiga sai da janela e
+  **volta a aparecer como pendente** — o sintoma de 08/09, por outra causa.
+  Subir o limite ou escopar a leitura por mês.
+
+- **0.5.4 — O token do atleta sobrevive ao logout.** `clearAtletaCred()` e
+  `revogarSessaoAtleta()` existem em `src/App.jsx` e **nunca são chamadas**: ao
+  sair, o token continua no aparelho e válido no servidor por 90 dias.
+
+- **0.5.5 — Qualquer pessoa na internet pode trancar o painel.** O freio do PIN
+  de admin conta falhas **globalmente**: 5 tentativas erradas de qualquer origem
+  bloqueiam o painel por 15 minutos, inclusive para o Juliano. Avaliar contagem
+  por origem. Aconteceu de verdade em 08/09.
+
+- **0.5.6 — Falta `Vary: Origin`** nas respostas das Edge Functions. Sem ele, um
+  cache intermediário pode servir a uma origem a resposta dada a outra. Risco
+  baixo hoje (sem CDN na frente), uma linha para resolver.
+
+- **0.5.7 — Decidir o destino do `localhost` na lista de origens.** Ou tentar o
+  proxy do Vite (que exigiria tirar a URL fixa do `src/App.jsx:104`) e remover as
+  linhas, ou registrar que ficam e por quê. Condição levantada e não cumprida.
+
+- **0.5.8 — A bateria não testa o arquivo que vai ao ar.** `carregarFuncao` lê
+  sempre `supabase/functions/<nome>/index.ts`. Enquanto o repositório estiver à
+  frente da produção, o deploy é montado à mão e testá-lo exige trocar arquivos
+  de lugar. Fazer `carregarFuncao` aceitar um caminho.
+
+- **0.5.9 — Reconciliar a fila ao voltar do WhatsApp.** O `keepalive` faz o
+  pedido chegar, mas não garante que a resposta seja processada — no iPhone a
+  aba pode ser descartada. A prova real seria recarregar `mensagens_enviadas` do
+  servidor quando a página volta a ficar visível. A verdade passaria a vir do
+  banco, não da promessa.
+
 ## Onda 1 — Piloto real ⬅️ **é aqui que estamos**
 
 **Abrir um 2º circuito de verdade** (Sistema B, outra cidade), com atletas

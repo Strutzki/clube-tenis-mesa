@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "motor:publicar": "node scripts/publicar-motor.mjs",
     "motor:listar": "supabase functions list --project-ref eultwfzzlgcmcikobmmy",
-    "teste": "node testes/rating.mjs && node testes/sistema-b.mjs && node testes/isolamento.mjs && node testes/pacote.mjs",
+    "teste": "node testes/rating.mjs && node testes/sistema-b.mjs && node testes/isolamento.mjs && node testes/mensagens.mjs && node testes/pacote.mjs",
     "motor:conferir": "node scripts/conferir-motor.mjs"
   },
   "dependencies": {

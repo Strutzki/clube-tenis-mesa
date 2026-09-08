@@ -1097,16 +1097,28 @@ Deno.serve(async (req) => {
       }
 
       case "REGISTRAR_MENSAGEM_ENVIADA": {
+        // Este registro NAO e um log acessorio: e ele que tira a mensagem da
+        // fila de pendentes do admin. Ate 08/09/2026 o insert era envolvido num
+        // try/catch mudo e a resposta era SEMPRE `sucesso: true` — quando a
+        // gravacao falhava, o app achava que tinha registrado e a mensagem
+        // reaparecia como pendente sem ninguem entender por que.
+        // Regra 6 do CLAUDE.md: nao dizer que fez o que nao fez.
         const { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm, matchId } = payload || {};
-        try {
-          const { error } = await supabase.from("mensagens_enviadas").insert({
-            id, atleta_id: athleteId || null, atleta_nome: athleteName || null,
-            categoria, categoria_label: categoriaLabel, texto, enviado_em: enviadoEm, match_id: matchId || null,
-            circuito_id: circuitoId,
-          });
-          if (error) throw error;
-        } catch (e) {
-          console.warn("Registro de mensagem no histórico falhou (seguindo mesmo assim):", e.message);
+        if (!id || !categoria || !texto) {
+          return jsonResponse({ sucesso: false, erro: "id, categoria e texto são obrigatórios para registrar a mensagem." }, 400);
+        }
+        const { error } = await supabase.from("mensagens_enviadas").insert({
+          id, atleta_id: athleteId || null, atleta_nome: athleteName || null,
+          categoria, categoria_label: categoriaLabel, texto, enviado_em: enviadoEm, match_id: matchId || null,
+          circuito_id: circuitoId,
+        });
+        if (error) {
+          // Id repetido = a mesma mensagem registrada duas vezes (clique duplo,
+          // ou a chamada que sobreviveu a saida da pagina chegando junto com a
+          // repetida). O efeito desejado ja aconteceu: e sucesso, nao erro.
+          if (error.code === "23505") return jsonResponse({ sucesso: true, dados: { jaRegistrada: true } });
+          console.error("REGISTRAR_MENSAGEM_ENVIADA falhou:", error.message);
+          return jsonResponse({ sucesso: false, erro: "Não deu para registrar a mensagem: " + error.message }, 500);
         }
         return jsonResponse({ sucesso: true });
       }

@@ -151,6 +151,21 @@ class Consulta {
 
   executar() {
     this.banco.registro.push({ tabela: this.tabela, operacao: this.operacao });
+
+    // O Postgres recusa gravacao por NOT NULL, chave repetida, tipo errado.
+    // Sem poder simular isso, um teste nunca prova que o codigo TRATA o erro —
+    // so que ele funciona quando tudo da certo. `banco.recusar(...)` fecha essa
+    // lacuna: foi o que faltou quando o servidor respondia "sucesso" com a
+    // gravacao falhando (incidente das mensagens pendentes, 08/09/2026).
+    const recusa = this.banco.recusas.find((r) => r.tabela === this.tabela && r.operacao === this.operacao);
+    if (recusa) {
+      if (recusa.vezes !== undefined) {
+        recusa.vezes -= 1;
+        if (recusa.vezes <= 0) this.banco.recusas = this.banco.recusas.filter((r) => r !== recusa);
+      }
+      return { data: null, error: recusa.erro, count: null };
+    }
+
     const linhas = this.linhasDaTabela();
 
     if (this.operacao === "select") {
@@ -231,6 +246,7 @@ export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {
   const banco = {
     relacoes,               // { "circuito_atletas.atletas": { coluna, chave } } — o padrao ja cobre o caso comum
     padroes,                // { tabela: { coluna: () => valor } } — o DEFAULT de coluna do Postgres
+    recusas: [],            // gravacoes que o banco vai recusar de proposito (ver `recusar`)
     tabelas: clonar(tabelasIniciais),
     registro: [],           // toda operação feita, para os testes conferirem o que foi tocado
     funcoesChamadas: [],
@@ -249,6 +265,12 @@ export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {
   };
 
   // Atalhos para os testes lerem o resultado sem repetir código.
+  // Faz o banco recusar uma operacao, como o Postgres faria.
+  //   banco.recusar("mensagens_enviadas", "insert", { message: "null value in column texto", code: "23502" })
+  banco.recusar = (tabela, operacao, erro, vezes) => {
+    banco.recusas.push({ tabela, operacao, erro, vezes });
+  };
+
   banco.linhas = (tabela) => clonar(banco.tabelas[tabela] || []);
   banco.acha = (tabela, teste) => (banco.tabelas[tabela] || []).map(clonar).find(teste);
   banco.impressao = () => JSON.stringify(banco.tabelas);

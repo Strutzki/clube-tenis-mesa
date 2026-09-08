@@ -541,6 +541,10 @@ async function conferirSenhaAdmin(senha) {
   }
 }
 
+// Falhas de registro de mensagem desta sessao de disparo. Serve para avisar UMA
+// vez e para o resumo do fim da fila, em vez de um modal por mensagem.
+const falhasDeRegistro = [];
+
 function clearPinCache() {
   try { sessionStorage.removeItem(PIN_SESSAO_KEY); } catch(e) {}
 }
@@ -3458,8 +3462,13 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
   // "marcar como enviada" manual) — é o que tira o atleta da fila de pendentes.
   // Lê a categoria do próprio item (não da seleção atual), pra funcionar igual
   // na fila de 1 categoria e na fila unificada.
-  function registrarEnvio(msgItem) {
+  // `saindoDaPagina` liga o modo que sobrevive ao navegador ser tirado da frente.
+  // So o botao que abre o WhatsApp precisa dele: a cota do keepalive e de 64 KB
+  // somando TODAS as chamadas em voo, entao gastar no "Ja enviei essa" — que nao
+  // sai da pagina — pode fazer faltar para quem precisa.
+  function registrarEnvio(msgItem, saindoDaPagina = false) {
     dispatch({type:"REGISTRAR_MENSAGEM_ENVIADA",payload:{
+      sobreviveASaida: saindoDaPagina,
       id:`${Date.now()}-${msgItem.atleta.id}`, athleteId:msgItem.atleta.id, athleteName:nomeExibicao(msgItem.atleta),
       categoria: msgItem.categoria || categoria,
       categoriaLabel: msgItem.categoriaLabel || categorias.find(c=>c.id===categoria)?.label||categoria,
@@ -3563,8 +3572,8 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
           <a href={wppLink(telefones[atual.atleta.id] || "", atual.msg)} target="_blank" rel="noreferrer"
             style={{textDecoration:"none",display:"block",marginBottom:10}}
             onClick={()=>{
-              if (atual.matchId) dispatch({type:"MARCAR_RESULTADO_COMUNICADO",payload:{matchId:atual.matchId,comunicado:true}});
-              registrarEnvio(atual);
+              if (atual.matchId) dispatch({type:"MARCAR_RESULTADO_COMUNICADO",payload:{matchId:atual.matchId,comunicado:true,sobreviveASaida:true}});
+              registrarEnvio(atual, true);
               setTimeout(()=>proxMensagem(atual.atleta.id), 300);
             }}>
             <Btn color="#25d366" full>
@@ -3573,7 +3582,7 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
           </a>
           <Btn onClick={()=>{
               if (atual.matchId) dispatch({type:"MARCAR_RESULTADO_COMUNICADO",payload:{matchId:atual.matchId,comunicado:true}});
-              registrarEnvio(atual);
+              registrarEnvio(atual, false);
               proxMensagem(atual.atleta.id);
             }} color="#9C6F3E" full small>
             ✓ Já enviei essa (marcar sem abrir)
@@ -4695,7 +4704,13 @@ export default function App() {
   // Se o PIN vier errado (401) ou expirar, limpa o cache — a PRÓXIMA ação pede
   // confirmação de novo automaticamente, em vez de continuar tentando com um
   // PIN que já sabemos que está errado.
-  async function chamarAdminAction(acao, payload) {
+  // `opcoes.sobreviveASaida` usa o modo keepalive do navegador: a chamada
+  // continua mesmo se a pagina for congelada ou fechada logo depois. Sem isso,
+  // clicar em "Abrir WhatsApp" tira o navegador da frente e mata o registro no
+  // meio do caminho — foi assim que 4 mensagens enviadas continuaram pendentes
+  // em 08/09/2026. O limite do keepalive e 64 KB, folgado para estes payloads.
+  async function chamarAdminAction(acao, payload, opcoes) {
+    const keepalive = !!(opcoes && opcoes.sobreviveASaida);
     // Papéis Fatia 3: modo organizador — manda (orgTelefone+orgPin) em vez do PIN
     // global, e TRAVA o circuitoId no dele. O servidor revalida o vínculo e o
     // escopo por recurso (allowlist + partida/atleta do circuito). Nunca envia o PIN global.
@@ -4709,6 +4724,7 @@ export default function App() {
           "apikey": SUPA_KEY,
         },
         body: JSON.stringify({ orgTelefone: cred.telefone, orgPin: cred.pin, acao, payload: { ...(payload || {}), circuitoId: cred.circuitoId } }),
+        keepalive,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.sucesso) {
@@ -4725,6 +4741,7 @@ export default function App() {
         "apikey": SUPA_KEY,
       },
       body: JSON.stringify({ pin, acao, payload: { ...(payload || {}), circuitoId: CIRCUITO_ATIVO } }),
+      keepalive,
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.sucesso) {
@@ -4938,15 +4955,26 @@ export default function App() {
       await chamarAtletaAction("ATUALIZAR_PERFIL", { athleteId, estilo_jogo: estilo });
     }
     else if (action.type === "REGISTRAR_MENSAGEM_ENVIADA") {
-      // Registro no histórico é acessório: se falhar (tabela ausente, tipo de
-      // coluna divergente, etc.), NÃO pode derrubar o "marcar como enviado".
+      // Este registro NAO e acessorio: e ele que tira a mensagem da fila de
+      // pendentes. Ate 08/09/2026 o erro era engolido com um aviso invisivel, e
+      // 4 mensagens ja enviadas voltaram a aparecer como pendentes sem ninguem
+      // entender. Agora a falha aparece na tela.
       const { id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm, matchId } = action.payload;
       try {
         await chamarAdminAction("REGISTRAR_MENSAGEM_ENVIADA", {
           id, athleteId, athleteName, categoria, categoriaLabel, texto, enviadoEm, matchId,
-        });
+        }, { sobreviveASaida: !!action.payload.sobreviveASaida });
       } catch(e) {
-        console.warn("Registro de mensagem no histórico falhou (seguindo mesmo assim):", e.message);
+        console.warn("Registro de mensagem no histórico falhou:", e.message);
+        falhasDeRegistro.push(athleteName || "atleta");
+        // A DbBar do app so aparece com dbStatus === "error"; esta falha nao passa
+        // por la. `alert` e o que o app ja usa para erro que o admin precisa ver.
+        // UM alerta por sessao de disparo: numa fila de 20 com o banco fora, 20
+        // modais seriam pior que o defeito.
+        if (!falhasDeRegistro.jaAvisou) {
+          falhasDeRegistro.jaAvisou = true;
+          alert(`Não deu para marcar como enviada a mensagem de ${athleteName || "este atleta"}.\n\nO WhatsApp foi enviado, mas o app não conseguiu registrar. Na tela ela já saiu da fila; ao RECARREGAR a página ela volta como pendente.\n\nAviso só uma vez: se acontecer com outras, elas aparecem juntas no fim. Recarregue e use "✓ Já enviei essa" nelas.`);
+        }
       }
     }
     else if (action.type === "DEFINIR_AUTO_VALIDAR") {
@@ -5004,9 +5032,14 @@ export default function App() {
       await chamarAdminAction("INICIAR_ETAPA", {});
       await loadFromSupabase();
     }
+    // Sai no mesmo clique que abre o WhatsApp — precisa do mesmo tratamento.
     else if (action.type === "MARCAR_RESULTADO_COMUNICADO") {
       const { matchId, comunicado } = action.payload;
-      await chamarAdminAction("MARCAR_RESULTADO_COMUNICADO", { matchId, comunicado });
+      // Sao DUAS travas independentes, e as duas saem no mesmo clique que abre o
+      // WhatsApp. O registro em `mensagens_enviadas` segura a mensagem DENTRO do
+      // mes; `resultado_comunicado` e o que segura DEPOIS da virada do mes
+      // (App.jsx:3148). Consertar so uma adia o defeito em vez de fechar.
+      await chamarAdminAction("MARCAR_RESULTADO_COMUNICADO", { matchId, comunicado }, { sobreviveASaida: !!action.payload.sobreviveASaida });
     }
     else if (action.type === "NOVA_TEMPORADA") {
       // Zera saldo/vitórias/derrotas, arquiva a posição final no histórico,

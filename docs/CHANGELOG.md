@@ -3,6 +3,18 @@
 Histórico do que foi a produção. Mantido pelo agente `curador-projeto`. Mais recente no topo.
 Formato: **data — o quê** (versão do edge/regulamento, notas).
 
+## 2026-09-08
+- **Mensagem enviada parava de voltar para "pendente"** — o Juliano mandou 4 mensagens de resultado pelo WhatsApp e as 4 continuaram na fila. Duas causas somadas, e as duas foram corrigidas.
+  1. **A chamada morria ao abrir o WhatsApp.** O clique dispara DUAS escritas — `REGISTRAR_MENSAGEM_ENVIADA` (segura a mensagem dentro do mês) e `MARCAR_RESULTADO_COMUNICADO` (é o que segura DEPOIS da virada do mês, `App.jsx:3148`) — e no mesmo gesto abre o WhatsApp, que tira o navegador da frente. No celular a página congela e o `fetch` morre antes de chegar. Agora as duas usam o modo `keepalive`, que sobrevive à saída da página. O botão "✓ Já enviei essa", que **não** sai da página, ficou de fora de propósito: a cota do keepalive é de 64 KB somando todas as chamadas em voo, e gastá-la ali faria faltar para quem precisa.
+  2. **O servidor dizia que gravou quando não gravou.** O `case REGISTRAR_MENSAGEM_ENVIADA` embrulhava o insert num try/catch mudo e respondia **sempre** `sucesso: true`. Agora valida `id`/`categoria`/`texto` (400), devolve 500 com a mensagem do banco quando a gravação falha, e trata chave repetida (23505) como sucesso idempotente — que é o caso da chamada keepalive que chega duas vezes. **admin-action v56 → v57**, montado sobre o código que estava no ar (base conferida por sha256 `ab1ab013…`), então as ~163 linhas do financeiro do organizador **continuam sem ir ao ar**.
+  3. **O app avisa quando falha**, em vez de engolir com um `console.warn` invisível. Um alerta por sessão de disparo, não um por mensagem — numa fila de 20 com o banco fora, 20 modais seriam pior que o defeito.
+
+  Provado em produção pelo Guardião do Regulamento: as 2 partidas com `resultado_comunicado=false` e zero linha em `mensagens_enviadas` eram exatamente as 4 mensagens do incidente. Ele também pegou que a primeira versão da correção consertava **só metade** — o `MARCAR_RESULTADO_COMUNICADO` tinha ganhado um comentário prometendo o tratamento, sem o tratamento.
+
+  `testes/mensagens.mjs` (novo, 24 asserções) e `banco.recusar(...)` no banco de mentira, que faltava para provar que o código TRATA o erro do banco em vez de só funcionar quando tudo dá certo. Bateria: **117 asserções**, rodada também contra o arquivo híbrido que foi ao ar.
+
+  ⚠️ **Pendência anotada:** `LISTAR_MENSAGENS` tem teto de 200 linhas e agosto sozinho gravou 165. Quando o teto estourar, mensagem antiga sai da janela e **volta a aparecer como pendente** — o mesmo sintoma, por outra causa.
+
 ## 2026-09-07
 - **Dá para entrar no app rodando na máquina (CORS de desenvolvimento)** — as Edge Functions só aceitavam os domínios de produção, então o app servido por `npm run dev` (localhost:5173) tinha a chamada cortada pelo navegador no preflight: não dava para entrar nem como atleta nem como admin, e só as telas públicas carregavam. Agora `http://localhost:5173` e `http://127.0.0.1:5173` estão na `ALLOWED_ORIGINS`. **No ar:** `despachos-do-dia` v5, `circuito-dados` v3, `athlete-action` v18, `login-atleta` v7, `admin-action` v55. Verificado ao vivo em cada uma: o preflight de localhost devolve a origem local, o do site oficial continua devolvendo o domínio oficial, e `verify_jwt` permaneceu `false` nas cinco. `comprovante-url`, `anonimizar-atleta` e `resetar-pin-atleta` **ficaram de fora de propósito** (portão do Supabase já exige token nelas; liberar CORS não mudaria nada). Login de atleta testado pelo Juliano no app local: entra normal.
 

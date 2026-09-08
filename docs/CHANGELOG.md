@@ -4,6 +4,19 @@ Histórico do que foi a produção. Mantido pelo agente `curador-projeto`. Mais 
 Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ## 2026-09-08
+- **As permissões do organizador chegaram ao ar — `admin-action` v57 → v58** (sha `6e03fbeb131d`). A decisão que o Juliano tomou em 07/09, item a item, estava no repositório e **nunca tinha sido publicada**: a produção ainda concedia ao organizador `EXCLUIR_ATLETA`, `ABRIR_PROXIMA_TEMPORADA`, `CANCELAR_PROXIMA` e `DEFINIR_RODADAS`, e as **cinco ações de dinheiro sem portão nenhum** (`grep -c FINANCEIRO_ACOES` no arquivo que estava no ar: 0). Achado pelo Supervisor de Segurança. Agora vale a lista restrita, mais o portão `org_ve_financeiro` (nasce desligado, só o super-admin liga).
+
+  Vai junto, e é **inerte**: `DEFINIR_ORG_VE_FINANCEIRO` e a configuração de cobrança da plataforma (`LER_`/`DEFINIR_COBRANCA_PLATAFORMA`). Provado por três caminhos independentes — a linha que recusa o BH antes de tocar o banco, o estado do banco (1 circuito, **0 organizadores**, 0 linhas em `circuito_cobranca`, 0 circuitos com o portão ligado) e o front, que não renderiza os cards com o BH selecionado.
+
+  **Este deploy também acaba com a divergência** que atrapalhou o dia inteiro: publicou-se o arquivo do repositório, então a bateria passa a testar exatamente o que está rodando. Os deploys anteriores saíram de cópias montadas à mão, e o `entrypoint_path` das funções no ar apontava para pastas temporárias — foi essa a origem do descompasso.
+
+  `testes/permissoes.mjs` (novo, **25 asserções**) trava a decisão: as 4 ações removidas, as 5 financeiras com o portão fechado, o portão lido do circuito **certo**, o par que faltava (com o portão ligado, passa), o super-admin continuando a poder tudo, e — o que uma mutação do Guardião Jurídico provou faltar — o organizador barrado em `LISTAR_TELEFONES`, `LISTAR_ORGANIZADORES`, `LER`/`DEFINIR_COBRANCA_PLATAFORMA` e `DEFINIR_ORG_VE_FINANCEIRO`. Bateria: **142 asserções**.
+
+  **Rodada completa do rito, 6 guardiões:** Regulamento GO limpo (nenhum `case` de competição muda, provado por diff normalizado); Segurança GO ("para publicar, nenhuma condição"); Jurídico GO (a mudança só *tira* acesso de terceiro a dado pessoal); Atleta GO (nenhum caminho dele passa pelo diff); Confiabilidade GO com a condição de commitar os testes antes — cumprida; **Experiência do Admin NO-GO para NOMEAR organizador**, não para publicar.
+
+  ⚠️ **NÃO NOMEAR NENHUM ORGANIZADOR AINDA.** Ver `docs/ROADMAP.md`, Onda 0.6 — a lista do que falta antes.
+
+## 2026-09-08
 - **Mensagem enviada parava de voltar para "pendente"** — o Juliano mandou 4 mensagens de resultado pelo WhatsApp e as 4 continuaram na fila. Duas causas somadas, e as duas foram corrigidas.
   1. **A chamada morria ao abrir o WhatsApp.** O clique dispara DUAS escritas — `REGISTRAR_MENSAGEM_ENVIADA` (segura a mensagem dentro do mês) e `MARCAR_RESULTADO_COMUNICADO` (é o que segura DEPOIS da virada do mês, `App.jsx:3148`) — e no mesmo gesto abre o WhatsApp, que tira o navegador da frente. No celular a página congela e o `fetch` morre antes de chegar. Agora as duas usam o modo `keepalive`, que sobrevive à saída da página. O botão "✓ Já enviei essa", que **não** sai da página, ficou de fora de propósito: a cota do keepalive é de 64 KB somando todas as chamadas em voo, e gastá-la ali faria faltar para quem precisa.
   2. **O servidor dizia que gravou quando não gravou.** O `case REGISTRAR_MENSAGEM_ENVIADA` embrulhava o insert num try/catch mudo e respondia **sempre** `sucesso: true`. Agora valida `id`/`categoria`/`texto` (400), devolve 500 com a mensagem do banco quando a gravação falha, e trata chave repetida (23505) como sucesso idempotente — que é o caso da chamada keepalive que chega duas vezes. **admin-action v56 → v57**, montado sobre o código que estava no ar (base conferida por sha256 `ab1ab013…`), então as ~163 linhas do financeiro do organizador **continuam sem ir ao ar**.

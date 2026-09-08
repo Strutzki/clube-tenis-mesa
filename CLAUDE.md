@@ -11,11 +11,13 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 
 ## Regras que não se quebram
 
-1. **Nunca publicar sem ele pedir.** Publicar o app é `./atualizar.sh`, e é o
-   que troca o app que os atletas estão usando naquele momento. Ao contrário do
-   app de torneios, **aqui não há véspera de congelamento**: o circuito é
-   assíncrono, os atletas jogam ao longo do mês, e o Juliano publica a qualquer
-   hora — decisão dele, 07/09/2026. O portão é o pedido dele, não a data.
+1. **Nunca publicar sem o de acordo dele**, e só depois do **rito de subida**
+   (seção própria abaixo): bateria verde, guardiões revisados com o supervisor
+   de cada um, e o resumo aprovado por ele. Publicar o app é `./atualizar.sh` —
+   o que troca o app que os atletas estão usando naquele momento.
+   Ao contrário do app de torneios, **aqui não há véspera de congelamento**: o
+   circuito é assíncrono, os atletas jogam ao longo do mês, e ele publica a
+   qualquer hora — decisão dele, 07/09/2026. O portão é o de acordo, não a data.
 2. **O BH nunca é prejudicado.** Qualquer mudança que toque o motor, o banco ou
    a leitura do roster precisa ser comparada antes/depois no BH — o padrão do
    projeto é provar que o BH ficou **byte-idêntico** (mesmo hash dos dados de
@@ -46,6 +48,89 @@ e roda contra um banco em memória. Detalhe em `testes/README.md`.
 protege e exija que a bateria fique vermelha. O harness antigo em `harnesses/`
 não faz isso: ele reescreve a lógica do motor dentro dele, e por isso continua
 verde mesmo com o motor quebrado.
+
+## O rito de subida — vale para todo avanço
+
+Pedido do Juliano, 07/09/2026: **todo avanço no app passa por esta rotina antes
+de subir.** Não espere ele pedir; é o caminho padrão, e eu conduzo sozinho até o
+passo 4.
+
+**1. Bateria e build.** `npm run teste` e `npm run build`. Resultado **em
+números**. Vermelho aqui encerra o assunto — não se leva mudança quebrada para
+revisão.
+
+**2. Asserção nova.** Mexeu numa regra da competição? Ela nasce com asserção na
+bateria **e com teste de mutação** (sabotar a linha, ver a bateria ficar
+vermelha, restaurar). Sem isso, a regra não está protegida.
+
+**3. Revisão pelos guardiões.** Chame os agentes de `.claude/agents/`, cada
+guardião **com o supervisor dele**. Se o supervisor devolver (REVISAR), corrija
+e refaça — o parecer só vale depois de APROVADO pelo supervisor.
+
+- **Sempre:** `guardiao-confiabilidade` + `supervisor-confiabilidade`.
+- **Mais as duplas da área tocada**, pela tabela de `docs/GOVERNANCA_AGENTES.md`
+  (regulamento/motor, segurança, jurídico, admin, atleta, visual, curador).
+- **As 8 duplas completas** quando a mudança tocar em **motor, banco, dinheiro
+  ou dado pessoal** — as quatro coisas que não dá para consertar depois.
+
+**4. Resumo para o de acordo.** Traga ao Juliano, no formato abaixo, e **pare**.
+
+**5. Ele diz que pode subir.** Só então publicar, e registrar no
+`docs/CHANGELOG.md` com a versão da função que subiu.
+
+### O formato do resumo (curto, sempre igual)
+
+```
+O QUE MUDA
+  Uma a três linhas, na língua dele, sem jargão.
+
+O QUE ELE VAI NOTAR
+  O que o atleta e o organizador veem de diferente. Se nada muda na
+  tela, dizer isso — mudança inerte é informação, não silêncio.
+
+O QUE SOBE
+  App (git push) / motor (qual função, de qual versão para qual) /
+  banco (qual migração). Se for mais de um, em que ordem.
+
+BATERIA
+  N asserções, N falhas. Build OK ou não.
+
+VEREDITOS
+  Guardião X: GO (supervisor: APROVADO)
+  Guardião Y: GO-com-condições — qual condição, e se foi atendida
+
+RISCO E VOLTA ATRÁS
+  O que pode dar errado e o comando exato para reverter.
+```
+
+Se algum guardião der **NO-GO**, não traga o resumo pedindo o de acordo: traga o
+problema. Pedir autorização com um NO-GO em aberto transfere para ele uma
+decisão técnica que é minha.
+
+## O que publica e o que não publica
+
+Só **duas** coisas trocam o que os atletas estão usando:
+
+| Comando | Troca | Quando |
+|---|---|---|
+| `git push origin main` — **inclusive o que o `atualizar.sh` faz no fim** | o app (as telas) | ~1 minuto depois, sozinho |
+| `npm run motor:publicar -- <função>` | o motor (as regras) | na hora |
+
+O `atualizar.sh` **não fala com a Vercel**: ele testa, comita e dá `git push`.
+Quem republica o site é a Vercel, ao ver o push na `main`. Logo, **empurrar para
+o GitHub é publicar** — não existe "só guardar no GitHub" nesta configuração.
+
+Não trocam nada: editar arquivos, `npm run teste`, `npm run build`,
+`git commit`, e ler o banco. **Commit é marcador de página, não publicação.**
+
+⚠️ **`npm run dev` conversa com o banco de produção.** A URL do Supabase está
+fixa no `src/App.jsx` (linha 104) e não há ambiente separado de teste. Abrir e
+olhar, tranquilo; lançar placar ali mexe no circuito de verdade.
+
+⚠️ **A regra 1 é combinado, não cadeado.** O Claude continua com acesso que
+permite publicar uma Edge Function pela conexão do Supabase. O que impede é esta
+página, não uma trava técnica. Se um dia isso não bastar, o caminho é um hook do
+Claude Code que barre o comando.
 
 ## Publicar tem duas metades — e elas andam separadas
 

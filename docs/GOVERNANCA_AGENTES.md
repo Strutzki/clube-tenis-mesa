@@ -26,6 +26,27 @@ Mudanças que cruzam áreas → mais de um agente.
 - Confiabilidade/deploy: `guardiao-confiabilidade` (Sonnet) + `supervisor-confiabilidade` (Sonnet) — **novo**
 - Curador do acervo/docs: `curador-projeto` (Sonnet) + `supervisor-curador` (Sonnet) — **novo** (curador, sem veto de código; mantém `INDICE_PROJETO.md` + `CHANGELOG.md`)
 
+## O rito é automático desde 07/09/2026
+
+O Juliano pediu que **todo avanço** siga a rotina sem ele precisar acionar:
+bateria e build com números → asserção nova (com teste de mutação) para regra
+nova → revisão dos guardiões com os supervisores → **resumo curto pedindo o de
+acordo dele** → só então publicar → registrar no CHANGELOG.
+
+O rito operacional, com o formato do resumo, está no `CLAUDE.md` (seção "O rito
+de subida"). Este documento continua sendo a fonte de **quem revisa o quê** e o
+arquivo dos vereditos.
+
+Escopo dos guardiões por avanço: a dupla de **Confiabilidade sempre**; mais as
+duplas da área tocada; e **as 8 duplas completas** quando a mudança tocar motor,
+banco, dinheiro ou dado pessoal.
+
+**Os mandatos foram atualizados para o ambiente novo** (Claude Code, na pasta do
+código): agora dá para compilar (`npm run build`) e existe bateria
+(`npm run teste`, 82 asserções). A antiga instrução de "provas substitutas de
+compilação" — contar delimitadores contra o HEAD — saiu: era resposta a um
+sandbox que não compilava, e hoje seria trabalho perdido.
+
 ## Rito por fase (checklist)
 1. **Análise de risco** escrita (PLANO_*.md).
 2. **Revisão supervisionada** do(s) agente(s) → **veredito documentado** (GO / GO-com-condições / NO-GO + condições).

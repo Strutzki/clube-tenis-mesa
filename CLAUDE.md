@@ -127,10 +127,13 @@ Não trocam nada: editar arquivos, `npm run teste`, `npm run build`,
 fixa no `src/App.jsx` (linha 104) e não há ambiente separado de teste. Abrir e
 olhar, tranquilo; lançar placar ali mexe no circuito de verdade.
 
-⚠️ **A regra 1 é combinado, não cadeado.** O Claude continua com acesso que
-permite publicar uma Edge Function pela conexão do Supabase. O que impede é esta
-página, não uma trava técnica. Se um dia isso não bastar, o caminho é um hook do
-Claude Code que barre o comando.
+✅ **Existe uma trava, além do combinado.** Desde 07/09/2026 um hook do Claude
+Code (`~/.claude/hooks/trava-publicacao.sh`, ligado em `~/.claude/settings.json`)
+intercepta todo comando que publica — `git push`, `publicar.command`,
+`vercel --prod`, `motor:publicar` — e a publicação de Edge Function ou migração
+pela conexão do Supabase. Ele não deixa o comando rodar direto: para e pede a
+confirmação do Juliano na tela, dizendo o que iria ao ar. Vale para comandos que
+saem do Claude; não impede o Juliano de publicar pela própria máquina.
 
 ## Publicar tem duas metades — e elas andam separadas
 
@@ -148,6 +151,20 @@ Claude Code que barre o comando.
 
   O CLI do Supabase está fixado como dependência do projeto (2.117.0), e o
   número do projeto já vai dentro do comando.
+
+  ⚠️ **Este comando nunca publicou nada ainda** (nasceu em 07/09/2026) e exige
+  duas coisas antes da estreia: `supabase login` feito nesta máquina — sem
+  credencial não há deploy **nem rollback** — e o `supabase/config.toml`, que diz
+  o `verify_jwt` de cada função. Sem esse arquivo o CLI **liga** a verificação
+  por padrão, e as cinco funções que o app chama estão no ar com ela desligada:
+  ligá-las faria o portão do Supabase exigir um token que o app não manda, e
+  login, painel e telas públicas parariam para todo mundo. O arquivo existe
+  desde 07/09/2026, conferido função a função contra o que está rodando.
+
+  ⚠️ **Não há rollback de Edge Function.** "Voltar" é republicar o código antigo,
+  criando uma versão nova — o número sempre sobe. E `git checkout` não serve,
+  porque o fonte está à frente do ar. Uma cópia do que está rodando hoje está em
+  `JULIANO/CLUBE DO TÊNIS DE MESA/BACKUPS/motor-no-ar-2026-09-07/`.
 
 Consequência que já confundiu: **o código no repositório pode estar à frente do
 que está no ar.** O `CHANGELOG.md` registra isso explicitamente (ex.: "edge

@@ -1,0 +1,47 @@
+# Como cada Edge Function deve ser publicada.
+#
+# POR QUE ESTE ARQUIVO EXISTE (07/09/2026): o comando de publicar o motor nao
+# dizia nada sobre `verify_jwt`, e o padrao do CLI e LIGAR essa verificacao.
+# As cinco funcoes que o app chama do navegador estao no ar com ela DESLIGADA;
+# publicar sem dizer isso as ligaria, e o portao do Supabase passaria a exigir
+# um token que o app nao manda -> login do atleta, painel do admin e telas
+# publicas parariam para todo mundo, BH incluido.
+#
+# Os valores abaixo sao os que estao no ar hoje, conferidos funcao a funcao.
+# Mexer aqui muda o portao de entrada de uma funcao: so com o Guardiao de
+# Seguranca junto.
+
+project_id = "eultwfzzlgcmcikobmmy"
+
+# --- Chamadas pelo app, no navegador. A propria funcao autentica (PIN, PIN de
+#     organizador ou token de sessao), entao o portao do Supabase fica aberto. ---
+
+[functions.admin-action]
+verify_jwt = false
+
+[functions.athlete-action]
+verify_jwt = false
+
+[functions.login-atleta]
+verify_jwt = false
+
+[functions.circuito-dados]
+verify_jwt = false
+
+[functions.despachos-do-dia]
+verify_jwt = false
+
+# --- Nao sao chamadas direto pelo app anonimo: o portao do Supabase exige
+#     token antes de a funcao rodar. Continuam assim. ---
+
+[functions.comprovante-url]
+verify_jwt = true
+
+[functions.anonimizar-atleta]
+verify_jwt = true
+
+[functions.resetar-pin-atleta]
+verify_jwt = true
+
+[functions.backup-clube-tenis-mesa]
+verify_jwt = true

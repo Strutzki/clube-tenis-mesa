@@ -186,6 +186,15 @@ const ALLOWED_ORIGINS = [
   "https://clubedotenisdemesabh.com.br",
   "https://www.clubedotenisdemesabh.com.br",
   "https://clube-tenis-mesa.vercel.app",
+  // Desenvolvimento: o app rodando na maquina do Juliano (`npm run dev`).
+  // Sem isto, o preflight responde com a origem de producao e o navegador corta
+  // a chamada ANTES de sair da tela — nao da para entrar no app local, nem como
+  // admin nem como atleta, e so as telas publicas carregam.
+  // Nao afrouxa autenticacao: CORS so vale para navegador, e PIN/token continuam
+  // exigidos aqui dentro. Quem chama por fora do navegador (curl) nunca passou
+  // por CORS de todo jeito.
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
 ];
 
 const JANELA_MINUTOS = 15;

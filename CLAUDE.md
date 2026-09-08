@@ -152,14 +152,23 @@ saem do Claude; não impede o Juliano de publicar pela própria máquina.
   O CLI do Supabase está fixado como dependência do projeto (2.117.0), e o
   número do projeto já vai dentro do comando.
 
-  ⚠️ **Este comando nunca publicou nada ainda** (nasceu em 07/09/2026) e exige
-  duas coisas antes da estreia: `supabase login` feito nesta máquina — sem
-  credencial não há deploy **nem rollback** — e o `supabase/config.toml`, que diz
-  o `verify_jwt` de cada função. Sem esse arquivo o CLI **liga** a verificação
-  por padrão, e as cinco funções que o app chama estão no ar com ela desligada:
-  ligá-las faria o portão do Supabase exigir um token que o app não manda, e
-  login, painel e telas públicas parariam para todo mundo. O arquivo existe
-  desde 07/09/2026, conferido função a função contra o que está rodando.
+  **O comando exige o nome da função** e recusa rodar sem ele — porque o comando
+  cru do Supabase, sem nome, publica **todas**, e a fonte deste repositório está
+  à frente do ar (a `admin-action` guarda ~178 linhas do financeiro do
+  organizador que ainda não foram liberadas). Ele também recusa `--prune`, que
+  apagaria as funções dos outros apps na mesma conta.
+
+  **Confira sempre depois de publicar:** `npm run motor:conferir` compara o
+  `verify_jwt` de cada função com o `supabase/config.toml` e falha em vermelho na
+  divergência. Esse arquivo é o portão de entrada: sem ele, o CLI **liga** a
+  verificação por padrão, e as cinco funções que o app chama estão no ar com ela
+  desligada — ligá-las faria o Supabase exigir um token que o app não manda, e
+  login, painel e telas públicas parariam para todo mundo. Pior: a chave que o
+  app envia não é um JWT, então a queda seria total, não parcial.
+
+  Estreou em 07/09/2026 publicando 5 funções (a liberação do `localhost`), com
+  conferência a cada uma. Precisa de `supabase login` feito nesta máquina — sem
+  credencial não há deploy **nem rollback**.
 
   ⚠️ **Não há rollback de Edge Function.** "Voltar" é republicar o código antigo,
   criando uma versão nova — o número sempre sobe. E `git checkout` não serve,

@@ -8,9 +8,10 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "motor:publicar": "supabase functions deploy --project-ref eultwfzzlgcmcikobmmy",
+    "motor:publicar": "node scripts/publicar-motor.mjs",
     "motor:listar": "supabase functions list --project-ref eultwfzzlgcmcikobmmy",
-    "teste": "node testes/rating.mjs && node testes/sistema-b.mjs && node testes/isolamento.mjs"
+    "teste": "node testes/rating.mjs && node testes/sistema-b.mjs && node testes/isolamento.mjs",
+    "motor:conferir": "node scripts/conferir-motor.mjs"
   },
   "dependencies": {
     "react": "^19.2.7",

@@ -42,7 +42,8 @@ Pagamentos são processados por **gateway** ([Asaas] e/ou outros). **Não armaze
 ## 7. Por quanto tempo guardamos
 - Enquanto você participa de um circuito e pelo tempo necessário às finalidades acima.
 - Dados fiscais/financeiros: pelo prazo legal (ex.: 5 anos).
-- Ao pedir **exclusão**, anonimizamos seu cadastro (nome, telefone, foto) e removemos você do circuito; **partidas e histórico dos adversários são preservados** de forma que não te identifiquem. O hash de CPF é purgado na exclusão.
+- Ao pedir **exclusão**, anonimizamos seu cadastro (nome, telefone, apelido, foto e estilo de jogo) e removemos você do circuito; **partidas e histórico dos adversários são preservados** de forma que não te identifiquem.
+- **O que ainda não é apagado na exclusão** (situação atual, sendo revista — ver `ROADMAP.md`, Onda 0.7): o **hash de CPF**, a **data de nascimento**, o **nome e o hash de CPF do responsável** (no caso de menores) e o **IP do consentimento de CPF** permanecem na base. O hash de CPF é mantido para a finalidade de identidade única nacional declarada na seção 3; os demais estão em revisão e serão eliminados. Enquanto essa revisão não conclui, esta seção descreve o comportamento real do sistema e não promete prazo de eliminação.
 
 ## 8. Cookies e armazenamento local
 Usamos armazenamento local do navegador apenas para **manter você conectado** (token de sessão — **não guardamos seu PIN**) e lembrar preferências. **Não usamos rastreadores de publicidade.**

@@ -4,6 +4,71 @@ Histórico do que foi a produção. Mantido pelo agente `curador-projeto`. Mais 
 Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ## 2026-09-08
+- **O app parou de engolir os erros do servidor — Onda 0.6.1.** Só front; o motor
+  não muda uma linha (`admin-action` segue v58). O defeito: `dispatchAndSync`
+  gravava a mensagem de erro num estado que **nada lia** (`setDbMsg` sem
+  `setDbStatus("error")`, e a `DbBar` só renderiza com `"error"`), e o `dispatch`
+  otimista já tinha mudado a tela enquanto o `loadFromSupabase()` que a desfaria
+  ficava **depois** da chamada — pulado pelo `throw`. O organizador clicava em
+  excluir um atleta, o atleta sumia da lista, o servidor recusava com 403 e nada
+  aparecia. O `ROADMAP.md` chamava isso de "uma linha de conserto"; não era.
+
+  **O que entrou, item por item:** barra própria para recusa do servidor,
+  separada da de conexão (fundo/borda iguais, mas ícone 🚫 vs ⚠️ para não se
+  confundirem quando empilham); as duas num wrapper `sticky, zIndex:1200`, acima
+  dos modais de conteúdo (1000) e abaixo dos portões de confirmação (1400/1500/
+  2000); a terceira linha **condicionada ao retorno real** de `loadFromSupabase()`
+  — afirmar "a tela já voltou ao que está no banco" quando a recarga também
+  falhou era mentir no pior momento, e o pior momento é a virada de temporada;
+  `sent` do `SubmitMatchCard` reseta na recusa (o atleta veria "não foi salvo" e
+  "✓ enviado" ao mesmo tempo); `setAcaoErro(null)` nas 4 entradas e no logout;
+  contraste 2,7:1 → 9,9:1 e alvo de toque 10,7×14px → 32×32px no ✕; cabeçalho
+  distinguindo cancelamento do PIN de recusa do servidor.
+
+  **Exclusão de dados (LGPD):** `exclusaoSolicitada` era `useState` congelado no
+  mount e ligado no clique sem olhar a resposta — se o pedido falhava, a tela
+  dizia "📩 Pedido de exclusão registrado" **para sempre**. Agora deriva do estado
+  vivo, `SOLICITAR_EXCLUSAO` recarrega no sucesso (não recarregava), e o texto
+  parou de prometer "remoção dos seus dados" quando o que o sistema faz é
+  **anonimizar** — a tela do admin já dizia certo; só a do titular estava errada.
+  Na falha, a barra oferece o canal alternativo que o consentimento já promete.
+
+  **Quem vê qual mensagem**, decidido e travado: super-admin vê o texto cru (é
+  quem relata o defeito); **organizador vê só a frase 4xx** do motor, nunca o
+  texto de máquina do 500 (ele é terceiro, e o banco é compartilhado com o app de
+  torneios); atleta e visitante ficam no piso de uma lista branca fail-closed.
+  Verificado no esquema de produção: **CPF e telefone não podem ecoar na tela** —
+  o Postgres põe o valor violado em `DETAIL`, e nenhuma função devolve
+  `details`/`hint`.
+
+  `testes/erros-na-tela.mjs` (novo, **12 asserções**), com teste de mutação
+  demonstrado em quatro pontos — tirar o `!modoOrg`, tornar erro sem status
+  "autoral", mudar a pontuação de uma mensagem no motor, e um 4xx com template
+  literal (este último foi um **furo real na primeira versão da asserção**, achado
+  pelo Guardião de Segurança: ela não via a forma idiomática do repositório).
+  Bateria: **154 asserções**. O `src/App.jsx` saiu do zero de cobertura.
+
+  **Rito completo, 6 duplas:** Confiabilidade GO; Admin GO; Atleta GO (havia dado
+  NO-GO e reverteu com evidência); Visual GO; Jurídico GO-com-condições
+  (cumpridas); Segurança GO-com-condições (cumpridas). Em três duplas o
+  **supervisor errou e o guardião provou** — box-sizing medido no Chrome, a
+  `DbBar` que tem ramo de "carregando", e `NOVA_TEMPORADA` que não é do
+  organizador.
+
+  ⚠️ **A revisão desenterrou 13 achados pré-existentes** — falta de autenticação
+  no `athlete-action`, dados que sobrevivem à anonimização, três outras telas com
+  texto cru. Nenhum foi criado por esta mudança e nenhum a bloqueia. Estão na
+  **Onda 0.7** do `ROADMAP.md`, com o veredito de cada guardião.
+
+  **Descartado por teste:** a suspeita de que "Finalizar exclusão" nunca
+  funcionara (`verify_jwt` ligado, app manda chave publicável). POST com corpo
+  vazio devolveu **400 "pin e id são obrigatórios"** — o portão deixa passar.
+
+  `POLITICA_PRIVACIDADE.md` §7 corrigido: prometia que o hash de CPF era purgado
+  na exclusão, e não é. O texto agora descreve o comportamento real e aponta a
+  Onda 0.7. A decisão sobre o que reter é do Juliano e está registrada lá.
+
+## 2026-09-08
 - **As permissões do organizador chegaram ao ar — `admin-action` v57 → v58** (sha `6e03fbeb131d`). A decisão que o Juliano tomou em 07/09, item a item, estava no repositório e **nunca tinha sido publicada**: a produção ainda concedia ao organizador `EXCLUIR_ATLETA`, `ABRIR_PROXIMA_TEMPORADA`, `CANCELAR_PROXIMA` e `DEFINIR_RODADAS`, e as **cinco ações de dinheiro sem portão nenhum** (`grep -c FINANCEIRO_ACOES` no arquivo que estava no ar: 0). Achado pelo Supervisor de Segurança. Agora vale a lista restrita, mais o portão `org_ve_financeiro` (nasce desligado, só o super-admin liga).
 
   Vai junto, e é **inerte**: `DEFINIR_ORG_VE_FINANCEIRO` e a configuração de cobrança da plataforma (`LER_`/`DEFINIR_COBRANCA_PLATAFORMA`). Provado por três caminhos independentes — a linha que recusa o BH antes de tocar o banco, o estado do banco (1 circuito, **0 organizadores**, 0 linhas em `circuito_cobranca`, 0 circuitos com o portão ligado) e o front, que não renderiza os cards com o BH selecionado.

@@ -4387,6 +4387,49 @@ function PinPromptModal({ onSubmit, onCancel }) {
   );
 }
 
+// Mensagens que o `athlete-action` escreve para o ATLETA ler. Só estas chegam
+// à tela dele; o resto vira texto genérico.
+//
+// Fail-closed de propósito, na mesma lógica do `getSistema()` do motor: o catch
+// genérico do athlete-action devolve `e.message` cru num 500, e erro de Postgres
+// costuma trazer o VALOR que violou a constraint dentro da mensagem. Filtrar por
+// "marcas de erro técnico" (deixando passar o que não bate) seria fail-open —
+// bastaria um erro fora do vocabulário previsto para expor estrutura ou dado do
+// banco na tela do atleta.
+//
+// DÍVIDA TÉCNICA assumida: esta lista precisa acompanhar o texto do motor, e
+// nada quebra quando ela desatualiza — a bateria cobre o motor, não o app. Daí o
+// console.warn no fallback. A correção certa é o `athlete-action` devolver um
+// código de erro estável (`erroCod`) ao lado da mensagem humana, e o app passar
+// a casar por código em vez de por string.
+const MSGS_ATLETA = new Set([
+  "Placar inválido.",
+  "Partida não encontrada.",
+  "Esta partida já foi encerrada.",
+  "Você não participa desta partida.",
+  "Nada para atualizar.",
+  "Atleta não encontrado.",
+  "Apenas atletas ativos podem renovar.",
+  "Solicitação não encontrada.",
+  "Só é possível cancelar uma solicitação ainda pendente.",
+  "Nome é obrigatório.",
+  "Telefone inválido.",
+  "Circuito não encontrado.",
+  "Este circuito está inativo.",
+  "As inscrições deste circuito estão fechadas no momento.",
+]);
+const MSG_ATLETA_GENERICA = "Não deu para completar agora. Tente de novo em instantes.";
+// Usada nos DOIS pontos: quem rejeita (o onCancel do modal de PIN) e quem
+// reconhece (a AcaoErroBar, para não acusar o servidor de uma escolha do admin).
+const MSG_PIN_CANCELADO = "Confirmação de PIN cancelada.";
+
+function mensagemParaAtleta(msg) {
+  const t = String(msg || "").trim();
+  if (MSGS_ATLETA.has(t)) return t;
+  console.warn("[AcaoErroBar] mensagem fora da lista conhecida — mostrando texto genérico ao atleta:", t);
+  return MSG_ATLETA_GENERICA;
+}
+
 export default function App() {
   const [state, dispatch] = useReducer(reducer, INIT);
   // ── Restaurar sessão do localStorage ─────────────────────────
@@ -4430,6 +4473,11 @@ export default function App() {
   const [tab, setTab] = useState(sessaoSalva.tab || "dashboard");
   const [dbStatus, setDbStatus] = useState("loading");
   const [dbMsg, setDbMsg] = useState("");
+  // Recusa do servidor a uma ação (403 de permissão, validação, conflito). É um
+  // canal SEPARADO do dbStatus de propósito: "não deu pra conectar" e "o servidor
+  // entendeu e recusou" são coisas diferentes, e o loadFromSupabase que recarrega
+  // a verdade depois da recusa põe dbStatus de volta em "ok" — apagaria o aviso.
+  const [acaoErro, setAcaoErro] = useState(null); // { acao, msg }
   // A2: seletor de circuito (super-admin). Default BH; NÃO persiste (recarrega no BH).
   const [circuitos, setCircuitos] = useState([]);
   const [circuitoSelId, setCircuitoSelId] = useState(() => {
@@ -4695,7 +4743,7 @@ export default function App() {
     return new Promise((resolve, reject) => {
       setPinPrompt({
         onSubmit: (pin) => { setPinCache(pin); setPinPrompt(null); resolve(pin); },
-        onCancel: () => { setPinPrompt(null); reject(new Error("Confirmação de PIN cancelada.")); },
+        onCancel: () => { setPinPrompt(null); reject(new Error(MSG_PIN_CANCELADO)); },
       });
     });
   }
@@ -4728,7 +4776,11 @@ export default function App() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.sucesso) {
-        throw new Error(data.erro || `Erro ${res.status} ao executar ${acao}`);
+        {
+        const err = new Error(data.erro || `Erro ${res.status} ao executar ${acao}`);
+        err.status = res.status;
+        throw err;
+      }
       }
       return data.dados;
     }
@@ -4746,7 +4798,11 @@ export default function App() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.sucesso) {
       if (res.status === 401) clearPinCache();
-      throw new Error(data.erro || `Erro ${res.status} ao executar ${acao}`);
+      {
+        const err = new Error(data.erro || `Erro ${res.status} ao executar ${acao}`);
+        err.status = res.status;
+        throw err;
+      }
     }
     return data.dados;
   }
@@ -4788,7 +4844,11 @@ export default function App() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.sucesso) {
-      throw new Error(data.erro || `Erro ${res.status} ao executar ${acao}`);
+      {
+        const err = new Error(data.erro || `Erro ${res.status} ao executar ${acao}`);
+        err.status = res.status;
+        throw err;
+      }
     }
     return data.dados;
   }
@@ -4872,11 +4932,29 @@ export default function App() {
   }
 
   async function dispatchAndSync(action) {
-    dispatch(action);
+    dispatch(action);            // otimista: a tela muda ANTES do servidor responder
+    setAcaoErro(null);           // recusa anterior não contamina a ação nova
     try { const r = await syncToSupabase(action, state); return r ?? { ok: true }; }
     catch(e) {
       console.error(`[sync falhou] ${action.type}:`, e);
-      setDbMsg(`Erro ao salvar (${action.type}): ${e.message}`);
+      // O servidor recusou, mas o dispatch otimista lá em cima JÁ mudou a tela —
+      // e o loadFromSupabase de cada ação fica DEPOIS da chamada, então o throw
+      // pula por cima dele. Sem recarregar aqui, o admin vê o atleta sumir da
+      // lista e acredita que excluiu, enquanto o banco continua intacto.
+      const recarregou = await loadFromSupabase();
+      // Só depois do load: ele termina pondo dbStatus em "ok", e um aviso preso
+      // ao dbStatus seria apagado no mesmo instante em que fosse aceso.
+      // `recarregou` NÃO é enfeite: a barra afirma que a tela voltou ao que está
+      // no banco, e isso só é verdade se a releitura deu certo. Se a mesma queda
+      // de rede derrubou a ação E a recarga, a mudança otimista continua na tela
+      // — afirmar o contrário ali seria mentir no pior momento possível.
+      setAcaoErro({ acao: action.type, msg: e.message, recarregou,
+        cancelado: e.message === MSG_PIN_CANCELADO,
+        // Sem status quando o erro não veio de uma resposta HTTP: PIN cancelado,
+        // rede caída (`Failed to fetch`), CORS derrubado. Nesse caso a barra
+        // trata como NÃO-autoral e cai no piso — filtrar só por status seria
+        // fail-open justamente no ramo mais imprevisível.
+        status: (typeof e.status === "number" ? e.status : null) });
       return { ok: false, erro: e.message };
     }
   }
@@ -5011,6 +5089,11 @@ export default function App() {
     }
     else if (action.type === "SOLICITAR_EXCLUSAO") {
       await chamarAtletaAction("SOLICITAR_EXCLUSAO", { athleteId: action.payload.athleteId });
+      // Recarrega como o RENOVAR já fazia. Sem isto, `exclusaoSolicitadaEm`
+      // nunca chega ao state e a confirmação na tela do atleta não teria de
+      // onde vir — o direito da LGPD ficaria sem recibo mesmo quando o pedido
+      // é aceito.
+      await loadFromSupabase();
     }
     else if (action.type === "RESPONDER_WO") {
       const { id, matchId, aprovado, motivoRecusa, justificativa } = action.payload;
@@ -5109,7 +5192,11 @@ export default function App() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.sucesso) {
         if (res.status === 401) clearPinCache();
-        throw new Error(data.erro || `Erro ${res.status} ao resetar PIN`);
+        {
+          const err = new Error(data.erro || `Erro ${res.status} ao resetar PIN`);
+          err.status = res.status;
+          throw err;
+        }
       }
     }
   }
@@ -5125,10 +5212,90 @@ export default function App() {
     </div>
   ) : null;
 
+  // Recusa do servidor. Barra própria, e não a DbBar: aqui a conexão funcionou —
+  // o servidor entendeu o pedido e disse não. Dizer "erro de conexão" mandaria o
+  // admin procurar o defeito no lugar errado.
+  // Quem vê o quê, escrito na POSITIVA — a versão anterior perguntava "não é
+  // admin?", e quem não se encaixasse caía no texto cru por omissão.
+  //   super-admin  → tudo, é ele quem relata o defeito.
+  //   organizador  → só a frase 4xx do motor ("Você não organiza este
+  //                  circuito."), nunca o texto de máquina do 500. Ele é um
+  //                  TERCEIRO, e o banco é compartilhado com o app de torneios:
+  //                  nome de tabela e de coluna não são assunto dele.
+  //   atleta/visitante → piso da lista branca, sempre.
+  // O status é ADITIVO à lista branca, nunca substituto: sem status (rede caída,
+  // PIN cancelado, CORS derrubado) trata-se como não-autoral e cai no piso.
+  function textoDoErro() {
+    if (acaoErro.cancelado) return acaoErro.msg;
+    const souSuperAdmin = isAdmin && !modoOrg;
+    if (souSuperAdmin) return acaoErro.msg;
+    const autoral = typeof acaoErro.status === "number" && acaoErro.status >= 400 && acaoErro.status < 500;
+    if (isAdmin && autoral) return acaoErro.msg;
+    return mensagemParaAtleta(acaoErro.msg);
+  }
+
+  const AcaoErroBar = () => acaoErro ? (
+    <div style={{background:"rgba(248,113,113,0.15)",borderLeft:"3px solid #c25a45",padding:"8px 14px",fontSize:11,display:"flex",gap:8,alignItems:"flex-start"}}>
+      <div style={{flex:1}}>
+        {/* O ícone 🚫 (e não o ⚠️ da DbBar) existe porque as duas barras podem
+            aparecer empilhadas, com fundo, borda e cor idênticos: sem um sinal
+            próprio, o usuário não distingue "não conectei" de "conectei e o
+            servidor recusou" antes de ler as duas. */}
+        {/* O cabeçalho não acusa o servidor quando não foi ele: cancelar o modal
+            de PIN rejeita antes de qualquer chamada, e dizer "o servidor recusou"
+            mandaria o admin procurar o defeito no lugar errado. O ícone também
+            muda — 🚫 é bloqueio, e repreender uma escolha que o próprio usuário
+            fez é o tom errado; o aviso continua porque o dispatch otimista já
+            tinha mexido na tela. */}
+        <div style={{fontWeight:700,color:T.offwhite}}>
+          {acaoErro.cancelado ? "↩️ Não foi salvo — você cancelou a confirmação." : "🚫 Não foi salvo — o servidor recusou."}
+        </div>
+        {/* Texto em T.offwhite, não no vermelho da borda: #c25a45 sobre este
+            fundo dá 2,7:1, e a WCAG AA pede 4,5:1 para texto pequeno.
+            Quem vê o quê está em textoDoErro(), logo acima: o texto cru é do
+            SUPER-ADMIN; o organizador recebe só a frase 4xx do motor; atleta e
+            visitante ficam no piso da lista branca. */}
+        <div style={{marginTop:2,color:T.offwhite}}>
+          {textoDoErro()}
+        </div>
+        {/* Mesmo gate da linha de cima: "banco" é palavra de quem opera o
+            sistema. O atleta não tem esse modelo mental — e o ramo de falha da
+            recarga é justamente o mais provável para quem está no celular, em
+            rede ruim, que é a situação dele e não a do admin. */}
+        {acaoErro.recarregou ? (
+          <div style={{marginTop:2,color:T.cinzaSuave}}>
+            {(!isAdmin) ? "A tela mostra agora o que realmente foi salvo." : "A tela já voltou ao que está no banco."}
+          </div>
+        ) : (
+          // Aqui não cabe tom secundário: a recarga também falhou, o estado da
+          // tela é desconhecido, e esta linha deixou de ser tranquilização para
+          // virar a instrução mais urgente da barra.
+          <div style={{marginTop:2,color:T.offwhite,fontWeight:700}}>
+            {(!isAdmin) ? "Não deu para confirmar o que foi salvo de verdade. Recarregue antes de tentar de novo." : "Não deu pra confirmar o estado atual — recarregue a página antes de continuar."}
+          </div>
+        )}
+        {/* Pedido de exclusão que falha não pode deixar o titular sem caminho:
+            o art. 18 obriga o controlador a manter um meio de exercer o direito,
+            e este canal já é o prometido no consentimento que ele assinou. Sem
+            isto, o único caminho do app falha e a tela não oferece outro. */}
+        {acaoErro.acao === "SOLICITAR_EXCLUSAO" && (
+          <div style={{marginTop:4,color:T.offwhite}}>
+            Você pode pedir a exclusão também por <b>@clubedotenisdemesa</b> no Instagram, ou pelo WhatsApp do grupo oficial.
+          </div>
+        )}
+      </div>
+      {/* padding 8 + mín. 32: o ✕ media 10,7×14px, abaixo do piso de 24×24 da
+          WCAG 2.5.8. A cor sai do vermelho também por contraste — 1.4.11 pede
+          3:1 para controle, e #c25a45 não alcança. */}
+      <button onClick={()=>setAcaoErro(null)} style={{background:"none",border:"none",color:T.offwhite,fontSize:14,cursor:"pointer",lineHeight:1,padding:8,minWidth:32,minHeight:32,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}} aria-label="Fechar aviso">✕</button>
+    </div>
+  ) : null;
+
   if (!isAdmin && !currentAthlete && !isVisitante) return (
     <LoginScreen
-      onLogin={() => { setIsAdmin(true); setTab("dashboard"); }}
+      onLogin={() => { setAcaoErro(null); setIsAdmin(true); setTab("dashboard"); }}
       onAthleteLogin={a => {
+        setAcaoErro(null);
         setCurrentAthlete(a); setTab("meus_jogos");
         const cred = getAtletaCred();
         const circs = (cred && Array.isArray(cred.circuitos)) ? cred.circuitos : [];
@@ -5137,6 +5304,7 @@ export default function App() {
       onVisitante={() => {
         // Visitante: vitrine de TODOS os circuitos ativos. Abertos ele explora; fechados
         // aparecem com cadeado + aviso (nunca carrega dados de circuito privado).
+        setAcaoErro(null);
         setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID);
         setVisitanteCirc(null); setIsVisitante(true); setTab("ranking");
         // A lista da vitrine é carregada pelo efeito abaixo (também cobre o refresh).
@@ -5144,6 +5312,7 @@ export default function App() {
       athletes={state.athletes}
       onInscricao={p => dispatchAndSync({type:"INSCRICAO_ADD", payload:p})}
       onOrganizadorLogin={(cred) => {
+        setAcaoErro(null);
         setOrgCred(cred); setModoOrg(cred);
         setCircuitoAtivo(cred.circuitoId); setCircuitoSelId(cred.circuitoId);
         setIsAdmin(true); setTab("dashboard");
@@ -5165,10 +5334,20 @@ export default function App() {
 
   return (
     <div style={{fontFamily:"Inter,sans-serif", background:"#1C2B27", minHeight:"100vh", maxWidth:480, margin:"0 auto", color:"#F0EAE0", paddingBottom:80}}>
-      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); setModoOrg(null); setEscolherCircuito(false); setVisitanteCirc(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
+      <Header isAdmin={isAdmin} isVisitante={isVisitante} athlete={currentAthlete} nomeCircuito={state.nomeCircuito} onLogout={() => { setAcaoErro(null); setIsAdmin(false); setCurrentAthlete(null); setIsVisitante(false); setTab("dashboard"); localStorage.removeItem("ctm_sessao"); clearPinCache(); clearOrgCred(); setModoOrg(null); setEscolherCircuito(false); setVisitanteCirc(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
       {pinPrompt && <PinPromptModal onSubmit={pinPrompt.onSubmit} onCancel={pinPrompt.onCancel}/>}
       {mostrarBoasVindasVisitante && <BoasVindasVisitanteModal onClose={()=>setMostrarBoasVindasVisitante(false)}/>}
-      <DbBar/>
+      {/* As duas barras num wrapper só, e não como irmãs sticky: dois
+          `position:sticky, top:0` adjacentes colam no mesmo ponto e se cobrem.
+          zIndex 1200 fica acima das telas cheias de 1000 (edição de perfil,
+          solicitação de W.O., cards de histórico) — onde o aviso ficava
+          desenhado ATRÁS do modal — e abaixo dos portões de confirmação de
+          1400/1500/2000 (novo circuito, boas-vindas, PIN, virada de temporada),
+          que não devem ser encobertos por aviso nenhum. */}
+      <div style={{position:"sticky", top:0, zIndex:1200}}>
+        <DbBar/>
+        <AcaoErroBar/>
+      </div>
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
@@ -9164,7 +9343,21 @@ function baixarMeusDados(perfil, telefone, minhasPartidas, meusWos) {
 
 function EditarPerfilView({ athlete, dispatch, onClose, state, telefone }) {
   const [confirmandoExcl, setConfirmandoExcl] = useState(false);
-  const [exclusaoSolicitada, setExclusaoSolicitada] = useState(!!athlete.exclusaoSolicitadaEm);
+  const [pedindoExcl, setPedindoExcl] = useState(false);
+  // Vem do estado vivo do atleta (`athlete` é o `eu` de AthleteGames, achado em
+  // state.athletes a cada render), não de um useState local. Até 08/09/2026 era
+  // `useState(!!athlete.exclusaoSolicitadaEm)`: congelado no mount e ligado no
+  // clique sem olhar a resposta do servidor. Se o pedido falhava, a tela seguia
+  // dizendo "registrado" para sempre — o atleta acreditava ter exercido um
+  // direito da LGPD que ninguém recebeu, e não tinha como descobrir.
+  // `pedidoAceito` só liga com CONFIRMAÇÃO do servidor — nunca no clique. Existe
+  // porque em circuito privado não-BH o ranking vem pelo porteiro
+  // (`circuito-dados`), que não devolve `exclusao_solicitada_em`: ali o campo é
+  // sempre nulo e o recibo sumiria mesmo num pedido aceito. Não é o otimismo
+  // antigo de volta — aquele mentia na recusa; este só afirma o que o servidor
+  // já aceitou. A correção de raiz é o porteiro passar a devolver o campo.
+  const [pedidoAceito, setPedidoAceito] = useState(false);
+  const exclusaoSolicitada = !!athlete.exclusaoSolicitadaEm || pedidoAceito;
   return (
     <div style={{position:"fixed",inset:0,background:T.telaFundo,zIndex:1000,display:"flex",flexDirection:"column",alignItems:"center"}}>
       <div style={{height:3,background:T.terracota,flexShrink:0,width:"100%",maxWidth:480}}/>
@@ -9185,7 +9378,15 @@ function EditarPerfilView({ athlete, dispatch, onClose, state, telefone }) {
           <div style={{fontSize:11,color:T.cinza,marginTop:6,lineHeight:1.5}}>Baixa um arquivo com os dados que o app guarda sobre você (perfil, partidas e solicitações).</div>
           <div style={{marginTop:16}}>
             {exclusaoSolicitada ? (
-              <div style={{fontSize:11,color:T.madeira,lineHeight:1.5}}>📩 Pedido de exclusão registrado. O administrador vai processar sua saída do circuito e a remoção dos seus dados.</div>
+              // O texto antigo prometia "remoção dos seus dados". O que a
+              // `anonimizar-atleta` faz é ANONIMIZAR: apaga nome, telefone,
+              // apelido, foto e estilo, e mantém a linha, as estatísticas e as
+              // partidas — porque o histórico dos adversários depende delas. A
+              // tela do admin já dizia isso certo; só a do titular estava errada,
+              // que é justamente a que precisa estar certa.
+              <div style={{fontSize:11,color:T.madeira,lineHeight:1.5}}>
+                📩 Pedido de exclusão registrado{athlete.exclusaoSolicitadaEm ? ` em ${fmtDate(String(athlete.exclusaoSolicitadaEm).slice(0,10))}` : ""}. O administrador vai tirar você do circuito e anonimizar seus dados pessoais (nome, telefone, apelido e foto). As partidas que você jogou continuam registradas, porque fazem parte do histórico dos seus adversários.
+              </div>
             ) : !confirmandoExcl ? (
               <button onClick={()=>setConfirmandoExcl(true)} style={{fontFamily:T.mono,fontSize:11,letterSpacing:0.5,color:T.vermelho,background:"transparent",border:`1px solid ${T.vermelho}55`,padding:"8px 12px",borderRadius:10,cursor:"pointer"}}>
                 🗑️ Solicitar exclusão dos meus dados
@@ -9196,7 +9397,15 @@ function EditarPerfilView({ athlete, dispatch, onClose, state, telefone }) {
                   Isto solicita a <b>exclusão dos seus dados pessoais</b> (nome, telefone, foto). Como esses dados são necessários para jogar, você <b>será removido do circuito</b>. O administrador processa o pedido. Deseja continuar?
                 </div>
                 <div style={{display:"flex",gap:8}}>
-                  <Btn small color={T.vermelho} onClick={()=>{ dispatch({type:"SOLICITAR_EXCLUSAO",payload:{athleteId:athlete.id}}); setExclusaoSolicitada(true); setConfirmandoExcl(false); }}>Confirmar pedido</Btn>
+                  <Btn small color={T.vermelho} disabled={pedindoExcl} onClick={async ()=>{
+                    setPedindoExcl(true);
+                    const r = await dispatch({type:"SOLICITAR_EXCLUSAO",payload:{athleteId:athlete.id}});
+                    setPedindoExcl(false);
+                    // Só sai da confirmação se o servidor aceitou. Na recusa ele
+                    // fica aqui, com a barra de erro visível por cima do modal
+                    // (zIndex 1200 > 1000), em vez de ver "registrado" e ir embora.
+                    if (!r || r.ok !== false) { setPedidoAceito(true); setConfirmandoExcl(false); }
+                  }}>{pedindoExcl ? "Enviando…" : "Confirmar pedido"}</Btn>
                   <Btn small color={T.borda} onClick={()=>setConfirmandoExcl(false)}>Cancelar</Btn>
                 </div>
               </div>
@@ -9455,11 +9664,18 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
   const ranking = [...state.athletes].filter(a=>estaNoRanking(a, state.matches)).sort(cmpRanking(state.matches));
   const posicaoAdversario = (() => { const idx = ranking.findIndex(a => a.id === adversario?.id); return idx === -1 ? null : idx + 1; })();
 
-  function submit() {
+  async function submit() {
     if (!s1||!s2) return;
-    dispatch({type:"SUBMIT_RESULT",payload:{matchId:m.id,athleteId:athlete.id,score1:parseInt(s1),score2:parseInt(s2)}});
     setSent(true);
     setEditando(false);
+    // `sent` é otimista e, até 08/09/2026, NUNCA voltava a false: quando o
+    // servidor recusava o placar, o dispatch recarregava a verdade (o p1/p2
+    // Submitted voltava a vazio) mas o card seguia mostrando "✓ Resultado
+    // enviado" — o atleta lia, ao mesmo tempo, "não foi salvo" na barra e
+    // "enviado" no card. Agora o retorno decide: recusou, o card volta ao
+    // formulário com o placar ainda digitado, e só a barra fala.
+    const r = await dispatch({type:"SUBMIT_RESULT",payload:{matchId:m.id,athleteId:athlete.id,score1:parseInt(s1),score2:parseInt(s2)}});
+    if (r && r.ok === false) { setSent(false); setEditando(true); }
   }
 
   return (

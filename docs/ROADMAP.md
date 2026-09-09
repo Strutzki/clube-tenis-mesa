@@ -26,9 +26,10 @@ for comunicado como pronto.
 Não estavam em plano nenhum; apareceram ao mapear o banco e o repositório em
 07/09/2026. Nenhuma é urgente hoje; todas cobram juros.
 
-- **0.1 — A bateria existe, mas só cobre o motor.** Desde 07/09/2026 há 82
-  asserções (`npm run teste`) rodando o `admin-action` de verdade, ligadas ao
-  `atualizar.sh`. Falta cobrir: o front `src/App.jsx`, o `athlete-action`, o
+- **0.1 — A bateria cobre o motor e começou a cobrir o front.** São **154
+  asserções** (`npm run teste`), ligadas ao `atualizar.sh`. O `src/App.jsx` saiu
+  do zero: `pacote.mjs` (11) e `erros-na-tela.mjs` (12) leem o fonte e travam
+  decisões. Falta cobrir: o resto do front, o `athlete-action`, o
   `login-atleta`, o pareamento (`INICIAR_ETAPA`/`AVANCAR_RODADA`), os desempates
   do ranking e o financeiro. O carregador já serve para todas — faltam as
   asserções. Ver `testes/README.md`.
@@ -112,7 +113,8 @@ real no minuto em que deixar de ser.
 
 ### Trava o organizador de trabalhar
 
-- **0.6.1 — O app não mostra os erros do servidor.** `dispatchAndSync` grava a
+- **0.6.1 — ✅ RESOLVIDO em 08/09/2026.** O app não mostrava os erros do
+  servidor. `dispatchAndSync` grava a
   mensagem de erro sem ligar o estado que a barra de aviso lê, e o `dispatch`
   otimista já mudou a tela antes. Efeito: o organizador clica em excluir um
   atleta, o atleta some da lista, o servidor recusa com 403 e **nada aparece**.
@@ -179,6 +181,98 @@ real no minuto em que deixar de ser.
   irmã. Inofensivo (só super-admin), mas incoerente.
 - **0.6.14 —** `CobrancaPlataformaCard` desempacota a resposta duas vezes, então
   a tela mostrará campos vazios mesmo com configuração salva.
+
+## Onda 0.7 — O que a revisão da 0.6.1 desenterrou (08/09/2026)
+
+Nada disto foi criado pela 0.6.1. Apareceu porque seis duplas de guardiões foram
+olhar o fluxo de erro de ponta a ponta, e **está tudo em produção hoje**. A
+0.6.1 subiu sem esperar por estes itens — decisão do Juliano em 08/09, caminho
+"subir o conserto e separar o resto": segurá-la não consertava nenhum deles.
+
+### Autenticação — o mais sério
+
+- **0.7.1 — O `athlete-action` não autentica ninguém.** Não há token de sessão
+  nem PIN: o `athleteId` vem do corpo da requisição, e a chave que o app manda
+  está no pacote que todo visitante baixa. Vale para **todas** as ações do
+  atleta — `ENVIAR_PLACAR`, `SOLICITAR_WO`, `RENOVAR`, `ATUALIZAR_PERFIL` —, não
+  só a exclusão. Onde dói mais: qualquer pessoa pode marcar **qualquer** atleta
+  como tendo pedido exclusão de dados, e o admin não tem como distinguir pedido
+  legítimo de forjado antes de executar uma anonimização **irreversível**.
+  Vetores: assédio (marcar um rival) e indução do controlador ao erro.
+  A peça já existe — o `login-atleta` emite token de sessão e o `circuito-dados`
+  já sabe consumi-lo (`body.sessionToken`); o `athlete-action` é que não exige.
+  *(Guardião Jurídico, confirmado pelo supervisor.)*
+
+### Exclusão de dados (LGPD)
+
+- **0.7.2 — A anonimização não toca `atleta_documento`.** Sobrevivem à exclusão:
+  `cpf_hash`, `data_nascimento`, `responsavel_nome`, `responsavel_cpf_hash` e
+  `cpf_consent_ip` — inclusive dado de **menor** e de **terceiro** (o responsável,
+  que não é quem pediu). A `POLITICA_PRIVACIDADE.md` §7 prometia que o hash de
+  CPF era purgado; **o texto foi corrigido em 08/09** para descrever o que o
+  sistema faz. Falta decidir o código.
+  **Decisão pendente do Juliano** (o jurídico separou o que é e o que não é opção):
+  - *Não é opção* — `responsavel_nome`, `responsavel_cpf_hash`, `data_nascimento`
+    e `cpf_consent_ip` devem ser apagados em qualquer cenário.
+  - *É opção* — o `cpf_hash`: apagar (libera recadastro e derruba a dedup
+    nacional), reter por prazo declarado (ex.: 2 anos, alinhado ao consentimento),
+    ou reter enquanto a plataforma existir (o mais frágil frente ao art. 6º, III).
+- **0.7.3 — Segundo pedido de exclusão reinicia o prazo legal.**
+  `athlete-action` grava `exclusao_solicitada_em` incondicionalmente, então um
+  clique novo apaga a data do primeiro e empurra o vencimento do art. 18 §3º
+  para frente. Correção: só gravar se estiver nulo.
+- **0.7.4 — Sucesso silencioso com zero linhas.** O update tem
+  `.neq("status","arquivado")` e ninguém confere quantas linhas mudaram: pode
+  responder `sucesso: true` sem ter gravado nada. Mesma família do defeito que a
+  0.6.1 consertou, um degrau abaixo.
+- **0.7.5 — O porteiro não devolve `exclusao_solicitada_em`.** Em circuito
+  privado não-BH, `circuito-dados` e `porteiroRankingToCa` não carregam o campo,
+  então o recibo do pedido não tem de onde vir. Contornado no front pela 0.6.1
+  (um sinalizador que só liga com confirmação do servidor); a correção de raiz é
+  o porteiro passar a devolver o campo.
+
+  > **Verificado e DESCARTADO em 08/09:** a suspeita de que o botão "Finalizar
+  > exclusão" nunca funcionara (o `verify_jwt` da `anonimizar-atleta` está ligado
+  > e o app manda chave publicável, não JWT). Teste sem escrita — POST com corpo
+  > vazio — devolveu **HTTP 400 "pin e id são obrigatórios"**: o portão deixa
+  > passar e a função roda. Os zero POSTs em 24h eram ausência de pedidos, não
+  > recusa. Fica o registro para não se reinvestigar isso.
+
+### Mensagem de erro na tela — as quatro portas
+
+A 0.6.1 fechou a porta nova. Três continuam abertas, e a correção certa das
+quatro é **um saneador compartilhado**, não quatro remendos.
+
+- **0.7.6 — `DbBar` mostra o corpo inteiro do PostgREST, com `details` e `hint`,
+  para todo mundo — inclusive o visitante.** É estruturalmente a pior das quatro
+  (`details` é justamente o campo que carrega o valor que violou a regra) e já
+  está no ar. **Fazer primeiro.**
+- **0.7.7 — Login do atleta** (`setErr(e.message)`) e **troca de foto**
+  (`Erro: ${errMsg}`, ecoando o corpo do Storage) mostram texto cru ao atleta.
+- **0.7.8 — `erroCod` estável no `athlete-action`.** Hoje o app casa mensagens
+  por texto (lista branca em `MSGS_ATLETA`). Funciona e está travado por
+  asserção, mas o certo é o motor devolver um código estável ao lado da frase.
+  Quando entrar, a asserção de paridade é aposentada.
+- **0.7.9 — `resetar-pin-atleta` sem catch-all:** o `throw` vira 500 do Deno sem
+  cabeçalho CORS, o navegador corta e o erro chega sem status nem corpo.
+- **0.7.10 — Dívidas das asserções novas:** escopar a asserção de escopo ao corpo
+  do `syncToSupabase` (hoje varre o `App.jsx` inteiro, então uma chamada nova a
+  uma função já existente passa verde).
+
+### Tela
+
+- **0.7.11 — `NovaTemporadaPanel` não filtra por `modoOrg`.** O painel de virada
+  de temporada aparece para o organizador, que sempre levará 403 (o motor é
+  fail-closed, `NOVA_TEMPORADA` não está em `ACOES_ORG`). Não é falha de
+  segurança; é botão que nunca funciona, com um aviso de "não pode ser desfeita"
+  para uma ação que não é dele. Desde a 0.6.1 ele ao menos **vê** o 403.
+- **0.7.12 — O padrão otimista é sistêmico.** Todo o admin muda a tela antes de o
+  servidor confirmar (`NOVA_TEMPORADA`, `AVANCAR_RODADA`, `PROCESSAR_RODADA`,
+  `APLICAR_WO`, `ARQUIVAR_ATLETA`). A 0.6.1 fez a reversão acontecer e ficar
+  visível; o padrão em si continua.
+- **0.7.13 — Dívida de marca:** `#c25a45` é uma 5ª cor, fora da paleta de 4 do
+  manual, usada ~37 vezes. Ou o manual ganha seção de "cor semântica de sistema",
+  ou o app migra. Decisão do Juliano, via curador.
 
 ## Onda 1 — Piloto real ⬅️ **é aqui que estamos**
 

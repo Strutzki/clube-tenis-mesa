@@ -1629,7 +1629,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
     ? { txt:"Pontos", desc:"Vitória vale 2, derrota 1 — sem rating", cor:"#6a9d7a" }
     : { txt:"Rating", desc:"Rating tipo CBTM — sobe e desce", cor:T.terracota };
   // Nome de EXIBIÇÃO do circuito (separado do nome_circuito, que é o rótulo das mensagens).
-  const nomeCirc = (c) => (c && (c.nome_exibicao || c.nome_circuito)) || "Clube do Tênis de Mesa";
+  const nomeCirc = (c) => (c && (c.nome_exibicao || c.nome_circuito)) || "circuito";
 
   // Confirmado -> formulário. Injeta o circuitoId escolhido no submit (roteia a inscrição).
   if (escolhido && confirmado) {
@@ -1647,7 +1647,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
   if (escolhido) {
     const sl = selo(escolhido.sistema);
     // Regulamento do circuito escolhido (ramificado por sistema: A=rating v03-12 / B=pontos vB-01).
-    if (verReg) return <RegulamentoView onBack={() => setVerReg(false)} sistema={escolhido.sistema} />;
+    if (verReg) return <RegulamentoView onBack={() => setVerReg(false)} sistema={escolhido.sistema} circuitoNome={escolhido.nome_exibicao || escolhido.nome_circuito} />;
     return (
       <div style={{minHeight:"100vh",background:T.verde,fontFamily:T.sans,display:"flex",justifyContent:"center"}}>
         <div style={{width:"100%",maxWidth:390,padding:"20px 24px 40px",color:T.offwhite}}>
@@ -1681,6 +1681,9 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
     );
   }
   // Fallback (leitura falhou): não bloqueia o atleta -> formulário do circuito ativo (BH).
+  // Sem `circuitoNome` de propósito: a leitura dos circuitos foi o que falhou, então
+  // não há nome para mostrar. Os textos caem em "o circuito", que é vago mas honesto —
+  // antes diziam "Circuito BH" cravado, o que acertava só por o BH ser o único.
   if (erro) return <InscricaoForm onBack={onBack} onSubmit={onSubmit} athletes={athletes} />;
   // Carregando
   if (lista === null) return <div style={wrap}><div style={{fontFamily:T.mono,fontSize:12,letterSpacing:1,color:T.cinza}}>Procurando circuitos abertos…</div></div>;
@@ -1953,8 +1956,12 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
             <strong style={{color:"#F0EAE0"}}>Circuito por pontos (Sistema B)</strong><br/>
             Aqui não há rating: todos começam em <strong style={{color:"#F0EAE0"}}>0 pontos</strong>. Vitória vale 2, derrota vale 1 — o ranking é a soma dos pontos da temporada.
           </>) : (<>
-            <strong style={{color:"#F0EAE0"}}>Temporada 1 · modalidade piloto</strong><br/>
-            Nesta primeira temporada, o Circuito BH está aberto ao ranking <strong style={{color:"#F0EAE0"}}>masculino adulto (18+)</strong>. Outras categorias entram em breve.
+            {/* Nem o número da temporada nem o nome do circuito ficam cravados
+                aqui: "Temporada 1" envelhecia sozinho na virada, e "Circuito BH"
+                apareceria em QUALQUER circuito de rating — inclusive num segundo,
+                de outra cidade, dizendo o nome errado. */}
+            <strong style={{color:"#F0EAE0"}}>Modalidade piloto</strong><br/>
+            Nesta primeira temporada, o {circuitoNome || "circuito"} está aberto ao ranking <strong style={{color:"#F0EAE0"}}>masculino adulto (18+)</strong>. Outras categorias entram em breve.
           </>)}
         </div>
 
@@ -2160,6 +2167,9 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
               ["📋 Disposições Gerais","Casos omissos decididos pelo administrador. O regulamento pode ser atualizado com aviso prévio."],
             ] : [
               ["🏓 O Circuito","Circuito recreativo independente, não filiado à CBTM ou FMTMOP. Rating baseado na metodologia rating/CBTM apenas como referência técnica."],
+              // TODO categoria e temporada cravadas aqui: "Temporada 1" envelhece na virada e
+              // "homens com 18 anos ou mais" é fato do BH, não regra da plataforma. Ver os TODO
+              // iguais no Cap. 02 e no Cap. 11 do RegulamentoView.
               ["👤 Elegibilidade","Temporada 1 exclusiva para homens com 18 anos ou mais. Federados e não-federados são bem-vindos."],
               ["⚙️ Formato","Rodadas quinzenais com pareamento por rating. Partidas em MD5 (melhor de 5 sets), 11 pontos por set."],
               ["📊 Rating vs. Ranking","Rating = nível técnico acumulado (nunca zera). Ranking = saldo de pontos da temporada (zera a cada temporada)."],
@@ -2187,8 +2197,8 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
             </div>
             <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>
               {ehB
-                ? <>Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do regulamento de pontos (Sistema B · versão vB-01) deste circuito.</>
-                : <>Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do Clube do Tênis de Mesa — Circuito BH (versão v03-12). Estou ciente do aviso sobre atletas federados pela CBTM.</>
+                ? <>Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do regulamento de pontos do <strong style={{color:"#F0EAE0"}}>{circuitoNome || "circuito"}</strong> (versão vB-01).</>
+                : <>Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do regulamento de rating do <strong style={{color:"#F0EAE0"}}>{circuitoNome || "circuito"}</strong> (versão v03-12). Estou ciente do aviso sobre atletas federados pela CBTM.</>
               }
             </div>
           </div>
@@ -2273,7 +2283,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
 // ── REGULAMENTO VIEW (v03-12 = Sistema A/rating · vB-01 = Sistema B/pontos) ────
 // Chamada sem `sistema` (ou "A") => regulamento do rating (BH, intocado).
 // `sistema="B"` => regulamento de pontos (vB-01).
-function RegulamentoView({ onBack, sistema }) {
+function RegulamentoView({ onBack, sistema, circuitoNome }) {
   const [capAberto, setCapAberto] = useState(null);
 
   const s = {
@@ -2365,6 +2375,11 @@ function RegulamentoView({ onBack, sistema }) {
     );
     if (id===2) return (
       <div>
+        {/* TODO categoria cravada: "masculino adulto (18+)" é fato do BH, não
+    regra da plataforma, e NÃO vem do dado — `circuitos` não tem coluna de
+    categoria. No dia em que abrir um 2º circuito de rating com outra
+    categoria, este texto mente. É o MESMO esquecimento que fez o nome do
+    circuito ficar errado até 08/09/2026; fica anotado para não repetir. */}
         <p style={s.p}>O Clube do Tênis de Mesa nasce como um projeto independente e em construção. A Temporada 1 inicia com o ranking masculino adulto (18+) como <span style={s.dest}>modalidade piloto</span>, permitindo validar o modelo operacional antes de expandir.</p>
         <p style={s.p}>Novas categorias serão incluídas gradualmente nas temporadas seguintes, com o objetivo de tornar o Clube um espaço plural para todos os perfis e níveis de jogadores.</p>
         <Tbl headers={["Perfil","Temporada 1","Observação"]} rows={[
@@ -2590,6 +2605,11 @@ function RegulamentoView({ onBack, sistema }) {
     if (id===11) return (
       <div>
         <Box cor="#D85A30" titulo="👨 Temporada Inaugural — Masculino Adulto (18+)">
+          {/* TODO categoria cravada: "masculino adulto (18+)" é fato do BH, não
+    regra da plataforma, e NÃO vem do dado — `circuitos` não tem coluna de
+    categoria. No dia em que abrir um 2º circuito de rating com outra
+    categoria, este texto mente. É o MESMO esquecimento que fez o nome do
+    circuito ficar errado até 08/09/2026; fica anotado para não repetir. */}
           <p style={s.p}>O Clube inicia com a categoria <span style={s.dest}>Masculino Adulto (18+)</span> como modalidade piloto. Qualquer nível de jogo é bem-vindo — federado ou não-federado.</p>
         </Box>
         <Box cor="#6a9d7a" titulo="💰 Custo de Participação">
@@ -2704,7 +2724,7 @@ function RegulamentoView({ onBack, sistema }) {
           ]}/>
           <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A decisão do administrador em casos omissos é final. Situações recorrentes podem motivar a inclusão de uma nova regra em versão futura deste regulamento.</p>
         </Box>
-        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Circuito BH · Regulamento v03-12</div>
+        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa{circuitoNome ? ` · ${circuitoNome}` : ""} · Regulamento v03-12</div>
       </div>
     );
     return null;
@@ -7284,6 +7304,11 @@ function DespachosDoDiaCard({ fetchDespachos, chamarAdminAction, loadFromSupabas
 
 function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
+  // Ressincroniza quando o nome muda no banco (recarga, troca de circuito, ou
+  // correção feita por fora). Sem isto, o campo guardava o valor da montagem e
+  // o botão Salvar o regravava por cima — desfazendo em silêncio uma alteração
+  // feita enquanto esta aba estava aberta.
+  useEffect(() => { setNomeEdit(state.nomeCircuito || ""); }, [state.nomeCircuito]);
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
   const pendentes = state.athletes.filter(a => a.status === "pendente");
@@ -8348,7 +8373,7 @@ function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, n
             <>
               <div style={{fontSize:12,color:T.offwhite,marginBottom:10}}>
                 {liberado
-                  ? `Confirma o cálculo de rating da Rodada ${round} — Circuito ${nomeCircuito}? ${pendentes.length} partida(s). Essa ação não pode ser desfeita.`
+                  ? `Confirma o cálculo de rating da Rodada ${round} — ${nomeCircuito}? ${pendentes.length} partida(s). Essa ação não pode ser desfeita.`
                   : `O prazo desta rodada ainda não fechou. Tem certeza que quer calcular agora mesmo assim?`}
               </div>
               <div style={{display:"flex",gap:8}}>

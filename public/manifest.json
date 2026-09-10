@@ -1,10 +1,10 @@
 {
-  "name": "Clube do Tênis de Mesa BH",
-  "short_name": "CTM BH",
-  "description": "Circuito de Tênis de Mesa de Belo Horizonte",
+  "name": "Clube do Tênis de Mesa",
+  "short_name": "Clube",
+  "description": "Circuitos de tênis de mesa por rating e ranking",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a1628",
+  "background_color": "#1C2B27",
   "theme_color": "#1d3a31",
   "orientation": "portrait",
   "icons": [

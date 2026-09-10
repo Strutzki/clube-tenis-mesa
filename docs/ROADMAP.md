@@ -274,6 +274,70 @@ quatro é **um saneador compartilhado**, não quatro remendos.
   manual, usada ~37 vezes. Ou o manual ganha seção de "cor semântica de sistema",
   ou o app migra. Decisão do Juliano, via curador.
 
+## Onda 0.8 — O que a correção de nomes desenterrou (10/09/2026)
+
+O Juliano reportou que a tela de inscrição oferecia "Clube do Tênis de Mesa BH"
+em vez do circuito. A causa era o nome gravado, não o código — mas a revisão
+achou que o mesmo circuito tinha **cinco nomes diferentes** pelo app, e destravou
+uma pilha de coisas cravadas em texto que deviam vir do dado.
+
+Decisões dele, para o registro: **o app é "Clube do Tênis de Mesa"**, sem "BH";
+**o circuito é "Circuito BH"**, sem número (o número é da temporada, e cravá-lo
+faria o nome envelhecer sozinho na virada).
+
+### Precisam de decisão dele
+
+- **0.8.1 — `claude/` ou `docs/` como registro único do curador.** Os dois
+  existem, divergiram, e `claude/INDICE.md` ficou parado desde 05/09 enquanto
+  `docs/curadoria-log.md` registrou em 06/09 uma consolidação que nunca terminou.
+  Duas fontes competindo é o drift que o índice existe para evitar. *(Curador)*
+- **0.8.2 — O nome da marca em itálico terracota na tela de entrada.** O manual
+  reserva esse tratamento ao slogan ("Vem pro **Clube**"), e a tela de entrada
+  aplica em "de Mesa", que é metade do NOME. É a tela mais vista do app.
+  *(Designer)*
+
+### Texto cravado que devia vir do dado
+
+- **0.8.3 — "masculino adulto (18+)" está cravado em três lugares**, incluindo o
+  regulamento que o atleta assina (Cap. 02 e Cap. 11) e o mini-resumo do passo 3.
+  É fato do BH, não regra da plataforma, e `circuitos` não tem coluna de
+  categoria — então é trabalho de banco, não de texto. Três `// TODO` deixados no
+  código em 10/09 para não repetir o esquecimento que causou esta onda.
+- **0.8.4 — "Temporada 1" cravada** no mini-resumo do passo 3 e no Cap. 02 do
+  regulamento. Envelhece sozinha na virada.
+- **0.8.5 — `RegulamentoView` não ramifica por `regulamento_versao`.** A coluna
+  existe e está preenchida (`v03-12` no BH), mas o componente escolhe o texto só
+  por sistema (A/B). Consequência: um 2º circuito de rating herdaria o
+  regulamento do BH, **com o capítulo do torneio presencial**, que não é dele —
+  o correto seria `vA-nc-01`. **Bloqueia vender um 2º circuito Sistema A.**
+  *(Curador)*
+- **0.8.6 — Fallback cravado no `SeletorCircuito`:** `"Circuito BH"` em texto,
+  usado quando o circuito atual não é encontrado. Inofensivo hoje (é o valor
+  real), fica velho se o BH for renomeado de novo. *(Confiabilidade)*
+
+### Instagram — tem dono agora, e tem data
+
+Complementa a Onda 0.2, que dizia "o Instagram não tem dono". Verificado em
+10/09: **está vivo e publicando** (53 peças, a última no próprio dia 10/09).
+
+- **0.8.7 — O token vence em 29/10/2026** e nada avisa quando se aproxima. Se
+  vencer sem troca, as publicações param em silêncio.
+- **0.8.8 — A anotação em `instagram_config` está desatualizada e engana.** Diz,
+  desde 30/08: "Acesso do app revogado pela conta; aguardando novo token. Religar
+  ativo=true depois de gravar o token novo e testar." Mas `ativo` já está ligado
+  e as publicações saem normalmente. A rotação terminou e o bilhete ficou.
+- Verificado e **descartado**: as 53 publicações não citam "Temporada BH" nem
+  "BH" — o rename do circuito não desencosta nada do Instagram.
+
+### Campo em edição × recarga
+
+- **0.8.9 — Campo do admin perde o que está sendo digitado se outro admin salvar.**
+  O `nomeEdit` ganhou resync em 10/09 (era ele que desfazia o rename sozinho), e
+  isso troca um defeito por um risco menor: com dois admins logados — possível
+  desde a v58 — o texto não salvo de um é descartado quando o outro grava.
+  `nomeNova` em `AbrirProximaPanel` não tem resync nenhum, e é o defeito antigo.
+  Só vira uso real quando houver organizador. *(Confiabilidade)*
+
 ## Onda 1 — Piloto real ⬅️ **é aqui que estamos**
 
 **Abrir um 2º circuito de verdade** (Sistema B, outra cidade), com atletas
@@ -310,8 +374,11 @@ aceite dos termos.
 - Confirmar o nome legal do controlador e o canal de exercício de direitos.
 - Registro da marca no INPI — o símbolo gráfico é o ativo protegível; o nome é
   descritivo.
-- Nome e domínio neutros: o app hoje é "Clube do Tênis de Mesa **BH**", e a
-  plataforma é nacional.
+- Domínio neutro: o site segue em `clubedotenisdemesabh.com.br` (com "bh"),
+  enquanto a plataforma é nacional. Decisão de negócio, não técnica — troca de
+  domínio junto com a Onda 4. *(O nome do app já foi resolvido em 08/09/2026:
+  "Clube do Tênis de Mesa", sem "BH" — ver `claude/curadoria-log.md`. Só o
+  domínio ficou pendente.)*
 
 ## Onda 5 — Operar em escala
 

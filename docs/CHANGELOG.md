@@ -3,6 +3,68 @@
 Histórico do que foi a produção. Mantido pelo agente `curador-projeto`. Mais recente no topo.
 Formato: **data — o quê** (versão do edge/regulamento, notas).
 
+## 2026-09-10
+- **O nome do app perdeu o "BH", e o circuito ganhou o nome dele.** Reportado
+  pelo Juliano: a tela de inscrição oferecia "Clube do Tênis de Mesa BH" — que é
+  o nome do APP — em vez do circuito. Decisões dele: o app é **"Clube do Tênis de
+  Mesa"** (nacional, sem "BH") e o circuito é **"Circuito BH"** (sem número: o
+  número é da temporada, e cravá-lo faria o nome envelhecer na virada).
+
+  **Banco (já feito, 10/09).** Valores ANTERIORES, para o rollback ficar completo:
+  `circuitos.nome_exibicao` = `Clube do Tênis de Mesa BH`;
+  `circuitos.nome_circuito` = `Temporada BH 1`;
+  `configuracao.nome_circuito` = `Temporada BH 1`. Os três foram para
+  `Circuito BH`. **BH byte-idêntico nos dados de competição**, provado
+  antes/depois: 14 atletas ativos, 34 partidas, e os três hashes (partidas,
+  ratings, circuito_atletas) inalterados — `007953294dfb14c4…`,
+  `dc0b716dcfe1eb27…`, `f0bc4b92eb729a06…`.
+  Reverter: `update circuitos set nome_exibicao='Clube do Tênis de Mesa BH',
+  nome_circuito='Temporada BH 1' where slug='bh';` e
+  `update configuracao set nome_circuito='Temporada BH 1';`
+
+  **App.** Título da aba, nome do PWA e ícone do celular (`CTM BH` → **`Clube`** —
+  o manual não define sigla, mas usa "Clube" como forma curta; "Clube TM" era
+  invenção minha e caiu na revisão). Descrição deixou de amarrar a plataforma a
+  uma cidade. E `background_color` do manifest saiu de `#0a1628` — um **azul, cor
+  proibida pelo manual** — para o verde-mesa `#1C2B27`; é a tela de abertura do
+  app instalado, vista a cada abertura pelo ícone. *(Designer)*
+
+  **Texto que cravava nome parou de cravar:** o aviso do passo 1 e a frase de
+  ACEITE do regulamento passaram a usar o nome vindo do dado. A frase de aceite
+  passou por três versões até fechar: cravava "Circuito BH" (erraria em outro
+  circuito), virou "Sistema A" (preciso, mas jargão que o app nunca explica ao
+  atleta) e terminou como "o regulamento de rating do **{nome do circuito}**".
+
+  **Dois defeitos achados pela revisão, não pelo pedido:**
+  1. O modal de cálculo de rating dizia `Circuito ${nome}` — com o nome novo
+     viraria **"Circuito Circuito BH"**, numa tela que avisa "não pode ser
+     desfeita". *(Supervisor de Confiabilidade)*
+  2. **O painel ⚙️ Configuração do circuito desfazia o rename sozinho.**
+     `nomeEdit` era capturado na montagem e o botão Salvar o regravava por cima,
+     nas duas tabelas. Mesma família da Onda 0.6.1: estado local que congela e
+     depois sobrescreve a verdade. Corrigido com `useEffect` de ressincronia.
+
+  **Correção ao próprio rito, registrada como lição:** o dado foi trocado ANTES
+  do deploy do app, e isso abriu uma janela em que a versão no ar — sem o conserto
+  do `nomeEdit` — podia reverter o rename num clique em Salvar. A regra para a
+  próxima: quando o conserto existe para impedir reversão silenciosa perto de um
+  dado que vai mudar, **o código sobe antes do dado**.
+
+  Bateria: **154 asserções, 0 falhas** (inalterada — é branding, não regra de
+  competição). Motor intocado: `admin-action` segue v58, nenhuma Edge Function
+  publicada, nenhuma migração.
+
+  **Rito, 4 duplas:** Confiabilidade GO-com-condições (as duas cumpridas: aviso da
+  janela e registro do valor anterior, este item); Curador (achou que o
+  **v03-12 é o regulamento DO BH**, não do Sistema A — circuito novo usa
+  `vA-nc-01`); Designer GO-com-condições (cumprida: "Clube TM" → "Clube");
+  Atleta GO-com-condições (cumprida: o aceite deixou de usar jargão).
+
+  ⚠️ **9 achados foram para a Onda 0.8** do `ROADMAP.md`, incluindo dois que
+  precisam de decisão do Juliano e um que **bloqueia vender um 2º circuito de
+  rating** (o regulamento não ramifica por circuito). E o Instagram, verificado:
+  está vivo, publicou em 10/09, e **o token vence em 29/10** sem nada avisar.
+
 ## 2026-09-08
 - **O app parou de engolir os erros do servidor — Onda 0.6.1.** Só front; o motor
   não muda uma linha (`admin-action` segue v58). O defeito: `dispatchAndSync`

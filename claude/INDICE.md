@@ -2,6 +2,16 @@
 
 **Leia este arquivo ANTES de reescrever qualquer documento.** Ele traz (1) a hierarquia de fontes de verdade e (2) o inventário do que está atual vs. superado. Mantido pelo agente `curador-projeto`; toda revisão é registrada em `claude/curadoria-log.md`. Estado: 05/09/2026.
 
+> ⚠️ **Achado em 08/09/2026, não resolvido:** este arquivo ficou parado desde
+> 05/09 (3 dias de trabalho atrás — admin-action v54→v58, permissões do
+> organizador, etc. não estão refletidos aqui). Existe um gêmeo em
+> `docs/curadoria-indice-app-tenis-de-mesa.md`, igualmente parado, mas o log
+> irmão dele (`docs/curadoria-log.md`) registra em 06/09 uma consolidação que
+> tentou tornar `docs/` a fonte única — nunca concluída. Duas fontes
+> competindo é exatamente o drift que este arquivo existe para evitar. Precisa
+> de decisão de qual vira o único antes da próxima reescrita grande. Detalhe
+> em `claude/curadoria-log.md`, entrada de 08/09/2026.
+
 ## 1. Hierarquia de fontes de verdade
 Quando dois documentos divergem, vale a fonte mais alta:
 1. **Realidade em produção** — o que o app faz e o que está no banco/edge (Supabase `eultwfzzlgcmcikobmmy`). Fonte final.

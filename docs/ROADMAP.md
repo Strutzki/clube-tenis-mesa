@@ -338,6 +338,32 @@ Complementa a Onda 0.2, que dizia "o Instagram não tem dono". Verificado em
   `nomeNova` em `AbrirProximaPanel` não tem resync nenhum, e é o defeito antigo.
   Só vira uso real quando houver organizador. *(Confiabilidade)*
 
+## Onda 0.9 — Dívidas do contador de mensagens (10/09/2026)
+
+Saíram do conserto do contador (ver `CHANGELOG.md`, 10/09). Nenhuma bloqueia nada
+hoje; todas são do mesmo padrão — **estado carregado sob demanda sendo lido por
+quem não checa se já chegou**.
+
+- **0.9.1 — A corrida do `msgsCircRef`.** `msgsCircRef.current = CIRCUITO_ATIVO`
+  lê a variável global no momento em que a RESPOSTA chega, não no início da
+  chamada. Se o super-admin trocar de circuito com um `LISTAR_MENSAGENS` em voo,
+  a resposta tardia é carimbada para o circuito errado. Pré-existente, só
+  super-admin multi-circuito, autocorrige na busca seguinte. Correção: capturar
+  `const circAlvo = CIRCUITO_ATIVO` antes do `await` e só aplicar se ainda bater —
+  o mesmo espírito do `loadGenRef` que o arquivo já usa noutro fluxo.
+  *(Confiabilidade)*
+- **0.9.2 — Card em "···" a sessão inteira.** Quem entra por biometria e nunca
+  visita Inscrições, Mensagens ou W.O. fica sem o número no painel até a primeira
+  ação. É o preço de não abrir modal de PIN numa leitura de fundo, e é o lado
+  certo do erro — mas um "toque para carregar" no card resolveria.
+  *(Confiabilidade)*
+- **0.9.3 — Chamada dupla de `LISTAR_MENSAGENS`** quando o admin clica em "Msgs"
+  logo após entrar: o guard do ref só é setado no sucesso. Leitura idempotente,
+  desperdício de uma chamada. *(Admin)*
+- **0.9.4 — Rótulo do botão de disparo fora do padrão local.** "carregando o
+  histórico…" não tem emoji nem maiúscula, ao contrário dos outros botões da
+  tela. Estética. *(Admin)*
+
 ## Onda 1 — Piloto real ⬅️ **é aqui que estamos**
 
 **Abrir um 2º circuito de verdade** (Sistema B, outra cidade), com atletas

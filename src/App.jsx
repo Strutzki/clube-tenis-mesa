@@ -3360,7 +3360,7 @@ function todasMensagensPendentes(state, telefones = {}) {
   ).filter(m => !mensagemJaEnviada(state.mensagensEnviadas, m.atleta?.id, m.categoria, m.matchId, inicioDoMes));
 }
 
-function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
+function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsStatus }) {
   const [categoria, setCategoria] = useState("confrontos"); // confrontos | resultados | lembretes | torneio | ranking | coletivas
   const [disparoIdx, setDisparoIdx] = useState(null); // índice do atleta atual no fluxo sequencial
   const [disparados, setDisparados] = useState([]); // ids já disparados nesta sessão
@@ -3496,12 +3496,18 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
     }});
   }
 
+  const historicoPronto = msgsStatus === "ok";
+  const rotuloSemHistorico = msgsStatus === "erro"
+    ? "não deu para carregar — saia e volte nesta aba"
+    : "carregando o histórico…";
   function iniciarDisparo() {
+    if (!historicoPronto) return; // fila calculada contra histórico vazio = reenvio
     setFilaCongelada(mensagensPendentes);
     setDisparoIdx(0);
     setDisparados([]);
   }
   function iniciarDisparoUnificado() {
+    if (!historicoPronto) return;
     setFilaCongelada(todasPendentesUnificadas);
     setDisparoIdx(0);
     setDisparados([]);
@@ -3686,10 +3692,12 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
         <Card style={{border:"1px solid rgba(37,211,102,0.4)",marginBottom:16}}>
           <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0",marginBottom:4}}>🚀 Despachar tudo de uma vez</div>
           <div style={{fontSize:12,color:"#9db3a8",marginBottom:12}}>
-            {todasPendentesUnificadas.length} mensagem(s) pendente(s), de todas as categorias juntas — clica, confirma, próxima, sem precisar escolher categoria antes.
+            {historicoPronto
+              ? `${todasPendentesUnificadas.length} mensagem(s) pendente(s), de todas as categorias juntas — clica, confirma, próxima, sem precisar escolher categoria antes.`
+              : "Conferindo o que já foi enviado antes de mostrar quantas faltam."}
           </div>
-          <Btn onClick={iniciarDisparoUnificado} color="#25d366" full>
-            📲 Despachar tudo — {todasPendentesUnificadas.length} pendente(s)
+          <Btn onClick={iniciarDisparoUnificado} color="#25d366" full disabled={!historicoPronto}>
+            {historicoPronto ? `📲 Despachar tudo — ${todasPendentesUnificadas.length} pendente(s)` : rotuloSemHistorico}
           </Btn>
         </Card>
       )}
@@ -3719,18 +3727,18 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
                   {cat.icon} {cat.label}
                 </div>
                 <div style={{fontSize:11,color:"#7d9188",marginTop:2}}>{cat.desc}</div>
-                {msgs.length > 0 && (
+                {msgs.length > 0 && historicoPronto && (
                   <div style={{fontFamily:T.mono,fontSize:10,color:enviados===msgs.length?T.verde2:T.cinza,marginTop:4}}>
                     {enviados} de {msgs.length} já enviada(s)
                   </div>
                 )}
               </div>
               <div style={{
-                background: pendentes > 0 ? "rgba(216,90,48,0.15)" : "rgba(127,174,143,0.15)",
-                color: pendentes > 0 ? "#D85A30" : T.verde2,
+                background: !historicoPronto ? "rgba(255,255,255,0.05)" : pendentes > 0 ? "rgba(216,90,48,0.15)" : "rgba(127,174,143,0.15)",
+                color: !historicoPronto ? T.cinza : pendentes > 0 ? "#D85A30" : T.verde2,
                 borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,flexShrink:0
               }}>
-                {pendentes > 0 ? `${pendentes} pendente(s)` : "✓ tudo enviado"}
+                {!historicoPronto ? "···" : pendentes > 0 ? `${pendentes} pendente(s)` : "✓ tudo enviado"}
               </div>
             </div>
           </div>
@@ -3738,8 +3746,8 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones }) {
       })}
 
       {mensagens.length > 0 ? (
-        <Btn onClick={iniciarDisparo} color="#25d366" full>
-          📲 Iniciar disparo — {mensagens.length} pendente(s)
+        <Btn onClick={iniciarDisparo} color="#25d366" full disabled={!historicoPronto}>
+          {historicoPronto ? `📲 Iniciar disparo — ${mensagens.length} pendente(s)` : rotuloSemHistorico}
         </Btn>
       ) : (
         <Card>
@@ -4514,6 +4522,12 @@ export default function App() {
   });
   const loadGenRef = useRef(0); // guarda contra loads fora de ordem (troca de circuito)
   const msgsCircRef = useRef(null); // A2: circuito cujo histórico de mensagens está carregado (recarrega ao trocar)
+  // "nao-carregado" | "ok" | "erro". O histórico de mensagens saiu da carga geral
+  // por LGPD e passou a ser buscado sob demanda — mas o contador de pendentes
+  // continuou somando contra ele. Sem histórico, TUDO parecia pendente, e o
+  // painel cobrava mensagens que já tinham sido enviadas. Agora o contador só
+  // mostra número quando sabe; enquanto não sabe, não inventa.
+  const [msgsStatus, setMsgsStatus] = useState("nao-carregado");
   // Confirmação de PIN pra ações de escrita do admin (Edge Function admin-action).
   // null = nenhum prompt aberto; senão, { onSubmit, onCancel }.
   const [pinPrompt, setPinPrompt] = useState(null);
@@ -4740,6 +4754,15 @@ export default function App() {
     if (!isAdmin) return;
     let vivo = true;
     recarregarCircuitos().then(() => { if (!vivo) return; });
+    // O contador "Msgs" do painel compara com o histórico de envios. Sem ele
+    // carregado, tudo parece pendente — por isso busca já na entrada, e não só
+    // quando o admin abre a tela de Mensagens.
+    // SÓ com o PIN já em cache: no login por biometria ele não está (o app entra
+    // sem senha de propósito e só pede o PIN na primeira ação que grava), e uma
+    // busca de fundo NÃO pode abrir modal de PIN na cara de quem não pediu nada.
+    // Sem PIN, o contador fica em "não sei" — que é honesto — até a primeira
+    // ação real do admin trazer o histórico.
+    if (getPinCache()) garantirMensagensEnviadas();
     return () => { vivo = false; };
   }, [isAdmin]);
 
@@ -4753,6 +4776,7 @@ export default function App() {
     const ok = await loadFromSupabase();
     if (ok === false) { setCircuitoAtivo(prevAtivo); setCircuitoSelId(prevSel); return; } // R1: reverte se o load falhar
     dispatch({ type: "SET_MENSAGENS_ENVIADAS", payload: [] }); // A2: limpa o histórico; recarrega no circuito novo (msgsCircRef != CIRCUITO_ATIVO)
+    setMsgsStatus("nao-carregado");
   }
 
   // Resolve com o PIN em cache, ou abre o PinPromptModal e espera a confirmação.
@@ -4889,8 +4913,14 @@ export default function App() {
       }));
       dispatch({ type: "SET_MENSAGENS_ENVIADAS", payload: mapa });
       msgsCircRef.current = CIRCUITO_ATIVO;
+      setMsgsStatus("ok");
     } catch(e) {
       console.warn("Não consegui carregar o histórico de mensagens:", e.message);
+      // Não morre mais no console: sem histórico o contador fica cego, e o admin
+      // precisa saber disso — senão volta a cobrar mensagem já enviada.
+      setMsgsStatus("erro");
+      setAcaoErro({ acao: "LISTAR_MENSAGENS", msg: e.message, recarregou: true, leitura: true,
+        cancelado: e.message === MSG_PIN_CANCELADO, status: (typeof e.status === "number" ? e.status : null) });
     }
   }
 
@@ -5268,7 +5298,9 @@ export default function App() {
             fez é o tom errado; o aviso continua porque o dispatch otimista já
             tinha mexido na tela. */}
         <div style={{fontWeight:700,color:T.offwhite}}>
-          {acaoErro.cancelado ? "↩️ Não foi salvo — você cancelou a confirmação." : "🚫 Não foi salvo — o servidor recusou."}
+          {acaoErro.cancelado ? "↩️ Não foi salvo — você cancelou a confirmação."
+            : acaoErro.leitura ? "⚠️ Não deu para carregar o histórico de mensagens."
+            : "🚫 Não foi salvo — o servidor recusou."}
         </div>
         {/* Texto em T.offwhite, não no vermelho da borda: #c25a45 sobre este
             fundo dá 2,7:1, e a WCAG AA pede 4,5:1 para texto pequeno.
@@ -5282,7 +5314,9 @@ export default function App() {
             sistema. O atleta não tem esse modelo mental — e o ramo de falha da
             recarga é justamente o mais provável para quem está no celular, em
             rede ruim, que é a situação dele e não a do admin. */}
-        {acaoErro.recarregou ? (
+        {acaoErro.leitura ? (
+          <div style={{marginTop:2,color:T.cinzaSuave}}>O contador de pendentes fica sem número até conseguir. O resto do painel funciona normalmente.</div>
+        ) : acaoErro.recarregou ? (
           <div style={{marginTop:2,color:T.cinzaSuave}}>
             {(!isAdmin) ? "A tela mostra agora o que realmente foi salvo." : "A tela já voltou ao que está no banco."}
           </div>
@@ -5349,7 +5383,9 @@ export default function App() {
     pendencias: state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado).length
       + (state.solicitacoesWo?.filter(s => s.status === "pendente").length || 0),
     // "Msgs" = mensagens (todas as categorias) ainda não enviadas neste par mensal.
-    mensagens: todasMensagensPendentes(state, {}).length,
+    // Só conta quando o histórico está carregado: contar contra histórico vazio
+    // marcava como pendente tudo que já tinha sido enviado.
+    mensagens: msgsStatus === "ok" ? todasMensagensPendentes(state, {}).length : null,
   } : null;
 
   return (
@@ -5371,7 +5407,7 @@ export default function App() {
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
-          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} />
+          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} msgsStatus={msgsStatus} />
         ) : isVisitante ? (
           visitanteCirc ? (
             <VisitanteView state={state} tab={tab} setTab={setTab} nomeCircuito={visitanteCirc.nome_exibicao || visitanteCirc.nome_circuito} onVoltar={()=>{ setVisitanteCirc(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
@@ -6362,14 +6398,14 @@ const Badge = ({label, color="#D85A30"}) => (
 );
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
-function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
-  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} />;
+function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg, msgsStatus }) {
+  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} msgsStatus={msgsStatus} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
   if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} />;
   if (tab === "historico") return <AdminHistorico key={circuitoSelId} state={state} />;
-  if (tab === "mensagens") return <AdminMensagens key={circuitoSelId} state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
+  if (tab === "mensagens") return <AdminMensagens key={circuitoSelId} state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} msgsStatus={msgsStatus} />;
   if (tab === "financeiro") return <AdminFinanceiro key={circuitoSelId} state={state} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} />;
   return null;
 }
@@ -7302,7 +7338,7 @@ function DespachosDoDiaCard({ fetchDespachos, chamarAdminAction, loadFromSupabas
   );
 }
 
-function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg }) {
+function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg, msgsStatus }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
   // Ressincroniza quando o nome muda no banco (recarga, troca de circuito, ou
   // correção feita por fora). Sem isto, o campo guardava o valor da montagem e
@@ -7319,7 +7355,8 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
   // Mesma função compartilhada com Mensagens — sem telefone aqui, só contagem
   // (telefone só é necessário na hora de montar o link de WhatsApp de verdade).
   const msgsPendentes = todasMensagensPendentes(state, {});
-  const pendentesMensagensCount = msgsPendentes.length;
+  // null = ainda não sei (histórico não carregado ou falhou). Number = sei.
+  const pendentesMensagensCount = msgsStatus === "ok" ? msgsPendentes.length : null;
   // Quebra das pendentes por categoria (pro contador detalhado no painel).
   const pendentesPorCategoria = CATEGORIAS_MENSAGEM
     .map(c => ({ id: c.id, icon: c.icon, label: c.label, n: msgsPendentes.filter(m => m.categoria === c.id).length }))
@@ -7467,7 +7504,7 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
           {label:"Partidas em aberto",val:roundMatches.length,color:"#c25a45"},
           {label:"Aguardando validação",val:waitingVal.length,color:"#9C6F3E"},
           {label:"Solicitações de W.O.",val:pendentesWoCount,color:"#9C6F3E"},
-          {label:"Mensagens pendentes",val:pendentesMensagensCount,color:"#25d366"},
+          {label:"Mensagens pendentes",val:pendentesMensagensCount === null ? "···" : pendentesMensagensCount,color:"#25d366"},
         ].map(s => (
           <Card key={s.label} style={{padding:"12px 14px"}}>
             <div style={{fontSize:22,fontWeight:800,color:s.color}}>{s.val}</div>
@@ -7518,7 +7555,7 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
         </Card>
       )}
 
-      {pendentesMensagensCount > 0 && (
+      {pendentesMensagensCount !== null && pendentesMensagensCount > 0 && (
         <Card style={{marginBottom:16,border:"1px solid rgba(37,211,102,0.4)"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#25d366",marginBottom:8}}>📲 {pendentesMensagensCount} mensagem(ns) de WhatsApp pendente(s)</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>

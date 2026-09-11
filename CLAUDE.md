@@ -38,7 +38,7 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **154 asserções**. O `atualizar.sh` roda isso antes de publicar e se
+Hoje são **172 asserções**. O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho.
 
 Ela carrega o `admin-action` **de verdade** — o mesmo arquivo que vai para o ar —

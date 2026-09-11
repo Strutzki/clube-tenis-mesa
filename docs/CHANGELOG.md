@@ -4,6 +4,67 @@ Histórico do que foi a produção. Mantido pelo agente `curador-projeto`. Mais 
 Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ## 2026-09-10
+- **O painel cobrava mensagens que já tinham sido enviadas.** Reportado pelo
+  Juliano. Conferidas as **8 categorias** no banco: havia **zero pendências
+  reais** — resultados nenhuma; confrontos 12, exatamente os 12 atletas com
+  partida; backlog enviado aos 2 em 29/08; ranking 22 da chave `ranking-r4`, que
+  é a última rodada processada; lembretes nenhum (o prazo mais próximo é 15/09 e
+  eles só disparam a 3 dias); renovação fechada; torneio fora de fase.
+
+  **A causa:** o histórico de envios saiu da carga geral por LGPD e passou a ser
+  buscado sob demanda, com PIN, só ao abrir a tela de Mensagens. Mas o contador
+  do painel continuou somando contra `state.mensagensEnviadas`. Enquanto o
+  histórico não chegava, a lista era `[]`, `mensagemJaEnviada` não achava
+  registro nenhum, e **toda** mensagem possível aparecia como pendente. O
+  contador não estava lendo mensagens: estava contando na ausência delas. E a
+  falha da busca morria num `console.warn` invisível.
+
+  **O conserto, em uma frase: o app parou de afirmar o que não sabe.**
+  Estado novo `msgsStatus`; o selo e o card só recebem número quando é "ok", e
+  mostram "···" enquanto não sabem; a falha acende aviso na tela.
+
+  **O que a revisão acrescentou, e é mais sério que o defeito relatado:** os
+  botões "Iniciar disparo" e "Despachar tudo" não ficavam desabilitados durante
+  o carregamento. Um clique ali **congela a fila** (`setFilaCongelada`) calculada
+  contra histórico vazio — e leva o admin a **reenviar mensagem no WhatsApp para
+  atleta que já recebeu**. Não é tela errada, é ação externa errada. As duas
+  portas agora travam, com guarda na função E `disabled` no botão. *(Admin, que
+  reclassificou o próprio achado de "cosmético" para bloqueante.)*
+
+  **Dois erros meus que a revisão pegou, ambos afirmados com confiança:**
+  1. Diagnostiquei o **teto de 200** mensagens como causa. Não era: o "mês" do
+     app são as rodadas 5 e 6, criadas em 26/08, e a janela cobre isso com folga.
+     O teto (item 0.5.3) segue dívida real, ainda não mordeu.
+  2. Afirmei que **o PIN está em cache na entrada do admin**. Só no login por
+     SENHA. No login por **biometria** o app entra sem senha de propósito — e a
+     busca que eu pus na entrada abriria um modal de PIN em tela cheia, dizendo
+     "primeira ação de escrita", para uma leitura que ninguém pediu. Era a linha
+     vermelha que eu mesmo tinha definido. Corrigido com
+     `if (getPinCache()) garantirMensagensEnviadas();`. *(Admin)*
+
+  **E um erro numa asserção minha:** a primeira versão não ficava vermelha quando
+  a linha protegida era **comentada** — o texto seguia no arquivo e ela dava por
+  cumprida. Agora ignora código comentado. Mesmo furo que o Guardião de Segurança
+  achou numa asserção minha em 08/09.
+
+  **Outras correções de "o app afirma o que não sabe", todas do mesmo dia:** a
+  barra de erro dizia "🚫 Não foi salvo — o servidor recusou" numa **leitura**
+  que não salvava nada (agora tem cabeçalho próprio de leitura); o botão dizia
+  "carregando" mesmo depois de **falhar**; e os contadores por categoria da tela
+  de Mensagens anunciavam "0 de N já enviada(s)" contra histórico vazio.
+
+  `testes/contador-mensagens.mjs` (novo, **18 asserções**), com mutação
+  demonstrada em quatro pontos — inclusive uma que conta as ocorrências das duas
+  guardas, então remover **uma** já fica vermelho. Bateria: **172 asserções**.
+  Só front; motor intocado (`admin-action` v58).
+
+  **Rito, 2 duplas:** Admin — NO-GO (o modal de PIN na biometria) → corrigido →
+  GO. Confiabilidade — GO-com-condições (o cabeçalho falso na leitura) →
+  cumprida → GO. Os dois reconfirmaram depois de eu ampliar o conserto.
+
+  4 dívidas foram para a **Onda 0.9** do `ROADMAP.md`.
+
+## 2026-09-10
 - **O nome do app perdeu o "BH", e o circuito ganhou o nome dele.** Reportado
   pelo Juliano: a tela de inscrição oferecia "Clube do Tênis de Mesa BH" — que é
   o nome do APP — em vez do circuito. Decisões dele: o app é **"Clube do Tênis de

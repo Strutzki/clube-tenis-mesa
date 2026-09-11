@@ -14,9 +14,34 @@
 ---
 
 
-Base: regulamento oficial do BH, com **duas mudanças aplicadas aos novos circuitos**:
-1. **Prazo da 2ª rodada = dia 27** (conferência dias 28–29).
-2. **Sem torneio de encerramento no texto** — passa a ser opcional, a critério do admin do circuito. (O corte visual dos 8 primeiros no ranking do app **permanece** em A e B.)
+Base: regulamento oficial do BH (**v03-12**), com **uma** mudança aplicada aos
+novos circuitos:
+
+1. **Sem torneio de encerramento no texto** — passa a ser opcional, a critério do
+   admin do circuito. (O corte visual dos 8 primeiros no ranking do app
+   **permanece** em A e B.)
+
+> **Corrigido em 10/09/2026.** Este trecho listava também "prazo da 2ª rodada =
+> dia 27" como mudança dos circuitos novos. Não é: o **v03-12 do BH já usa o dia
+> 27** (a mudança de 25 → 27 foi feita nele, e as versões com dia 25 — v03-4 e
+> v03-11 — estão desatualizadas). Verificado em três fontes independentes: o
+> texto do v03-12, o motor (`admin-action`, `prazoB` = dia 27, sem ramificar por
+> sistema) e os prazos no banco.
+>
+> ⚠️ **Retratação, no mesmo dia.** A primeira versão desta correção afirmava que
+> "a diferença real entre `v03-12` e `vA-nc-01` é só o capítulo do torneio".
+> **É falso**, e dois guardiões acharam isso independentemente. Além do Cap. 10:
+> - o **torneio continua citado em quatro outros capítulos** do texto do BH
+>   (Cap. 09 convocação dos 8 melhores; Cap. 11 taxa individual e elegibilidade;
+>   Cap. 12 "o que está incluído"; Cap. 13 calendário) — e o `vA-nc-01`, como
+>   definido aqui, é silencioso sobre torneio **no corpo inteiro**;
+> - o **teto de atletas** é cravado em 20 no texto do BH, e aqui é "definido na
+>   criação do circuito";
+> - os **meses de recesso** são cravados (janeiro, julho, dezembro) no texto do
+>   BH, e aqui são "configuráveis".
+>
+> Filtrar só o capítulo autônomo **não** produz o `vA-nc-01`. Quem for implementar
+> precisa reescrever a prosa desses capítulos, não só escondê-los.
 
 O BH mantém o regulamento dele (v03-12, com o torneio) — nada aqui muda o BH.
 

@@ -1502,7 +1502,12 @@ Deno.serve(async (req) => {
         const uf = p.uf ? String(p.uf).trim().toUpperCase().slice(0, 2) : null;
         const sistema = (p.sistema === "A" || p.sistema === "B") ? p.sistema : null;
         const pareamento = (p.pareamento === "sorteio" || p.pareamento === "grupos") ? p.pareamento : null;
-        const maxAtletas = p.maxAtletas != null ? Math.max(10, Math.round(Number(p.maxAtletas) || 20)) : 20;
+        // Teto 20, mínimo 8 (decisão do Juliano, 10/09/2026). O 8 não é arbitrário:
+        // é o número abaixo do qual o pareamento passa a REPETIR confrontos dentro da
+        // mesma temporada de 6 rodadas — por isso o Cap. 13 exige 8 ativos para abrir.
+        // Antes não havia limite SUPERIOR aqui (dava para criar um circuito com 100) e
+        // a edição usava outro mínimo (2). Agora os dois pontos usam a mesma regra.
+        const maxAtletas = p.maxAtletas != null ? Math.min(20, Math.max(8, Math.round(Number(p.maxAtletas) || 20))) : 20;
         const rodadas = 6; // Fixo em 6 rodadas por temporada (Cap. 13).
 
         if (!nome) return jsonResponse({ sucesso: false, erro: "Nome do circuito é obrigatório." }, 400);
@@ -1532,7 +1537,13 @@ Deno.serve(async (req) => {
           desconto_global_pct: 0,
           percentual_entrada_meio: 80,
           ativo: true,
-          regulamento_versao: sistema === "A" ? "v03-12" : "vB-01",
+          // Circuito de rating NOVO nasce com `vA-nc-01`, não com o v03-12 do BH.
+          // A diferença é o Cap. 10, o Torneio Presencial de Encerramento: ele é
+          // do BH, e o app passou a NÃO exibi-lo para outras versões (10/09/2026).
+          // Carimbar v03-12 aqui faria o circuito novo herdar, e o atleta aceitar,
+          // a regra de um torneio que o circuito dele não tem. O BH não é tocado:
+          // esta linha só roda em CRIAR_CIRCUITO, e o BH já existe.
+          regulamento_versao: sistema === "A" ? "vA-nc-01" : "vB-01",
           inscricoes_abertas: false,
         };
         const { data: ins, error } = await supabase.from("circuitos").insert(novo).select("id, slug, nome_circuito, sistema, pareamento").single();
@@ -1551,7 +1562,7 @@ Deno.serve(async (req) => {
         const upd: Record<string, unknown> = {};
         if (typeof p.nome === "string") upd.nome_circuito = p.nome.trim() || "Clube do Tênis de Mesa";
         if (p.dataInicio !== undefined) upd.data_inicio_temporada = p.dataInicio || null;
-        if (p.maxAtletas !== undefined) upd.max_atletas = Math.max(2, Math.round(Number(p.maxAtletas) || 20));
+        if (p.maxAtletas !== undefined) upd.max_atletas = Math.min(20, Math.max(8, Math.round(Number(p.maxAtletas) || 20))); // mesma regra da criação: teto 20, mínimo 8
         if (p.pixChave !== undefined) upd.pix_chave = (typeof p.pixChave === "string" && p.pixChave.trim()) ? p.pixChave.trim() : null;
         if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
         await setCfg(circuitoId, upd);

@@ -287,14 +287,16 @@ faria o nome envelhecer sozinho na virada).
 
 ### Precisam de decisão dele
 
-- **0.8.1 — `claude/` ou `docs/` como registro único do curador.** Os dois
-  existem, divergiram, e `claude/INDICE.md` ficou parado desde 05/09 enquanto
-  `docs/curadoria-log.md` registrou em 06/09 uma consolidação que nunca terminou.
-  Duas fontes competindo é o drift que o índice existe para evitar. *(Curador)*
-- **0.8.2 — O nome da marca em itálico terracota na tela de entrada.** O manual
-  reserva esse tratamento ao slogan ("Vem pro **Clube**"), e a tela de entrada
-  aplica em "de Mesa", que é metade do NOME. É a tela mais vista do app.
-  *(Designer)*
+- **0.8.1 — ✅ RESOLVIDO em 10/09/2026.** Havia dois pares de índice+log do
+  curador (`claude/` e `docs/`), divergidos: o de `claude/` congelado desde 05/09,
+  o de `docs/` escrito até 07/09. Decisão do Juliano: **`docs/` é o registro
+  único**. A pasta `claude/` foi removida (histórico no git), a entrada de 08/09
+  que só existia lá foi trazida, e o mandato do curador passou a apontar para o
+  lugar certo — senão ele voltaria a escrever numa pasta que não existe.
+- **0.8.2 — ✅ RESOLVIDO em 10/09/2026.** O nome da marca aparecia com "de Mesa"
+  em terracota itálico na tela de entrada — tratamento que o manual reserva ao
+  slogan, e que ficava duas linhas acima do slogan de verdade, os dois brigando
+  pelo mesmo destaque. O nome ficou inteiro em off-white. *(Designer)*
 
 ### Texto cravado que devia vir do dado
 
@@ -305,7 +307,8 @@ faria o nome envelhecer sozinho na virada).
   código em 10/09 para não repetir o esquecimento que causou esta onda.
 - **0.8.4 — "Temporada 1" cravada** no mini-resumo do passo 3 e no Cap. 02 do
   regulamento. Envelhece sozinha na virada.
-- **0.8.5 — `RegulamentoView` não ramifica por `regulamento_versao`.** A coluna
+- **0.8.5 — ✅ RESOLVIDO em 10/09/2026** (era: `RegulamentoView` não ramifica por
+  `regulamento_versao`). A coluna
   existe e está preenchida (`v03-12` no BH), mas o componente escolhe o texto só
   por sistema (A/B). Consequência: um 2º circuito de rating herdaria o
   regulamento do BH, **com o capítulo do torneio presencial**, que não é dele —
@@ -364,6 +367,100 @@ quem não checa se já chegou**.
   histórico…" não tem emoji nem maiúscula, ao contrário dos outros botões da
   tela. Estética. *(Admin)*
 
+## Onda 0.10 — Antes de abrir o 2º circuito ⛔ (10/09/2026)
+
+Saiu da revisão da 0.8.5 pelas 8 duplas. **Nada aqui morde hoje** — existe um
+circuito, o BH, e ele está provado intocado. Tudo aqui tem **gatilho**, não data:
+o dia em que nascer o segundo circuito, ou em que for nomeado o primeiro
+organizador. Registrado com gatilho a pedido do Guardião Jurídico: *"se virar
+backlog sem gatilho, o defeito volta a ser descoberto no pior momento — com
+atleta inscrito."*
+
+### Gatilho: antes de criar o 1º circuito Sistema A que não seja o BH
+
+- **0.10.1 — O fallback da versão do regulamento não é fail-closed.** Se a
+  leitura de `circuitos.regulamento_versao` falhar, o app cai em `v03-12` — e
+  mostraria ao atleta de um circuito novo o regulamento do BH, **com torneio e
+  com a taxa**, enquanto o servidor carimba `vA-nc-01`. O recibo ficaria
+  provadamente falso. Consentimento é a última coisa que pode ser fail-open.
+  *Achado independentemente pelo Guardião Jurídico E pelo de Segurança — os dois
+  chegaram nele por caminhos diferentes, o que é sinal de que é real.*
+- **0.10.2 — O "80%" está cravado em três textos que o atleta aceita**
+  (`src/App.jsx` ~2200 no portão do aceite, ~2675, ~2697), e
+  `percentual_entrada_meio` é configurável por circuito. Organizador que puser
+  50% terá atletas com aceite prometendo 80%. **Mesma classe do teto** — e o
+  Jurídico recomendou o mesmo remédio que funcionou lá: em vez de o texto seguir
+  a configuração, **a configuração passar a caber dentro do que o atleta
+  aceitou**.
+- **0.10.3 — O regulamento `vA-nc-01` não tem texto canônico.** Ele existe como
+  prosa no `REGULAMENTOS_NOVOS_CIRCUITOS.md` e como ramificação no `App.jsx`.
+  Não há `docs/REGULAMENTO_vA-nc-01.md`. Um documento que o atleta aceita
+  juridicamente mora só dentro de um JSX de 9.700 linhas. *(Jurídico)*
+- **0.10.4 — Duas referências a capítulo nas telas do admin ficam off-by-one**
+  num circuito sem torneio: `App.jsx:7672` ("Cap. 13", vira 12) e `:8031`
+  ("Cap. 11", vira 10). As de "(Cap. 03)" e "(Cap. 07)" **não** quebram — são
+  anteriores ao capítulo removido. Conserto: nomear o capítulo, como foi feito
+  dentro do regulamento. Não tocado porque alteraria a tela do BH.
+- **0.10.5 — O corte dos 8 no ranking vira promessa vazia.** `RankingView`
+  desenha "Zona de classificação" e "C = classificado para o torneio final"
+  incondicionalmente. Num circuito sem torneio, é rótulo sem referente. Saída sem
+  tocar o BH: prop opcional com default que preserva o comportamento atual.
+
+### Gatilho: antes de nomear o 1º organizador
+
+- **0.10.6 — `login-atleta` precisa subir como v9.** O que está no ar (v8)
+  difere do repositório em **uma coisa**: o `LOGIN_ORGANIZADOR` não devolve
+  `org_ve_financeiro`. Consequência: a aba Financeiro **nunca apareceria** para o
+  organizador. Dormente hoje (0 organizadores, e o BH é excluído desse fluxo por
+  `slug !== "bh"`), e o portão real do servidor está no ar desde a v58.
+  *Nota de método, do Guardião de Segurança:* `supabase functions download`
+  devolve o código **transpilado** — para comparar fonte com o que está no ar,
+  só pela MCP.
+- **0.10.7 — O admin é cego para o regulamento do próprio circuito.** Não é
+  avisado na criação de que um circuito de rating novo nasce **sem torneio**; não
+  vê `regulamento_versao` em tela nenhuma do painel; e não tem como mudá-la.
+  Some as três: *não é avisado, não vê, não muda.* O `CRIAR_CIRCUITO` nem
+  devolve o campo no `select`. *(Admin)*
+- **0.10.8 — O torneio virou decisão de ninguém.** O
+  `REGULAMENTOS_NOVOS_CIRCUITOS.md` promete que ele é "a critério do admin do
+  circuito"; o código entrega "sempre não", travado na criação. Um organizador
+  que queira fazer torneio não tem caminho. *(Admin)*
+- **0.10.9 — Não há campo para editar o teto de um circuito existente.** O motor
+  aceita (`DEFINIR_CONFIG_CIRCUITO`), a tela não oferece. *(Admin)*
+
+### Gatilho: antes do 1º circuito de terceiro (e pede advogado)
+
+- **0.10.10 — O app registra um aceite que o atleta nunca deu.** Ao entrar num
+  **segundo** circuito, `login-atleta:314` grava `aceite_regulamento: true` com
+  data e versão — e o `ParticiparFlow`, única tela desse fluxo, **nunca mostra o
+  regulamento** nem tem checkbox. Hoje a exposição é **exatamente zero** (o
+  fluxo recusa o BH por construção) e passa a ser **100% no dia 1 do circuito 2**.
+  Não há zona cinzenta. *(Jurídico — e é ele quem nota que a 0.8.5 transforma
+  isso de inofensivo em falso: com versões diferentes por circuito, o registro
+  passa a afirmar que o atleta aceitou um documento que só existe lá e que ele
+  nunca viu.)*
+- **0.10.11 — Os 15 aceites do BH estão desatualizados.** Nenhum atleta tem
+  `v03-12` gravado: 12 têm `v03-3`, 1 tem `v03-5`, 1 tem `v03-8`, 1 tem `v03-11`
+  — e todos jogam sob o v03-12, que traz cláusulas penais (W.O. culposo −15,
+  suspensão, **banimento permanente** por fraude). `RENOVAR` não re-colhe aceite
+  nem atualiza a versão. **Recomendação do Jurídico: re-colher na próxima
+  renovação** (o ponto de contato já existe; falta ele gravar), e fazer isso
+  **depois** de 0.10.12, senão gasta-se o atrito sem comprar a proteção.
+- **0.10.12 — Falta a regra "texto mudou → versão nova".** Hoje a string de
+  versão não identifica um texto com segurança: este próprio avanço quase
+  alterou o v03-12 sem trocar a versão. Proposta do Jurídico: a regra, mais
+  `docs/REGULAMENTO_<versao>.md` como texto de registro, mais uma asserção que
+  compare o documento com o fonte.
+- **0.10.13 — O consentimento de CPF do `ParticiparFlow` é mais fino que o do
+  cadastro**, sob o **mesmo** rótulo de versão: uma linha, sem controlador, sem
+  retenção, sem direitos. Dois textos materialmente diferentes com uma etiqueta
+  só. *(Jurídico)*
+
+### Sem gatilho — higiene
+
+- **0.10.14 — `circuitos` tem RLS `USING (true)` e `pix_chave` legível pelo
+  `anon`.** Pré-existente, não desta mudança. *(Segurança)*
+
 ## Onda 1 — Piloto real ⬅️ **é aqui que estamos**
 
 **Abrir um 2º circuito de verdade** (Sistema B, outra cidade), com atletas
@@ -403,7 +500,7 @@ aceite dos termos.
 - Domínio neutro: o site segue em `clubedotenisdemesabh.com.br` (com "bh"),
   enquanto a plataforma é nacional. Decisão de negócio, não técnica — troca de
   domínio junto com a Onda 4. *(O nome do app já foi resolvido em 08/09/2026:
-  "Clube do Tênis de Mesa", sem "BH" — ver `claude/curadoria-log.md`. Só o
+  "Clube do Tênis de Mesa", sem "BH" — ver `docs/curadoria-log.md`. Só o
   domínio ficou pendente.)*
 
 ## Onda 5 — Operar em escala

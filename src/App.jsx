@@ -220,6 +220,7 @@ const db = {
   getCircuitosAbertos: () => supaFetch(`circuitos?select=id,slug,nome_circuito,nome_exibicao,cidade,uf,sistema&ativo=eq.true&inscricoes_abertas=eq.true&publico=eq.true&order=nome_circuito.asc`),
   // Fatia 6: mesma lista de abertos, porém com info de vagas (ativos, max, cheio) via RPC seguro.
   getCircuitosAbertosVagas: () => supaFetch(`rpc/circuitos_abertos_vagas`, { method: "POST", body: "{}" }),
+  getVersoesRegulamento: () => supaFetch(`circuitos?select=id,regulamento_versao&ativo=eq.true&inscricoes_abertas=eq.true&publico=eq.true`),
 
   // Histórico de mensagens de WhatsApp enviadas
   getMensagensEnviadas: () => supaFetch("mensagens_enviadas?order=enviado_em.desc&limit=200"),
@@ -785,7 +786,7 @@ function reducer(state, action) {
         status: "pendente", key: null,
         aceiteRegulamento: aceiteRegulamento || false,
         dataAceiteRegulamento: dataAceite || null,
-        versaoRegulamento: "v03-12",
+        versaoRegulamento: action.payload.versaoRegulamento || "v03-12", // espelho local; a verdade é o carimbo do servidor
         aceiteLGPD: aceiteLGPD || false,
         dataAceiteLGPD: dataAceite || null,
         inscritoEm: dataAceite || new Date().toISOString(),
@@ -1476,7 +1477,7 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
           <img src={LOGO} alt="Clube do Tênis de Mesa" width={92} height={92} style={{borderRadius:"50%",display:"block",border:"1px solid rgba(240,234,224,0.18)",animation:"ctm-logoIn 0.9s cubic-bezier(.2,.7,.2,1) both"}}/>
         </span>
 
-        <div style={{fontFamily:T.serif,fontSize:34,lineHeight:1.02,textAlign:"center",marginTop:22}}>Clube do Tênis<br/><span style={{fontStyle:"italic",color:T.terracota}}>de Mesa</span></div>
+        <div style={{fontFamily:T.serif,fontSize:34,lineHeight:1.02,textAlign:"center",color:T.offwhite,marginTop:22}}>Clube do Tênis<br/>de Mesa</div>
         {/* slogan da marca — voz editorial (Adendo 01 do manual) */}
         <div style={{fontFamily:T.serif,fontSize:19,lineHeight:1,textAlign:"center",color:T.offwhite,marginTop:10}}>Vem pro <span style={{fontStyle:"italic",color:T.terracota}}>Clube</span></div>
         <div style={{fontFamily:T.mono,fontSize:9.5,letterSpacing:2,textTransform:"uppercase",color:"rgba(240,234,224,0.5)",marginTop:12}}>Ranking · Rodadas · Resultados</div>
@@ -1612,10 +1613,23 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
   const [verReg, setVerReg] = useState(false);
   useEffect(() => {
     let vivo = true;
-    db.getCircuitosAbertosVagas()
-      .then(cs => {
+    Promise.allSettled([db.getCircuitosAbertosVagas(), db.getVersoesRegulamento()])
+      .then(async ([rVagas, rVersoes]) => {
         if (!vivo) return;
-        const arr = Array.isArray(cs) ? cs : [];
+        if (rVagas.status !== "fulfilled") throw rVagas.reason;
+        const cs = rVagas.value;
+        let arr = Array.isArray(cs) ? cs : [];
+        // Casa a versão do regulamento de cada circuito. Se esta leitura falhar,
+        // segue sem ela: a RegulamentoView cai no padrão por sistema, que é
+        // exatamente o que o app fazia antes — falha aqui não regride nada.
+        try {
+          const versoes = rVersoes.status === "fulfilled" ? rVersoes.value : null;
+          if (Array.isArray(versoes)) {
+            const porId = Object.fromEntries(versoes.map(v => [v.id, v.regulamento_versao]));
+            arr = arr.map(c => ({ ...c, regulamento_versao: porId[c.id] || null }));
+          }
+        } catch (e) { console.warn("Versão do regulamento indisponível:", e.message); }
+        if (!vivo) return;
         setLista(arr);
         if (arr.length === 1) setEscolhido(arr[0]); // um só -> auto-seleciona (mantém o "um toque" do BH)
       })
@@ -1647,7 +1661,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
   if (escolhido) {
     const sl = selo(escolhido.sistema);
     // Regulamento do circuito escolhido (ramificado por sistema: A=rating v03-12 / B=pontos vB-01).
-    if (verReg) return <RegulamentoView onBack={() => setVerReg(false)} sistema={escolhido.sistema} circuitoNome={escolhido.nome_exibicao || escolhido.nome_circuito} />;
+    if (verReg) return <RegulamentoView onBack={() => setVerReg(false)} sistema={escolhido.sistema} circuitoNome={escolhido.nome_exibicao || escolhido.nome_circuito} versao={escolhido.regulamento_versao} />;
     return (
       <div style={{minHeight:"100vh",background:T.verde,fontFamily:T.sans,display:"flex",justifyContent:"center"}}>
         <div style={{width:"100%",maxWidth:390,padding:"20px 24px 40px",color:T.offwhite}}>
@@ -1674,7 +1688,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
               <div style={{fontSize:11.5,color:T.cinza,lineHeight:1.5}}>{av.texto}</div>
             </div>
           ) : null; })()}
-          <button onClick={() => setVerReg(true)} style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>📋 Ver regulamento ({escolhido.sistema === "B" ? "vB-01 · pontos" : "v03-12 · rating"})</button>
+          <button onClick={() => setVerReg(true)} style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>📋 Ver regulamento ({(escolhido.regulamento_versao || (escolhido.sistema === "B" ? "vB-01" : "v03-12"))} · {escolhido.sistema === "B" ? "pontos" : "rating"})</button>
           <button onClick={() => setConfirmado(true)} style={{width:"100%",background:T.terracota,color:T.verde,border:"none",borderRadius:12,padding:14,fontSize:15,fontWeight:800,cursor:"pointer"}}>Continuar para inscrição →</button>
         </div>
       </div>
@@ -1875,7 +1889,13 @@ function ParticiparOutroCircuito({ athlete }) {
 
 function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, circuitoNome, circ }) {
   const ehB = sistema === "B";
-  const versaoReg = ehB ? "vB-01" : "v03-12";
+  // Vem do circuito, não do sistema. Cravada, a frase de aceite dizia "v03-12"
+  // enquanto o athlete-action gravava no registro a versão real do circuito —
+  // o atleta assinaria uma versão e o recibo diria outra.
+  const versaoReg = (circ && circ.regulamento_versao) || (ehB ? "vB-01" : "v03-12");
+  // Mesma regra do RegulamentoView: o resumo abaixo é o PORTÃO do aceite, e
+  // prometia torneio a quem não tem.
+  const comTorneio = VERSOES_COM_TORNEIO.has(versaoReg);
   const [step, setStep] = useState(1); // 1=dados, 2=lgpd, 3=regulamento, 4=sucesso
   const [enviando, setEnviando] = useState(false);
   const [erroSubmit, setErroSubmit] = useState("");
@@ -2176,7 +2196,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
               ["⏱ Prazos","10 dias para realizar a partida. Até 24h após o jogo para registrar o placar em sets no app."],
               ["🔴 W.O. Culposo","Confirmou e não foi: −15 pts + aviso. Adversário recebe +8 pts. 2 W.O.s culposos = suspensão da temporada."],
               ["🚫 Fraude","Registro de resultado falso = banimento permanente do Circuito."],
-              ["🏆 Torneio Final","Top 8 do ranking ao final da temporada disputam torneio presencial. Prêmios: troféu, medalhas e certificados."],
+              ...(comTorneio ? [["🏆 Torneio Final","Top 8 do ranking ao final da temporada disputam torneio presencial. Prêmios: troféu, medalhas e certificados."]] : []),
               ["💰 Valor","Valor por temporada, pago no início. Quem entra na 2ª etapa (Rodada 3) paga 80%. Valores e descontos divulgados a cada temporada."],
               ["⚖️ Atletas Federados CBTM","Verifique com sua federação e com o clube ao qual é filiado a conformidade com a Nota CBTM 183/2025 antes de participar."],
               ["📋 Disposições Gerais","Casos omissos decididos pelo administrador. O regulamento pode ser atualizado com aviso prévio."],
@@ -2186,7 +2206,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
                 <div style={{fontSize:11,color:"#9db3a8",lineHeight:1.6}}>{d}</div>
               </div>
             ))}
-            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>{ehB ? "Regulamento completo (vB-01) — use \"Ver regulamento\" na etapa anterior" : "Regulamento completo disponível na tela inicial · v03-12"}</div>
+            <div style={{fontSize:10,color:"#4a5d56",textAlign:"center",padding:"8px 0"}}>{ehB ? `Regulamento completo (${versaoReg}) — use "Ver regulamento" na etapa anterior` : `Regulamento completo disponível na tela inicial · ${versaoReg}`}</div>
           </div>
         )}
 
@@ -2198,7 +2218,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
             <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>
               {ehB
                 ? <>Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do regulamento de pontos do <strong style={{color:"#F0EAE0"}}>{circuitoNome || "circuito"}</strong> (versão vB-01).</>
-                : <>Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do regulamento de rating do <strong style={{color:"#F0EAE0"}}>{circuitoNome || "circuito"}</strong> (versão v03-12). Estou ciente do aviso sobre atletas federados pela CBTM.</>
+                : <>Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do regulamento de rating do <strong style={{color:"#F0EAE0"}}>{circuitoNome || "circuito"}</strong> (versão {versaoReg}). Estou ciente do aviso sobre atletas federados pela CBTM.</>
               }
             </div>
           </div>
@@ -2229,6 +2249,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
               responsavelCpf: ehMenor ? respCpf.replace(/\D/g,"") : null,
               cpfConsent: true,
               cpfConsentVersao: CPF_CONSENT_VERSAO,
+              versaoRegulamento: versaoReg,
               dataAceite: agora,
             }) : { ok: true };
           } catch(e) { r = { ok: false, erro: e?.message }; }
@@ -2283,7 +2304,14 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
 // ── REGULAMENTO VIEW (v03-12 = Sistema A/rating · vB-01 = Sistema B/pontos) ────
 // Chamada sem `sistema` (ou "A") => regulamento do rating (BH, intocado).
 // `sistema="B"` => regulamento de pontos (vB-01).
-function RegulamentoView({ onBack, sistema, circuitoNome }) {
+// Versões que INCLUEM o capítulo do torneio presencial. Lista explícita e
+// fail-closed de propósito: versão desconhecida NÃO ganha o capítulo, porque o
+// erro de omitir um capítulo é menor que o de prometer ao atleta um torneio que
+// o circuito dele não tem. Hoje só o BH (v03-12) tem; `vA-nc-01`, a versão dos
+// circuitos de rating novos, não — é a ÚNICA diferença entre as duas.
+const VERSOES_COM_TORNEIO = new Set(["v03-12"]);
+
+function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
   const [capAberto, setCapAberto] = useState(null);
 
   const s = {
@@ -2310,7 +2338,11 @@ function RegulamentoView({ onBack, sistema, circuitoNome }) {
     tdd: { padding:"7px 8px", borderBottom:"1px solid rgba(255,255,255,0.05)", color:"#F0EAE0", fontWeight:600, verticalAlign:"top" },
   };
 
-  const caps = [
+  // Sem `versao` (chamada genérica, antes de escolher circuito) cai no padrão do
+  // sistema — que é exatamente o que o app fazia antes de existir esta ramificação.
+  const versaoEfetiva = versao || (sistema === "B" ? "vB-01" : "v03-12");
+  const comTorneio = VERSOES_COM_TORNEIO.has(versaoEfetiva);
+  const capsBase = [
     { id:1,  tag:"Cap. 01", titulo:"Como Funciona: O Ciclo do Ranking" },
     { id:2,  tag:"Cap. 02", titulo:"Elegibilidade — Quem Pode Participar" },
     { id:3,  tag:"Cap. 03", titulo:"Sistema de Pareamento" },
@@ -2326,6 +2358,9 @@ function RegulamentoView({ onBack, sistema, circuitoNome }) {
     { id:13, tag:"Cap. 13", titulo:"Estrutura das Rodadas & Calendário Anual" },
     { id:14, tag:"Cap. 14", titulo:"Casos Omissos" },
   ];
+  const caps = capsBase
+    .filter(c => comTorneio || c.id !== 10)
+    .map((c, i) => ({ ...c, tag: `Cap. ${String(i + 1).padStart(2, "0")}` }));
 
   function Ul({ items }) {
     return <ul style={{paddingLeft:16,marginTop:6}}>{items.map((i,k)=><li key={k} style={s.li}>{i}</li>)}</ul>;
@@ -2559,7 +2594,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome }) {
           <p style={s.p}>Jogador que mais subiu de rating na rodada ganha destaque especial — "Escalada da Rodada" — publicado no Instagram e no grupo.</p>
         </Box>
         <Box cor="#6a9d7a" titulo="🏆 Fim de Temporada">
-          <p style={s.p}>Top 3 recebe certificado digital. Os 8 melhores do ranking geral são convocados para o torneio presencial de encerramento.</p>
+          <p style={s.p}>Top 3 recebe certificado digital.{comTorneio ? " Os 8 melhores do ranking geral são convocados para o torneio presencial de encerramento." : ""}</p>
         </Box>
       </div>
     );
@@ -2613,7 +2648,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome }) {
           <p style={s.p}>O Clube inicia com a categoria <span style={s.dest}>Masculino Adulto (18+)</span> como modalidade piloto. Qualquer nível de jogo é bem-vindo — federado ou não-federado.</p>
         </Box>
         <Box cor="#6a9d7a" titulo="💰 Custo de Participação">
-          <p style={s.p}>A participação no circuito tem um <span style={s.dest}>valor por temporada</span>, pago no início. O valor vigente e eventuais descontos são divulgados antes da abertura das inscrições de cada temporada. O único custo adicional é a taxa individual do torneio presencial de encerramento — cuja participação <span style={s.dest}>não é obrigatória</span>.</p>
+          <p style={s.p}>A participação no circuito tem um <span style={s.dest}>valor por temporada</span>, pago no início. O valor vigente e eventuais descontos são divulgados antes da abertura das inscrições de cada temporada.{comTorneio ? <> O único custo adicional é a taxa individual do torneio presencial de encerramento — cuja participação <span style={s.dest}>não é obrigatória</span>.</> : <> Este regulamento <span style={s.dest}>não prevê custo adicional obrigatório</span> além do valor da temporada. Atividades opcionais com custo próprio, se houver, são informadas previamente pelo organizador antes da adesão.</>}</p>
         </Box>
         <Box cor="#9C6F3E" titulo="🚪 Entrada no Meio da Temporada">
           <p style={s.p}>A inscrição padrão é feita antes do início de cada temporada. Entradas fora desse período seguem a regra abaixo.</p>
@@ -2638,7 +2673,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome }) {
             "No app: ao aprovar o atleta como 'próxima etapa/temporada', a entrada é automática no próximo par permitido (fora do último terço) ou na virada de temporada",
             "Rating de entrada: 250 pts (não-federados) ou rating CBTM-Web (federados)",
             "Valor da temporada: 100% na abertura; 80% para quem entra na 2ª etapa (Rodada 3)",
-            "Elegível ao torneio presencial normalmente se atingir top 8",
+            ...(comTorneio ? ["Elegível ao torneio presencial normalmente se atingir top 8"] : []),
           ]}/>
         </Box>
       </div>
@@ -2652,7 +2687,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome }) {
             "✅ Confronto pareado pelo sistema a cada rodada",
             "✅ Perfil e rating publicados no ranking oficial",
             "✅ Acesso ao grupo WhatsApp oficial",
-            "✅ Elegibilidade para o torneio presencial (via ranking)",
+            ...(comTorneio ? ["✅ Elegibilidade para o torneio presencial (via ranking)"] : []),
             "✅ Certificado digital para os 3 melhores da temporada",
           ]}/>
         </Box>
@@ -2660,7 +2695,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome }) {
           <Tbl headers={["Momento","Valor"]} rows={[
             ["Abertura da temporada (Rodada 1)","100% do valor"],
             ["Entrada na 2ª etapa (Rodada 3)","80% do valor"],
-            ["Último terço da temporada","Sem novas entradas (Cap. 11)"],
+            ["Último terço da temporada", comTorneio ? "Sem novas entradas (Cap. 11)" : 'Sem novas entradas (ver "Como Participar")'],
           ]}/>
         </Box>
         <Box cor="#c25a45" titulo="🔒 Falta de pagamento">
@@ -2677,13 +2712,17 @@ function RegulamentoView({ onBack, sistema, circuitoNome }) {
     );
     if (id===13) return (
       <div>
-        <p style={s.p}>O ano é dividido em <span style={s.dest}>3 temporadas de 3 meses</span>, com janeiro, julho e dezembro reservados para férias. Cada temporada tem, por padrão, 6 rodadas (número definido pelo administrador), organizadas em pares mensais — 2 rodadas por mês.</p>
+        <p style={s.p}>O ano é dividido em <span style={s.dest}>3 temporadas de 3 meses</span>, com {comTorneio ? "janeiro, julho e dezembro reservados para férias" : "meses de recesso definidos pelo organizador do circuito"}. Cada temporada tem, por padrão, 6 rodadas (número definido pelo administrador), organizadas em pares mensais — 2 rodadas por mês.</p>
         <Box cor="#D85A30" titulo="📅 Estrutura do Ano">
           <Ul items={[
-            "Janeiro, julho e dezembro: meses sem rodadas",
-            "Torneio presencial: mês imediatamente seguinte ao término da Temporada 3, excluindo janeiro, julho e dezembro",
-            "Exemplos: T3 termina em junho → torneio em agosto (julho=férias). T3 termina em novembro → torneio em fevereiro.",
-            "Admin confirma e comunica as datas com mínimo 30 dias de antecedência",
+            comTorneio ? "Janeiro, julho e dezembro: meses sem rodadas" : "Meses de recesso: definidos pelo organizador do circuito",
+            ...(comTorneio ? [
+              "Torneio presencial: mês imediatamente seguinte ao término da Temporada 3, excluindo janeiro, julho e dezembro",
+              "Exemplos: T3 termina em junho → torneio em agosto (julho=férias). T3 termina em novembro → torneio em fevereiro.",
+              "Admin confirma e comunica as datas com mínimo 30 dias de antecedência",
+            ] : [
+              "O organizador confirma e comunica o calendário com mínimo 30 dias de antecedência",
+            ]),
           ]}/>
         </Box>
         <Box cor="#D85A30" titulo="⏱ Linha do Tempo de Um Mês (2 Rodadas)">
@@ -2698,7 +2737,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome }) {
           ]}/>
         </Box>
         <Box cor="#c25a45" titulo="⚠️ Mínimo para Abertura da Temporada">
-          <p style={s.p}>A temporada só será iniciada com no mínimo <span style={s.dest}>8 atletas ativos</span>. Caso esse número não seja atingido até o prazo de inscrições, o administrador pode prorrogar o período de inscrições ou adiar o início da temporada. Se, <span style={s.dest}>durante a temporada</span>, o número de atletas ativos cair abaixo de 8, o torneio continua normalmente com os atletas restantes — a queda não interrompe o circuito.</p>
+          <p style={s.p}>A temporada só será iniciada com no mínimo <span style={s.dest}>8 atletas ativos</span>. Caso esse número não seja atingido até o prazo de inscrições, o administrador pode prorrogar o período de inscrições ou adiar o início da temporada. Se, <span style={s.dest}>durante a temporada</span>, o número de atletas ativos cair abaixo de 8, {comTorneio ? "o torneio continua normalmente" : "a temporada continua normalmente"} com os atletas restantes — a queda não interrompe o circuito.</p>
         </Box>
         <Box cor="#6a9d7a" titulo="📝 Inscrições & Renovação">
           <Ul items={[
@@ -2724,7 +2763,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome }) {
           ]}/>
           <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A decisão do administrador em casos omissos é final. Situações recorrentes podem motivar a inclusão de uma nova regra em versão futura deste regulamento.</p>
         </Box>
-        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa{circuitoNome ? ` · ${circuitoNome}` : ""} · Regulamento v03-12</div>
+        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa{circuitoNome ? ` · ${circuitoNome}` : ""} · Regulamento {versaoEfetiva}</div>
       </div>
     );
     return null;
@@ -2854,14 +2893,14 @@ function RegulamentoView({ onBack, sistema, circuitoNome }) {
     if (id===13) return (
       <div>
         <p style={s.p}>Situações não previstas são resolvidas pelo administrador do circuito, com bom senso e em favor da integridade da competição. A decisão do administrador em casos omissos é final e pode motivar uma nova regra em versão futura.</p>
-        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa · Sistema B (pontos) · Regulamento vB-01</div>
+        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa{circuitoNome ? ` · ${circuitoNome}` : ""} · Regulamento {versaoEfetiva}</div>
       </div>
     );
     return null;
   }
 
   const capsAtivos = sistema === "B" ? CAPS_B : caps;
-  const versaoLabel = sistema === "B" ? "vB-01" : "v03-12";
+  const versaoLabel = versaoEfetiva; // era cravado por sistema e contradizia o rodapé na mesma tela
 
   return (
     <div style={s.wrap}>
@@ -6713,7 +6752,7 @@ function CriarCircuitoCard({ chamarAdminAction }) {
   const [criado, setCriado] = useState(null);
 
   const slugLimpo = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
-  const podeCriar = !!(nome.trim() && slugLimpo.length >= 2 && slugLimpo !== "bh" && sistema && (sistema === "A" || pareamento) && Number(maxAtletas) >= 10);
+  const podeCriar = !!(nome.trim() && slugLimpo.length >= 2 && slugLimpo !== "bh" && sistema && (sistema === "A" || pareamento) && Number(maxAtletas) >= 8 && Number(maxAtletas) <= 20);
 
   function reset() {
     setNome(""); setCidade(""); setUf(""); setSlug(""); setSistema(null);
@@ -6820,7 +6859,7 @@ function CriarCircuitoCard({ chamarAdminAction }) {
                 <div style={{marginTop:14}}>
                   <div style={lbl}>Máx. de atletas</div>
                   <input value={maxAtletas} onChange={e=>setMaxAtletas(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric" style={{...inp, maxWidth:120}}/>
-                  <div style={{fontSize:11,color: Number(maxAtletas)>=10 ? T.cinza : T.vermelho,marginTop:4}}>Mínimo 10 atletas.</div>
+                  <div style={{fontSize:11,color: (Number(maxAtletas)>=8 && Number(maxAtletas)<=20) ? T.cinza : T.vermelho,marginTop:4}}>De 8 a 20 atletas. Abaixo de 8, o pareamento repetiria confrontos na mesma temporada.</div>
                 </div>
 
                 {erro && <div style={{fontSize:13,color:T.vermelho,marginTop:14}}>{erro}</div>}

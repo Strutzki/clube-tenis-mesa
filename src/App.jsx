@@ -752,7 +752,8 @@ const INIT = {
   financeiroAtivo: false,   // interruptor do módulo financeiro (trava de pareamento por pagamento)
   valorTemporada: null,     // centavos; nulo até o admin definir
   descontoGlobalPct: 0,     // desconto global aplicado a todos
-  percentualEntradaMeio: 80,// % pago por quem entra na Rodada 3
+  regulamentoVersao: null, // versão do circuito ativo; null = ainda não sabemos
+  percentualEntradaMeio: 100,// % pago por quem entra depois da abertura (12/09/2026: mesmo valor em qualquer etapa)
   nomeCircuito: "Clube do Tênis de Mesa", // nome exibido (cabeçalho + mensagens)
   dataInicioTemporada: null, // data de início da próxima temporada (define prazos de renovação)
   maxAtletas: 20,            // teto de atletas por circuito
@@ -1305,7 +1306,7 @@ function reducer(state, action) {
     }
 
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, nomeCircuito, dataInicioTemporada, maxAtletas, proximaAberta, proximaNome, proximaDataInicio, proximaRotulo, proximaValorCheio, proximaValorDesconto, pixChave, mensagensEnviadas, solicitacoesWo, inscricoesAbertas } = action.payload;
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, regulamentoVersao, nomeCircuito, dataInicioTemporada, maxAtletas, proximaAberta, proximaNome, proximaDataInicio, proximaRotulo, proximaValorCheio, proximaValorDesconto, pixChave, mensagensEnviadas, solicitacoesWo, inscricoesAbertas } = action.payload;
       return {
         ...state, athletes, matches, keys, phase,
         proximaAberta: proximaAberta ?? state.proximaAberta,
@@ -1321,6 +1322,7 @@ function reducer(state, action) {
         valorTemporada: valorTemporada !== undefined ? valorTemporada : state.valorTemporada,
         descontoGlobalPct: descontoGlobalPct ?? state.descontoGlobalPct,
         percentualEntradaMeio: percentualEntradaMeio ?? state.percentualEntradaMeio,
+        regulamentoVersao: regulamentoVersao !== undefined ? regulamentoVersao : state.regulamentoVersao,
         nomeCircuito: nomeCircuito ?? state.nomeCircuito,
         dataInicioTemporada: dataInicioTemporada !== undefined ? dataInicioTemporada : state.dataInicioTemporada,
         maxAtletas: maxAtletas ?? state.maxAtletas,
@@ -1438,7 +1440,7 @@ function deadlineStatus(dateStr) {
 }
 
 // ── LOGIN SCREEN ─────────────────────────────────────────────────────────────
-function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscricao, onOrganizadorLogin }) {
+function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscricao, onOrganizadorLogin, regulamentoVersao, sistemaAtivo }) {
   const [mode, setMode] = useState("select"); // select | admin | athlete | inscricao | regulamento | organizador
   const [user, setUser] = useState(""), [pass, setPass] = useState("");
   const [err, setErr] = useState("");
@@ -1566,7 +1568,11 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
   );
 
   if (mode === "inscricao") return <SelecaoCircuitoInscricao onBack={() => setMode("select")} onSubmit={onInscricao} athletes={athletes} />;
-  if (mode === "regulamento") return <RegulamentoView onBack={() => setMode("select")} />;
+  // A versão TEM de vir daqui. Sem ela, esta tela caía num "v03-12" cravado —
+  // e era o link mais visível do app, público, antes do login. No dia em que o BH
+  // for carimbado na v03-13, ela continuaria prometendo 80% para sempre.
+  // Achado pelo guardião do Regulamento e pelo do Atleta, cada um por um caminho.
+  if (mode === "regulamento") return <RegulamentoView onBack={() => setMode("select")} versao={regulamentoVersao} sistema={sistemaAtivo} />;
   async function doAdmin(bypass=false) {
     // Biometria: entra sem senha; a senha e pedida na primeira acao que grava.
     if (bypass) { onLogin(); return; }
@@ -1892,10 +1898,36 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
   // Vem do circuito, não do sistema. Cravada, a frase de aceite dizia "v03-12"
   // enquanto o athlete-action gravava no registro a versão real do circuito —
   // o atleta assinaria uma versão e o recibo diria outra.
-  const versaoReg = (circ && circ.regulamento_versao) || (ehB ? "vB-01" : "v03-12");
+  // Retentativa SEM recarregar: `window.location.reload()` apagaria os dois passos
+  // já preenchidos (nome, telefone, CPF, nascimento, dados do responsável) e, como
+  // ainda não há sessão aqui, nem devolveria o atleta à inscrição — ele cairia na
+  // tela inicial. Preço alto demais por uma falha que a própria tela chama de
+  // momentânea. Aqui só a leitura da versão é refeita; o formulário fica de pé.
+  //
+  // DECLARADO ANTES de `versaoReg` de propósito: `versaoReg` lê `versaoRetry` no
+  // `||`, e const fica em zona morta até a própria linha de declaração rodar —
+  // com a ordem invertida, a tela QUEBRAVA com ReferenceError sempre que a versão
+  // não viesse. Build e 244 asserções passavam; só leitura do código pegou.
+  const [versaoRetry, setVersaoRetry] = useState(null);
+  const [tentandoVersao, setTentandoVersao] = useState(false);
+  async function tentarVersaoDeNovo() {
+    setTentandoVersao(true);
+    try {
+      const versoes = await db.getVersoesRegulamento();
+      const achado = Array.isArray(versoes) ? versoes.find(v => v.id === circuitoId) : null;
+      if (achado && achado.regulamento_versao) setVersaoRetry(achado.regulamento_versao);
+    } catch (e) { console.warn("Retentativa da versão do regulamento falhou:", e.message); }
+    setTentandoVersao(false);
+  }
+  const versaoReg = (circ && circ.regulamento_versao) || versaoRetry || (ehB ? "vB-01" : "v03-12");
+  // Só é seguro cair no fallback quando ele acerta: no BH, cuja versão É a do
+  // fallback. Em qualquer outro circuito, versão ausente significa que a leitura
+  // falhou — e aí o texto exibido pode não ser o que o servidor vai carimbar.
+  const versaoDesconhecida = !!circuitoId && circuitoId !== CIRCUITO_BH_ID && !((circ && circ.regulamento_versao) || versaoRetry);
   // Mesma regra do RegulamentoView: o resumo abaixo é o PORTÃO do aceite, e
   // prometia torneio a quem não tem.
   const comTorneio = VERSOES_COM_TORNEIO.has(versaoReg);
+  const comDescontoEtapa = VERSOES_COM_DESCONTO_ETAPA.has(versaoReg);
   const [step, setStep] = useState(1); // 1=dados, 2=lgpd, 3=regulamento, 4=sucesso
   const [enviando, setEnviando] = useState(false);
   const [erroSubmit, setErroSubmit] = useState("");
@@ -2155,6 +2187,29 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
   );
 
   // ── STEP 3: Aceite do regulamento ───────────────────────────────────────────
+  // Sem saber a versão, não se colhe aceite. Melhor barrar a inscrição do que
+  // registrar que o atleta aceitou um documento que talvez não seja o que ele leu.
+  if (step === 3 && versaoDesconhecida) return (
+    <div style={s.wrap}>
+      <div style={{...s.card, marginTop:20}}>
+        <button style={s.back} onClick={()=>setStep(2)}>← Voltar</button>
+        {/* O atleta continua NO passo 3 — só não pode concluir ainda. Sem os
+            pontinhos, esta era a única das quatro telas do fluxo sem bússola. */}
+        <Steps/>
+        <div style={s.title}>📋 Regulamento indisponível</div>
+        <div style={s.sub}>Não foi possível carregar o regulamento deste circuito</div>
+        <div style={{...s.box("#c25a45"), marginTop:10, fontSize:12, lineHeight:1.7}}>
+          Sem carregar o regulamento, não dá para você aceitá-lo — e nós não
+          registramos aceite de um texto que você não viu. Isso costuma ser falha
+          momentânea de conexão.
+        </div>
+        <button onClick={tentarVersaoDeNovo} disabled={tentandoVersao} style={{...s.btn(tentandoVersao), marginTop:12}}>
+          {tentandoVersao ? "Tentando…" : "Tentar de novo"}
+        </button>
+        <div style={{fontSize:11,color:T.cinza,marginTop:8,textAlign:"center"}}>Seus dados continuam preenchidos.</div>
+      </div>
+    </div>
+  );
   if (step === 3) return (
     <div style={s.wrap}>
       <div style={{...s.card, marginTop:20}}>
@@ -2197,7 +2252,9 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
               ["🔴 W.O. Culposo","Confirmou e não foi: −15 pts + aviso. Adversário recebe +8 pts. 2 W.O.s culposos = suspensão da temporada."],
               ["🚫 Fraude","Registro de resultado falso = banimento permanente do Circuito."],
               ...(comTorneio ? [["🏆 Torneio Final","Top 8 do ranking ao final da temporada disputam torneio presencial. Prêmios: troféu, medalhas e certificados."]] : []),
-              ["💰 Valor","Valor por temporada, pago no início. Quem entra na 2ª etapa (Rodada 3) paga 80%. Valores e descontos divulgados a cada temporada."],
+              comDescontoEtapa
+                ? ["💰 Valor","Valor por temporada, pago no início. Quem entra na 2ª etapa (Rodada 3) paga 80%. Valores e descontos divulgados a cada temporada."]
+                : ["💰 Valor","Valor por temporada, pago no início — o mesmo, entrando em qualquer etapa. Eventual desconto é decisão exclusiva do organizador, avaliada individualmente — não é automático nem garantido. Valores divulgados a cada temporada."],
               ["⚖️ Atletas Federados CBTM","Verifique com sua federação e com o clube ao qual é filiado a conformidade com a Nota CBTM 183/2025 antes de participar."],
               ["📋 Disposições Gerais","Casos omissos decididos pelo administrador. O regulamento pode ser atualizado com aviso prévio."],
             ]).map(([t,d]) => (
@@ -2262,6 +2319,19 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
                 ? "Já existe um cadastro com esse CPF. Entre pela tela de acesso (“Sou atleta”)."
                 : (String(r.erro||"").includes("cpf_invalido") || String(r.erro||"").includes("cpf_responsavel"))
                 ? "CPF inválido. Volte ao passo 1 e confira os números."
+                // Antes daqui caía TUDO no texto de conexão — inclusive recusas
+                // do servidor que já vêm escritas para o atleta ler, como a de
+                // versão de regulamento não confirmada. Mandava o atleta olhar o
+                // Wi-Fi por um problema que não é dele, no clique final de uma
+                // inscrição paga. Esta tela tinha mapeamento próprio e ficou de
+                // fora do mecanismo que a Onda 0.6.1 criou para exatamente isso
+                // (`MSGS_ATLETA` + fail-closed genérico) — regressão da decisão
+                // de 0.6.1, apontada pelo supervisor do guardião do Atleta.
+                : MSGS_ATLETA.has(String(r.erro||"").trim())
+                ? String(r.erro).trim()
+                // Fail-closed: mensagem que não está na lista branca não vai
+                // para a tela do atleta. Só aqui o texto de conexão faz sentido,
+                // porque aqui é mesmo "não sei o que houve".
                 : "Não foi possível enviar sua inscrição. Verifique sua conexão e tente de novo."
             );
             return; // permanece no passo 3
@@ -2309,7 +2379,22 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
 // erro de omitir um capítulo é menor que o de prometer ao atleta um torneio que
 // o circuito dele não tem. Hoje só o BH (v03-12) tem; `vA-nc-01`, a versão dos
 // circuitos de rating novos, não — é a ÚNICA diferença entre as duas.
-const VERSOES_COM_TORNEIO = new Set(["v03-12"]);
+// Ações que NÃO ganham dispatch otimista. O padrão do app é mudar a tela antes
+// do servidor responder — bom para ação frequente, péssimo para a virada de
+// temporada: ela zera stats, apaga partidas e chaves na tela na hora, e se o
+// servidor recusar o admin vê a temporada "virada" por alguns segundos antes do
+// erro chegar. Com a trava do regulamento (13/09/2026) isso deixou de ser azar
+// de rede e virou o caminho GARANTIDO na próxima virada do BH. Ação rara não
+// precisa parecer rápida; precisa não mentir.
+const ACOES_SEM_OTIMISMO = new Set(["NOVA_TEMPORADA"]);
+
+const VERSOES_COM_TORNEIO = new Set(["v03-12", "v03-13"]);
+// Quais versões PROMETEM o desconto de 80% para quem entra na 2ª etapa.
+// Separada da lista do torneio de propósito: na v03-13 o BH mantém o torneio
+// (Cap. 10 é dele) mas perde o desconto por etapa (decisão de 12/09/2026). Antes
+// as duas coisas andavam na mesma chave, e mexer numa mexia na outra.
+// Fail-closed: versão desconhecida não promete desconto nenhum.
+const VERSOES_COM_DESCONTO_ETAPA = new Set(["v03-12"]);
 
 function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
   const [capAberto, setCapAberto] = useState(null);
@@ -2338,10 +2423,24 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
     tdd: { padding:"7px 8px", borderBottom:"1px solid rgba(255,255,255,0.05)", color:"#F0EAE0", fontWeight:600, verticalAlign:"top" },
   };
 
-  // Sem `versao` (chamada genérica, antes de escolher circuito) cai no padrão do
-  // sistema — que é exatamente o que o app fazia antes de existir esta ramificação.
-  const versaoEfetiva = versao || (sistema === "B" ? "vB-01" : "v03-12");
+  // Sem `versao`, esta tela NÃO adivinha. O fallback antigo era o literal
+  // "v03-12": acertava por coincidência enquanto o BH estivesse nessa versão, e
+  // passaria a mentir no dia do carimbo da v03-13 — prometendo 80% num circuito
+  // que cobra 100%. Agora: fail-closed no CONTEÚDO (sem torneio, sem desconto —
+  // as duas coisas que o texto pode prometer e o circuito não ter) e um aviso
+  // visível, porque uma tela de regulamento calada sobre a própria versão é pior
+  // que uma tela que assume o que não sabe.
+  const versaoEfetiva = versao || null;
+  const versaoIncerta = !versaoEfetiva;
+  // A cláusula de transição é da v03-13 e SÓ dela: fala da mudança de preço do
+  // BH entre a temporada 1/2026 e a 2/2026. Num circuito novo (vA-nc-01, vB-01)
+  // ela não faz sentido nenhum — nunca houve 80% para não cobrar de volta.
+  // Ela não pode viver só no .md: o texto que vale é o que o atleta lê na tela.
+  const ehTransicaoV0313 = versaoEfetiva === "v03-13";
   const comTorneio = VERSOES_COM_TORNEIO.has(versaoEfetiva);
+  const comDescontoEtapa = VERSOES_COM_DESCONTO_ETAPA.has(versaoEfetiva);
+  // Usado nos rodapés dos capítulos; mesma regra do rótulo do cabeçalho.
+  const versaoLabelRodape = versaoEfetiva || "versão não confirmada";
   const capsBase = [
     { id:1,  tag:"Cap. 01", titulo:"Como Funciona: O Ciclo do Ranking" },
     { id:2,  tag:"Cap. 02", titulo:"Elegibilidade — Quem Pode Participar" },
@@ -2672,7 +2771,9 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
             "Prioridade de entrada para o primeiro da fila — mediante avaliação e aprovação do administrador",
             "No app: ao aprovar o atleta como 'próxima etapa/temporada', a entrada é automática no próximo par permitido (fora do último terço) ou na virada de temporada",
             "Rating de entrada: 250 pts (não-federados) ou rating CBTM-Web (federados)",
-            "Valor da temporada: 100% na abertura; 80% para quem entra na 2ª etapa (Rodada 3)",
+            comDescontoEtapa
+              ? "Valor da temporada: 100% na abertura; 80% para quem entra na 2ª etapa (Rodada 3)"
+              : "Valor da temporada: o mesmo para todos, entrando em qualquer etapa",
             ...(comTorneio ? ["Elegível ao torneio presencial normalmente se atingir top 8"] : []),
           ]}/>
         </Box>
@@ -2691,10 +2792,31 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
             "✅ Certificado digital para os 3 melhores da temporada",
           ]}/>
         </Box>
+        {ehTransicaoV0313 && (
+          <Box cor="#6a9d7a" titulo="🔁 Transição da v03-12 para a v03-13">
+            <p style={{...s.p, marginTop:0}}>
+              Esta versão vigora <span style={s.dest}>a partir da temporada 2/2026</span>. A
+              temporada 1/2026 seguiu integralmente pela v03-12, inclusive no valor.
+            </p>
+            <p style={{...s.p, marginBottom:0}}>
+              O Clube <span style={s.dest}>não cobrará</span> diferença de valor de quem ingressou
+              na 2ª etapa da temporada 1/2026. O direito ao valor reduzido decorre da{" "}
+              <span style={s.dest}>data de ingresso</span>, não do momento do pagamento: quem
+              ingressou sob o regulamento anterior a esta versão e ainda não quitou
+              paga os 80% prometidos.
+            </p>
+          </Box>
+        )}
         <Box cor="#9C6F3E" titulo="💵 Valor conforme o momento de entrada">
           <Tbl headers={["Momento","Valor"]} rows={[
-            ["Abertura da temporada (Rodada 1)","100% do valor"],
-            ["Entrada na 2ª etapa (Rodada 3)","80% do valor"],
+            // Sem o desconto por etapa, "abertura = 100%" e "qualquer etapa =
+            // integral" são a MESMA regra dita duas vezes — e duas redações para
+            // a mesma coisa, na cláusula que é o motivo inteiro da versão, é
+            // convite a discussão. Uma linha só. (Supervisor do Regulamento.)
+            ...(comDescontoEtapa
+              ? [["Abertura da temporada (Rodada 1)","100% do valor"],
+                 ["Entrada na 2ª etapa (Rodada 3)","80% do valor"]]
+              : [["Entrada em qualquer etapa","Valor integral"]]),
             ["Último terço da temporada", comTorneio ? "Sem novas entradas (Cap. 11)" : 'Sem novas entradas (ver "Como Participar")'],
           ]}/>
         </Box>
@@ -2763,7 +2885,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
           ]}/>
           <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A decisão do administrador em casos omissos é final. Situações recorrentes podem motivar a inclusão de uma nova regra em versão futura deste regulamento.</p>
         </Box>
-        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa{circuitoNome ? ` · ${circuitoNome}` : ""} · Regulamento {versaoEfetiva}</div>
+        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa{circuitoNome ? ` · ${circuitoNome}` : ""} · Regulamento {versaoLabelRodape}</div>
       </div>
     );
     return null;
@@ -2893,17 +3015,27 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
     if (id===13) return (
       <div>
         <p style={s.p}>Situações não previstas são resolvidas pelo administrador do circuito, com bom senso e em favor da integridade da competição. A decisão do administrador em casos omissos é final e pode motivar uma nova regra em versão futura.</p>
-        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa{circuitoNome ? ` · ${circuitoNome}` : ""} · Regulamento {versaoEfetiva}</div>
+        <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa{circuitoNome ? ` · ${circuitoNome}` : ""} · Regulamento {versaoLabelRodape}</div>
       </div>
     );
     return null;
   }
 
   const capsAtivos = sistema === "B" ? CAPS_B : caps;
-  const versaoLabel = versaoEfetiva; // era cravado por sistema e contradizia o rodapé na mesma tela
+  // Sem versão confirmada o rótulo não inventa um número — diz que não sabe.
+  const versaoLabel = versaoEfetiva || "versão não confirmada";
 
   return (
     <div style={s.wrap}>
+      {versaoIncerta && (
+        <div style={{...s.aviso, borderColor:"#c25a45", background:"rgba(194,90,69,0.12)"}}>
+          <strong style={{color:"#c25a45"}}>⚠️ NÃO FOI POSSÍVEL CONFIRMAR A VERSÃO EM VIGOR</strong><br/>
+          O texto abaixo é a versão mais restrita — sem torneio de encerramento e sem
+          desconto por etapa de entrada. O regulamento do seu circuito pode prever
+          mais do que isto. Para ver o texto certo, entre pelo circuito (Inscrever-se
+          ou Entrar) ou recarregue a página.
+        </div>
+      )}
       <div style={s.aviso}>
         <strong style={{color:"#9C6F3E"}}>⚠️ AVISO — ATLETAS FEDERADOS PELA CBTM</strong><br/>
         Este circuito é independente e não filiado à CBTM ou FMTMOP. Atletas com TRA ativa devem verificar junto à sua federação e ao clube ao qual são filiados se a participação contraria seus deveres estatutários.
@@ -3637,7 +3769,18 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsSta
           <a href={wppLink(telefones[atual.atleta.id] || "", atual.msg)} target="_blank" rel="noreferrer"
             style={{textDecoration:"none",display:"block",marginBottom:10}}
             onClick={()=>{
-              if (atual.matchId) dispatch({type:"MARCAR_RESULTADO_COMUNICADO",payload:{matchId:atual.matchId,comunicado:true,sobreviveASaida:true}});
+              // Só a mensagem de RESULTADO marca o resultado como comunicado.
+              // O `if (atual.matchId)` sozinho pegava também os LEMBRETES, que
+              // carregam matchId igual — então mandar "não esqueça de jogar"
+              // marcava o resultado daquele jogo como já divulgado, às vezes
+              // horas ANTES de o resultado existir. Quando o placar era validado,
+              // a mensagem de resultado simplesmente não aparecia, sem erro
+              // nenhum na tela. Reportado pelo Juliano em 14/09/2026 (Fabio x
+              // Juliano, rodada 5); 7 jogos estavam nesse estado no banco.
+              // `atual.categoria || categoria` é a mesma expressão do
+              // registrarEnvio: na fila unificada cada item traz a própria
+              // categoria; na fila de uma categoria só, vale a da tela.
+              if (atual.matchId && (atual.categoria || categoria) === "resultados") dispatch({type:"MARCAR_RESULTADO_COMUNICADO",payload:{matchId:atual.matchId,comunicado:true,sobreviveASaida:true}});
               registrarEnvio(atual, true);
               setTimeout(()=>proxMensagem(atual.atleta.id), 300);
             }}>
@@ -3646,7 +3789,8 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsSta
             </Btn>
           </a>
           <Btn onClick={()=>{
-              if (atual.matchId) dispatch({type:"MARCAR_RESULTADO_COMUNICADO",payload:{matchId:atual.matchId,comunicado:true}});
+              // Mesma regra do botão acima: lembrete não marca resultado.
+              if (atual.matchId && (atual.categoria || categoria) === "resultados") dispatch({type:"MARCAR_RESULTADO_COMUNICADO",payload:{matchId:atual.matchId,comunicado:true}});
               registrarEnvio(atual, false);
               proxMensagem(atual.atleta.id);
             }} color="#9C6F3E" full small>
@@ -4470,6 +4614,9 @@ function PinPromptModal({ onSubmit, onCancel }) {
 // código de erro estável (`erroCod`) ao lado da mensagem humana, e o app passar
 // a casar por código em vez de por string.
 const MSGS_ATLETA = new Set([
+  // Fail-closed do aceite no servidor (13/09/2026): sem a versão do regulamento
+  // não se colhe aceite, e o atleta precisa ver o motivo em vez de um genérico.
+  "Não foi possível confirmar a versão do regulamento deste circuito. Tente de novo em instantes.",
   "Placar inválido.",
   "Partida não encontrada.",
   "Esta partida já foi encerrada.",
@@ -4741,7 +4888,8 @@ export default function App() {
         financeiroAtivo: config?.[0]?.financeiro_ativo || false,
         valorTemporada: config?.[0]?.valor_temporada ?? null,
         descontoGlobalPct: config?.[0]?.desconto_global_pct || 0,
-        percentualEntradaMeio: config?.[0]?.percentual_entrada_meio || 80,
+        percentualEntradaMeio: config?.[0]?.percentual_entrada_meio ?? 100,
+        regulamentoVersao: config?.[0]?.regulamento_versao ?? null,
         nomeCircuito: config?.[0]?.nome_circuito || "Clube do Tênis de Mesa",
         dataInicioTemporada: config?.[0]?.data_inicio_temporada || null,
         maxAtletas: config?.[0]?.max_atletas || 20,
@@ -5021,7 +5169,12 @@ export default function App() {
   }
 
   async function dispatchAndSync(action) {
-    dispatch(action);            // otimista: a tela muda ANTES do servidor responder
+    // Otimista por padrão: a tela muda ANTES do servidor responder. As ações de
+    // ACOES_SEM_OTIMISMO ficam de fora — nelas a verdade vem do `loadFromSupabase`
+    // que a própria ação faz ao dar certo, e uma recusa não chega a pintar na tela
+    // um estado que não existe no banco.
+    const otimista = !ACOES_SEM_OTIMISMO.has(action.type);
+    if (otimista) dispatch(action);
     setAcaoErro(null);           // recusa anterior não contamina a ação nova
     try { const r = await syncToSupabase(action, state); return r ?? { ok: true }; }
     catch(e) {
@@ -5384,6 +5537,11 @@ export default function App() {
     </div>
   ) : null;
 
+  // `SISTEMA_ATIVO` é variável de módulo (setada no load do circuito), não state.
+  // Em 13/09 escrevi `sistemaAtivo={sistemaAtivo}` aqui supondo um state com esse
+  // nome — não existe. O app virou TELA BRANCA para todo visitante sem sessão
+  // salva, e passou por `npm run build` e pelas 326 asserções: JSX não confere
+  // escopo de identificador, e a bateria não toca o App.jsx.
   if (!isAdmin && !currentAthlete && !isVisitante) return (
     <LoginScreen
       onLogin={() => { setAcaoErro(null); setIsAdmin(true); setTab("dashboard"); }}
@@ -5403,6 +5561,8 @@ export default function App() {
         // A lista da vitrine é carregada pelo efeito abaixo (também cobre o refresh).
       }}
       athletes={state.athletes}
+      regulamentoVersao={state.regulamentoVersao}
+      sistemaAtivo={SISTEMA_ATIVO}
       onInscricao={p => dispatchAndSync({type:"INSCRICAO_ADD", payload:p})}
       onOrganizadorLogin={(cred) => {
         setAcaoErro(null);
@@ -6473,7 +6633,7 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
   const financeiroAtivo = !!state.financeiroAtivo;
   const valorTemporada = state.valorTemporada;
   const descontoGlobalPct = state.descontoGlobalPct || 0;
-  const percentualMeio = state.percentualEntradaMeio || 80;
+  const percentualMeio = state.percentualEntradaMeio ?? 100;
   const rotuloTemp = `${state.temporadaNumero}/${state.temporadaAno}`;
   // Alvo do pagamento: "proxima" só faz sentido com a pré-abertura ligada.
   const alvo = state.proximaAberta ? alvoSel : "atual";
@@ -6515,7 +6675,10 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
       } else if (alvo === "proxima") {
         await chamarAdminAction("DEFINIR_FINANCEIRO", { proximaValorCheio: reaisParaCent(cheioReais), proximaValorDesconto: reaisParaCent(descReais) });
       } else {
-        await chamarAdminAction("DEFINIR_FINANCEIRO", { valorTemporada: reaisParaCent(valorReais), descontoGlobalPct: Number(descGlobal)||0, percentualMeio: Number(pctMeio)||80 });
+        await chamarAdminAction("DEFINIR_FINANCEIRO", { valorTemporada: reaisParaCent(valorReais), descontoGlobalPct: Number(descGlobal)||0, percentualMeio: String(pctMeio).trim() === "" ? null : Number(pctMeio) });
+        // Campo vazio manda `null` e o motor NÃO grava a coluna — em vez de
+        // inventar um número. O `||80` de antes concedia um desconto que ninguém
+        // pediu; o `||100` que o substituiu cobrava mais de quem tinha digitado 0.
       }
       await loadFromSupabase();
     } catch(e) { setErro(e.message); }
@@ -7543,7 +7706,7 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
           {label:"Partidas em aberto",val:roundMatches.length,color:"#c25a45"},
           {label:"Aguardando validação",val:waitingVal.length,color:"#9C6F3E"},
           {label:"Solicitações de W.O.",val:pendentesWoCount,color:"#9C6F3E"},
-          {label:"Mensagens pendentes",val:pendentesMensagensCount === null ? "···" : pendentesMensagensCount,color:"#25d366"},
+          {label:"Mensagens pendentes",val:pendentesMensagensCount === null ? "···" : pendentesMensagensCount,color:T.verde2}  // paleta da marca: o verde do WhatsApp (#25d366) estava fora dela,
         ].map(s => (
           <Card key={s.label} style={{padding:"12px 14px"}}>
             <div style={{fontSize:22,fontWeight:800,color:s.color}}>{s.val}</div>
@@ -7777,6 +7940,7 @@ function AbrirProximaPanel({ state, dispatch }) {
 // ligada. Usa o nome/data já definidos, arquiva as partidas e carrega os pagamentos.
 function NovaTemporadaPanel({ state, dispatch }) {
   const [confirmando, setConfirmando] = useState(false);
+  const [virando, setVirando] = useState(false);
   const ativos = state.athletes.filter(a => a.status === "ativo");
   const nome = state.proximaNome || state.nomeCircuito || "Clube do Tênis de Mesa";
   const dataTxt = state.proximaDataInicio ? new Date(state.proximaDataInicio+"T00:00:00").toLocaleDateString("pt-BR") : "não definida";
@@ -7804,8 +7968,23 @@ function NovaTemporadaPanel({ state, dispatch }) {
               Isto <b style={{color:"#e79b8c"}}>zera pontos, vitórias e derrotas</b> de <b>{ativos.length} atleta(s)</b>, <b>arquiva</b> e remove as partidas da temporada atual, e <b>carrega os pagamentos da próxima</b>. O rating é preservado. <b style={{color:"#e79b8c"}}>Esta ação não pode ser desfeita.</b>
             </div>
             <div style={{display:"flex",gap:10}}>
-              <Btn onClick={()=>{dispatch({type:"NOVA_TEMPORADA",payload:{}});setConfirmando(false);}} color="#c25a45" full>Sim, virar temporada</Btn>
-              <Btn onClick={()=>setConfirmando(false)} color="#5E7569" full>Cancelar</Btn>
+              <Btn onClick={async ()=>{
+                if (virando) return;                       // clique repetido não dispara duas viradas
+                setVirando(true);
+                try {
+                  const r = await dispatch({type:"NOVA_TEMPORADA",payload:{}});
+                  // Só sai da confirmação se o servidor ACEITOU — mesmo padrão do
+                  // pedido de exclusão (:9659) e do envio de placar (:9929).
+                  // `dispatchAndSync` NUNCA lança: ele captura o erro e devolve
+                  // `{ok:false}`. Um `await` seco fecharia o modal também na
+                  // recusa, e o admin sairia da tela de aviso achando que virou.
+                  // Com a trava do regulamento, a recusa deixou de ser azar de
+                  // rede e virou o caminho garantido na próxima virada do BH.
+                  if (!r || r.ok !== false) setConfirmando(false);
+                }
+                finally { setVirando(false); }
+              }} color="#c25a45" full disabled={virando}>{virando ? "Virando…" : "Sim, virar temporada"}</Btn>
+              <Btn onClick={()=>setConfirmando(false)} color="#5E7569" full disabled={virando}>Cancelar</Btn>
             </div>
           </div>
         </div>

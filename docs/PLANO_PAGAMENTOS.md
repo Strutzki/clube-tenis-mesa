@@ -10,7 +10,7 @@ Documento de **decisão** (não de implementação). Estado: 06/09/2026. Serve p
 
 O app já tem um **financeiro por temporada**, manual:
 
-- `valor_temporada` por circuito; **80%** pra quem entra na 2ª etapa (Rodada 3); descontos (global, individual, isento); chave Pix do clube.
+- `valor_temporada` por circuito; **mesmo valor em qualquer etapa** (12/09/2026 — o desconto automático de 80% na 2ª etapa foi abolido nos circuitos novos); descontos (global, individual, isento) como ato do organizador; chave Pix do clube.
 - O atleta paga por fora (Pix), e **o admin confirma na mão** (`CONFIRMAR_PAGAMENTO` / `ESTORNAR`). Enquanto não confirmado, o atleta **não é pareado**.
 - Tabela `pagamentos`, flags `pagamento_confirmado` / `pagamento_proxima_confirmado`, pré-abertura da próxima temporada com valores próprios.
 - O regulamento diz, hoje, **"valor único por temporada, sem mensalidade"** (isso vale pro atleta).

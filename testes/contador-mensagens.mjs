@@ -20,7 +20,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ok, secao, placar } from "./ferramentas.mjs";
+import { ok, igual, secao, placar } from "./ferramentas.mjs";
 
 const RAIZ = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const bruto = fs.readFileSync(path.join(RAIZ, "src", "App.jsx"), "utf8");
@@ -146,6 +146,51 @@ secao("Não se dispara mensagem contra histórico vazio");
   // andamento de uma coisa que já parou.
   ok(/msgsStatus\s*===\s*["']erro["']\s*\?\s*["']não deu para carregar/.test(fonte),
     "o botão distingue 'ainda carregando' de 'falhou'");
+}
+
+secao("Lembrete não marca resultado como comunicado");
+{
+  // Bug reportado pelo Juliano em 14/09/2026: jogou Fabio x Juliano, o placar foi
+  // validado, e a mensagem de resultado nunca apareceu para enviar.
+  //
+  // A causa: `resultado_comunicado` é um campo POR PARTIDA, e a guarda que o
+  // marcava era só `if (atual.matchId)`. Só que DUAS categorias carregam
+  // matchId — "resultados" e "lembretes". Mandar "não esqueça de jogar" marcava
+  // o resultado daquele jogo como já divulgado, HORAS antes de o resultado
+  // existir. Depois o filtro `m.validated && !m.resultadoComunicado` escondia a
+  // mensagem, sem erro nenhum na tela.
+  //
+  // No banco havia 7 partidas nesse estado, todas com lembrete enviado antes.
+  // `[^)]*` NÃO serve aqui: a guarda contém `(atual.categoria || categoria)`, e
+  // o regex pararia no primeiro `)`. Foi o mesmo engano que cometi na asserção
+  // das chamadas da RegulamentoView, no mesmo dia. Recorta do `if` até o
+  // `dispatch`, que é o que interessa.
+  const marcacoes = [];
+  for (let i = fonte.indexOf('dispatch({type:"MARCAR_RESULTADO_COMUNICADO"');
+       i >= 0;
+       i = fonte.indexOf('dispatch({type:"MARCAR_RESULTADO_COMUNICADO"', i + 1)) {
+    const inicioLinha = fonte.lastIndexOf("\n", i) + 1;
+    marcacoes.push(fonte.slice(inicioLinha, i));
+  }
+  igual(marcacoes.length, 2,
+    `os dois botões de envio marcam o resultado (achados: ${marcacoes.length})`);
+
+  const semGuarda = marcacoes.filter(m => !/=== "resultados"/.test(m));
+  igual(semGuarda, [],
+    "nenhum dos dois marca sem antes conferir que a mensagem É de resultado");
+
+  // A expressão tem de ser a mesma do registrarEnvio: na fila unificada cada
+  // item traz a própria categoria; na fila de uma categoria só, vale a da tela.
+  // Usar só `categoria` (o estado) quebraria o "Despachar tudo", que mistura.
+  const comFallback = marcacoes.filter(m => /\(atual\.categoria \|\| categoria\) === "resultados"/.test(m));
+  igual(comFallback.length, 2,
+    "a guarda usa a categoria DO ITEM, com a da tela como reserva — a fila unificada mistura categorias");
+
+  // E a fila unificada tem de continuar carimbando a categoria em cada item,
+  // senão o `atual.categoria` vira undefined e a guarda cai no estado da tela,
+  // que ali não corresponde ao item.
+  ok(/\.map\(item => \(\{ \.\.\.item, categoria: c\.id, categoriaLabel: c\.label \}\)\)/.test(fonte),
+    "a fila unificada carimba a categoria em cada mensagem");
 }
 
 placar("Contador de mensagens");

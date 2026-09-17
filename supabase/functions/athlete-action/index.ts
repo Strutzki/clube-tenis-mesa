@@ -80,8 +80,6 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:5173",
 ];
 
-const VERSAO_REGULAMENTO = "v03-12";
-
 function scoreValido(n: unknown): boolean {
   return Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 99;
 }
@@ -167,6 +165,15 @@ Deno.serve(async (req) => {
         if (!circ) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
         if (!circ.ativo) return jsonResponse({ sucesso: false, erro: "Este circuito está inativo." }, 400);
         if (!circ.inscricoes_abertas) return jsonResponse({ sucesso: false, erro: "As inscrições deste circuito estão fechadas no momento." }, 400);
+        // Fail-closed: sem saber a versão do regulamento, não se colhe aceite.
+        // O app já barra isto na tela (Onda 0.10.1), mas a tela não é o portão —
+        // qualquer um pode chamar a função direto. Um aceite carimbado com a versão
+        // errada é pior que inscrição recusada: vira recibo falso. Fica AQUI, junto
+        // das outras guardas do circuito, para nada ter sido escrito ainda.
+        const versaoDoCircuito = String(circ.regulamento_versao ?? "").trim();
+        if (!versaoDoCircuito) {
+          return jsonResponse({ sucesso: false, erro: "Não foi possível confirmar a versão do regulamento deste circuito. Tente de novo em instantes." }, 409);
+        }
 
         // ── CPF (Fatia 5) — OBRIGATÓRIO no servidor (backstop; o front já exige). Decisão Juliano: exigir de todos já.
         // (Atletas já cadastrados não passam por aqui — o backfill deles é fatia futura.)
@@ -218,7 +225,14 @@ Deno.serve(async (req) => {
           status: "pendente",
           aceite_regulamento: !!p.aceiteRegulamento,
           data_aceite_regulamento: p.aceiteRegulamento ? dataAceite : null,
-          versao_regulamento: circ.regulamento_versao || VERSAO_REGULAMENTO, // carimba a versão do circuito (fallback: constante)
+          // Carimba a versão QUE O CIRCUITO DECLARA. Sem fallback, de propósito:
+          // o `|| VERSAO_REGULAMENTO` que estava aqui gravava "v03-12" — a versão
+          // do BH, com torneio e com o desconto de 80% — em QUALQUER circuito cuja
+          // versão não tivesse sido lida. O recibo ficaria provadamente falso, que
+          // é exatamente o defeito que a Onda 0.10.1 fechou no app. O servidor não
+          // podia continuar fail-OPEN no lugar que grava o aceite (13/09/2026).
+          // A guarda que impede chegar aqui sem versão está logo acima.
+          versao_regulamento: versaoDoCircuito,
           aceite_lgpd: !!p.aceiteLGPD,
           data_aceite_lgpd: p.aceiteLGPD ? dataAceite : null,
           cpf_verificado: temCpf, // true só quando veio CPF válido e não-duplicado (doc gravado abaixo)

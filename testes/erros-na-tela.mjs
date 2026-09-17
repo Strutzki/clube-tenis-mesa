@@ -142,4 +142,37 @@ secao("A lista branca acompanha o texto do motor");
     `nenhuma frase do athlete-action ficou fora da lista (fora: ${fora.join(" | ") || "nenhuma"})`);
 }
 
+secao("O passo 3 da inscrição não culpa a internet do atleta");
+{
+  // A Onda 0.6.1 criou a lista branca para o app parar de engolir os erros do
+  // servidor. Mas o passo 3 da INSCRIÇÃO tinha mapeamento PRÓPRIO, com quatro
+  // `.includes()`, e jogava fora qualquer outra mensagem — inclusive recusas já
+  // escritas para o atleta ler. O texto que sobrava mandava ele "verificar a
+  // conexão", ou seja, acusava o Wi-Fi dele por uma recusa do servidor, no
+  // clique final de uma inscrição paga.
+  //
+  // Achado pelo supervisor do guardião do Atleta, que classificou como regressão
+  // da decisão de 0.6.1 — e ele estava certo: era a única tela do fluxo fora do
+  // mecanismo que essa onda criou.
+  // Âncora no conteúdo do mapeamento, não em `setErroSubmit(` — essa string
+  // aparece antes num `setErroSubmit("")` de limpeza, 24 linhas acima, e o
+  // recorte pegava o trecho errado. (Terceira vez nesta onda que eu ancoro mal
+  // uma asserção; as três acusaram na hora.)
+  const i = fonte.indexOf('"telefone_duplicado"');
+  ok(i > 0, "o mapeamento de erro do passo 3 foi encontrado");
+  const trecho = fonte.slice(i, i + 1800);
+
+  ok(/MSGS_ATLETA\.has\(String\(r\.erro\|\|""\)\.trim\(\)\)/.test(trecho),
+    "o passo 3 consulta a lista branca antes de cair no texto genérico");
+  ok(/Verifique sua conexão/.test(trecho),
+    "o texto de conexão continua existindo — é o fail-closed de quando não se sabe");
+
+  // A ORDEM importa: a consulta à lista tem de vir ANTES do genérico, senão o
+  // genérico engole tudo de novo e a asserção acima fica verde sem efeito.
+  const iLista = trecho.indexOf("MSGS_ATLETA.has");
+  const iGenerico = trecho.indexOf("Verifique sua conexão");
+  ok(iLista > 0 && iLista < iGenerico,
+    "a lista branca é consultada ANTES do texto genérico, não depois");
+}
+
 placar("Erros na tela");

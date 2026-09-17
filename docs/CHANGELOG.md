@@ -3,7 +3,64 @@
 Histórico do que foi a produção. Mantido pelo agente `curador-projeto`. Mais recente no topo.
 Formato: **data — o quê** (versão do edge/regulamento, notas).
 
-## 2026-09-10
+## 2026-09-16 — Onda 0.10: o app para de adivinhar qual regulamento o atleta aceita
+
+**No ar:** `athlete-action` **v19 → v20**, `admin-action` **v59 → v60**, front por
+`git push`. Nesta ordem — motor primeiro. `login-atleta` **ficou de fora** de
+propósito (ver 0.10.19). Nenhuma migração, nenhuma coluna nova.
+
+**O que mudou, em três frases.** Sem saber a versão do regulamento do circuito, o
+app e o servidor **recusam colher o aceite** em vez de carimbar um palpite — antes
+o `athlete-action` gravava `v03-12`, a versão do BH, em qualquer circuito cuja
+versão não tivesse sido lida, e o recibo ficava provadamente falso. O desconto
+automático de 80% para quem entra na 2ª etapa **acabou** nos circuitos novos:
+todo mundo paga o mesmo, e desconto virou ato do organizador, por atleta
+(decisão do Juliano, 12/09). Para o BH, que promete os 80% no regulamento
+vigente, criou-se a **v03-13** e uma **trava**: a virada de temporada é recusada
+com 409 enquanto o circuito declarar uma versão que promete o desconto.
+
+**O que o atleta e o organizador veem.** Quase nada: o BH continua em v03-12, com
+80%, telas iguais. A mudança visível é que **virar a temporada do BH passa a ser
+recusado** até a v03-13 ser carimbada — e hoje não existe botão para carimbar
+(0.10.15(a)). É a trava funcionando, não defeito.
+
+**Bateria: 82 → 392 asserções, 0 falhas.** Portão novo: `no-undef` ligada no
+`.oxlintrc.json` e `testes/nomes-que-nao-existem.mjs` rodando **primeiro** na
+cadeia, cobrindo app, bateria e motor.
+
+**O que quase foi ao ar, e não foi.** Um `ReferenceError` (`sistemaAtivo` em vez
+de `SISTEMA_ATIVO`) que deixava **tela branca para todo visitante sem sessão
+salva** — atleta novo, logout, sessão expirada. Passou por `npm run build`, pelas
+326 asserções da época **e** pelo `npm run lint`. Foi achado pelos guardiões
+**Visual e Atleta, abrindo o app e deslogando** — o único portão que funcionou.
+É a terceira vez que um erro só-de-execução atravessa build verde neste projeto;
+por isso o portão novo.
+
+**Revisão:** as **8 duplas completas** (motor + dinheiro), guardião e supervisor,
+três rodadas em alguns casos. Todos os oito supervisores APROVARAM. Dois deles
+erraram e retificaram por escrito. O histórico, com os achados e as reincidências
+de processo, está em `GOVERNANCA_AGENTES.md`.
+
+## 2026-09-10 — entrada escrita em atraso (16/09)
+
+- **`admin-action` v58 → v59 foi ao ar e não tinha sido registrado aqui.**
+  Commit `c43f327` ("Cada circuito ve o regulamento dele; teto de atletas passa
+  a valer"), 14 linhas no motor. O que subiu: circuito de rating **novo** passa a
+  nascer com `regulamento_versao: "vA-nc-01"` em vez de herdar o `v03-12` do BH
+  (o Cap. 10, o Torneio Presencial, é do BH e não dos outros); e o **teto de
+  atletas** passa a ser travado no motor entre **8 e 20** — 8 porque abaixo disso
+  os confrontos se repetem dentro de uma temporada de 6 rodadas.
+
+  **Por que a entrada está atrasada:** o `CLAUDE.md` manda registrar aqui a
+  versão da função **depois** de publicar, e isso não foi feito. Resultado: por
+  seis dias o CHANGELOG disse "segue v58" enquanto o ar estava em v59 — que é
+  exatamente a armadilha que o próprio `CLAUDE.md` descreve em "o fonte pode não
+  ser o que está no ar". Achado por dois supervisores, cada um por conta própria
+  (Confiabilidade e Segurança), ao conferirem a versão publicada antes de
+  aprovar a próxima. Três linhas do documento ainda dizem "v58" no corpo dos
+  itens de 08-10/09; ficam como estavam, porque descreviam o estado correto **no
+  dia em que foram escritas**.
+
 - **O painel cobrava mensagens que já tinham sido enviadas.** Reportado pelo
   Juliano. Conferidas as **8 categorias** no banco: havia **zero pendências
   reais** — resultados nenhuma; confrontos 12, exatamente os 12 atletas com

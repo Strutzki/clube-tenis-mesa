@@ -4,6 +4,9 @@
 
 ## Regra vigente
 - Regulamento **A (rating/CBTM): v03-12** — 1ª rodada até dia **15**, 2ª rodada até dia **27**.
+  (Existe uma **v03-13**, 13/09/2026, que tira o desconto por etapa; só passa a
+  valer no BH quando carimbada na próxima virada — ver `docs/ROADMAP.md` 0.10.15.
+  Este documento em si já está datado — ver aviso na linha 1.)
 - Regulamento **B (pontos fixos): vB-01**.
 - BH em produção **nunca é prejudicado**; toda mudança é comparada byte-a-byte antes de subir.
 

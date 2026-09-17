@@ -19,7 +19,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ok, igual, secao, placar } from "./ferramentas.mjs";
+import { ok, igual, secao, placar, montarMotor, comoAdmin, atleta, partida, circuito, BH } from "./ferramentas.mjs";
+// O `athlete-action` também é carregado de verdade aqui — a guarda que recusa
+// inscrição sem versão de regulamento mora nele, não no admin-action.
+import { carregarFuncao } from "./carrega-motor.mjs";
 
 const RAIZ = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const bruto = fs.readFileSync(path.join(RAIZ, "src", "App.jsx"), "utf8");
@@ -149,8 +152,11 @@ secao("O conteúdo da lista de versões, não só a forma");
   const m = fonte.match(/const VERSOES_COM_TORNEIO = new Set\(\[([^\]]*)\]\)/);
   ok(!!m, "a lista de versões com torneio foi encontrada e pôde ser lida");
   const versoes = [...(m ? m[1] : "").matchAll(/"([^"]+)"/g)].map(x => x[1]);
-  igual(versoes.join(","), "v03-12",
-    `só o v03-12 tem torneio (achadas: ${versoes.join(", ") || "nenhuma"})`);
+  // As DUAS versões do BH, e nenhuma outra. A v03-13 entrou em 13/09/2026: ela
+  // tira o desconto por etapa do BH mas MANTÉM o Cap. 10, que é dele. Qualquer
+  // terceira versão aqui significa circuito novo herdando o torneio do BH.
+  igual(versoes.join(","), "v03-12,v03-13",
+    `só as versões do BH têm torneio (achadas: ${versoes.join(", ") || "nenhuma"})`);
 }
 
 secao("O portão do aceite usa a versão do circuito");
@@ -216,8 +222,12 @@ secao("O espelho local carimba a versão do circuito");
 
 secao("O rodapé diz a versão real");
 {
-  const rodapes = (fonte.match(/Regulamento \{versaoEfetiva\}/g) || []).length;
+  // O rótulo passou a ser `versaoLabelRodape` em 13/09: com versão não
+  // confirmada ele diz "versão não confirmada" em vez de renderizar vazio.
+  const rodapes = (fonte.match(/Regulamento \{versaoLabelRodape\}/g) || []).length;
   igual(rodapes, 2, "os dois rodapés (rating e pontos) dizem a versão vinda do dado");
+  ok(/const versaoLabelRodape = versaoEfetiva \|\| "versão não confirmada"/.test(fonte),
+    "o rodapé não inventa número de versão quando não sabe");
   ok(!/Regulamento v03-12<\/div>/.test(fonte),
     "nenhum rodapé crava v03-12");
 }
@@ -281,6 +291,943 @@ secao("A frase de preço não é garantia absoluta");
     "o texto diz o que o regulamento prevê, não o que o organizador vai cobrar");
   ok(!/Não há custo adicional<\/span> além do valor da temporada\.<\/>/.test(fonte),
     "não sobrou a garantia absoluta de preço");
+}
+
+secao("Sem desconto por etapa de entrada no circuito novo");
+{
+  const motor = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "admin-action", "index.ts"), "utf8");
+  // Decisão do Juliano, 12/09: o atleta paga o mesmo valor entrando em qualquer
+  // etapa. Desconto deixa de ser automático e vira ato do admin, por atleta.
+  // As DUAS formas. O motor escreve esse campo de dois jeitos — como chave de
+  // objeto (`percentual_entrada_meio: 100,` nos três pontos de criação/virada) e
+  // como atribuição (`upd.percentual_entrada_meio = ...` no DEFINIR_FINANCEIRO,
+  // linha ~1647). A 1ª versão desta asserção só olhava a forma de objeto, então
+  // um `upd.percentual_entrada_meio = 80` passava batido — e é justamente a
+  // forma do ponto onde o 80 já morou. (Supervisor do guardião de Regulamento.)
+  ok(!/percentual_entrada_meio\s*[:=]\s*80\b/.test(motor),
+    "nenhum ponto do motor cria circuito com o desconto de 80%");
+
+  // E o texto: o BH mantém o 80% dele; o circuito novo diz valor único.
+  ok(/\? \["💰 Valor","Valor por temporada, pago no início\. Quem entra na 2ª etapa \(Rodada 3\) paga 80%/.test(fonte),
+    "o BH mantém o texto de 80% no portão do aceite");
+  ok(/o mesmo, entrando em qualquer etapa/.test(fonte),
+    "o circuito novo diz que o valor é o mesmo em qualquer etapa");
+
+  // Mesmo cuidado da frase do custo adicional: quem concede o desconto é o
+  // ORGANIZADOR, e a plataforma não pode escrever algo que soe como promessa de
+  // processo. "São concedidos... caso a caso" lia como rotina formal.
+  ok(/não é automático nem garantido/.test(fonte),
+    "o desconto é descrito como decisão discricionária, não como promessa");
+  ok(!/Descontos são concedidos pelo organizador/.test(fonte),
+    "não sobrou a redação que soava como promessa");
+  ok(/\["Entrada em qualquer etapa","Valor integral"\]/.test(fonte),
+    "a tabela de valores do circuito novo não tem linha de desconto por etapa");
+}
+
+secao("Sem saber a versão, não se colhe aceite (fail-closed)");
+{
+  // 0.10.1 — achado independente do Guardião Jurídico E do de Segurança. O
+  // fallback `|| "v03-12"` é seguro no BH (onde acerta) e perigoso fora dele:
+  // numa falha de leitura, o atleta de um circuito novo leria o regulamento do
+  // BH — com torneio e com a taxa — enquanto o servidor carimba a versão dele.
+  // O recibo ficaria provadamente falso.
+  ok(/const versaoDesconhecida = !!circuitoId && circuitoId !== CIRCUITO_BH_ID &&/.test(fonte),
+    "o app sabe distinguir 'versão ausente no BH' (ok) de 'versão ausente em circuito novo' (falha)");
+  // O BH tem de ficar de fora da guarda: lá o fallback acerta, e a instrução do
+  // Juliano é não mexer no circuito que está rodando.
+  ok(/circuitoId !== CIRCUITO_BH_ID/.test(fonte),
+    "a guarda exclui o BH explicitamente");
+
+  ok(/if \(step === 3 && versaoDesconhecida\) return/.test(fonte),
+    "o passo do aceite é bloqueado quando a versão é desconhecida");
+
+  // A ordem importa: a guarda tem de vir ANTES do passo 3 normal, senão nunca roda.
+  const iGuarda = fonte.indexOf("if (step === 3 && versaoDesconhecida) return");
+  const iNormal = fonte.indexOf("if (step === 3) return");
+  ok(iGuarda > 0 && iGuarda < iNormal,
+    "a guarda vem antes do passo 3 normal");
+
+  ok(/registramos aceite de um texto que você não viu/.test(fonte),
+    "a tela de recusa explica o motivo ao atleta, em vez de só falhar");
+
+  // A retentativa NÃO pode recarregar a página: sem sessão neste ponto, o reload
+  // apagaria os dois passos preenchidos e nem devolveria o atleta à inscrição —
+  // ele cairia na tela inicial. Barrar o aceite protege a plataforma; fazer isso
+  // custando a inscrição inteira protege às custas do atleta.
+  ok(!/window\.location\.reload\(\)/.test(fonte),
+    "a retentativa não recarrega a página (o formulário sobrevive)");
+  ok(/async function tentarVersaoDeNovo/.test(fonte),
+    "existe uma retentativa que refaz só a leitura da versão");
+
+  // ORDEM DE DECLARAÇÃO. `versaoReg` lê `versaoRetry` dentro de um `||`, e const
+  // fica em zona morta até a própria linha de declaração executar. Com a ordem
+  // invertida, a tela de inscrição QUEBRAVA com ReferenceError sempre que a
+  // versão não viesse — inclusive para o BH, e justamente na falha que esta
+  // funcionalidade existe para tratar. Build e 244 asserções passavam: nenhuma
+  // renderiza o componente. Só leitura do código pegou (Guardião de
+  // Confiabilidade), e por isso esta asserção existe.
+  const iDecl = fonte.indexOf("const [versaoRetry, setVersaoRetry]");
+  const iUso = fonte.indexOf("const versaoReg = (circ && circ.regulamento_versao) || versaoRetry");
+  ok(iDecl > 0 && iUso > 0, "as duas linhas foram encontradas");
+  ok(iDecl < iUso,
+    "versaoRetry é declarado ANTES de versaoReg (senão a tela quebra com ReferenceError)");
+}
+
+secao("A regra do valor único sobrevive ao motor — rodando o motor, não lendo o texto");
+{
+  // Esta seção substituiu uma asserção que CONTAVA ocorrências de
+  // `percentual_entrada_meio: 100` no arquivo e exigia que fossem 2. Ela ficava
+  // verde sem saber em que RAMO as linhas estavam — e estava verde justamente
+  // quando a linha da virada tinha caído no ramo errado (o do BH), deixando o
+  // ramo dos circuitos novos descoberto. Dois guardiões acharam; o teste não.
+  // A lição: asserção que lê texto não sabe o que o código faz. Estas chamam o
+  // motor de verdade e leem o campo depois.
+  const NOVO = "11111111-1111-1111-1111-111111111111";
+
+  // 1) Circuito nasce com 100. Sabote `admin-action` (CRIAR_CIRCUITO) para 80.
+  {
+    const { banco, motor } = await montarMotor({ funcoes: { arquivar_partidas_temporada_circuito: () => null } });
+    const r = await comoAdmin(motor, "CRIAR_CIRCUITO", {
+      slug: "novo", nome: "Circuito Novo", cidade: "Uberlândia", uf: "MG", sistema: "A", rodadas: 6,
+    });
+    ok(r.corpo?.sucesso === true, `CRIAR_CIRCUITO respondeu sucesso (veio: ${JSON.stringify(r.corpo?.erro ?? r.corpo?.sucesso)})`);
+    const criado = banco.acha("circuitos", c => c.slug === "novo");
+    igual(criado?.percentual_entrada_meio, 100,
+      "circuito novo NASCE sem desconto por etapa de entrada");
+  }
+
+  // 2) A virada do circuito NÃO-BH devolve o campo a 100. Sem a linha no
+  //    `updCfgN`, um circuito cujo admin baixou o percentual carregaria o
+  //    desconto para a temporada seguinte — a regra se desfazendo sozinha.
+  //    Sabote apagando `percentual_entrada_meio: 100` do `updCfgN`.
+  {
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH), circuito(NOVO, { slug: "novo", sistema: "A", percentual_entrada_meio: 80,
+        regulamento_versao: "vA-nc-01", fase: "temporada", temporada_numero: 1, temporada_ano: 2026 })],
+      atletas: [atleta("b1"), atleta("b2")],
+      circuito_atletas: [
+        { id: "ca1", circuito_id: NOVO, atleta_id: "b1", status: "ativo", pendente_circuito: false, saldo_temp: 10, vitorias: 1, derrotas: 0, historico: [] },
+        { id: "ca2", circuito_id: NOVO, atleta_id: "b2", status: "ativo", pendente_circuito: false, saldo_temp: -10, vitorias: 0, derrotas: 1, historico: [] },
+      ],
+      chaves: [{ id: "chave1", nome: "A", rodada_atual: 1, circuito_id: NOVO }],
+      partidas: [partida("q1", { circuito_id: NOVO, atleta1_id: "b1", atleta2_id: "b2", placar1: 3, placar2: 1, validado: true, calculado: true })],
+      funcoes: { arquivar_partidas_temporada_circuito: () => null },
+    });
+    const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: NOVO });
+    ok(r.corpo?.sucesso === true, `NOVA_TEMPORADA do circuito não-BH respondeu sucesso (veio: ${JSON.stringify(r.corpo?.erro ?? r.corpo?.sucesso)})`);
+    igual(banco.acha("circuitos", c => c.id === NOVO)?.percentual_entrada_meio, 100,
+      "a virada do circuito NÃO-BH zera o desconto por etapa — a regra não se desfaz sozinha");
+  }
+
+  // 3) A alavanca que sobrou: campo vazio na tela do admin não pode virar 80.
+  //    O motor recebia `0`/`""`, o `|| 80` engolia, e ele gravava 80 — um
+  //    desconto que ninguém pediu, num circuito cujo regulamento não o promete
+  //    mais. Sabote trocando o `|| 100` do DEFINIR_FINANCEIRO de volta por 80.
+  {
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH), circuito(NOVO, { slug: "novo", percentual_entrada_meio: 100 })],
+      funcoes: { arquivar_partidas_temporada_circuito: () => null },
+    });
+    await comoAdmin(motor, "DEFINIR_FINANCEIRO", { circuitoId: NOVO, valorTemporada: 12000, descontoGlobalPct: 0, percentualMeio: "" });
+    igual(banco.acha("circuitos", c => c.id === NOVO)?.percentual_entrada_meio, 100,
+      "campo de percentual vazio grava 100, não o 80 abolido");
+  }
+}
+
+secao("v03-13: o BH mantém o torneio e perde o desconto por etapa");
+{
+  // Decisão do Juliano, 13/09/2026. Ele autorizou o BH a ir a 100% na virada; os
+  // guardiões Jurídico e Regulamento mostraram que isso exige versão nova do
+  // regulamento, porque a v03-12 — que os atletas aceitaram — PROMETE 80% a quem
+  // entra na Rodada 3. Cobrar 100% sob um texto que promete 80% é divergência de
+  // verdade, não de redação.
+  //
+  // O ponto delicado do código: até aqui "tem torneio" e "tem desconto de etapa"
+  // eram a MESMA chave (`comTorneio`), porque por acaso só o BH tinha as duas. A
+  // v03-13 quebra a coincidência — mantém o torneio, tira o desconto. Sem duas
+  // listas, tirar o desconto do BH tiraria o Cap. 10 junto.
+
+  // As duas listas existem e são DIFERENTES. Não basta a forma: a lição de 12/09
+  // foi que um agente pôs "vA-nc-01" na lista do torneio e a bateria seguiu verde,
+  // porque a asserção checava o formato e não o conteúdo. Aqui o conteúdo é exato.
+  const lista = re => {
+    const m = fonte.match(re);
+    return m ? m[1].split(",").map(x => x.trim().replace(/^["']|["']$/g, "")).filter(Boolean) : null;
+  };
+  igual(lista(/const VERSOES_COM_TORNEIO = new Set\(\[([^\]]*)\]\)/), ["v03-12", "v03-13"],
+    "o torneio é das DUAS versões do BH — a v03-13 não perde o Cap. 10");
+  igual(lista(/const VERSOES_COM_DESCONTO_ETAPA = new Set\(\[([^\]]*)\]\)/), ["v03-12"],
+    "só a v03-12 promete o desconto de 80% — a v03-13 não, e nenhuma versão nova ganha isso de graça");
+
+  // Os três textos de valor têm de olhar a lista do DESCONTO, não a do torneio.
+  // Sabote trocando qualquer um por `comTorneio` e a bateria fica vermelha: o
+  // atleta do BH leria 80% num circuito que passou a cobrar 100%.
+  const valorPorDesconto = (fonte.match(/comDescontoEtapa\s*\n\s*\?/g) || []).length;
+  igual(valorPorDesconto, 3,
+    `os 3 textos de valor (card do aceite, bullet de entradas, tabela do Cap. 12) seguem o desconto, não o torneio (achados: ${valorPorDesconto})`);
+  ok(!/comTorneio\s*\n?\s*\?\s*\["💰 Valor"/.test(fonte),
+    "o card de Valor não depende mais da lista do torneio");
+  ok(!/comTorneio\s*\n\s*\?\s*"Valor da temporada: 100% na abertura/.test(fonte),
+    "o bullet de valor não depende mais da lista do torneio");
+
+  // E as duas telas precisam derivar o flag, senão uma delas mostra o texto errado.
+  const derivam = (fonte.match(/const comDescontoEtapa = VERSOES_COM_DESCONTO_ETAPA\.has\(/g) || []).length;
+  igual(derivam, 2,
+    `as duas telas (portão do aceite e RegulamentoView) derivam o flag do desconto (achadas: ${derivam})`);
+}
+
+secao("O documento da v03-13 muda UMA cláusula, e só");
+{
+  // Versão nova de regulamento é a coisa mais fácil de estragar sem ninguém ver:
+  // basta uma linha a mais no copiar-e-colar e o atleta aceita uma regra que
+  // ninguém decidiu mudar. Esta asserção compara os dois arquivos linha a linha e
+  // exige que TODA linha removida da v03-12 seja sobre valor ou sobre a versão.
+  const doc = v => fs.readFileSync(path.join(RAIZ, "docs", `REGULAMENTO_TENIS_DE_MESA_${v}.md`), "utf8").split("\n");
+  const v12 = doc("v03-12"), v13 = new Set(doc("v03-13"));
+  const sumiram = v12.filter(l => l.trim() && !v13.has(l));
+  const esperadas = [
+    "**Versão vigente: v03-12.** Prazos: **1ª rodada até o dia 15**, **2ª rodada até o dia 27**.",
+    "> Fonte: texto oficial exibido no app (RegulamentoView). Este documento reproduz fielmente o regulamento vigente. Substitui as versões anteriores em PDF (v03-4 e v03-11), que estão **desatualizadas** (traziam a 2ª rodada no dia 25).",
+    "- Valor da temporada: 100% na abertura; 80% para quem entra na 2ª etapa (Rodada 3)",
+    "| Entrada na 2ª etapa (Rodada 3) | 80% do valor |",
+    // O rodapé: as duas versões tinham o MESMO rodapé errado ("v03-12") por
+    // coincidência do copiar-e-colar, e por isso esta asserção ficava verde
+    // PROTEGENDO UM DEFEITO. O curador achou ao tentar consertar o .md e ver a
+    // bateria acusar. Agora a v03-13 assina o próprio número.
+    "*Clube do Tênis de Mesa · Circuito BH · Regulamento v03-12*",
+    // A linha "Abertura da temporada (Rodada 1) | 100% do valor" sai porque,
+    // SEM o desconto por etapa, ela e "Entrada em qualquer etapa | Valor
+    // integral" dizem a mesma coisa. Duas redações para a mesma regra, na
+    // cláusula que é o motivo da versão, é convite a discussão. Na v03-12 ela
+    // fica, porque lá contrasta de verdade com os 80% da 2ª etapa.
+    "| Abertura da temporada (Rodada 1) | 100% do valor |",
+  ];
+  // `includes` NÃO serve aqui, e o supervisor provou com três exemplos: numa
+  // asserção cujo propósito é "nenhuma regra nova foi colada em silêncio",
+  // casar por substring deixa passar o acréscimo À LINHA DECLARADA —
+  // "| Entrada em qualquer etapa | Valor integral | multa de R$ 50 |" passava,
+  // e o foro de eleição colado no rodapé também. Igualdade exata, com `trim`
+  // só para não brigar com espaço no fim da linha.
+  const igualExato = (l, lista) => lista.some(e => l.trim() === e.trim());
+  const inesperadas = sumiram.filter(l => !igualExato(l, esperadas));
+  igual(inesperadas, [],
+    "nada além da cláusula de valor e do cabeçalho saiu da v03-12");
+
+  // E o outro lado do diff, que faltava: linhas ACRESCENTADAS. A asserção acima
+  // só conferia o que SAIU da v03-12 — uma cláusula nova colada na v03-13
+  // passava em silêncio, que é exatamente o modo de falha que uma versão de
+  // regulamento tem (copiar-e-colar acrescenta, raramente remove).
+  // (Supervisor do guardião de Regulamento.)
+  //
+  // O que pode legitimamente ser novo na v03-13: o cabeçalho e a seção "O que
+  // muda", que é o bloco que explica a transição. Qualquer linha nova FORA
+  // desse bloco é regra que ninguém decidiu mudar.
+  const v13linhas = doc("v03-13"), v12set = new Set(doc("v03-12"));
+  const iInicioBloco = v13linhas.findIndex(l => l.includes("## O que muda da v03-12"));
+  const iFimBloco = v13linhas.findIndex((l, n) => n > iInicioBloco && /^---\s*$/.test(l));
+  ok(iInicioBloco > 0 && iFimBloco > iInicioBloco,
+    "o bloco 'O que muda' da v03-13 foi localizado");
+
+  const novasForaDoBloco = v13linhas
+    .map((l, n) => ({ l, n }))
+    .filter(({ l, n }) => l.trim()
+      && !v12set.has(l)
+      && !(n >= iInicioBloco && n <= iFimBloco))
+    .map(({ l }) => l);
+  const novasEsperadas = [
+    "**Versão: v03-13.** Prazos: **1ª rodada até o dia 15**, **2ª rodada até o dia 27**.",
+    "> Fonte: texto oficial exibido no app (RegulamentoView). Este documento reproduz fielmente o regulamento. Substitui as versões anteriores em PDF (v03-4 e v03-11), que estão **desatualizadas** (traziam a 2ª rodada no dia 25).",
+    "- Valor da temporada: o mesmo para todos, entrando em qualquer etapa",
+    "| Entrada em qualquer etapa | Valor integral |",
+    "*Clube do Tênis de Mesa · Circuito BH · Regulamento v03-13*",
+  ];
+  // Igualdade exata AQUI TAMBÉM. Eu tinha trocado só no lado das removidas e
+  // afirmado ao supervisor que os três exemplos dele deixavam de passar — era
+  // falso: este é o lado que importa, porque copiar-e-colar acrescenta, raramente
+  // remove. Ele rodou a lógica que estava no arquivo e mostrou os três passando.
+  const acrescentadasSemPermissao = novasForaDoBloco.filter(l => !igualExato(l, novasEsperadas));
+  igual(acrescentadasSemPermissao, [],
+    "nenhuma regra nova foi colada na v03-13 fora do bloco que explica a transição");
+
+  // E o Cap. 10 — o torneio — tem de continuar lá por inteiro.
+  const t13 = fs.readFileSync(path.join(RAIZ, "docs", "REGULAMENTO_TENIS_DE_MESA_v03-13.md"), "utf8");
+  ok(/Cap\. 10/.test(t13), "a v03-13 mantém o Cap. 10 (Torneio Presencial) — ele é do BH");
+  ok(!/\| Entrada na 2ª etapa \(Rodada 3\) \| 80% do valor \|/.test(t13),
+    "a v03-13 não promete mais 80% na tabela de valores");
+  // Sem atravessar quebra de linha: o .md quebra em "de quem\ningressou".
+  ok(/não cobrará\*\* diferença de valor/.test(t13) && /ingressou na 2ª etapa da temporada 1\/2026/.test(t13),
+    "a v03-13 diz explicitamente que quem já pagou 80% não é cobrado de novo");
+  ok(/ainda não quitou \*\*paga os 80% prometidos\*\*/.test(t13),
+    "e que quem ingressou mas ainda não pagou também está protegido");
+
+  // A cláusula NÃO pode identificar o protegido por um NÚMERO DE VERSÃO.
+  // A 1ª redação dizia "quem ingressou sob a v03-12" — e no banco NENHUM atleta
+  // do BH tem v03-12 gravado. Conferido em 15/09/2026, com o filtro dito por
+  // extenso porque dois documentos deste projeto já se contradisseram por
+  // omiti-lo: são **15 matrículas** em `circuito_atletas` — **14 ativas**
+  // (11 v03-3, 1 v03-5, 1 v03-8, 1 v03-11) mais **1 suspensa** (v03-3).
+  // A frase escrita para proteger esses atletas nomeava um rótulo que nenhum
+  // deles carrega; lida ao pé da letra, não cobria ninguém.
+  //
+  // O Jurídico resumiu a lição melhor do que eu: asserção que lê texto não sabe
+  // A QUEM o texto se aplica. Esta aqui não conserta isso — só impede a forma
+  // que já falhou uma vez. O protegido tem de ser definido por FATO (a data de
+  // ingresso), não por etiqueta.
+  const clausula = t13.slice(t13.indexOf("**Não retroatividade.**"), t13.indexOf("**Não retroatividade.**") + 500);
+  ok(!/v03-\d+/.test(clausula),
+    "a cláusula de não-retroatividade não identifica o protegido por número de versão");
+  ok(/data de ingresso/.test(clausula),
+    "ela identifica o protegido por um FATO — a data de ingresso");
+  // E o mesmo na tela, que é o texto que vale.
+  const naTela = fonte.slice(fonte.indexOf("não cobrará"), fonte.indexOf("não cobrará") + 600);
+  ok(!/sob a v03-\d+/.test(naTela),
+    "na tela também não se identifica o protegido por número de versão");
+
+  // O v03-12 é registro histórico: os atletas de hoje aceitaram AQUELE texto.
+  // Editá-lo reescreveria o que eles aceitaram.
+  const t12 = fs.readFileSync(path.join(RAIZ, "docs", "REGULAMENTO_TENIS_DE_MESA_v03-12.md"), "utf8");
+  ok(/\| Entrada na 2ª etapa \(Rodada 3\) \| 80% do valor \|/.test(t12),
+    "a v03-12 continua intacta — é o texto que os atletas de hoje aceitaram");
+}
+
+secao("O preço do BH não sobe antes do regulamento — e a trava age ANTES de destruir");
+{
+  // A virada leva o percentual do BH a 100. O v03-12, que os atletas aceitaram,
+  // promete 80% na 2ª etapa. A trava recusa a virada enquanto o BH declarar uma
+  // versão que promete o desconto.
+  //
+  // O que esta seção realmente protege é a ORDEM. O update da config acontece
+  // depois de `arquivar_partidas_temporada_circuito`, do delete de partidas e do
+  // delete de chaves. Uma recusa tardia devolveria "não pode" com a temporada já
+  // destruída e sem caminho de volta — o motor não tem desfazer. Por isso a
+  // asserção não se contenta com o 409: ela exige que as partidas CONTINUEM lá.
+  const cenarioBh = async (versao) => montarMotor({
+    circuitos: [circuito(BH, { regulamento_versao: versao, percentual_entrada_meio: 80 })],
+    atletas: [atleta("p1"), atleta("p2")],
+    partidas: [partida("j1", { atleta1_id: "p1", atleta2_id: "p2", placar1: 3, placar2: 1, validado: true, calculado: true })],
+    funcoes: { arquivar_partidas_temporada_circuito: () => null },
+  });
+
+  {
+    const { banco, motor } = await cenarioBh("v03-12");
+    const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: BH });
+    ok(r.corpo?.sucesso === false, "a virada do BH é RECUSADA enquanto ele declarar a v03-12");
+    igual(r.status, 409, "a recusa vem como conflito (409), não como erro de servidor");
+    ok(/v03-13/.test(String(r.corpo?.erro || "")),
+      "a recusa diz ao admin o que fazer: carimbar a v03-13");
+    ok(/80%/.test(String(r.corpo?.erro || "")),
+      "a recusa diz POR QUE: o texto aceito promete 80%");
+
+    // O coração da asserção: nada foi destruído.
+    igual(banco.tabelas.partidas.length, 1,
+      "a temporada continua INTEIRA — a trava agiu antes de arquivar e apagar as partidas");
+    igual(banco.tabelas.chaves.length, 1, "as chaves continuam lá");
+    igual(banco.acha("circuitos", c => c.id === BH)?.percentual_entrada_meio, 80,
+      "e o preço não mudou — o BH segue no 80% que o regulamento dele promete");
+  }
+
+  {
+    // Com a v03-13 carimbada, a virada acontece e o preço vai a 100.
+    // Sabote apagando a trava e a asserção de cima fica vermelha; sabote apagando
+    // `percentual_entrada_meio: 100` do updConfig e esta fica.
+    const { banco, motor } = await cenarioBh("v03-13");
+    const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: BH });
+    ok(r.corpo?.sucesso === true,
+      `com a v03-13 carimbada a virada do BH acontece (veio: ${JSON.stringify(r.corpo?.erro ?? r.corpo?.sucesso)})`);
+    igual(banco.acha("configuracao", c => c.id === 1)?.percentual_entrada_meio, 100,
+      "aí sim o BH passa a cobrar o mesmo valor em qualquer etapa");
+  }
+
+  // As duas listas não são mais iguais: a do app diz quem PROMETE o desconto, a
+  // do motor diz quem JÁ NÃO promete (virou lista de permissão em 13/09, para um
+  // typo no carimbo fechar o portão em vez de abrir). Logo a comparação não pode
+  // ser de texto com texto — tem de ser SEMÂNTICA: as duas juntas têm de cobrir
+  // todas as versões conhecidas, e nenhuma versão pode estar nas duas.
+  // Uma versão que suma das duas é o caso perigoso: a tela não promete desconto,
+  // mas o motor também não deixa virar — e ninguém descobre até apertar o botão.
+  const motorTxt = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "admin-action", "index.ts"), "utf8");
+  const leSet = (txt, nome) => {
+    const m = txt.match(new RegExp(`const ${nome} = new Set\\(\\[([^\\]]*)\\]\\)`));
+    return m ? [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1]) : null;
+  };
+  const prometem = leSet(fonte, "VERSOES_COM_DESCONTO_ETAPA");
+  const naoPrometem = leSet(motorTxt, "VERSOES_SEM_DESCONTO_ETAPA");
+  ok(!!prometem && !!naoPrometem, "as duas listas do desconto foram encontradas (app e motor)");
+
+  // As versões conhecidas são DERIVADAS, não escritas à mão. A lista fixa que
+  // estava aqui tinha um furo exato: o "caso perigoso" que o comentário acima
+  // descreve — versão nova órfã das duas listas — ficava VERDE, porque o teste
+  // não sabia que ela existia. Quem cria uma v03-14 e esquece de classificá-la
+  // não era avisado por nada. (Supervisor do guardião de Regulamento.)
+  //
+  // Duas fontes, as duas reais:
+  //   1. os documentos de regulamento em docs/ — uma versão com texto publicado
+  //      é uma versão que alguém pode aceitar;
+  //   2. o que o CRIAR_CIRCUITO carimba — é o que nasce em circuito novo.
+  const dosDocumentos = fs.readdirSync(path.join(RAIZ, "docs"))
+    .map(f => (f.match(/^REGULAMENTO_TENIS_DE_MESA_(v[\w-]+)\.md$/) || [])[1])
+    .filter(Boolean);
+  const doCriarCircuito = [...motorTxt.matchAll(/regulamento_versao:\s*sistema === "A" \? "([^"]+)" : "([^"]+)"/g)]
+    .flatMap(m => [m[1], m[2]]);
+  const CONHECIDAS = [...new Set([...dosDocumentos, ...doCriarCircuito])];
+  ok(CONHECIDAS.length >= 4,
+    `as versões conhecidas foram derivadas do acervo e do motor (achadas: ${CONHECIDAS.join(", ")})`);
+  const nasDuas = (prometem || []).filter(v => (naoPrometem || []).includes(v));
+  igual(nasDuas, [],
+    "nenhuma versão está nas duas listas — tela e servidor não se contradizem");
+  const emNenhuma = CONHECIDAS.filter(v => !(prometem || []).includes(v) && !(naoPrometem || []).includes(v));
+  igual(emNenhuma, [],
+    "toda versão com .md publicado ou carimbável pelo motor está classificada numa das duas listas");
+
+  // E a do motor é de PERMISSÃO: a v03-12, que promete 80%, não pode estar nela.
+  ok(!(naoPrometem || []).includes("v03-12"),
+    "a v03-12 NÃO libera a virada — é a versão que promete o desconto");
+}
+
+secao("A trava é lista de PERMISSÃO — typo no carimbo fecha o portão, não abre");
+{
+  // A 1ª versão desta guarda perguntava "esta versão promete desconto?" e barrava
+  // se sim. Três guardiões, cada um por um caminho, mostraram o mesmo buraco: tudo
+  // que não estivesse na lista PASSAVA — inclusive a v03-11 e a v03-4, que são
+  // versões reais antigas do BH e também prometiam 80%, e inclusive um typo do
+  // carimbo manual, que é a única operação de que o plano inteiro depende.
+  //
+  // Estas asserções falhariam contra o código de ontem. É o ponto delas.
+  const cenario = async (versao) => montarMotor({
+    circuitos: [circuito(BH, { regulamento_versao: versao, percentual_entrada_meio: 80 })],
+    atletas: [atleta("p1"), atleta("p2")],
+    partidas: [partida("j1", { atleta1_id: "p1", atleta2_id: "p2", placar1: 3, placar2: 1, validado: true, calculado: true })],
+    funcoes: { arquivar_partidas_temporada_circuito: () => null },
+  });
+
+  const devemBarrar = [
+    [null, "versão nula"],
+    ["", "versão vazia"],
+    ["v03-12", "a versão que promete 80%"],
+    ["v03-11", "versão antiga real do BH, que também prometia 80%"],
+    ["v03-4", "versão antiga real do BH, que também prometia 80%"],
+    ["V03-13", "typo de maiúscula no carimbo manual"],
+    ["v03-14", "versão futura que ninguém classificou ainda"],
+    ["qualquer-coisa", "lixo digitado no carimbo"],
+  ];
+  for (const [versao, porque] of devemBarrar) {
+    const { banco, motor } = await cenario(versao);
+    const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: BH });
+    ok(r.corpo?.sucesso === false && r.status === 409,
+      `a virada do BH é recusada com ${JSON.stringify(versao)} — ${porque}`);
+    igual(banco.tabelas.partidas.length, 1,
+      `e nada foi destruído com ${JSON.stringify(versao)} — a guarda agiu antes de arquivar`);
+  }
+
+  // O espaço sobrando é o único caso perdoado: não é decisão de ninguém, é o
+  // teclado. `trim` resolve, e errar para o lado de deixar passar aqui é seguro
+  // porque o número da versão está certo.
+  {
+    const { banco, motor } = await cenario("v03-13 ");
+    const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: BH });
+    ok(r.corpo?.sucesso === true,
+      `espaço sobrando no carimbo não barra a virada (veio: ${JSON.stringify(r.corpo?.erro ?? true)})`);
+    igual(banco.acha("circuitos", c => c.id === BH)?.percentual_entrada_meio, 100,
+      "e a virada com v03-13 leva o ESPELHO em `circuitos` a 100");
+  }
+
+  // ── E se o espelho falhar? ────────────────────────────────────────────────
+  // O `mirrorConfig` engole o erro com um `console.warn` e segue, de propósito:
+  // é para nunca quebrar a operação do BH. Mas o app lê `circuitos` — o espelho —
+  // MESMO PARA O BH (`App.jsx:216`, `getConfig`). Ninguém lê
+  // `configuracao.percentual_entrada_meio`: nem o app, nem o athlete-action, nem
+  // o login-atleta, nem a RPC de preço.
+  //
+  // Então uma falha silenciosa do espelho tem um efeito preciso: a `configuracao`
+  // diz 100, o `circuitos` fica em 80, e **o BH continua cobrando 80%** — que é
+  // exatamente o que o pacote existe para acabar. Sem erro para ninguém.
+  //
+  // Esta asserção não conserta isso: ela torna a divergência VISÍVEL e
+  // documentada, para ninguém afirmar que a virada garante o preço novo.
+  // (Pedida pelo supervisor do guardião de Segurança, que notou que a
+  // ferramenta de injeção de falha já existia e estava a quatro linhas.)
+  {
+    const { banco, motor } = await cenario("v03-13");
+    banco.recusar("circuitos", "update", { message: "simulando falha do espelho", code: "XX000" });
+    const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: BH });
+    ok(r.corpo?.sucesso === true,
+      "a virada NÃO quebra quando o espelho falha — é best-effort de propósito");
+    igual(banco.acha("configuracao", c => c.id === 1)?.percentual_entrada_meio, 100,
+      "o lugar autoritativo (`configuracao`) recebe o 100");
+    igual(banco.acha("circuitos", c => c.id === BH)?.percentual_entrada_meio, 80,
+      "mas o ESPELHO fica para trás — e é ele que o app lê, então o BH seguiria cobrando 80%");
+  }
+}
+
+secao("A virada bem-sucedida faz o que promete — não só deixa de recusar");
+{
+  // Até aqui a bateria só provava que a trava RECUSA. O que acontece quando ela
+  // DEIXA passar não tinha asserção nenhuma: nada verificava histórico, posição
+  // final, totais acumulados nem preservação de rating — na ação mais destrutiva
+  // do motor, que é irreversível e que esta onda alterou.
+  //
+  // A prova existiu: o guardião de Regulamento rodou a simulação na 1ª rodada e
+  // mostrou estado byte-idêntico. Mas ficou na sessão dele e **nunca virou
+  // asserção** — contra a regra da casa. O supervisor dele cobrou, com razão:
+  // "verificado uma vez" não é "protegido".
+  const { banco, motor } = await montarMotor({
+    circuitos: [circuito(BH, { regulamento_versao: "v03-13", percentual_entrada_meio: 80 })],
+    atletas: [
+      atleta("venceu", { rating: 620, rating_pico: 640, vitorias: 3, derrotas: 1, saldo_temp: 40, vitorias_total: 10, derrotas_total: 5, historico: [{ temporada: "3/2025", pos: 2 }], pagamento_proxima_confirmado: true }),
+      atleta("perdeu", { rating: 480, rating_pico: 500, vitorias: 1, derrotas: 3, saldo_temp: -40, vitorias_total: 7, derrotas_total: 9, historico: [], pagamento_proxima_confirmado: false }),
+    ],
+    partidas: [partida("j1", { atleta1_id: "venceu", atleta2_id: "perdeu", placar1: 3, placar2: 1, validado: true, calculado: true })],
+    funcoes: { arquivar_partidas_temporada_circuito: () => null },
+  });
+  const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: BH });
+  ok(r.corpo?.sucesso === true, `a virada aconteceu (veio: ${JSON.stringify(r.corpo?.erro ?? true)})`);
+
+  const venceu = banco.acha("atletas", a => a.id === "venceu");
+  const perdeu = banco.acha("atletas", a => a.id === "perdeu");
+
+  // 1. O RATING é o patrimônio do atleta — a virada não pode encostar.
+  igual(venceu.rating, 620, "o rating do vencedor é PRESERVADO na virada");
+  igual(perdeu.rating, 480, "o rating do perdedor é PRESERVADO na virada");
+  igual(venceu.rating_pico, 640, "o rating de pico também");
+
+  // 2. O que é da TEMPORADA zera.
+  igual([venceu.saldo_temp, venceu.vitorias, venceu.derrotas], [0, 0, 0],
+    "saldo, vitórias e derrotas da temporada zeram");
+  igual(venceu.chave, null, "a chave é desfeita");
+  igual(venceu.wo_culposos_temporada, 0, "os W.O. culposos da temporada zeram");
+
+  // 3. Os TOTAIS acumulam o que a temporada produziu — se isto quebrar, o
+  //    histórico de carreira do atleta é apagado em silêncio.
+  igual(venceu.vitorias_total, 13, "vitórias da temporada somam ao total de carreira (10 + 3)");
+  igual(venceu.derrotas_total, 6, "derrotas idem (5 + 1)");
+  igual(perdeu.vitorias_total, 8, "e para o outro atleta também (7 + 1)");
+
+  // 4. A POSIÇÃO FINAL entra no histórico, na frente, com o rótulo da temporada
+  //    que acabou. É o que alimenta a carta colecionável do atleta.
+  igual(venceu.historico[0], { temporada: "1/2026", pos: 1 },
+    "quem venceu entra no histórico como 1º da temporada 1/2026");
+  igual(perdeu.historico[0], { temporada: "1/2026", pos: 2 },
+    "e quem perdeu como 2º");
+  igual(venceu.historico[1], { temporada: "3/2025", pos: 2 },
+    "o histórico anterior continua atrás, não é sobrescrito");
+
+  // 5. O PAGAMENTO da próxima vira o pagamento da atual.
+  igual(venceu.pagamento_confirmado, true, "quem pagou a próxima entra pago na temporada nova");
+  igual(perdeu.pagamento_confirmado, false, "quem não pagou, não");
+
+  // E o campo da PRÓXIMA tem de ser consumido, não só copiado. Sem este reset,
+  // o atleta fica pré-pago para sempre e **ganha uma temporada grátis a cada
+  // virada** — e a bateria ficava verde, porque o campo aparecia só como
+  // ENTRADA do cenário, nunca como saída. É dinheiro sumindo em silêncio.
+  // (Supervisor do guardião de Regulamento; severidade crítica no mandato dele.)
+  igual(venceu.pagamento_proxima_confirmado, false,
+    "o pagamento da próxima é CONSUMIDO na virada — senão o atleta vira pré-pago eterno");
+  igual(perdeu.pagamento_proxima_confirmado, false,
+    "e para quem não tinha, continua falso");
+  igual([venceu.quer_renovar, venceu.renovacao_em], [false, null],
+    "a intenção de renovar é limpa — ela é da temporada que acabou");
+
+  // Zeragem conferida nos DOIS atletas, não só no vencedor — a assimetria era
+  // minha, e o supervisor apontou.
+  igual([perdeu.saldo_temp, perdeu.vitorias, perdeu.derrotas], [0, 0, 0],
+    "saldo, vitórias e derrotas zeram também para quem perdeu");
+  igual(perdeu.chave, null, "e a chave é desfeita para os dois");
+
+  // 6. A temporada avança e as partidas somem da mesa.
+  const cfg = banco.acha("configuracao", c => c.id === 1);
+  igual([cfg.temporada_numero, cfg.temporada_ano], [2, 2026], "a temporada avança para 2/2026");
+  igual(cfg.fase, "inscricoes", "e a fase volta para inscrições");
+  igual(banco.tabelas.partidas.length, 0, "as partidas da temporada que acabou saem da mesa");
+}
+
+secao("A posição final respeita o critério de desempate, nível a nível");
+{
+  // A asserção anterior provava o ENCANAMENTO (a posição entra na frente do
+  // histórico, o anterior fica atrás) mas não a REGRA que decide quem é 1º: no
+  // cenário de dois atletas, o vencedor ganhava por saldo, por vitórias, pelo
+  // confronto direto E pelo rating ao mesmo tempo. O supervisor testou e mostrou
+  // que **apagar o `cmpRankingDB` inteiro deixava o bloco verde**.
+  //
+  // Aqui cada par vizinho é decidido por UM nível só, e desempatado ao contrário
+  // nos demais — então remover qualquer nível troca a ordem e acende.
+  //   cmpRankingDB: saldo_temp -> vitorias -> confronto direto -> rating
+  //
+  //   A  saldo 30  vit 0  rating 100   1º  (ganha de B só no SALDO; perde em tudo)
+  //   B  saldo 20  vit 5  rating 100   2º  (ganha de C só no CONFRONTO DIRETO)
+  //   C  saldo 20  vit 5  rating 200   3º  (ganha de D só nas VITÓRIAS)
+  //   D  saldo 20  vit 3  rating 900   4º  (ganha de E só no RATING)
+  //   E  saldo 20  vit 3  rating 400   5º
+  const sazonal = (id, saldo, vit, rating, extra = {}) =>
+    atleta(id, { saldo_temp: saldo, vitorias: vit, derrotas: 0, rating, rating_pico: rating, historico: [], ...extra });
+
+  const { banco, motor } = await montarMotor({
+    circuitos: [circuito(BH, { regulamento_versao: "v03-13" })],
+    // INSERIDOS NA ORDEM INVERSA da esperada, de propósito. Com a ordem de
+    // inserção igual à esperada, apagar o `.sort(cmpRankingDB(...))` inteiro
+    // deixava a bateria VERDE — a lista já saía certa por acidente. Foi o que
+    // aconteceu na 1ª tentativa desta asserção.
+    atletas: [
+      sazonal("E", 20, 3, 400),
+      sazonal("D", 20, 3, 900),
+      sazonal("C", 20, 5, 200),
+      sazonal("B", 20, 5, 100),
+      sazonal("A", 30, 0, 100),
+      // ── E os dois FILTROS do ranking, que também não tinham asserção ──
+      // `rankingFinal` filtra `!pendente_circuito && idsComPartida.has(id)`.
+      sazonal("pendente", 999, 9, 999, { pendente_circuito: true }),   // saldo altíssimo de propósito
+      sazonal("naoJogou", 999, 9, 999, { historico: [{ temporada: "3/2025", pos: 7 }] }),
+      sazonal("soRejeitada", 999, 9, 999),
+    ],
+    partidas: [
+      // B ganhou de C no confronto direto — é o 3º nível do desempate.
+      partida("h2h", { atleta1_id: "B", atleta2_id: "C", placar1: 3, placar2: 1, validado: true, calculado: true }),
+      // As demais existem só para os atletas entrarem em `idsComPartida`.
+      partida("q1", { atleta1_id: "A", atleta2_id: "D", placar1: 3, placar2: 0, validado: true, calculado: true }),
+      partida("q2", { atleta1_id: "E", atleta2_id: "A", placar1: 1, placar2: 3, validado: true, calculado: true }),
+      partida("q3", { atleta1_id: "pendente", atleta2_id: "A", placar1: 0, placar2: 3, validado: true, calculado: true }),
+      // Partida REJEITADA não qualifica ninguém para o ranking.
+      partida("rej", { atleta1_id: "soRejeitada", atleta2_id: "A", placar1: 3, placar2: 0, validado: true, rejeitado: true, calculado: true }),
+    ],
+    funcoes: { arquivar_partidas_temporada_circuito: () => null },
+  });
+  const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: BH });
+  ok(r.corpo?.sucesso === true, `a virada aconteceu (veio: ${JSON.stringify(r.corpo?.erro ?? true)})`);
+
+  // Procura a entrada DESTA temporada, não a primeira do histórico: quem não
+  // jogou mantém a entrada antiga na posição 0, e ler `historico[0]` confundiria
+  // "não recebeu posição nova" com "recebeu a posição antiga". Meu atalho errou
+  // nisso na 1ª tentativa e a asserção acusou.
+  const pos = id => (banco.acha("atletas", a => a.id === id)?.historico || [])
+    .find(h => h.temporada === "1/2026")?.pos ?? null;
+  igual([pos("A"), pos("B"), pos("C"), pos("D"), pos("E")], [1, 2, 3, 4, 5],
+    "a ordem final respeita saldo → vitórias → confronto direto → rating, nesta ordem");
+
+  // Os filtros: nenhum dos três entra no ranking, apesar do saldo altíssimo.
+  igual(pos("pendente"), null,
+    "quem está pendente no circuito NÃO recebe posição, mesmo com o maior saldo da temporada");
+  igual(pos("naoJogou"), null,
+    "quem não jogou NÃO recebe posição — o entrante tardio não vira campeão por não ter jogado");
+  igual(banco.acha("atletas", a => a.id === "naoJogou").historico[0], { temporada: "3/2025", pos: 7 },
+    "e o histórico antigo de quem não jogou fica intacto, sem entrada nova");
+  igual(pos("soRejeitada"), null,
+    "partida rejeitada não qualifica ninguém para o ranking final");
+}
+
+secao("A virada do Sistema B também ordena pelo critério dele");
+{
+  // O `cmpRankingB` só é chamado no ramo NÃO-BH com `sistema === "B"`
+  // (`admin-action:1219`). Nenhum teste do projeto montava esse cenário — o fim
+  // de temporada do Sistema B inteiro estava sem cobertura, e é a fronteira A×B,
+  // que é onde o projeto mais teme errar (rating vazando para circuito de
+  // pontos, e vice-versa). (Supervisor do guardião de Regulamento.)
+  //
+  // Critério do B: pontos -> MENOS W.O. culposo -> confronto direto ->
+  // aproveitamento -> saldo de sets -> id. Cada par vizinho decidido por um
+  // nível, e inseridos na ordem inversa da esperada.
+  //   p1  20 pts, 1 wo            1º  (ganha de p2 só nos PONTOS — e PERDE dele
+  //                                   no W.O., de propósito: com wo 0 ele ficava
+  //                                   em 1º por acidente mesmo sem os pontos, e a
+  //                                   mutação do nível primário ficava verde)
+  //   p2  10 pts, 0 wo            2º  (ganha de p3 só no W.O.: p3 tem 1)
+  //   p3  10 pts, 1 wo, 3v/0d     3º  (ganha de p4 no APROVEITAMENTO: 1,00 x 0,33;
+  //                                   sem confronto direto entre os dois)
+  //   p4  10 pts, 1 wo, 1v/2d     4º
+  const CIRC_B = "22222222-2222-2222-2222-222222222222";
+  const doB = (id, pts, wo, v, d) => ({
+    id: "cb-" + id, circuito_id: CIRC_B, atleta_id: id,
+    status: "ativo", pendente_circuito: false, chave: "chaveB",
+    saldo_temp: pts, vitorias: v, derrotas: d, vitorias_total: 0, derrotas_total: 0,
+    wo_culposos_temporada: wo, pagamento_confirmado: true, isento: false,
+    historico: [], posicao_historico: [],
+  });
+
+  const { banco, motor } = await montarMotor({
+    circuitos: [circuito(BH), circuito(CIRC_B, { slug: "pontos", sistema: "B", pareamento: "sorteio",
+      regulamento_versao: "vB-01", fase: "temporada", temporada_numero: 1, temporada_ano: 2026 })],
+    atletas: ["p1", "p2", "p3", "p4"].map(id => atleta(id, { rating: 500, rating_pico: 500 })),
+    circuito_atletas: [doB("p4", 10, 1, 1, 2), doB("p3", 10, 1, 3, 0), doB("p2", 10, 0, 1, 1), doB("p1", 20, 1, 1, 1)],
+    chaves: [{ id: "chaveB", nome: "B", rodada_atual: 1, circuito_id: CIRC_B }],
+    // p3 e p4 NÃO jogam entre si, de propósito: com confronto direto entre eles,
+    // o 3º nível decidiria e o aproveitamento nunca seria consultado — foi o que
+    // aconteceu na 1ª tentativa, e a mutação do aproveitamento ficou verde.
+    // Os sets favorecem p4 (+2 contra −2), para que remover o aproveitamento
+    // INVERTA o par e acenda.
+    partidas: [partida("b1", { circuito_id: CIRC_B, atleta1_id: "p1", atleta2_id: "p3", placar1: 3, placar2: 1, validado: true, calculado: true }),
+               partida("b2", { circuito_id: CIRC_B, atleta1_id: "p4", atleta2_id: "p2", placar1: 3, placar2: 1, validado: true, calculado: true })],
+    funcoes: { arquivar_partidas_temporada_circuito: () => null },
+  });
+  const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: CIRC_B });
+  ok(r.corpo?.sucesso === true, `a virada do circuito B aconteceu (veio: ${JSON.stringify(r.corpo?.erro ?? true)})`);
+
+  const posB = id => (banco.acha("circuito_atletas", c => c.atleta_id === id && c.circuito_id === CIRC_B)?.historico || [])
+    .find(h => h.temporada === "1/2026")?.pos ?? null;
+  igual([posB("p1"), posB("p2"), posB("p3"), posB("p4")], [1, 2, 3, 4],
+    "o Sistema B ordena por pontos → menos W.O. culposo → confronto direto → aproveitamento");
+
+  // E a fronteira A×B: circuito de pontos NÃO pode escrever rating na tabela
+  // global — é a regra que o CLAUDE.md chama de contaminação do rating do BH.
+  igual(banco.acha("atletas", a => a.id === "p1").rating, 500,
+    "a virada do circuito B não encosta no rating global do atleta");
+  igual(banco.acha("circuito_atletas", c => c.atleta_id === "p1" && c.circuito_id === CIRC_B).saldo_temp, 0,
+    "e zera os pontos da temporada que acabou");
+}
+
+secao("Campo de percentual vazio não vira número inventado");
+{
+  // Três comportamentos diferentes, e a bateria confundia os três. O `|| 80`
+  // original concedia desconto que ninguém pediu; o `|| 100` que o substituiu
+  // (1ª tentativa deste pacote) COBRAVA MAIS de quem digitou 0. Regra: vazio não
+  // grava; número válido grava o que foi digitado, zero inclusive.
+  const NOVO = "11111111-1111-1111-1111-111111111111";
+  const cenario = async () => montarMotor({
+    circuitos: [circuito(BH), circuito(NOVO, { slug: "novo", percentual_entrada_meio: 55 })],
+    funcoes: { arquivar_partidas_temporada_circuito: () => null },
+  });
+  const pct = (banco) => banco.acha("circuitos", c => c.id === NOVO)?.percentual_entrada_meio;
+
+  for (const [valor, esperado, porque] of [
+    [0,    0,  "zero digitado de propósito é entrada grátis, e tem de ser gravado"],
+    ["0",  0,  "zero como texto, que é o que o input manda"],
+    [40,   40, "número normal grava o que foi digitado"],
+    [null, 55, "campo vazio (null) NÃO grava — o valor de antes fica"],
+    ["",   55, "campo vazio (string) NÃO grava"],
+    ["abc",55, "lixo NÃO grava"],
+  ]) {
+    const { banco, motor } = await cenario();
+    await comoAdmin(motor, "DEFINIR_FINANCEIRO", { circuitoId: NOVO, valorTemporada: 12000, percentualMeio: valor });
+    igual(pct(banco), esperado, `DEFINIR_FINANCEIRO com ${JSON.stringify(valor)}: ${porque}`);
+  }
+}
+
+secao("O texto que protege o atleta está NA TELA, não só no documento");
+{
+  // O Jurídico: as cláusulas de vigência e de não-retroatividade viviam só no
+  // .md, e o que o atleta lê e aceita sai do App.jsx. A proteção não chegava a
+  // quem ela protege. E ela é da v03-13 e só dela — num circuito novo não houve
+  // 80% para deixar de cobrar.
+  ok(/const ehTransicaoV0313 = versaoEfetiva === "v03-13"/.test(fonte),
+    "a cláusula de transição tem condição própria, não pega carona no desconto");
+  ok(/ehTransicaoV0313 && \(/.test(fonte),
+    "e ela só é renderizada sob essa condição");
+  ok(/não cobrará<\/span> diferença de valor de quem ingressou/.test(fonte),
+    "a tela promete, no imperativo, que não haverá cobrança retroativa");
+  ok(/data de ingresso<\/span>, não do momento do pagamento/.test(fonte),
+    "a tela diz que o direito vem da data de INGRESSO — quem não quitou também está protegido");
+  ok(/a partir da temporada 2\/2026<\/span>/.test(fonte),
+    "a tela nomeia a temporada em que a v03-13 passa a valer");
+
+  // E o documento tem de dizer o mesmo, com a mesma força.
+  const t13 = fs.readFileSync(path.join(RAIZ, "docs", "REGULAMENTO_TENIS_DE_MESA_v03-13.md"), "utf8");
+  ok(/O Clube \*\*não cobrará\*\* diferença de valor/.test(t13),
+    "o documento OBRIGA o clube, em vez de só descrever o que vai acontecer");
+  ok(/temporada 2\/2026 do Circuito\nBH/.test(t13) || /temporada 2\/2026/.test(t13),
+    "o documento nomeia a temporada de vigência");
+  ok(!/já é o ajuste/.test(t13),
+    "saiu do documento a justificativa que admitia contrapartida menor por mesmo preço");
+  ok(/Regulamento v03-13\*$/m.test(t13),
+    "o rodapé da v03-13 assina o próprio número");
+}
+
+secao("Nenhuma tela de regulamento adivinha a versão");
+{
+  // O link "Regulamento oficial" da tela inicial — público, antes do login — era
+  // renderizado SEM versão e caía num "v03-12" cravado. Acertava por coincidência
+  // e passaria a mentir no dia do carimbo. Achado pelo guardião do Regulamento e
+  // pelo do Atleta, cada um por um caminho.
+  // `[^>]*` não serve: as props contêm `=>`, e o regex parava na seta. Recorta
+  // da tag até o `/>` que a fecha.
+  const chamadas = [];
+  for (let i = fonte.indexOf("<RegulamentoView"); i >= 0; i = fonte.indexOf("<RegulamentoView", i + 1)) {
+    chamadas.push(fonte.slice(i, fonte.indexOf("/>", i) + 2));
+  }
+  ok(chamadas.length >= 2, `as chamadas da RegulamentoView foram encontradas (achadas: ${chamadas.length})`);
+  const semVersao = chamadas.filter(c => !/versao=/.test(c));
+  igual(semVersao, [],
+    "toda chamada da RegulamentoView passa a versão — nenhuma cai em fallback cravado");
+
+  ok(/const versaoEfetiva = versao \|\| null;/.test(fonte),
+    "sem versão, a tela não assume a do BH");
+  ok(/versaoIncerta && \(/.test(fonte),
+    "e avisa na tela que não conseguiu confirmar a versão");
+}
+
+secao("O servidor recusa a inscrição sem versão — rodando o servidor, não lendo");
+{
+  // As asserções da seção seguinte leem o arquivo. Estas rodam o `athlete-action`
+  // de verdade e cobrem o que o regex não alcança: que o `trim()` faz `"   "` ser
+  // fail-closed, e que **nada é gravado** na recusa. O supervisor do Regulamento
+  // rodou primeiro e mostrou que custava 12 linhas com o harness que já existe.
+  //
+  // Armadilha que ele avisou e que me pouparia uma rodada: o `circuitoId` vem de
+  // `payload.circuitoId` (`athlete-action:147`), não do nível de cima — sem ele
+  // no payload a função resolve para o BH em silêncio e o teste passa pelo
+  // motivo errado.
+  const CIRC_SEM_VERSAO = "33333333-3333-3333-3333-333333333333";
+  const cenarioInscricao = async (versao) => {
+    const { banco } = await montarMotor({
+      circuitos: [circuito(BH), circuito(CIRC_SEM_VERSAO, { slug: "novo", regulamento_versao: versao, inscricoes_abertas: true })],
+    });
+    const atleta = await carregarFuncao("athlete-action", banco);
+    const r = await atleta.chamar({
+      acao: "INSCREVER",
+      payload: { circuitoId: CIRC_SEM_VERSAO, nome: "Fulano de Tal", telefone: "31999990000", aceiteRegulamento: true, aceiteLGPD: true },
+    });
+    return { banco, r };
+  };
+
+  for (const [versao, rotulo] of [[null, "versão nula"], ["", "versão vazia"], ["   ", "só espaços"]]) {
+    const { banco, r } = await cenarioInscricao(versao);
+    igual(r.status, 409, `a inscrição é recusada com ${rotulo}`);
+    igual(banco.tabelas.atletas.length, 0,
+      `e NADA é gravado na tabela atletas com ${rotulo} — recusa não deixa rastro`);
+  }
+
+  // E com versão válida ela passa da guarda (segue adiante no fluxo).
+  {
+    const { r } = await cenarioInscricao("vA-nc-01");
+    ok(r.status !== 409 || !/versão do regulamento/.test(String(r.corpo?.erro || "")),
+      "com versão válida a guarda da versão não barra a inscrição");
+  }
+}
+
+secao("O servidor também não carimba aceite sem saber a versão");
+{
+  // A Onda 0.10.1 fechou isto na TELA. Mas a tela não é o portão: qualquer um
+  // chama a Edge Function direto. O `athlete-action` carimbava
+  // `circ.regulamento_versao || "v03-12"` — ou seja, na dúvida gravava a versão
+  // do BH, com torneio e com os 80%, no aceite de um circuito que não tem nem um
+  // nem outro. O recibo ficaria provadamente falso.
+  //
+  // Achado pelo guardião de Segurança em 13/09/2026, que também notou que o
+  // `login-atleta` fazia o OPOSTO no mesmo campo (`|| null`): as duas funções
+  // discordavam entre si sobre a mesma regra.
+  const atleta = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "athlete-action", "index.ts"), "utf8");
+
+  ok(!/regulamento_versao \|\| VERSAO_REGULAMENTO/.test(atleta),
+    "o carimbo do aceite não tem mais fallback para a versão do BH");
+  ok(!/const VERSAO_REGULAMENTO = /.test(atleta),
+    "e a constante do fallback foi removida — const declarada é arma carregada");
+  ok(/versao_regulamento: versaoDoCircuito,/.test(atleta),
+    "o aceite carimba a versão que o circuito declara, e só ela");
+
+  const iGuarda = atleta.indexOf("const versaoDoCircuito");
+  ok(iGuarda > 0 && /if \(!versaoDoCircuito\)/.test(atleta.slice(iGuarda, iGuarda + 400)),
+    "sem versão, a inscrição é recusada em vez de carimbar um palpite");
+
+  // A ORDEM importa tanto quanto a guarda: se ela ficar depois de uma escrita,
+  // a recusa deixa lixo para trás. Ela tem de vir antes de qualquer insert.
+  const iPrimeiraEscrita = Math.min(
+    ...[".insert(", ".update(", ".rpc("].map(t => {
+      const i = atleta.indexOf(t, atleta.indexOf('case "INSCREVER"'));
+      return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+    })
+  );
+  ok(iGuarda < iPrimeiraEscrita,
+    "a guarda roda ANTES da primeira escrita da inscrição — recusa não deixa rastro");
+
+  // ── O que esta asserção dizia antes, e era MENTIRA ──────────────────────
+  // Eu tinha escrito aqui: "o PARTICIPAR do login-atleta segue fail-closed — as
+  // duas funções concordam agora". As duas afirmações são falsas, e o guardião
+  // de Segurança pegou. O `PARTICIPAR` grava `aceite_regulamento: true` com
+  // `versao_regulamento: null` quando não sabe a versão: um recibo de
+  // consentimento que não aponta para texto nenhum. Gravar nulo NÃO é recusar.
+  //
+  // Isso viola a regra 6 do CLAUDE.md — "nenhuma afirmação do tipo 'o app
+  // garante X' sem a linha de código que sustenta" — e era pior por estar na
+  // bateria, que é onde a afirmação vira verdade institucional.
+  //
+  // Não consertei o código nesta onda por escolha de escopo: o `PARTICIPAR`
+  // recusa o BH por construção e não existe 2º circuito, então o caminho é
+  // inalcançável hoje. Está registrado como 0.10.18, com gatilho no dia em que
+  // o primeiro circuito não-BH abrir inscrições.
+  // ATENÇÃO à forma desta asserção. A 1ª versão exigia que o defeito
+  // PERMANECESSE (`ok(/regulamento_versao || null/)`) — ou seja, consertar o
+  // 0.10.18 deixaria a bateria vermelha: **a bateria bloquearia a própria
+  // correção**. O supervisor do Regulamento pegou.
+  //
+  // A forma certa aceita os DOIS estados e recusa o terceiro, que é o silêncio:
+  // ou o `PARTICIPAR` recusa sem versão (consertado), ou grava null (o estado
+  // conhecido) E o item continua registrado no ROADMAP. O que não pode é o
+  // código piorar, nem o débito sumir do documento sem o conserto.
+  const login = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "login-atleta", "index.ts"), "utf8");
+  const iPart = login.indexOf('acao === "PARTICIPAR"');
+  const trechoPart = iPart > 0 ? login.slice(iPart) : login;
+  const consertado = /versao_regulamento: versaoDoCircuito/.test(trechoPart)
+    || /if \(!versaoDoCircuito\)/.test(trechoPart);
+  const estadoConhecido = /versao_regulamento: circ\.regulamento_versao \|\| null/.test(trechoPart);
+  ok(consertado || estadoConhecido,
+    "o PARTICIPAR está no estado conhecido (grava null) ou consertado (recusa) — nunca pior que isso");
+  ok(!/versao_regulamento: circ\.regulamento_versao \|\| ["']v03/.test(trechoPart),
+    "e NUNCA carimba uma versão inventada, que é o defeito que o athlete-action tinha");
+
+  // E o defeito conhecido tem de continuar REGISTRADO. Se alguém consertar o
+  // código e a asserção acima ficar vermelha, esta aqui lembra de fechar o item
+  // no ROADMAP junto; se alguém apagar o item do ROADMAP sem consertar o código,
+  // esta fica vermelha primeiro. Débito sem registro é débito esquecido.
+  const roadmap = fs.readFileSync(path.join(RAIZ, "docs", "ROADMAP.md"), "utf8");
+  ok(/0\.10\.18/.test(roadmap) && /PARTICIPAR/.test(roadmap),
+    "a assimetria do PARTICIPAR está registrada no ROADMAP, com gatilho");
+}
+
+secao("A tela não mente sobre a virada antes do servidor responder");
+{
+  // O app muda a tela ANTES do servidor responder — otimista, e é o padrão certo
+  // para ação frequente. Para a virada de temporada, não: o reducer local zera
+  // stats e apaga partidas e chaves NA HORA. Enquanto a recusa era erro raro de
+  // rede, dava para conviver. Com a trava do regulamento, a recusa virou o
+  // caminho GARANTIDO na próxima virada do BH — o admin apertaria o botão e veria
+  // a temporada "virada" por alguns segundos antes do erro chegar.
+  //
+  // O guardião do Admin classificou como bloqueante, e estava certo: a proteção
+  // do motor (que age antes de destruir) era anulada na tela.
+  ok(/const ACOES_SEM_OTIMISMO = new Set\(\["NOVA_TEMPORADA"\]\)/.test(fonte),
+    "a virada de temporada está na lista de ações sem dispatch otimista");
+
+  const i = fonte.indexOf("async function dispatchAndSync");
+  const corpo = fonte.slice(i, i + 900);
+  ok(i > 0, "o dispatchAndSync foi encontrado");
+  ok(/const otimista = !ACOES_SEM_OTIMISMO\.has\(action\.type\);/.test(corpo),
+    "o dispatchAndSync consulta a lista antes de mudar a tela");
+  ok(/if \(otimista\) dispatch\(action\);/.test(corpo),
+    "e só faz o dispatch otimista quando a ação permite");
+  ok(!/^\s*dispatch\(action\);\s*\/\/ otimista/m.test(corpo),
+    "não sobrou o dispatch incondicional que mudava a tela para toda ação");
+
+  // E o botão: sem esperar a resposta, o modal fecharia antes de saber se deu
+  // certo — o admin sairia da tela achando que virou.
+  const botao = fonte.slice(fonte.indexOf("Sim, virar temporada") - 600, fonte.indexOf("Sim, virar temporada") + 120);
+  ok(/await dispatch\(\{type:"NOVA_TEMPORADA"/.test(botao),
+    "o botão ESPERA o servidor antes de fechar o modal");
+  ok(/virando \? "Virando…"/.test(botao),
+    "e diz que está esperando, em vez de parecer travado");
+  ok(/if \(virando\) return;/.test(botao),
+    "clique repetido não dispara duas viradas");
+
+  // As três asserções acima checam PRESENÇA DE TEXTO, e por isso ficaram verdes
+  // enquanto o modal fechava na recusa. O guardião de Operações recusou assinar
+  // o item como fechado por causa disso, e o do Regulamento achou o mesmo por
+  // outro caminho: o comentário do código afirmava "na recusa o modal FICA
+  // aberto", e era falso — `dispatchAndSync` não lança, devolve `{ok:false}`,
+  // então um `await` seco fecha o modal dos dois jeitos.
+  //
+  // Estas duas olham a ESTRUTURA: o fechamento tem de estar preso ao resultado.
+  const iFecha = botao.indexOf("setConfirmando(false)");
+  const iGuarda = botao.indexOf("if (!r || r.ok !== false)");
+  ok(iGuarda > 0 && iGuarda < iFecha,
+    "o modal só fecha DEPOIS de conferir que o servidor aceitou — não fecha na recusa");
+  ok(/const r = await dispatch\(\{type:"NOVA_TEMPORADA"/.test(botao),
+    "o resultado do dispatch é capturado, não descartado");
+
+  // E o padrão tem de ser o MESMO que o arquivo já usa nas outras ações que
+  // esperam resposta — senão cada tela inventa o seu e a próxima erra de novo.
+  // São DUAS grafias no arquivo, uma o inverso da outra: `!r || r.ok !== false`
+  // (segue quando deu certo) e `r && r.ok === false` (desfaz quando deu errado).
+  // Contei 3 na primeira versão desta asserção e ela ficou vermelha — eram 2 de
+  // uma e 2 da outra. Conto as duas.
+  const seguiuNoSucesso = (fonte.match(/if \(!r \|\| r\.ok !== false\)/g) || []).length;
+  const desfezNaFalha = (fonte.match(/if \(r && r\.ok === false\)/g) || []).length;
+  ok(seguiuNoSucesso + desfezNaFalha >= 4,
+    `as ações que esperam resposta conferem o resultado antes de seguir (achadas: ${seguiuNoSucesso} + ${desfezNaFalha})`);
 }
 
 placar("Regulamento por circuito");

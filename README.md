@@ -128,11 +128,13 @@ atleta paga para quem soubesse o id. Hoje a consulta passa pela ação `PRECO` d
 
 O `sistema` trava na criação do circuito e não muda depois.
 
-- **A — rating/CBTM** (o do BH, regulamento **v03-12**). Rating permanente,
-  ganho e perda pela tabela da CBTM conforme a diferença entre favorito e
-  azarão. W.O. a favor rende **+8** ao beneficiado e o culposo custa **-15** ao
-  faltoso — `admin-action/index.ts:805` e `:815`, no rating e no saldo da
-  temporada ao mesmo tempo.
+- **A — rating/CBTM** (o do BH, regulamento **v03-12** — existe uma versão
+  nova, **v03-13**, que tira o desconto de 80% na 2ª etapa; só passa a valer
+  no BH depois de carimbada na próxima virada, ver `docs/ROADMAP.md` 0.10.15).
+  Rating permanente, ganho e perda pela tabela da CBTM conforme a diferença
+  entre favorito e azarão. W.O. a favor rende **+8** ao beneficiado e o
+  culposo custa **-15** ao faltoso — `admin-action/index.ts:805` e `:815`, no
+  rating e no saldo da temporada ao mesmo tempo.
 - **B — pontos fixos** (regulamento **vB-01**). Vitória vale 2, derrota 1, sem
   rating. Pareamento por sorteio ou por grupos, com bye rotativo.
 
@@ -150,7 +152,7 @@ tem rating.
 | Quem revisa o quê antes de publicar, e os vereditos passados | `docs/GOVERNANCA_AGENTES.md` |
 | O que já foi ao ar, com a versão da função | `docs/CHANGELOG.md` |
 | O que falta, e o que foi decidido não fazer | `docs/ROADMAP.md` |
-| As regras da competição | `docs/REGULAMENTO_TENIS_DE_MESA_v03-12.md`, `docs/REGULAMENTO_SISTEMA_B.md` |
+| As regras da competição | `docs/REGULAMENTO_TENIS_DE_MESA_v03-12.md` (BH, vigente) + `v03-13.md` (BH, próxima temporada); `docs/REGULAMENTOS_NOVOS_CIRCUITOS.md` (circuitos novos, A e B) |
 
 ## Pontas soltas conhecidas
 

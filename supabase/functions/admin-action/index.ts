@@ -61,6 +61,18 @@ async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Recor
     console.warn("dual-write circuito_atletas falhou (BH segue via atletas):", (e as any)?.message);
   }
 }
+// Versões de regulamento que JÁ NÃO prometem o desconto de 80% para quem entra
+// na 2ª etapa. É uma lista de PERMISSÃO, não de proibição, e a diferença é o
+// ponto inteiro: o destravamento do BH é um carimbo digitado à mão, e um typo
+// ("V03-13", "v03-13 ", versão nula) tem de FECHAR o portão, não abrir. A 1ª
+// versão desta guarda perguntava "esta versão promete desconto?" e deixava
+// passar tudo que não estivesse na lista — inclusive a v03-11 e a v03-4, que
+// são versões reais antigas do BH e também prometiam 80%. Achado por três
+// guardiões em 13/09/2026, cada um por um caminho.
+// Espelha VERSOES_COM_DESCONTO_ETAPA no App.jsx: o que está aqui é o complemento
+// do que está lá, e a bateria checa que as duas não divergem.
+const VERSOES_SEM_DESCONTO_ETAPA = new Set(["v03-13", "vA-nc-01", "vB-01"]);
+
 // Espelha config no circuito (mesmos nomes de coluna que `configuracao`).
 async function mirrorConfig(circuitoId: string, campos: Record<string, unknown>) {
   try {
@@ -1237,6 +1249,11 @@ Deno.serve(async (req) => {
             fase: "inscricoes", temporada_numero: proxNumN, temporada_ano: proxAnoN,
             proxima_aberta: false, proxima_nome: null, proxima_data_inicio: null, proxima_rotulo: null,
             proxima_valor_cheio: null, proxima_valor_desconto: null,
+            // Temporada nova nasce sem desconto por etapa (12/09/2026). A linha
+            // precisa estar AQUI, no ramo não-BH: é onde a regra passa a valer.
+            // Sem ela, um circuito cujo admin baixou o percentual carregaria o
+            // desconto para a temporada seguinte — a regra se desfazendo sozinha.
+            percentual_entrada_meio: 100,
           };
           const pNovaN = payload || {};
           if (cfgN?.proxima_aberta) {
@@ -1254,6 +1271,43 @@ Deno.serve(async (req) => {
           }
           await setCfg(circuitoId, updCfgN);
           return jsonResponse({ sucesso: true, dados: { temporadaNumero: proxNumN, temporadaAno: proxAnoN, arquivadas: rotuloN } });
+        }
+
+        // ── Trava: o preço do BH não muda antes do regulamento ──────────────
+        // A virada leva `percentual_entrada_meio` a 100 (decisão de 12/09/2026,
+        // logo abaixo). Mas a v03-12, que é o que o circuito DECLARA hoje, promete
+        // 80% a quem entra na 2ª etapa. Virar sem trocar a versão faria o circuito
+        // cobrar um valor que o próprio regulamento dele nega.
+        //
+        // Precisão que um guardião cobrou e é justa: os atletas do BH não
+        // aceitaram a v03-12 — estão registrados em v03-3, v03-5, v03-8 e v03-11.
+        // Esta guarda lê o que o CIRCUITO declara, não o que cada titular
+        // consentiu. Ela garante a ORDEM (regulamento antes do preço); ela NÃO
+        // cria o consentimento. Isso é o 0.10.11, e é outro problema.
+        //
+        // A versão NÃO pode ser carimbada junto com o resto do update: a tabela
+        // antiga `configuracao` (a do BH) não tem a coluna `regulamento_versao` —
+        // só `circuitos` tem. Um update com ela lançaria erro, e este trecho roda
+        // DEPOIS de arquivar e apagar as partidas: a temporada morreria sem volta.
+        //
+        // Por isso a guarda é aqui, ANTES de qualquer destruição, e só lê.
+        {
+          const { data: circBh, error: errVerBh } = await supabase
+            .from("circuitos").select("regulamento_versao").eq("id", circuitoId).maybeSingle();
+          if (errVerBh) throw errVerBh;
+          // `trim` porque o carimbo é digitado à mão e um espaço sobrando não é
+          // decisão de ninguém. Maiúscula NÃO é normalizada de propósito: "V03-13"
+          // é typo, e typo tem de barrar.
+          const versaoBh = String(circBh?.regulamento_versao ?? "").trim();
+          if (!VERSOES_SEM_DESCONTO_ETAPA.has(versaoBh)) {
+            return jsonResponse({
+              sucesso: false,
+              erro: "O Circuito BH declara o regulamento " + (versaoBh || "(nenhum)") +
+                ", que não está na lista de versões sem desconto por etapa. A virada passaria a " +
+                "cobrar 100% de quem o regulamento declarado manda cobrar 80%. " +
+                "Avise os atletas e carimbe a v03-13 no circuito antes de virar a temporada.",
+            }, 409);
+          }
         }
         const { data: ativos, error: errAtivos } = await supabase.from("atletas").select("*").eq("status", "ativo");
         if (errAtivos) throw errAtivos;
@@ -1299,6 +1353,10 @@ Deno.serve(async (req) => {
           fase: "inscricoes", temporada_numero: proximoNumero, temporada_ano: proximoAno,
           proxima_aberta: false, proxima_nome: null, proxima_data_inicio: null, proxima_rotulo: null,
           proxima_valor_cheio: null, proxima_valor_desconto: null,
+          // Temporada NOVA nasce sem desconto por etapa de entrada (12/09/2026).
+          // Sem esta linha a regra se desfaria sozinha na 1ª virada: o circuito
+          // nasceria com 100 e voltaria ao 80 herdado da temporada anterior.
+          percentual_entrada_meio: 100,
         };
         const pNova = payload || {};
         if (config?.proxima_aberta) {
@@ -1535,7 +1593,7 @@ Deno.serve(async (req) => {
           financeiro_ativo: false,
           max_atletas: maxAtletas,
           desconto_global_pct: 0,
-          percentual_entrada_meio: 80,
+          percentual_entrada_meio: 100, // mesmo valor em qualquer etapa (12/09/2026); desconto é ato do admin, via DEFINIR_DESCONTO_ATLETA
           ativo: true,
           // Circuito de rating NOVO nasce com `vA-nc-01`, não com o v03-12 do BH.
           // A diferença é o Cap. 10, o Torneio Presencial de Encerramento: ele é
@@ -1575,7 +1633,19 @@ Deno.serve(async (req) => {
         if (typeof p.ativo === "boolean") upd.financeiro_ativo = p.ativo;
         if (p.valorTemporada !== undefined) upd.valor_temporada = (p.valorTemporada === null ? null : Math.max(0, Math.round(Number(p.valorTemporada))));
         if (p.descontoGlobalPct !== undefined) upd.desconto_global_pct = Math.min(100, Math.max(0, Math.round(Number(p.descontoGlobalPct) || 0)));
-        if (p.percentualMeio !== undefined) upd.percentual_entrada_meio = Math.min(100, Math.max(0, Math.round(Number(p.percentualMeio) || 80)));
+        // Campo vazio NÃO é decisão do admin — então o motor não inventa uma:
+        // não escreve a coluna. O `|| 80` original transformava vazio em 80, o que
+        // concedia um desconto que ninguém pediu. Trocar por `|| 100` (1ª tentativa
+        // deste pacote) não consertou, só mudou a vítima: passou a gravar 100 na
+        // temporada em curso do BH, cujo regulamento declarado promete 80% — e
+        // engolia também o 0 deliberado (entrada grátis), subindo o preço para 100.
+        // Achado por dois guardiões em 13/09/2026. Regra: vazio/inválido não grava;
+        // número válido grava o que foi digitado, 0 inclusive.
+        if (p.percentualMeio !== undefined) {
+          const cru = p.percentualMeio;
+          const n = (cru === null || cru === "") ? NaN : Number(cru);
+          if (Number.isFinite(n)) upd.percentual_entrada_meio = Math.min(100, Math.max(0, Math.round(n)));
+        }
         if (p.proximaValorCheio !== undefined) upd.proxima_valor_cheio = (p.proximaValorCheio === null ? null : Math.max(0, Math.round(Number(p.proximaValorCheio))));
         if (p.proximaValorDesconto !== undefined) upd.proxima_valor_desconto = (p.proximaValorDesconto === null ? null : Math.max(0, Math.round(Number(p.proximaValorDesconto))));
         if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);

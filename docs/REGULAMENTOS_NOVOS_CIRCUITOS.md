@@ -116,7 +116,7 @@ Top 10 no Instagram a cada rodada; ranking completo no WhatsApp após o processa
 - **Fim de temporada:** Top 3 recebe certificado digital.
 
 ## Cap. 10 — Como Participar *(era Cap. 11)*
-Custo por temporada, pago no início; valor e descontos divulgados antes das inscrições. Inscrição padrão antes do início; entradas fora do período: por convite/aprovação do admin, com entrada automática no próximo par permitido; sem novas entradas no último terço. **Teto de atletas por temporada** (definido na criação do circuito) com **fila de espera** por ordem de chegada. Rating de entrada: 250 (não-federados) ou CBTM (federados). Valor: 100% na abertura; 80% na 2ª etapa (Rodada 3).
+Custo por temporada, pago no início; valor e descontos divulgados antes das inscrições. Inscrição padrão antes do início; entradas fora do período: por convite/aprovação do admin, com entrada automática no próximo par permitido; sem novas entradas no último terço. **Teto de atletas por temporada** (definido na criação do circuito) com **fila de espera** por ordem de chegada. Rating de entrada: 250 (não-federados) ou CBTM (federados). Valor: o mesmo para todos, entrando em qualquer etapa. Eventual desconto é decisão exclusiva do organizador, avaliada caso a caso — não é automático nem garantido.
 
 ## Cap. 11 — Valor da Temporada, Pagamento & Desistência *(era Cap. 12)*
 Pago por temporada, no início, valor único (sem mensalidade/parcelamento). Sem pagamento confirmado, o atleta fica retido (não é pareado). Incluído: participação em todas as rodadas, pareamento, perfil e rating no ranking, grupo oficial, certificado para o Top 3. **Desistência:** não reembolsável após o início; encerramento por força maior = reembolso proporcional (15 dias úteis, PIX); abandono sem comunicação pode implicar penalidade de rating (−30 pts) e bloqueio de 1 temporada.
@@ -188,7 +188,7 @@ O ranking é a **soma de pontos** da temporada, do maior pro menor. Publicado a 
 - **Fim de temporada:** Top 3 recebe certificado digital.
 
 ## Cap. 10 — Como Participar *(era Cap. 11)*
-Custo por temporada, pago no início; valor e descontos divulgados antes das inscrições. Inscrição padrão antes do início; entradas fora do período por convite/aprovação do admin; sem novas entradas no último terço. **Teto de atletas** com **fila de espera** por ordem de chegada. **No B, o atleta entra em 0 pontos.** Valor: 100% na abertura; 80% na 2ª etapa (Rodada 3).
+Custo por temporada, pago no início; valor e descontos divulgados antes das inscrições. Inscrição padrão antes do início; entradas fora do período por convite/aprovação do admin; sem novas entradas no último terço. **Teto de atletas** com **fila de espera** por ordem de chegada. **No B, o atleta entra em 0 pontos.** Valor: o mesmo para todos, entrando em qualquer etapa. Eventual desconto é decisão exclusiva do organizador, avaliada caso a caso — não é automático nem garantido.
 
 ## Cap. 11 — Valor da Temporada, Pagamento & Desistência *(era Cap. 12)*
 Pago por temporada, no início, valor único. Sem pagamento confirmado, o atleta fica retido. Incluído: participação, pareamento, perfil e pontos no ranking, grupo oficial, certificado para o Top 3. **Desistência:** não reembolsável após o início; força maior = reembolso proporcional (15 dias úteis, PIX); **abandono sem comunicação = bloqueio de 1 temporada** (no B não há rating a debitar).

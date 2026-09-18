@@ -36,6 +36,21 @@ salva** — atleta novo, logout, sessão expirada. Passou por `npm run build`, p
 É a terceira vez que um erro só-de-execução atravessa build verde neste projeto;
 por isso o portão novo.
 
+**O teste ao vivo da trava ficou PENDENTE, e o plano estava errado.** O roteiro
+mandava o Juliano apertar "Virar para a próxima temporada" e esperar o 409 com o
+modal aberto. Mas o botão **não está alcançável** no estado atual: a virada é um
+fluxo de dois passos (`App.jsx:7861-7866`) — com `fase = "etapa"` e
+`proxima_aberta = false`, o painel que aparece é o de **abrir a pré-abertura**, e
+o de virar só surge depois. E abrir a pré-abertura **não é inócuo**: anuncia a
+próxima temporada aos atletas e abre renovação e cobrança.
+
+Ou seja: o plano de smoke pedia um passo com efeito colateral real, e nem o
+guardião que o desenhou nem eu conferimos se o botão estava alcançável. A trava
+segue provada em bateria contra o motor de verdade — 8 cenários (versão nula,
+vazia, `v03-12`, `v03-11`, `v03-4`, `V03-13`, `v03-14`, lixo), todos com 409 **e
+partidas intactas** —, mas a confirmação ao vivo só vai acontecer no dia em que
+a virada for de fato necessária. Registrado em vez de dado como feito.
+
 **Revisão:** as **8 duplas completas** (motor + dinheiro), guardião e supervisor,
 três rodadas em alguns casos. Todos os oito supervisores APROVARAM. Dois deles
 erraram e retificaram por escrito. O histórico, com os achados e as reincidências

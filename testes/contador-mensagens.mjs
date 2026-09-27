@@ -113,14 +113,27 @@ secao("Falha de LEITURA não diz que algo não foi salvo");
   ok(/leitura:\s*true/.test(fonte),
     "a falha de carregar o histórico é marcada como leitura");
 
-  ok(/acaoErro\.leitura\s*\?\s*["']⚠️ Não deu para carregar/.test(fonte),
+  // O cabeçalho de leitura passou a ser escolhido por AÇÃO em 27/09/2026 (item
+  // 0.6.2): a falha de telefone ganhou texto próprio, porque antes ela pegava
+  // emprestada a frase do histórico de mensagens e o admin lia sobre o assunto
+  // errado. O que esta asserção trava continua sendo o mesmo: leitura NUNCA cai
+  // no cabeçalho de gravação.
+  ok(/acaoErro\.leitura\s*\?\s*\(?\s*(?:acaoErro\.acao[^?]*\?\s*)?["']⚠️ Não deu para carregar/.test(fonte),
     "a barra usa cabeçalho próprio para falha de leitura, não 'Não foi salvo'");
+
+  ok(/⚠️ Não deu para carregar os telefones/.test(fonte),
+    "e a falha de telefone tem cabeçalho próprio, não o do histórico de mensagens");
 
   // E a linha de apoio da barra de escrita ("a tela já voltou ao que está no
   // banco") também não cabe: não houve gravação para desfazer.
-  const i = fonte.indexOf("acaoErro.leitura ? (");
-  ok(i > 0 && /O contador de pendentes fica sem número/.test(fonte.slice(i, i + 400)),
+  // Ancora na CHAVE de abertura: desde 27/09/2026 o cabeçalho também contém
+  // "acaoErro.leitura ? (", e sem a chave o indexOf achava o cabeçalho.
+  const i = fonte.indexOf("{acaoErro.leitura ? (");
+  const trecho = i > 0 ? fonte.slice(i, i + 900) : "";
+  ok(i > 0 && /O contador de pendentes fica sem número/.test(trecho),
     "a falha de leitura explica a consequência real, sem falar em gravação");
+  ok(/Os telefones ficam em .{1,8}···/.test(trecho),
+    "e a falha de telefone explica o sintoma dela: telefone em ··· e WhatsApp sem abrir");
 }
 
 secao("Não se dispara mensagem contra histórico vazio");

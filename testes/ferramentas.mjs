@@ -115,6 +115,10 @@ export async function montarMotor({
   configuracao = [{ id: 1, fase: "temporada", temporada_numero: 1, temporada_ano: 2026, rodadas_por_temporada: 6 }],
   funcoes = {},
   outras = {},
+  // Qual Edge Function carregar. O padrao e o admin-action, que e o motor de
+  // quase tudo; `comprovante-url` entrou em 27/09/2026 (item 0.6.4), quando o
+  // organizador passou a poder abrir a prova de um W.O. do circuito dele.
+  funcao = "admin-action",
 } = {}) {
   const banco = criarBancoFalso({
     circuitos, atletas, circuito_atletas, partidas, chaves, solicitacoes_wo, configuracao,
@@ -122,7 +126,7 @@ export async function montarMotor({
     pagamentos: [], partidas_historico: [], atleta_sessao: [], circuito_cobranca: [],
     ...outras,
   }, funcoes, {}, PADROES_DO_BANCO);
-  const motor = await carregarFuncao("admin-action", banco);
+  const motor = await carregarFuncao(funcao, banco);
   return { banco, motor };
 }
 

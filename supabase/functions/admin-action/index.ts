@@ -310,18 +310,21 @@ async function ehOrganizadorDe(atletaId: string, circuitoId: string): Promise<bo
   return !!data;
 }
 // ALLOWLIST das ações do organizador (default-deny: o que não está aqui é só super-admin,
-// ex.: CRIAR_CIRCUITO, NOVA_TEMPORADA, SALVAR_ADMIN_BIO_CRED, EDITAR_ATLETA, LISTAR_TELEFONES).
+// ex.: CRIAR_CIRCUITO, NOVA_TEMPORADA, SALVAR_ADMIN_BIO_CRED, EDITAR_ATLETA).
 const ACOES_ORG = new Set([
   "INICIAR_ETAPA","AVANCAR_RODADA","PROCESSAR_RODADA",
   "VALIDATE_RESULT","ADMIN_IMPUTAR_RESULTADO","DESFAZER_VALIDACAO","MARCAR_RESULTADO_COMUNICADO",
   "APLICAR_WO","RESPONDER_WO","MARCAR_WO_NOTIFICADO",
-  "INSCRICAO_VALIDAR","INCLUIR_NO_CIRCUITO","RECUSAR_CIRCUITO","ARQUIVAR_ATLETA","DEFINIR_DESCONTO_ATLETA",
+  "INSCRICAO_VALIDAR","INCLUIR_NO_CIRCUITO","RECUSAR_CIRCUITO","ARQUIVAR_ATLETA","DESARQUIVAR_ATLETA","DEFINIR_DESCONTO_ATLETA",
   "DEFINIR_INSCRICOES_ABERTAS","DEFINIR_PUBLICO","DEFINIR_AUTO_VALIDAR","DEFINIR_CONFIG_CIRCUITO",
   // Financeiro (config + pagamentos): decisão do Juliano = "depende do financeiro por circuito".
   // Ficam aqui por ora; a Fatia do 'financeiro por circuito' vai torná-los CONDICIONAIS ao flag
   // `org_ve_financeiro` do circuito (padrão desligado). TODO: gate condicional.
   "DEFINIR_FINANCEIRO",
   "REGISTRAR_PAGAMENTO","ESTORNAR_PAGAMENTO","EDITAR_PAGAMENTO","LISTAR_PAGAMENTOS","LISTAR_MENSAGENS","REGISTRAR_MENSAGEM_ENVIADA",
+  // 0.6.2 — sem isto a tela de inscricoes/mensagens do organizador fica em "carregando..."
+  // para sempre e o botao de WhatsApp nasce morto. A acao agora e escopada por circuito.
+  "LISTAR_TELEFONES",
 ]);
 // Revisão de acesso do organizador (07/09/2026, validado item a item com o Juliano):
 // TIRADOS do organizador (só super-admin): EXCLUIR_ATLETA, ABRIR_PROXIMA_TEMPORADA, CANCELAR_PROXIMA.
@@ -339,7 +342,7 @@ const ORG_MATCH_FIELD: Record<string, string> = {
 };
 const ORG_MATCH_OPCIONAL = new Set(["RESPONDER_WO"]); // matchId só quando aprovado
 const ORG_MEMBRO_FIELD: Record<string, string> = {
-  INSCRICAO_VALIDAR: "id", INCLUIR_NO_CIRCUITO: "id", RECUSAR_CIRCUITO: "id", ARQUIVAR_ATLETA: "id",
+  INSCRICAO_VALIDAR: "id", INCLUIR_NO_CIRCUITO: "id", RECUSAR_CIRCUITO: "id", ARQUIVAR_ATLETA: "id", DESARQUIVAR_ATLETA: "id",
   EXCLUIR_ATLETA: "id", DEFINIR_DESCONTO_ATLETA: "atletaId", REGISTRAR_PAGAMENTO: "atletaId",
 };
 
@@ -972,6 +975,42 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true });
       }
 
+      // 0.6.3 — o espelho de ARQUIVAR. Antes disto, arquivar era porta de mao unica:
+      // o botao "Reativar" chamava EDITAR_ATLETA, que o organizador nao tem, e ele
+      // ficava sem como desfazer.
+      // O atleta volta para o BACKLOG: status "ativo" + pendente_circuito true —
+      // aprovado, esperando vaga. NAO entra direto no circuito, porque entrar numa
+      // rodada ja pareada e decisao de inclusao (INCLUIR_NO_CIRCUITO).
+      // CUIDADO: "ativo_backlog" e so rotulo do <select> da tela (src/App.jsx:8633),
+      // convertido para este par antes de sair. Gravar a string literal no banco tira
+      // o atleta de todas as listas do admin e do promoverBacklog. Pego pelo Guardiao
+      // de Seguranca em 27/09/2026, antes de subir.
+      case "DESARQUIVAR_ATLETA": {
+        const { id } = payload || {};
+        if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
+        const atualDes = await getAtletasPorIds(circuitoId, [String(id)]);
+        if (atualDes.length === 0) return jsonResponse({ sucesso: false, erro: "Atleta não encontrado neste circuito." }, 404);
+        if (atualDes[0].status !== "arquivado") {
+          return jsonResponse({ sucesso: false, erro: "Este atleta não está arquivado." }, 409);
+        }
+        // LGPD. Duas portas que NAO podem ser reabertas por aqui, apontadas pelo
+        // Guardiao de Seguranca em 27/09/2026:
+        //  1. quem PEDIU exclusao — ARQUIVAR_ATLETA nao limpa `exclusao_solicitada_em`,
+        //     e a fila de pedidos do admin ignora quem esta arquivado (src/App.jsx:9189),
+        //     entao o pedido fica invisivel e seria reativado sem ninguem ver.
+        //  2. quem JA FOI anonimizado — `anonimizar-atleta` TERMINA a exclusao gravando
+        //     status "arquivado" e telefone "removido:<algo>". Reativar traria o registro
+        //     morto de volta para a fila de entrada do circuito.
+        if (atualDes[0].exclusao_solicitada_em) {
+          return jsonResponse({ sucesso: false, erro: "Este atleta pediu a exclusão dos dados. Resolva o pedido antes de reativar." }, 409);
+        }
+        if (String(atualDes[0].telefone || "").startsWith("removido:")) {
+          return jsonResponse({ sucesso: false, erro: "Este cadastro já foi anonimizado e não pode ser reativado." }, 409);
+        }
+        await writeAtleta(circuitoId, String(id), { status: "ativo", pendente_circuito: true });
+        return jsonResponse({ sucesso: true, dados: { status: "ativo", pendenteCircuito: true } });
+      }
+
       case "VALIDATE_RESULT": {
         const { matchId, approved, motivo } = payload || {};
         if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
@@ -1496,6 +1535,10 @@ Deno.serve(async (req) => {
       // Config da COBRANÇA DA PLATAFORMA de um circuito VENDIDO (Caso 2). O BH (Caso 1,
       // circuito próprio) não tem essa cobrança. Só grava config — NÃO cobra nada ainda.
       case "LER_COBRANCA_PLATAFORMA": {
+        // 0.6.13 — coerência com DEFINIR_COBRANCA_PLATAFORMA: o BH é circuito próprio
+        // (Caso 1) e nao tem cobranca de plataforma. Antes so a irma que escreve recusava.
+        const bhLerCob = await bhId();
+        if (circuitoId === bhLerCob) return jsonResponse({ sucesso: false, erro: "O BH é circuito próprio — não tem cobrança de plataforma." }, 400);
         // Config de cobrança vive em `circuito_cobranca` (tabela PRIVADA, sem anon) — não
         // em `circuitos` (que o app lê com SELECT * pelo anon). O valor da temporada fica em circuitos.
         const { data: circ, error: eC } = await supabase.from("circuitos").select("id,valor_temporada").eq("id", circuitoId).maybeSingle();
@@ -1762,8 +1805,24 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true });
       }
 
+      // Telefones dos botoes de WhatsApp da tela de mensagens. ESCOPO POR CIRCUITO
+      // (0.6.2): antes devolvia o telefone de TODOS os atletas da plataforma, sem
+      // filtro — com o organizador na allowlist isso vazaria o telefone de atleta de
+      // outro circuito. No BH (legado) o roster E a identidade global, entao o caminho
+      // do BH fica IDENTICO ao de antes (regra 2: o BH nao e prejudicado).
       case "LISTAR_TELEFONES": {
-        const { data, error } = await supabase.from("atletas").select("id, telefone");
+        const bhTel = await bhId();
+        if (circuitoId === bhTel) {
+          const { data, error } = await supabase.from("atletas").select("id, telefone");
+          if (error) throw error;
+          return jsonResponse({ sucesso: true, dados: data });
+        }
+        const { data: membros, error: errMembros } = await supabase.from("circuito_atletas")
+          .select("atleta_id").eq("circuito_id", circuitoId);
+        if (errMembros) throw errMembros;
+        const idsTel = (membros ?? []).map((m: any) => m.atleta_id);
+        if (idsTel.length === 0) return jsonResponse({ sucesso: true, dados: [] });
+        const { data, error } = await supabase.from("atletas").select("id, telefone").in("id", idsTel);
         if (error) throw error;
         return jsonResponse({ sucesso: true, dados: data });
       }

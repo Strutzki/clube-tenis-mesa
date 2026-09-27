@@ -93,12 +93,14 @@ secao("E nada disso vale fora do circuito dele");
 
 secao("O organizador não alcança o que é só do dono da plataforma");
 {
-  // Estas quatro passaram despercebidas na primeira versão da bateria: uma
-  // mutação do Guardião Jurídico concedeu as quatro ao organizador e as 13
-  // asserções continuaram verdes. São justamente as que devolvem telefone de
-  // atleta e o preço que a plataforma cobra.
+  // Estas passaram despercebidas na primeira versão da bateria: uma mutação do
+  // Guardião Jurídico as concedeu ao organizador e as 13 asserções continuaram
+  // verdes. São justamente as que devolvem telefone de atleta e o preço que a
+  // plataforma cobra.
+  // LISTAR_TELEFONES saiu desta lista em 27/09/2026 (item 0.6.2): sem ela, a tela
+  // de inscrições do organizador ficava em "carregando…" para sempre. Ela passou a
+  // ser dele, mas ESCOPADA por circuito — a proteção virou a seção seguinte.
   const soDoDono = [
-    ["LISTAR_TELEFONES", {}, "ler o telefone dos atletas"],
     ["LISTAR_ORGANIZADORES", {}, "listar organizadores (devolve nome e telefone)"],
     ["LER_COBRANCA_PLATAFORMA", {}, "ver quanto a plataforma cobra"],
     ["DEFINIR_COBRANCA_PLATAFORMA", { ativa: true }, "mudar quanto a plataforma cobra"],
@@ -109,6 +111,56 @@ secao("O organizador não alcança o que é só do dono da plataforma");
     const r = await comoOrganizador(motor, TEL, PIN_ORG, acao, { circuitoId: CIRC, ...carga });
     igual(r.status, 403, `organizador é barrado ao tentar ${oQueFaz}`);
   }
+}
+
+secao("O telefone que o organizador vê é só o do circuito dele");
+{
+  // Item 0.6.2. Antes, LISTAR_TELEFONES fazia `select("id, telefone")` na tabela
+  // `atletas` sem NENHUM filtro: devolvia o telefone de todos os atletas da
+  // plataforma. Com a ação fora da allowlist isso ficava escondido atrás de um
+  // 403; ao conceder a ação, o filtro passa a ser a única proteção que existe.
+  const hash = await pinGuardado(PIN_ORG);
+  const OUTRO_C = "55555555-5555-5555-5555-555555555555";
+  const DE_FORA = "dddd0002-0000-4000-8000-000000000042";
+  const { motor } = await montarMotor({
+    circuitos: [BH, CIRC, OUTRO_C].map((id, i) =>
+      i === 0 ? circuito(BH) : circuito(id, { slug: i === 1 ? "sp" : "rj", sistema: "B" })),
+    atletas: [
+      atleta(ORG, { nome: "Organizador", telefone: TEL, pin_hash: hash }),
+      atleta(MEMBRO, { nome: "Atleta do circuito", telefone: "31911112222" }),
+      atleta(DE_FORA, { nome: "Atleta de outro circuito", telefone: "21933334444" }),
+    ],
+    circuito_atletas: [
+      { id: "ca-m", circuito_id: CIRC, atleta_id: MEMBRO, status: "ativo", pendente_circuito: false, saldo_temp: 0, vitorias: 0, derrotas: 0 },
+      { id: "ca-f", circuito_id: OUTRO_C, atleta_id: DE_FORA, status: "ativo", pendente_circuito: false, saldo_temp: 0, vitorias: 0, derrotas: 0 },
+    ],
+    outras: { circuito_organizadores: [{ circuito_id: CIRC, atleta_id: ORG, papel: "organizador" }] },
+  });
+
+  const r = await comoOrganizador(motor, TEL, PIN_ORG, "LISTAR_TELEFONES", { circuitoId: CIRC });
+  igual(r.status, 200, "o organizador consegue ler os telefones do circuito dele");
+  const lidos = (r.corpo?.dados || []).map((t) => t.telefone);
+  ok(lidos.includes("31911112222"), "e o telefone do atleta do circuito dele vem na lista");
+  ok(!lidos.includes("21933334444"), "mas o telefone do atleta de OUTRO circuito não vem");
+  ok(!lidos.includes(TEL) || lidos.length === 1, "e a lista não traz quem não é membro do circuito");
+  igual(lidos.length, 1, "exatamente 1 telefone: só o membro do circuito dele");
+
+  // MINIMIZAÇÃO DE COLUNA. O `select("id, telefone")` é a única coisa que impede
+  // esta ação de devolver a linha inteira de `atletas` — que inclui o `pin_hash`
+  // de cada atleta do circuito. Até 27/09/2026 trocar por `select("*")` deixava a
+  // bateria VERDE, porque o banco falso não projetava colunas (apontado pelo
+  // Guardião Jurídico). Agora o banco falso projeta, e isto confere as CHAVES.
+  igual(Object.keys(r.corpo.dados[0]).sort(), ["id", "telefone"],
+    "e a ação devolve SÓ id e telefone — nunca pin_hash, CPF ou o resto da linha");
+
+  const fora = await comoOrganizador(motor, TEL, PIN_ORG, "LISTAR_TELEFONES", { circuitoId: OUTRO_C });
+  igual(fora.status, 403, "e pedir os telefones de um circuito que não é dele continua 403");
+
+  // Regra 2 do CLAUDE.md: o caminho do BH não muda. Lá o roster É a identidade
+  // global, então o super-admin continua vendo todos os atletas.
+  const noBh = await comoAdmin(motor, "LISTAR_TELEFONES", { circuitoId: BH });
+  igual(noBh.status, 200, "no BH a leitura continua respondendo 200 para o super-admin");
+  igual((noBh.corpo?.dados || []).length, 3, "e no BH ele continua vendo todos os atletas, como antes");
 }
 
 secao("Com o portão ligado, o financeiro passa");

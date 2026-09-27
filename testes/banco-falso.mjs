@@ -85,6 +85,38 @@ class Consulta {
     }
     return this;
   }
+  // PROJECAO de colunas. O PostgREST devolve SO o que o select pede; sem isto o
+  // banco falso devolvia a linha inteira e uma coisa grave passava batido: trocar
+  // `select("id, telefone")` por `select("*")` em LISTAR_TELEFONES deixava a
+  // bateria VERDE, mesmo passando a devolver `pin_hash` de todos os atletas do
+  // circuito. Apontado pelo Guardiao Juridico em 27/09/2026.
+  // Colunas embutidas (`atletas!inner(*)`) sao resolvidas antes, em aplicarJuncao,
+  // e o apelido delas e preservado aqui.
+  projetar(linhas) {
+    const pedido = String(this.colunas || "*");
+    const topo = [];
+    let nivel = 0, atual = "";
+    for (const ch of pedido) {
+      if (ch === "(") { nivel++; atual += ch; continue; }
+      if (ch === ")") { nivel--; atual += ch; continue; }
+      if (ch === "," && nivel === 0) { topo.push(atual); atual = ""; continue; }
+      atual += ch;
+    }
+    if (atual.trim()) topo.push(atual);
+    const nomes = topo.map((t) => t.trim()).filter(Boolean);
+    if (nomes.some((n) => n === "*")) return linhas; // select("*") devolve tudo
+    const manter = new Set();
+    for (const n of nomes) {
+      // "atletas!inner(*)" / "atletas(id,nome)" -> a chave embutida e "atletas"
+      const emb = n.match(/^([A-Za-z0-9_]+)(?:![a-z]+)?\s*\(/);
+      manter.add(emb ? emb[1] : n);
+    }
+    return linhas.map((l) => {
+      const fora = {};
+      for (const k of Object.keys(l)) if (manter.has(k)) fora[k] = l[k];
+      return fora;
+    });
+  }
   order(coluna, opcoes) {
     this.ordenacao.push({ coluna, crescente: opcoes?.ascending !== false });
     return this;
@@ -181,6 +213,7 @@ class Consulta {
       if (this.limite !== null) achadas = achadas.slice(0, this.limite);
       const contagem = this.contar ? this.filtrar(linhas).length : null;
       achadas = this.aplicarJuncao(achadas);
+      achadas = this.projetar(achadas);
       return { data: this.somenteContagem ? null : clonar(achadas), error: null, count: contagem };
     }
 
@@ -250,6 +283,7 @@ export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {
     tabelas: clonar(tabelasIniciais),
     registro: [],           // toda operação feita, para os testes conferirem o que foi tocado
     funcoesChamadas: [],
+    assinaturas: [],         // links assinados que a funcao pediu ao storage
   };
 
   banco.cliente = {
@@ -261,6 +295,21 @@ export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {
       }
       const resultado = await funcoes[nome](banco, argumentos);
       return { data: resultado === undefined ? null : resultado, error: null };
+    },
+    // STORAGE de mentira. Existe para a bateria poder carregar funcoes que
+    // assinam arquivo de bucket privado (comprovante-url). Nao guarda arquivo
+    // nenhum: registra o que foi pedido e devolve uma URL de mentira, para o
+    // teste poder afirmar QUAL caminho foi assinado — e, principalmente, que a
+    // assinatura so acontece depois da autorizacao passar.
+    storage: {
+      from(bucket) {
+        return {
+          async createSignedUrl(caminho, segundos) {
+            banco.assinaturas.push({ bucket, caminho, segundos });
+            return { data: { signedUrl: `https://falso/${bucket}/${caminho}?exp=${segundos}` }, error: null };
+          },
+        };
+      },
     },
   };
 

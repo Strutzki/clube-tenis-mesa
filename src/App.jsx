@@ -838,6 +838,19 @@ function reducer(state, action) {
       return { ...state, athletes };
     }
 
+    // 0.6.3 — desfazer o arquivamento. Volta para "aprovado, aguardando vaga",
+    // que neste app é status "ativo" + pendenteCircuito true — NÃO a string
+    // "ativo_backlog", que é só rótulo do <select> logo abaixo e é convertida
+    // antes de sair (ver salvarEdicao). Gravar a string crua tirava o atleta de
+    // todas as listas do admin, do promoverBacklog e, no BH, do próprio login.
+    case "DESARQUIVAR_ATLETA": {
+      const { id } = action.payload;
+      const athletes = state.athletes.map(a =>
+        a.id === id ? { ...a, status: "ativo", pendenteCircuito: true } : a
+      );
+      return { ...state, athletes };
+    }
+
     case "INICIAR_ETAPA": {
       // Virada de temporada: promove todo o backlog (Aprovado — próxima etapa/temporada)
       // para dentro do circuito antes de parear (entrada liberada "antes da Rodada 1").
@@ -4922,6 +4935,13 @@ export default function App() {
   });
   const loadGenRef = useRef(0); // guarda contra loads fora de ordem (troca de circuito)
   const msgsCircRef = useRef(null); // A2: circuito cujo histórico de mensagens está carregado (recarrega ao trocar)
+  // 0.6.2: circuito em que a leitura de telefones JÁ falhou e já foi avisada. Sem
+  // isto, `garantirTelefones` roda no useEffect de três abas (Mensagens,
+  // Inscrições, Pendências) e, como a falha nunca preenche o mapa, a barra
+  // sticky voltava a cada troca de aba — virava carrossel depois de um PIN
+  // cancelado. Continua TENTANDO a cada aba (uma retentativa pode funcionar);
+  // só não repete o aviso.
+  const telsErroCircRef = useRef(null);
   // "nao-carregado" | "ok" | "erro". O histórico de mensagens saiu da carga geral
   // por LGPD e passou a ser buscado sob demanda — mas o contador de pendentes
   // continuou somando contra ele. Sem histórico, TUDO parecia pendente, e o
@@ -5334,9 +5354,20 @@ export default function App() {
       const mapa = {};
       (dados || []).forEach(t => { mapa[t.id] = t.telefone; });
       setTelefones(mapa);
+      telsErroCircRef.current = null;
       return mapa;
     } catch(e) {
-      console.warn("Não consegui carregar telefones:", e.message);
+      // Antes isto morria no console: o telefone ficava em "carregando…" para
+      // sempre e o botão de WhatsApp nascia morto, sem nenhuma explicação na tela.
+      // Agora usa a mesma barra de aviso das outras ações de admin.
+      // `recarregou: false` porque esta função NÃO chama loadFromSupabase — dizer
+      // que recarregou seria mentira dormente, que acende no dia em que alguém
+      // reordenar as condições da barra de aviso.
+      if (telsErroCircRef.current !== CIRCUITO_ATIVO) {
+        telsErroCircRef.current = CIRCUITO_ATIVO;
+        setAcaoErro({ acao: "LISTAR_TELEFONES", msg: e.message, recarregou: false, leitura: true,
+          cancelado: e.message === MSG_PIN_CANCELADO, status: (typeof e.status === "number" ? e.status : null) });
+      }
       return {};
     }
   }
@@ -5344,7 +5375,13 @@ export default function App() {
   // Link assinado temporário pra um comprovante de W.O. (bucket privado), com
   // PIN, via Edge Function comprovante-url. Recebe o CAMINHO e devolve a URL.
   async function urlComprovante(path) {
-    const pin = await obterPin();
+    // Modo organizador (0.6.4): ele nao tem o PIN global. Manda telefone+PIN e o
+    // circuito dele; o servidor revalida o vinculo E que o comprovante e de um W.O.
+    // deste circuito. Sem isto, decidir W.O. sem ver a prova era o unico caminho.
+    const credComp = getOrgCred();
+    const corpo = (credComp && credComp.telefone && credComp.pin && credComp.circuitoId)
+      ? { orgTelefone: credComp.telefone, orgPin: credComp.pin, circuitoId: credComp.circuitoId, path }
+      : { pin: await obterPin(), path };
     const res = await fetch(`${SUPA_URL}/functions/v1/comprovante-url`, {
       method: "POST",
       headers: {
@@ -5352,7 +5389,7 @@ export default function App() {
         "Authorization": `Bearer ${SUPA_KEY}`,
         "apikey": SUPA_KEY,
       },
-      body: JSON.stringify({ pin, path }),
+      body: JSON.stringify(corpo),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.sucesso) {
@@ -5632,6 +5669,11 @@ export default function App() {
       await chamarAdminAction("ARQUIVAR_ATLETA", { id });
       await loadFromSupabase();
     }
+    else if (action.type === "DESARQUIVAR_ATLETA") {
+      const { id } = action.payload;
+      await chamarAdminAction("DESARQUIVAR_ATLETA", { id });
+      await loadFromSupabase();
+    }
     else if (action.type === "EXCLUIR_ATLETA") {
       const { id } = action.payload;
       await chamarAdminAction("EXCLUIR_ATLETA", { id });
@@ -5705,7 +5747,9 @@ export default function App() {
             tinha mexido na tela. */}
         <div style={{fontWeight:700,color:T.offwhite}}>
           {acaoErro.cancelado ? "↩️ Não foi salvo — você cancelou a confirmação."
-            : acaoErro.leitura ? "⚠️ Não deu para carregar o histórico de mensagens."
+            : acaoErro.leitura ? (acaoErro.acao === "LISTAR_TELEFONES"
+                ? "⚠️ Não deu para carregar os telefones dos atletas."
+                : "⚠️ Não deu para carregar o histórico de mensagens.")
             : "🚫 Não foi salvo — o servidor recusou."}
         </div>
         {/* Texto em T.offwhite, não no vermelho da borda: #c25a45 sobre este
@@ -5721,7 +5765,9 @@ export default function App() {
             recarga é justamente o mais provável para quem está no celular, em
             rede ruim, que é a situação dele e não a do admin. */}
         {acaoErro.leitura ? (
-          <div style={{marginTop:2,color:T.cinzaSuave}}>O contador de pendentes fica sem número até conseguir. O resto do painel funciona normalmente.</div>
+          <div style={{marginTop:2,color:T.cinzaSuave}}>{acaoErro.acao === "LISTAR_TELEFONES"
+            ? "Os telefones ficam em \"···\" e o botão de WhatsApp não abre até conseguir. O resto do painel funciona normalmente."
+            : "O contador de pendentes fica sem número até conseguir. O resto do painel funciona normalmente."}</div>
         ) : acaoErro.recarregou ? (
           <div style={{marginTop:2,color:T.cinzaSuave}}>
             {(!isAdmin) ? "A tela mostra agora o que realmente foi salvo." : "A tela já voltou ao que está no banco."}
@@ -7355,19 +7401,27 @@ function CobrancaPlataformaCard({ chamarAdminAction, circuitoSelId, ativosCount 
   const [nSim, setNSim] = useState(ativosCount > 0 ? ativosCount : 10);
 
   const num = (s) => { const v = parseFloat(String(s).replace(",", ".")); return Number.isFinite(v) ? v : 0; };
-  const fmtR = (c) => "R$ " + ((Number(c) || 0) / 100).toFixed(2).replace(".", ",");
+  const fmtR = (c) => {
+    const n = (Number(c) || 0) / 100;
+    return (n < 0 ? "-R$ " : "R$ ") + Math.abs(n).toFixed(2).replace(".", ",");
+  };
   const fixoCent = fixo === "" ? null : Math.round(num(fixo) * 100);
   const valorStore = tipo === "" || valor === "" ? null : (tipo === "pct" ? Math.round(num(valor) * 100) : Math.round(num(valor) * 100));
 
   async function carregar() {
     setCarregando(true); setMsg("");
     try {
-      const r = await chamarAdminAction("LER_COBRANCA_PLATAFORMA", {});
-      const d = (r && r.dados) || {};
+      // `chamarAdminAction` já devolve `data.dados`. O `r.dados` de antes era um
+      // segundo desempacotamento: `d` saía {} e a tela mostrava tudo em branco
+      // mesmo com a configuração salva no banco (0.6.14).
+      const d = (await chamarAdminAction("LER_COBRANCA_PLATAFORMA", {})) || {};
       setAtiva(!!d.cobranca_plataforma_ativa);
-      setFixo(d.taxa_plataforma_temporada_cent != null ? String(d.taxa_plataforma_temporada_cent / 100) : "");
+      // Vírgula e dois decimais: o campo é de real e o app é todo pt-BR. Com
+      // String(cent/100), R$ 49,90 reabria como "49.9". Só ficou visível agora
+      // que a leitura funciona (0.6.14) — antes o campo vinha sempre vazio.
+      setFixo(d.taxa_plataforma_temporada_cent != null ? (d.taxa_plataforma_temporada_cent / 100).toFixed(2).replace(".", ",") : "");
       setTipo(d.taxa_plataforma_por_atleta_tipo || "");
-      setValor(d.taxa_plataforma_por_atleta_valor != null ? String(d.taxa_plataforma_por_atleta_valor / 100) : "");
+      setValor(d.taxa_plataforma_por_atleta_valor != null ? (d.taxa_plataforma_por_atleta_valor / 100).toFixed(2).replace(".", ",") : "");
       setValorTemporadaCent(Number(d.valor_temporada) || 0);
       setCarregado(true);
     } catch (e) { setMsg("✗ " + (e.message || "Erro ao carregar.")); }
@@ -8017,6 +8071,12 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
           )}
           {circuitoSelId !== CIRCUITO_BH_ID && (
             <CobrancaPlataformaCard
+              /* key por circuito: o card guarda `carregado` e só lê na 1ª abertura.
+                 Sem isto, abrir a cobrança de um circuito, trocar de circuito e
+                 abrir de novo mostrava as taxas do ANTERIOR — e "Salvar" gravaria
+                 esses valores no circuito novo. Ficava escondido enquanto o
+                 desempacotamento duplo deixava tudo em branco (0.6.14). */
+              key={circuitoSelId}
               chamarAdminAction={chamarAdminAction}
               circuitoSelId={circuitoSelId}
               ativosCount={ativos.length}
@@ -8578,6 +8638,9 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
   function arquivarAtleta(id) {
     dispatch({type:"ARQUIVAR_ATLETA",payload:{id}});
   }
+  function desarquivarAtleta(id) {
+    dispatch({type:"DESARQUIVAR_ATLETA",payload:{id}});
+  }
   // Trava do "Incluir agora (antecipar)": espelha as regras da entrada automática —
   // bloqueado quando o próximo ponto de entrada cai no último terço (Cap. 11) e,
   // com o financeiro ligado, quando o atleta ainda não pagou a temporada.
@@ -8846,9 +8909,17 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}</div>
-                <div style={{fontSize:11,color:"#7d9188"}}>{telefones[a.id] || "···"} · fora do backlog do circuito</div>
+                <div style={{fontSize:11,color:"#9db3a8"}}>{telefones[a.id] || "···"} · fora do backlog do circuito</div>
               </div>
-              <Btn small color="#D85A30" onClick={()=>abrirEditar(a)}>✏️ Reativar</Btn>
+              {/* "↩️" em #5E7569 espelha o 🗄️ Arquivar (o par oposto desta ação):
+                  arquivar e reativar têm o mesmo peso, e terracota é acento — a cor
+                  mais alta do app não pode marcar a ação mais inócua. O ✏️ fica:
+                  era o ÚNICO caminho para a ficha de um atleta arquivado, e o
+                  <select> de status é o único jeito de mandá-lo direto para ativo. */}
+              <div style={{display:"flex",gap:6}}>
+                <Btn small color="#5E7569" onClick={()=>{ if(confirm(`Reativar ${a.apelido||a.name}? Ele volta para o Backlog do Circuito, aguardando vaga na próxima entrada.`)) desarquivarAtleta(a.id); }}>↩️ Reativar</Btn>
+                <Btn small color="#D85A30" onClick={()=>abrirEditar(a)}>✏️</Btn>
+              </div>
             </div>
           </Card>
         ))}

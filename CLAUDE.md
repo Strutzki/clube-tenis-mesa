@@ -38,15 +38,22 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **535 asserções** (conferido ao vivo em 19/09/2026, somando as 10
-seções que a bateria imprime). O `atualizar.sh` roda isso antes de publicar e se
-recusa a subir com teste vermelho. O `testes/README.md` já traz esse mesmo
-número, mas **o corpo dele continua atrasado** (a tabela de arquivos lista 7 dos
-14, e a seção "o que ainda não é testado" cita coisas que já são) — detalhe em
+Hoje são **581 asserções** (conferido ao vivo em 27/09/2026, somando as 11
+seções que a bateria imprime). **Não cite este número de memória** — ele mudou em
+sete ondas seguidas; rode `npm run teste` e leia. O `atualizar.sh` roda isso
+antes de publicar e se recusa a subir com teste vermelho. O `testes/README.md`
+traz o mesmo número, e desde 27/09/2026 a tabela de arquivos dele está completa
+(os 15) — era a dívida antiga registrada em
 `docs/curadoria-indice-app-tenis-de-mesa.md`.
 
-Ela carrega o `admin-action` **de verdade** — o mesmo arquivo que vai para o ar —
-e roda contra um banco em memória. Detalhe em `testes/README.md`.
+Ela carrega **três Edge Functions de verdade** — `admin-action`,
+`athlete-action` e `comprovante-url`, os mesmos arquivos que vão para o ar — e
+roda contra um banco em memória. Detalhe em `testes/README.md`.
+
+O banco em memória **projeta colunas** desde 27/09/2026: se o código pede
+`select("id, telefone")`, o teste recebe só essas duas. Sem isso, trocar por
+`select("*")` numa ação lida pelo organizador passava **verde** mesmo passando a
+devolver o `pin_hash` de todos os atletas do circuito.
 
 **Todo teste novo nasce com teste de mutação**: sabote a linha do motor que ele
 protege e exija que a bateria fique vermelha. O harness antigo em `harnesses/`
@@ -277,18 +284,24 @@ gravar rating num circuito que não tem rating.
 - **`atualizar.sh` publica tudo que estiver na pasta.** Desde 07/09/2026 ele
   lista os arquivos e espera você digitar `S` antes de mandar — leia a lista:
   arquivo temporário esquecido ali viaja junto.
-- **A bateria executa duas das quatro funções, e nenhum pedaço do app.**
+- **A bateria executa três das funções, e nenhum pedaço do app.**
   Reconferido em 19/09/2026 rodando `grep` nos testes, não de memória. Quem
   carrega e executa código de verdade é `carregarFuncao(nome, banco)`
   (`testes/carrega-motor.mjs`) — **é esse o nome**, não `carregarMotor`, que não
-  existe. Ela é chamada para exatamente duas funções:
+  existe. `montarMotor({ funcao: "..." })` escolhe qual carregar (padrão:
+  `admin-action`). Ela é chamada para três funções:
   - **`admin-action`** — é o grosso da bateria, e a razão de a frase antiga
     dizer "a bateria cobre o motor";
   - **`athlete-action`** — e isto **cresceu** em 19/09: já não é só a guarda de
     versão do `INSCREVER`. São **7 cenários comportamentais** do
     `ACEITAR_REGULAMENTO` (`testes/regulamento-por-circuito.mjs`, seção "O
     re-aceite RODANDO"), com sessão gravada como SHA-256 de verdade, mais o
-    cenário do `INSCREVER`.
+    cenário do `INSCREVER`;
+  - **`comprovante-url`** — novo em 27/09/2026 (item 0.6.4). São **13 asserções**
+    em `testes/onda-06.mjs` rodando a função de verdade, com um `storage` de
+    mentira (`testes/banco-falso.mjs`) que registra o que foi assinado —
+    inclusive as asserções de que **nada é assinado** quando a autorização
+    recusa, que é a ordem que importa.
 
   **`src/App.jsx` e `login-atleta` não são executados por teste nenhum.** O que
   existe para eles são checagens por regex no texto fonte (`fonte.indexOf(...)`),

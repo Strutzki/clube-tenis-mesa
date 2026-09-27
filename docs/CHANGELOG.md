@@ -5,6 +5,88 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-09-27 — Onda 0.6, fatia "o organizador consegue trabalhar" (5 itens)
+
+**No ar:** `admin-action` **v61 → v62**, `comprovante-url` **v2 → v3**, front por
+`git push`.
+**Ordem obrigatória: as duas funções primeiro, o app depois.** O app novo tem o
+botão "↩️ Reativar" chamando `DESARQUIVAR_ATLETA` e manda telefone+PIN do
+organizador para o `comprovante-url`; se ele subir antes do motor, o organizador
+clica em botões que o servidor ainda não sabe atender. **Nenhuma migração,
+nenhuma coluna nova.**
+
+**⚠️ Publicar o `comprovante-url` leva uma carona.** A v2 no ar é de 08/08/2026 e
+ficou **de fora de propósito** da liberação de CORS do `localhost` de 07/09
+(registrado neste arquivo naquela data). O fonte do repositório tem as origens
+`http://localhost:5173` e `http://127.0.0.1:5173` desde então e nunca foram
+publicadas nesta função. A v3 sobe as duas coisas: o caminho do organizador **e**
+o CORS de desenvolvimento. É aditivo e só afeta navegador, mas está sendo dito
+aqui porque foi uma decisão de não subir, sendo desfeita de carona.
+O fonte da v2 no ar foi salvo em
+`docs/backups/motor-no-ar-2026-09-27/ar-comprovante-url-v2.ts` — não existia
+backup dessa função em nenhum lugar, e não há rollback de Edge Function.
+
+**O que muda:**
+
+- **0.6.2** — `LISTAR_TELEFONES` entrou na allowlist do organizador, **escopada
+  por circuito**. Antes devolvia o telefone de *todos* os atletas da plataforma,
+  sem filtro, e por isso estava fora da allowlist — com ela fora, a tela de
+  inscrições do organizador ficava em "carregando…" para sempre e o botão de
+  WhatsApp nascia morto. O ramo do BH ficou byte-idêntico ao anterior. E o erro
+  deixou de morrer no console: usa a barra de aviso, com texto próprio.
+- **0.6.3** — ação `DESARQUIVAR_ATLETA`: arquivar deixou de ser porta de mão
+  única (o botão "Reativar" chamava `EDITAR_ATLETA`, que o organizador não tem).
+  Devolve ao backlog, e recusa quem pediu exclusão de dados ou já foi anonimizado.
+- **0.6.4** — `comprovante-url` aceita telefone+PIN de organizador, com escopo por
+  circuito: ele deixou de decidir W.O. sem poder ver a prova.
+- **0.6.13** — `LER_COBRANCA_PLATAFORMA` recusa o BH, como a irmã que escreve.
+- **0.6.14** — o card da cobrança da plataforma mostrava tudo em branco mesmo com
+  configuração salva (desempacotava a resposta duas vezes). Consertar isso acendeu
+  três defeitos que ficavam escondidos atrás dos campos vazios, corrigidos junto:
+  o card guardava a configuração do circuito anterior ao trocar de circuito (e
+  "Salvar" gravaria no novo), os valores reabriam com ponto decimal num campo de
+  real, e o negativo saía "R$ -50,00".
+
+**Ficou de fora, deliberadamente:** **0.6.11** (`LIBERAR_NAO_RENOVANTES`). Foi
+implementado e **retirado antes de subir**, porque a revisão desenterrou que a
+regra do prazo dos 7 dias está invertida em relação ao Cap. 13 (novo item 0.6.15)
+e que a tela e o motor não concordam. O botão continua caindo em "Ação
+desconhecida", como antes — nenhuma regressão, nenhum conserto.
+
+**Bateria: 535 → 581 asserções, 0 falhas.** A contabilidade não é óbvia:
+`testes/onda-06.mjs` traz **36** novas; `testes/permissoes.mjs` foi de 25 para
+**33** (perdeu **1** — a que exigia o organizador BARRADO em `LISTAR_TELEFONES`,
+conquista registrada em 07/09, que passou a descrever o comportamento **antigo** —
+e ganhou **9** do contrato novo); `testes/contador-mensagens.mjs` foi de 22 para
+**24**. 535 − 1 + 9 + 36 + 2 = 581. **13 testes de mutação, 13 vermelhos.**
+
+**Duas coisas na infraestrutura de teste, e a segunda é grave:**
+1. A bateria passou a executar **três** Edge Functions (era duas):
+   `montarMotor({ funcao: "comprovante-url" })`, com um `storage` de mentira que
+   registra o que foi assinado — e asserções de que **nada** é assinado quando a
+   autorização recusa.
+2. O banco em memória **não projetava colunas**. Por isso, trocar
+   `select("id, telefone")` por `select("*")` em `LISTAR_TELEFONES` deixava a
+   bateria **verde**, mesmo passando a devolver o `pin_hash` de todos os atletas
+   do circuito. Agora projeta, e há asserção conferindo as chaves devolvidas.
+
+**A lição desta rodada, para ficar registrada:** a primeira versão desta fatia
+gravava `status: "ativo_backlog"` — que é **rótulo do `<select>` da tela**, não
+valor de banco. Nenhuma lista do admin casava, o `promoverBacklog` nunca promovia
+o atleta e, no BH (onde a escrita vai para a tabela global `atletas`), ele
+**perdia o login**. As 37 asserções estavam verdes porque exigiam justamente a
+string errada: elas carimbavam o defeito em vez de proteger a regra. Seis dos
+oito guardiões deram NO-GO pela mesma raiz. O conserto veio com uma asserção de
+ponta a ponta — desarquivar, virar a etapa, e exigir que o atleta receba chave e
+seja pareado —, que é o tipo de asserção que faltava.
+
+**Erro de método meu, também registrado:** editei o motor enquanto três guardiões
+revisavam o diff daquele motor, e eles auditaram uma versão que deixou de existir
+no meio do parecer. A próxima revisão vai com o SHA de um commit, não com um diff
+de árvore viva.
+
+---
+
 ### 2026-09-27 — Onda 0.10.15: o carimbo do regulamento, o re-aceite do atleta e o aviso prévio
 
 **No ar:** `admin-action` **v60 → v61**, `athlete-action` **v20 → v21**,

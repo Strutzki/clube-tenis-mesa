@@ -109,7 +109,17 @@ para o código, que já foi ao ar na v58, mas para o ato de nomear. A lista abai
 é o que falta, em ordem de quem trava o quê.
 
 **Nada aqui é urgente enquanto o número de organizadores for zero.** Vira falha
-real no minuto em que deixar de ser.
+real no minuto em que deixar de ser. Conferido no banco em 27/09/2026:
+`circuito_organizadores` = **0 linhas**, `circuitos` = **1** (só o BH).
+
+**O ⛔ continua depois da fatia de 27/09/2026** — e o porquê precisa ficar escrito,
+senão a próxima leitura vê cinco ✅ e conclui que dá para nomear. Aquela fatia
+tirou do caminho o que impedia o organizador de **trabalhar**; não tirou o que
+impede **nomear**. Seguem de pé: **0.6.6** (com a cobrança ligada, o atleta pago
+fica fora do pareamento), **0.6.7** (base jurídica — pede advogado, não código),
+**0.6.8** (PIX e desconto passam com o financeiro bloqueado), **0.6.5**, **0.6.9**,
+**0.6.10**, **0.6.11**, **0.6.12**, e o gatilho paralelo "antes de nomear o 1º
+organizador" da Onda 0.10.
 
 ### Trava o organizador de trabalhar
 
@@ -120,15 +130,40 @@ real no minuto em que deixar de ser.
   atleta, o atleta some da lista, o servidor recusa com 403 e **nada aparece**.
   Ele acredita que excluiu. É uma linha de conserto, e enquanto ela não existir
   toda a proteção da v58 é invisível para quem esbarra nela. *(Experiência do Admin)*
-- **0.6.2 — A tela de inscrições nunca carrega.** O organizador não pode ler
+- **0.6.2 — ✅ RESOLVIDO em 27/09/2026.** Duas metades: (a) `LISTAR_TELEFONES`
+  entrou na `ACOES_ORG` **escopada por circuito** (lê os membros em
+  `circuito_atletas` e filtra), com o ramo do BH byte-idêntico ao anterior;
+  (b) o erro deixou de morrer no `console.warn` — agora usa a barra de aviso do
+  admin, com texto próprio ("não deu para carregar os telefones"), e não repete o
+  aviso a cada troca de aba. 7 asserções em `testes/permissoes.mjs`, uma delas
+  travando que a ação devolve **só `id` e `telefone`** (nunca `pin_hash`).
+  *Era:* A tela de inscrições nunca carrega. O organizador não pode ler
   telefones, então todo telefone fica em "carregando…" para sempre, sem
   mensagem, e o botão de WhatsApp fica morto. Cuidado ao corrigir:
   `LISTAR_TELEFONES` hoje devolve o telefone de **todos** os atletas da
   plataforma, sem filtro de circuito — precisa de uma versão escopada primeiro.
-- **0.6.3 — Arquivar é porta de mão única.** Ele arquiva um atleta e não
+- **0.6.3 — ✅ RESOLVIDO em 27/09/2026.** Ação `DESARQUIVAR_ATLETA` no motor, na
+  allowlist e no `ORG_MEMBRO_FIELD`. Devolve o atleta ao **backlog** (`status`
+  "ativo" + `pendente_circuito` true), não para dentro do circuito: entrar numa
+  rodada já pareada é `INCLUIR_NO_CIRCUITO`, e só o caminho do backlog respeita o
+  corte do último terço (Cap. 11) e o teto de 20. Recusa quem pediu exclusão de
+  dados e quem já foi anonimizado. 13 asserções, incluindo a de ponta a ponta
+  (desarquivar → `INICIAR_ETAPA` → o atleta recebe chave e é pareado) e a do
+  caminho do BH.
+  **Lição registrada:** a primeira versão gravava a string `"ativo_backlog"`, que
+  é **rótulo do `<select>` da tela** e não existe no banco. Nenhuma lista casava,
+  o `promoverBacklog` nunca o promovia e, no BH, o atleta **perdia o login**. As
+  asserções iniciais exigiam justamente a string errada — carimbavam o defeito.
+  Pego pelos guardiões antes de subir.
+  *Era:* Arquivar é porta de mão única. Ele arquiva um atleta e não
   consegue desarquivar: o botão "Reativar" chama `EDITAR_ATLETA`, que ele não
   tem. Falta uma ação `DESARQUIVAR_ATLETA`.
-- **0.6.4 — Ele decide W.O. sem ver a prova.** Abrir o comprovante do W.O.
+- **0.6.4 — ✅ RESOLVIDO em 27/09/2026.** `comprovante-url` passou a aceitar
+  telefone+PIN de organizador, com escopo por recurso: só assina comprovante
+  cujo `solicitacoes_wo.circuito_id` é o circuito dele, e a autorização corre
+  **antes** do storage. 13 asserções rodando a função de verdade, incluindo as
+  que provam que **nada é assinado** quando recusa.
+  *Era:* Ele decide W.O. sem ver a prova. Abrir o comprovante do W.O.
   justificado exige o PIN do super-admin.
 - **0.6.5 — A janela de pré-inscrição.** Perder `ABRIR_PROXIMA_TEMPORADA` não
   tira dele a virada de temporada (essa nunca foi dele) — tira a capacidade de
@@ -138,6 +173,35 @@ real no minuto em que deixar de ser.
   atleta**. Pior: se a temporada virar sem essa janela ter sido aberta, todos os
   atletas viram como **não-pagos**. Desenho proposto: devolver a ação com filtro
   **por campo** — calendário livre, valores e chave PIX só com o portão ligado.
+
+- **0.6.15 — A janela dos 7 dias está invertida, e isso já atinge o atleta hoje.**
+  ⬅️ *achado de 27/09/2026, na revisão do 0.6.11* — **decisão do Juliano, não minha.**
+  O Cap. 13 (v03-12 §prioridade de renovação, idem v03-13, e é o texto que o
+  atleta lê na tela) diz: *"nos 7 dias anteriores ao início, os atletas do
+  circuito atual têm prioridade para renovar"* e *"após o prazo de prioridade, as
+  vagas não confirmadas abrem para a fila de espera"*. Logo a janela **vai de**
+  `início−7` **até** `início`, e as vagas abrem **a partir do início**.
+  O app trata `início−7` como o **fim** do prazo, em quatro lugares — o card de
+  renovação do admin, a mensagem `renovacao` ("confirme até {início−7}"), o
+  `lembrete_renovacao` (cujo "empurrão nos últimos 3 dias" cai **antes** de a
+  janela abrir) e o cálculo do botão de liberar vagas. **Efeito prático: o atleta
+  recebe 0 dos 7 dias de prioridade que o regulamento promete.**
+  E o app se contradiz na mesma tela: um texto diz *"a janela abre 7 dias antes"*
+  e o outro trata a mesma data como encerramento. Um dos dois está errado.
+  Dois caminhos: (a) corrigir o app nos quatro pontos (a leitura do regulamento
+  é a que vale), ou (b) mudar o Cap. 13 nas duas versões **com aviso prévio e
+  re-aceite** — que é a máquina que a Onda 0.10.15 construiu. Não dá para deixar
+  como está: é o único prazo do app que custa a vaga do atleta.
+
+- **0.6.16 — O atleta em backlog não sabe que está em backlog.**
+  Achado de 27/09/2026. Quem está `ativo` + `pendente_circuito` (aprovado
+  aguardando vaga — o estado em que o desarquivado cai, e em que a inscrição
+  aprovada já caía antes desta fatia) vê a POSIÇÃO virar "—" no card, sem o selo
+  de classificação, **mas com pontos e rating ainda na tela**. Fica com cara de
+  defeito, não de decisão, e não existe uma linha explicando. Não há categoria de
+  mensagem para o evento. Pré-existente, não criado pela 0.6.3 — mas a 0.6.3 cria
+  um caminho novo para esse estado. O projeto já decidiu duas vezes contra si
+  mesmo nesse ponto ("a garantia que tranquiliza estava SÓ no WhatsApp").
 
 ### Trava o atleta
 
@@ -157,6 +221,30 @@ real no minuto em que deixar de ser.
   nada); e o acervo dá **três respostas diferentes** sobre quem é o controlador.
   Isso precisa de advogado, não de código. *(Jurídico)*
 
+  **A fatia de 27/09/2026 AUMENTOU a superfície que este item não cobre**, e é
+  preciso dizer com letra: o organizador passou a poder ler o **telefone** dos
+  atletas do circuito dele e a abrir o **comprovante de W.O.** (foto do local,
+  print de conversa entre dois atletas — dado pessoal de quem nem pediu nada).
+  Inerte hoje, porque não existe organizador. Mas some-se que o organizador é
+  obrigatoriamente **um atleta ativo do mesmo circuito** (`NOMEAR_ORGANIZADOR`
+  recusa quem não está ativo): quem abre a prova que decide pontuação é um
+  competidor do mesmo ranking. Três coisas concretas que o Guardião Jurídico
+  levantou e que são **decisão do Juliano**:
+  1. A tela que colhe o consentimento diz *"seus dados não são vendidos nem
+     compartilhados com terceiros"*, sem ressalva, e é o **único** texto que o
+     atleta vê — a `docs/POLITICA_PRIVACIDADE.md` (que prevê o compartilhamento
+     com o organizador) **não está linkada em lugar nenhum do app**. No dia em que
+     existir um organizador, essa frase fica falsa. Corrigi-la mexe no texto do
+     aceite, então provavelmente pede versão nova e re-aceite.
+  2. A política não lista o **comprovante de W.O.** entre os dados tratados.
+  3. `NOMEAR_ORGANIZADOR` grava três campos e **nenhum aceite versionado** — o
+     atleta tem aceite com data e versão; o organizador, que vai tratar o dado de
+     dezenas, não tem nada. Recomendação do guardião: a ação **recusar** enquanto
+     não gravar, para o portão ser o servidor e não a memória de alguém.
+  E o modal "Não vou conseguir jogar" diz que *"o **admin** vai analisar"* — o
+  atleta precisa saber, **antes de anexar a foto**, que quem vai abrir é o
+  organizador.
+
 ### Fresta no portão do dinheiro
 
 - **0.6.8 — Duas ações escapam do portão.** `DEFINIR_CONFIG_CIRCUITO` permite
@@ -173,14 +261,34 @@ real no minuto em que deixar de ser.
   existe só na tela do super-admin. Para um cliente pagante, aba ausente sem
   aviso lê como defeito.
 - **0.6.11 —** `LIBERAR_NAO_RENOVANTES` é despachado pelo app e **não existe no
-  servidor** — cai em "Ação desconhecida". Pré-existente.
+  servidor** — cai em "Ação desconhecida". Pré-existente. **CONTINUA ABERTO.**
+  Foi implementado e depois **retirado** em 27/09/2026, antes de subir, porque a
+  revisão desenterrou que a regra do prazo está invertida (item 0.6.15) e que a
+  tela e o motor não concordam. Implementar antes de decidir a regra seria
+  carimbar a regra errada em cima de vaga vendida — e no BH, com `writeAtleta`
+  escrevendo na tabela global, **12 de 12 atletas ativos** estavam no alvo do
+  filtro, num clique, sem desfazer. O que precisa vir junto quando voltar:
+  (a) a decisão do 0.6.15; (b) gate do BH ou asserção provando o caminho do BH;
+  (c) confirmação-com-nome na tela (é escrita destrutiva em massa);
+  (d) o retorno dizendo quantas vagas saíram, e quantas falharam — o laço não tem
+  transação; (e) gate na tela igual ao do motor, senão o botão acende num estado
+  que o servidor recusa com 409; (f) um único cálculo de prazo, num único fuso
+  (hoje o motor conta em UTC e a tela em hora local: 3h de diferença).
 - **0.6.12 —** Ovo e galinha: `NOMEAR_ORGANIZADOR` exige um atleta ativo, e
   circuito novo nasce vazio. A ordem obrigatória (abrir inscrições → o futuro
   organizador se inscreve → aprovar → nomear) não está escrita em lugar nenhum.
-- **0.6.13 —** `LER_COBRANCA_PLATAFORMA` não recusa o BH, ao contrário da
-  irmã. Inofensivo (só super-admin), mas incoerente.
-- **0.6.14 —** `CobrancaPlataformaCard` desempacota a resposta duas vezes, então
-  a tela mostrará campos vazios mesmo com configuração salva.
+- **0.6.13 — ✅ RESOLVIDO em 27/09/2026.** `LER_COBRANCA_PLATAFORMA` recusa o BH
+  com 400, como a irmã que escreve. Inerte na tela (o card já é escondido para o
+  BH): é defesa em profundidade. 2 asserções.
+- **0.6.14 — ✅ RESOLVIDO em 27/09/2026.** `CobrancaPlataformaCard` desempacotava
+  a resposta duas vezes e mostrava tudo em branco mesmo com configuração salva.
+  **Sem asserção** — é front, e nenhum teste executa `src/App.jsx`.
+  Consertar isto **acendeu** três coisas que ficavam escondidas atrás dos campos
+  vazios, e as três foram corrigidas na mesma fatia: o card guardava a
+  configuração do circuito ANTERIOR ao trocar de circuito (e "Salvar" gravaria no
+  novo) — resolvido com `key={circuitoSelId}`; os valores reabriam com ponto
+  decimal ("49.9") num campo de real; e o negativo saía "R$ -50,00" em vez de
+  "-R$ 50,00".
 
 ## Onda 0.7 — O que a revisão da 0.6.1 desenterrou (08/09/2026)
 

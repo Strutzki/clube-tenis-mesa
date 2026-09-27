@@ -4,14 +4,15 @@
 npm run teste
 ```
 
-Hoje são 535 asserções (19/09/2026). O `atualizar.sh` roda isso antes de publicar e se
-recusa a subir com teste vermelho.
+Hoje são 581 asserções (27/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
 
-A bateria **carrega e executa o motor de verdade**: o mesmo
-`supabase/functions/admin-action/index.ts` que o `npm run motor:publicar` sobe.
-Não há cópia da lógica dentro do teste.
+A bateria **carrega e executa as Edge Functions de verdade**: os mesmos arquivos
+que o `npm run motor:publicar` sobe. Hoje são três — `admin-action` (o grosso),
+`athlete-action` e `comprovante-url` — e `montarMotor({ funcao: "..." })` escolhe
+qual. Não há cópia da lógica dentro do teste.
 
 Isso importa porque o harness anterior
 (`harnesses/desfazer-processamento.harness.mjs`) faz o contrário: ele reescreve
@@ -25,6 +26,14 @@ que é útil; não prova nada sobre o código que está no ar.
 | `rating.mjs` | Sistema A: tabela da CBTM (favorito, zebra, fronteiras de faixa), rating de pico, histórico, W.O. +8/-15, o que o motor se recusa a processar |
 | `sistema-b.mjs` | Sistema B: pontos V=2/D=1, W.O. que não anula, bye do ímpar, e a garantia de que um circuito de pontos **nunca** escreve rating |
 | `isolamento.mjs` | Operar um circuito não toca em outro; escopo do organizador; exclusão global × por circuito; virada de temporada; freio do PIN |
+| `permissoes.mjs` | A allowlist do organizador, o portão do financeiro, e o escopo por circuito do `LISTAR_TELEFONES` (inclusive: a ação devolve só `id` e `telefone`) |
+| `onda-06.mjs` | Onda 0.6: desarquivar (e a prova de que o desarquivado volta a ser pareado), as duas guardas de LGPD, a recusa do BH na leitura da cobrança, e o comprovante de W.O. do organizador — este roda a função `comprovante-url` |
+| `mensagens.mjs` | Registro de mensagens enviadas: o motor não pode responder "sucesso" com a gravação falhando |
+| `contador-mensagens.mjs` | O contador de pendentes e os textos da barra de aviso do admin (checagem por regex no fonte do app) |
+| `erros-na-tela.mjs` | Que o app não esconde erro do servidor atrás de um dispatch otimista |
+| `nomes-que-nao-existem.mjs` | Que nenhum teste chame função que não existe |
+| `regulamento-por-circuito.mjs` | Versão de regulamento por circuito, carimbo e re-aceite (a maior seção da bateria) |
+| `pacote.mjs` | O que está no pacote publicado |
 | `ferramentas.mjs` | Asserções e o cenário de partida (atletas, partidas, circuitos com defaults reais) |
 | `carrega-motor.mjs` | Carrega a Edge Function real no Node |
 | `banco-falso.mjs` | Um Supabase em memória que imita o PostgREST |

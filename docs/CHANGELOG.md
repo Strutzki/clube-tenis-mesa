@@ -7,10 +7,22 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ### 2026-09-27 — Onda 0.6, fatia "o organizador consegue trabalhar" (5 itens)
 
-**A SUBIR — ainda não publicado** (falta o de acordo do Juliano): `admin-action`
-**v61 → v62**, `comprovante-url` **v2 → v3**, front por `git push`.
-**No ar continua:** `admin-action` v61, `comprovante-url` v2, front no bundle de
-27/09 da Onda 0.10.15. Datar esta linha no dia em que subir.
+**NO AR desde 27/09/2026, 20:17–20:46 (de acordo do Juliano: "pode")**:
+`admin-action` **v61 → v62**, `comprovante-url` **v2 → v3**, front no bundle
+`index-Dw7EeH6N.js` (push `4adc017..3d41405`).
+Ordem cumprida: motor primeiro, app depois. `motor:conferir` rodado **depois de
+cada função**: 9 funções, 0 divergências nas duas vezes. Site conferido ao vivo:
+HTTP 200 e o bundle novo sendo servido.
+
+**Dados antes e depois, conferidos:** atletas 15, circuitos 1, circuito_atletas 15,
+circuito_organizadores 0, partidas 34, solicitacoes_wo 5, pagamentos 12. Roster do
+BH: 12 ativos no circuito + 2 no backlog + 1 suspenso. Hashes de competição
+(`a4027146…`) e de rating (`7346db66…`) **inalterados**.
+Única diferença: `mensagens_enviadas` 274 → 288. **Rastreado**: 14 mensagens da
+categoria `regulamento`, todas gravadas em 5 segundos às 20:45 local — o Juliano
+disparando o aviso prévio do carimbo do regulamento (Onda 0.10.15) **durante** a
+publicação. Nada a ver com esta fatia, e as 14 foram registradas com sucesso,
+nenhuma ficou pendente.
 **Ordem obrigatória: as duas funções primeiro, o app depois.** O app novo tem o
 botão "↩️ Reativar" chamando `DESARQUIVAR_ATLETA` e manda telefone+PIN do
 organizador para o `comprovante-url`; se ele subir antes do motor, o organizador

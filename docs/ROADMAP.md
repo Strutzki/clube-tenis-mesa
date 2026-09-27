@@ -130,7 +130,7 @@ organizador" da Onda 0.10.
   atleta, o atleta some da lista, o servidor recusa com 403 e **nada aparece**.
   Ele acredita que excluiu. É uma linha de conserto, e enquanto ela não existir
   toda a proteção da v58 é invisível para quem esbarra nela. *(Experiência do Admin)*
-- **0.6.2 — ✅ RESOLVIDO em 27/09/2026 *(no fonte; o motor ainda está na v61 — sobe com o de acordo do Juliano)*.** Duas metades: (a) `LISTAR_TELEFONES`
+- **0.6.2 — ✅ RESOLVIDO em 27/09/2026 *(no ar: `admin-action` v62, `comprovante-url` v3)*.** Duas metades: (a) `LISTAR_TELEFONES`
   entrou na `ACOES_ORG` **escopada por circuito** (lê os membros em
   `circuito_atletas` e filtra), com o ramo do BH byte-idêntico ao anterior;
   (b) o erro deixou de morrer no `console.warn` — agora usa a barra de aviso do
@@ -142,7 +142,7 @@ organizador" da Onda 0.10.
   mensagem, e o botão de WhatsApp fica morto. Cuidado ao corrigir:
   `LISTAR_TELEFONES` hoje devolve o telefone de **todos** os atletas da
   plataforma, sem filtro de circuito — precisa de uma versão escopada primeiro.
-- **0.6.3 — ✅ RESOLVIDO em 27/09/2026 *(no fonte; o motor ainda está na v61 — sobe com o de acordo do Juliano)*.** Ação `DESARQUIVAR_ATLETA` no motor, na
+- **0.6.3 — ✅ RESOLVIDO em 27/09/2026 *(no ar: `admin-action` v62, `comprovante-url` v3)*.** Ação `DESARQUIVAR_ATLETA` no motor, na
   allowlist e no `ORG_MEMBRO_FIELD`. Devolve o atleta ao **backlog** (`status`
   "ativo" + `pendente_circuito` true), não para dentro do circuito: entrar numa
   rodada já pareada é `INCLUIR_NO_CIRCUITO`, e só o caminho do backlog respeita o
@@ -158,7 +158,7 @@ organizador" da Onda 0.10.
   *Era:* Arquivar é porta de mão única. Ele arquiva um atleta e não
   consegue desarquivar: o botão "Reativar" chama `EDITAR_ATLETA`, que ele não
   tem. Falta uma ação `DESARQUIVAR_ATLETA`.
-- **0.6.4 — ✅ RESOLVIDO em 27/09/2026 *(no fonte; o motor ainda está na v61 — sobe com o de acordo do Juliano)*.** `comprovante-url` passou a aceitar
+- **0.6.4 — ✅ RESOLVIDO em 27/09/2026 *(no ar: `admin-action` v62, `comprovante-url` v3)*.** `comprovante-url` passou a aceitar
   telefone+PIN de organizador, com escopo por recurso: só assina comprovante
   cujo `solicitacoes_wo.circuito_id` é o circuito dele, e a autorização corre
   **antes** do storage. 16 asserções rodando a função de verdade, incluindo as
@@ -370,10 +370,10 @@ organizador" da Onda 0.10.
 - **0.6.12 —** Ovo e galinha: `NOMEAR_ORGANIZADOR` exige um atleta ativo, e
   circuito novo nasce vazio. A ordem obrigatória (abrir inscrições → o futuro
   organizador se inscreve → aprovar → nomear) não está escrita em lugar nenhum.
-- **0.6.13 — ✅ RESOLVIDO em 27/09/2026 *(no fonte; o motor ainda está na v61 — sobe com o de acordo do Juliano)*.** `LER_COBRANCA_PLATAFORMA` recusa o BH
+- **0.6.13 — ✅ RESOLVIDO em 27/09/2026 *(no ar: `admin-action` v62, `comprovante-url` v3)*.** `LER_COBRANCA_PLATAFORMA` recusa o BH
   com 400, como a irmã que escreve. Inerte na tela (o card já é escondido para o
   BH): é defesa em profundidade. 2 asserções.
-- **0.6.14 — ✅ RESOLVIDO em 27/09/2026 *(no fonte; o motor ainda está na v61 — sobe com o de acordo do Juliano)*.** `CobrancaPlataformaCard` desempacotava
+- **0.6.14 — ✅ RESOLVIDO em 27/09/2026 *(no ar: `admin-action` v62, `comprovante-url` v3)*.** `CobrancaPlataformaCard` desempacotava
   a resposta duas vezes e mostrava tudo em branco mesmo com configuração salva.
   **Sem asserção** — é front, e nenhum teste executa `src/App.jsx`.
   Consertar isto **acendeu** três coisas que ficavam escondidas atrás dos campos

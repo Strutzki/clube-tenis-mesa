@@ -126,8 +126,18 @@ Deno.serve(async (req) => {
     if (!(await ehOrganizadorDe(r.atletaId, String(circuitoId)))) {
       return jsonResponse({ sucesso: false, erro: "Você não organiza este circuito." }, 403);
     }
-    // ESCOPO POR RECURSO: só assina o comprovante de um W.O. DESTE circuito. Sem isto,
-    // o organizador de um circuito abriria a prova de um W.O. de outro (dado pessoal).
+    // ESCOPO POR RECURSO: confere que o caminho pedido consta de um W.O. deste
+    // circuito. Sem isto, o organizador de um circuito abriria a prova de um W.O.
+    // de outro (dado pessoal).
+    // ⚠️ E ATENÇÃO, porque esta guarda NÃO é suficiente (item 0.6.17 do ROADMAP):
+    // `comprovante_url` é gravado cru a partir do payload (`athlete-action`, caso
+    // SOLICITAR_WO), e esse caso não exige token de sessão. Logo o organizador pode
+    // PLANTAR um W.O. no circuito dele apontando para o caminho de outro circuito,
+    // e este `.eq` casa com a linha que ele mesmo plantou. Inalcançável enquanto
+    // `circuito_organizadores` estiver vazia; fechar ANTES de nomear o primeiro
+    // organizador. O conserto desenhado: validar aqui o formato que o app gera
+    // (`wo-<matchId>-<timestamp>.jpg`), extrair o matchId e exigir que a PARTIDA
+    // seja deste circuito — que é prova que o atacante não controla.
     const alvo = String(path).replace(/^\/+/, "");
     const { data: solW } = await supabase.from("solicitacoes_wo")
       .select("id").eq("circuito_id", String(circuitoId)).eq("comprovante_url", alvo).maybeSingle();

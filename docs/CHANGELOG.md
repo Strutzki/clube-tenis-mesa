@@ -7,8 +7,10 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ### 2026-09-27 — Onda 0.6, fatia "o organizador consegue trabalhar" (5 itens)
 
-**No ar:** `admin-action` **v61 → v62**, `comprovante-url` **v2 → v3**, front por
-`git push`.
+**A SUBIR — ainda não publicado** (falta o de acordo do Juliano): `admin-action`
+**v61 → v62**, `comprovante-url` **v2 → v3**, front por `git push`.
+**No ar continua:** `admin-action` v61, `comprovante-url` v2, front no bundle de
+27/09 da Onda 0.10.15. Datar esta linha no dia em que subir.
 **Ordem obrigatória: as duas funções primeiro, o app depois.** O app novo tem o
 botão "↩️ Reativar" chamando `DESARQUIVAR_ATLETA` e manda telefone+PIN do
 organizador para o `comprovante-url`; se ele subir antes do motor, o organizador
@@ -22,9 +24,14 @@ ficou **de fora de propósito** da liberação de CORS do `localhost` de 07/09
 publicadas nesta função. A v3 sobe as duas coisas: o caminho do organizador **e**
 o CORS de desenvolvimento. É aditivo e só afeta navegador, mas está sendo dito
 aqui porque foi uma decisão de não subir, sendo desfeita de carona.
-O fonte da v2 no ar foi salvo em
-`docs/backups/motor-no-ar-2026-09-27/ar-comprovante-url-v2.ts` — não existia
-backup dessa função em nenhum lugar, e não há rollback de Edge Function.
+O fonte da v2 no ar foi baixado da API e salvo em
+`docs/backups/motor-no-ar-2026-09-27/ar-comprovante-url-v2.ts`. **Correção de uma
+afirmação errada minha:** eu disse que não existia backup dessa função em lugar
+nenhum. Existia — `BACKUPS/motor-no-ar-2026-09-07/ar-comprovante-url.ts` (a pasta
+de backups fora do repositório, a da convenção do `CLAUDE.md`), e conferi: é
+**byte-idêntico** ao que está no ar. Eu tinha procurado só dentro do repositório.
+A cópia de 27/09 fica de qualquer forma, datada do deploy, como manda a
+convenção — e porque não há rollback de Edge Function.
 
 **O que muda:**
 
@@ -53,12 +60,44 @@ regra do prazo dos 7 dias está invertida em relação ao Cap. 13 (novo item 0.6
 e que a tela e o motor não concordam. O botão continua caindo em "Ação
 desconhecida", como antes — nenhuma regressão, nenhum conserto.
 
-**Bateria: 535 → 581 asserções, 0 falhas.** A contabilidade não é óbvia:
+**Bateria: 535 → 583 asserções, 0 falhas.** A contabilidade não é óbvia:
 `testes/onda-06.mjs` traz **36** novas; `testes/permissoes.mjs` foi de 25 para
-**33** (perdeu **1** — a que exigia o organizador BARRADO em `LISTAR_TELEFONES`,
+**35** (perdeu **1** — a que exigia o organizador BARRADO em `LISTAR_TELEFONES`,
 conquista registrada em 07/09, que passou a descrever o comportamento **antigo** —
-e ganhou **9** do contrato novo); `testes/contador-mensagens.mjs` foi de 22 para
-**24**. 535 − 1 + 9 + 36 + 2 = 581. **13 testes de mutação, 13 vermelhos.**
+e ganhou **9** do contrato novo do telefone, mais **2** que protegem
+`NOMEAR_ORGANIZADOR` e `REMOVER_ORGANIZADOR`, que não tinham asserção nenhuma);
+`testes/contador-mensagens.mjs` foi de 22 para **24**.
+535 − 1 + 9 + 2 + 36 + 2 = 583. **16 testes de mutação, 16 vermelhos.**
+
+As duas asserções dos papéis são o item mais barato e mais valioso da onda, e a
+mutação mostrou por quê: conceder as duas ações ao organizador fazia
+`REMOVER_ORGANIZADOR` responder **200** — um organizador removeria outro. Todo o
+parecer do Guardião Jurídico se apoiava em "existe uma única porta para criar
+organizador, e ela é do super-admin"; era exatamente a regra que a bateria não
+protegia.
+
+**🔴 E o achado que vale mais que esta fatia: o portão do `atualizar.sh` estava
+cego para 68% da bateria.** `placar()` **devolve** 0 ou 1 e não sai do processo, e
+quatro arquivos o chamavam sem `process.exit(...)` —
+`nomes-que-nao-existem.mjs`, `erros-na-tela.mjs`, `contador-mensagens.mjs` e
+`regulamento-por-circuito.mjs`. Eles saíam com código **0 mesmo com falha**, o
+`&&` do `npm run teste` seguia adiante, e o `atualizar.sh`, que lê o código de
+saída, **publicaria**. Eram **395 das 581** asserções de então, incluindo os
+**351** do regulamento — os que foram escritos justamente depois do episódio das
+regex de 19/09. Corrigido nos quatro, e provado: com uma asserção do regulamento
+sabotada, `npm run teste` agora sai com **1**; antes saía 0. Achado do Guardião de
+Confiabilidade. Nenhum dos quatro estava vermelho em silêncio — conferido antes de
+corrigir, para o conserto não acender nada escondido.
+
+**Uma condição de nomeação que esta fatia abriu, registrada como item 0.6.17:** o
+"escopo por recurso" do comprovante é **derrotável**. Ele confere que o caminho
+pedido consta de um W.O. do circuito do organizador — mas `comprovante_url` é
+gravável por quem chama, e `SOLICITAR_WO` não exige token de sessão. Então o
+organizador planta um W.O. no circuito dele apontando para o caminho de outro
+circuito, e a conferência casa com a linha que ele mesmo plantou. **Inalcançável
+hoje** (zero organizadores, zero comprovantes no banco) e só passa a existir com
+um ato deliberado do super-admin: nomear o primeiro organizador. Não bloqueia esta
+subida; **bloqueia nomear**.
 
 **Duas coisas na infraestrutura de teste, e a segunda é grave:**
 1. A bateria passou a executar **três** Edge Functions (era duas):
@@ -69,6 +108,10 @@ e ganhou **9** do contrato novo); `testes/contador-mensagens.mjs` foi de 22 para
    `select("id, telefone")` por `select("*")` em `LISTAR_TELEFONES` deixava a
    bateria **verde**, mesmo passando a devolver o `pin_hash` de todos os atletas
    do circuito. Agora projeta, e há asserção conferindo as chaves devolvidas.
+   **O alcance disso é maior que o item 0.6.2:** enquanto o banco em memória não
+   projetava, **toda** asserção da forma "esta ação devolve só X" estava improvada.
+   A mutação também trouxe de volta `isento` — coluna da blindagem, que é regra
+   inviolável. É aprendizado de bateria, não de fatia.
 
 **A lição desta rodada, para ficar registrada:** a primeira versão desta fatia
 gravava `status: "ativo_backlog"` — que é **rótulo do `<select>` da tela**, não

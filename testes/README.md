@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 581 asserções (27/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 583 asserções (27/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -59,7 +59,7 @@ que você acha que está.
 
 As mutações já verificadas nesta bateria:
 
-| Sabotagem no `admin-action` | Resultado |
+| Sabotagem na função | Resultado |
 |---|---|
 | `benef.rating + 8` → `+ 7` | 2 asserções vermelhas |
 | tabela CBTM `{max:24, v:10}` → `v:11` | 5 vermelhas |
@@ -69,12 +69,50 @@ As mutações já verificadas nesta bateria:
 | exclusão em circuito não-BH apagando `atletas` | 2 vermelhas |
 | tirar a checagem `ehOrganizadorDe` | 3 vermelhas |
 | freio de tentativas de PIN nunca disparar | 1 vermelha |
+| **Onda 0.6 — 27/09/2026 (16 sabotagens, 16 vermelhas)** | |
+| `select("id, telefone")` → `select("*")` em `LISTAR_TELEFONES` | 1 vermelha — **e esta ficava VERDE até o banco falso projetar colunas**; devolvia `pin_hash` e `isento` de todo atleta do circuito |
+| `status: "ativo"` → `"ativo_backlog"` no `DESARQUIVAR_ATLETA` | 6 vermelhas — 4 delas comportamentais (o atleta não é promovido, não recebe chave, não é pareado), que pegariam o defeito mesmo se alguém "consertasse" a asserção do valor |
+| `DESARQUIVAR` entrando direto no circuito (`pendente_circuito: false`) | 2 vermelhas |
+| `LISTAR_TELEFONES` sem o `.in("id", idsTel)` | 3 vermelhas |
+| `LISTAR_TELEFONES` sem o ramo do BH (regra 2) | 1 vermelha |
+| `LISTAR_TELEFONES` fora da `ACOES_ORG` | 3 vermelhas |
+| `DESARQUIVAR` sem a guarda "está arquivado?" | 1 vermelha |
+| `DESARQUIVAR` sem a guarda do pedido de exclusão (LGPD) | 2 vermelhas |
+| `DESARQUIVAR` sem a guarda do cadastro anonimizado (LGPD) | 1 vermelha |
+| `DESARQUIVAR` fora do `ORG_MEMBRO_FIELD` | 1 vermelha |
+| `LER_COBRANCA_PLATAFORMA` voltando a aceitar o BH | 1 vermelha |
+| `comprovante-url` sem o escopo por recurso | 2 vermelhas, incluindo "nada é assinado" |
+| `comprovante-url` sem conferir o vínculo de organizador | 2 vermelhas |
+| `comprovante-url` assinando caminho diferente do pedido | 1 vermelha |
+| `NOMEAR_ORGANIZADOR`/`REMOVER_ORGANIZADOR` concedidas ao organizador | 2 vermelhas — e revelou que `REMOVER_ORGANIZADOR` responderia **200**: um organizador removeria outro |
+| uma asserção qualquer do `regulamento-por-circuito.mjs` | **prova do portão**: `npm run teste` agora sai com código **1**; antes saía **0** |
+
+## O portão: todo arquivo termina em `process.exit(placar(...))`
+
+`placar()` **devolve** 0 ou 1 — não sai do processo. Um arquivo que chame
+`placar("...")` sem `process.exit(...)` **sai com código 0 mesmo imprimindo
+"Falhas:"**, o `&&` do `npm run teste` segue para o próximo, e o `atualizar.sh`,
+que lê o código de saída, publica.
+
+Isso aconteceu de verdade, e ficou assim por semanas: até 27/09/2026 quatro
+arquivos estavam nessa condição — `nomes-que-nao-existem.mjs`,
+`erros-na-tela.mjs`, `contador-mensagens.mjs` e `regulamento-por-circuito.mjs` —,
+o que cegava o portão para **395 das 581** asserções, incluindo os **351** do
+regulamento. Corrigido, e provado sabotando uma asserção do regulamento: o
+`npm run teste` passou a sair com **1**.
 
 ## O que ainda não é testado
 
-- O front (`src/App.jsx`) — nada dele passa por aqui.
-- `athlete-action`, `login-atleta`, `circuito-dados` — o carregador já serve
-  para elas; faltam as asserções.
+- O front (`src/App.jsx`) — não é **executado** por teste nenhum. O que existe são
+  checagens por regex no texto fonte (ver `erros-na-tela.mjs`,
+  `contador-mensagens.mjs`, `nomes-que-nao-existem.mjs` na tabela acima), e regex
+  registra que um trecho de texto está lá — **não** prova comportamento. Para
+  **texto de tela** isso é o certo, porque a afirmação é literalmente "esta frase
+  está aqui"; para regra, não serve.
+- `login-atleta` e `circuito-dados` — o carregador já serve para elas; faltam as
+  asserções. O `athlete-action` **já é executado** (8 cenários: os 7 do
+  `ACEITAR_REGULAMENTO` mais o do `INSCREVER`), e o `comprovante-url` também
+  (16 asserções, desde 27/09/2026).
 - Pareamento e geração de jogos (`INICIAR_ETAPA`, `AVANCAR_RODADA`).
 - Desempates do ranking (`cmpRankingDB` / `cmpRankingB`).
 - O financeiro.

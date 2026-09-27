@@ -71,4 +71,4 @@ secao("Nenhum nome usado no app deixou de existir");
     "os globais de navegador continuam declarados — sem isso a regra vira ruído");
 }
 
-placar("Nomes que não existem");
+process.exit(placar("Nomes que não existem"));

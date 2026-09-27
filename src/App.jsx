@@ -4942,6 +4942,12 @@ export default function App() {
   // cancelado. Continua TENTANDO a cada aba (uma retentativa pode funcionar);
   // só não repete o aviso.
   const telsErroCircRef = useRef(null);
+  // O mesmo, para a leitura do histórico. Sem ele o guarda de telefone só
+  // protegia METADE: `garantirTelefones` chama `garantirMensagensEnviadas` antes
+  // de tudo, e essa falha reavisava a cada troca de aba — então a barra voltava,
+  // e voltava falando do histórico quando a falha que o admin acabara de fechar
+  // era a do telefone. Mesma falha descrita de dois jeitos em dois toques.
+  const msgsErroCircRef = useRef(null);
   // "nao-carregado" | "ok" | "erro". O histórico de mensagens saiu da carga geral
   // por LGPD e passou a ser buscado sob demanda — mas o contador de pendentes
   // continuou somando contra ele. Sem histórico, TUDO parecia pendente, e o
@@ -5334,14 +5340,18 @@ export default function App() {
       }));
       dispatch({ type: "SET_MENSAGENS_ENVIADAS", payload: mapa });
       msgsCircRef.current = CIRCUITO_ATIVO;
+      msgsErroCircRef.current = null;
       setMsgsStatus("ok");
     } catch(e) {
       console.warn("Não consegui carregar o histórico de mensagens:", e.message);
       // Não morre mais no console: sem histórico o contador fica cego, e o admin
       // precisa saber disso — senão volta a cobrar mensagem já enviada.
       setMsgsStatus("erro");
-      setAcaoErro({ acao: "LISTAR_MENSAGENS", msg: e.message, recarregou: true, leitura: true,
-        cancelado: e.message === MSG_PIN_CANCELADO, status: (typeof e.status === "number" ? e.status : null) });
+      if (msgsErroCircRef.current !== CIRCUITO_ATIVO) {
+        msgsErroCircRef.current = CIRCUITO_ATIVO;
+        setAcaoErro({ acao: "LISTAR_MENSAGENS", msg: e.message, recarregou: true, leitura: true,
+          cancelado: e.message === MSG_PIN_CANCELADO, status: (typeof e.status === "number" ? e.status : null) });
+      }
     }
   }
 
@@ -7491,7 +7501,7 @@ function CobrancaPlataformaCard({ chamarAdminAction, circuitoSelId, ativosCount 
                 <div style={{fontSize:12.5,color:T.offwhite,lineHeight:1.7}}>
                   Receita dos atletas: <b>{fmtR(prev.receitaAtletasCent)}</b><br/>
                   Plataforma (fixo {fmtR(prev.plataformaFixoCent)} + por atleta {fmtR(prev.plataformaPorAtletaCent)}): <b style={{color:T.terracota}}>{fmtR(prev.plataformaTotalCent)}</b><br/>
-                  Organizador recebe (via split): <b>{fmtR(prev.organizadorBrutoCent)}</b>{prev.plataformaFixoCent > 0 && <> · líquido após o fixo: <b style={{color: prev.organizadorLiquidoCent < 0 ? T.vermelho : T.verde2}}>{fmtR(prev.organizadorLiquidoCent)}</b></>}
+                  Organizador recebe (via split): <b>{fmtR(prev.organizadorBrutoCent)}</b>{prev.plataformaFixoCent > 0 && <span style={{whiteSpace:"nowrap"}}> · líquido após o fixo: <b style={{color: prev.organizadorLiquidoCent < 0 ? T.vermelho : T.verde2}}>{fmtR(prev.organizadorLiquidoCent)}</b></span>}
                 </div>
                 {prev.organizadorLiquidoCent < 0 && <div style={{fontSize:11,color:T.vermelho,marginTop:6}}>⚠️ Com poucos atletas, o fixo deixa o organizador no negativo. Considere fixo menor.</div>}
               </div>
@@ -8463,12 +8473,24 @@ function RenovacaoAdminPanel({ state, dispatch }) {
               Sem resposta: {naoRenov.map(a=>a.apelido||a.name).join(", ")}
             </div>
           )}
-          <Btn full color={prazoPassou && naoRenov.length>0 ? "#9C6F3E" : "#5E7569"}
-            disabled={!prazoPassou || naoRenov.length===0}
-            onClick={()=>{ if(confirm(`Liberar ${naoRenov.length} vaga(s) dos atletas que não renovaram? Eles vão para o backlog (mantêm o acesso).`)) dispatch({type:"LIBERAR_NAO_RENOVANTES"}); }}>
-            Liberar {naoRenov.length} vaga(s) dos não-renovantes
+          {/* EM REVISÃO (27/09/2026, ROADMAP 0.6.11 e 0.6.15). Este botão nunca
+              funcionou: o servidor não conhece a ação LIBERAR_NAO_RENOVANTES e
+              responde "Ação desconhecida", com o nome da ação em maiúsculas na
+              barra de aviso — e o confirm prometia "eles vão para o backlog
+              (mantêm o acesso)", que não acontecia. Ficou desabilitado em vez de
+              continuar prometendo: a revisão de 27/09 descobriu que a regra do
+              prazo está INVERTIDA em relação ao Cap. 13 (a prioridade vai de
+              início−7 ATÉ início; as vagas abrem depois disso, não antes), então a
+              ação não pode voltar antes de a regra ser decidida. Enquanto isso, a
+              vaga de quem não renovou é resolvida na virada de temporada, pelo
+              pagamento — que é o que o Cap. 13 manda. */}
+          <Btn full color="#5E7569" disabled>
+            Liberar vagas dos não-renovantes
           </Btn>
-          {!prazoPassou && <div style={{fontSize:10,color:"#7d9188",marginTop:6,textAlign:"center"}}>Disponível após {prazoTxt}</div>}
+          <div style={{fontSize:10,color:"#9db3a8",marginTop:6,textAlign:"center",lineHeight:1.5}}>
+            Em revisão: o prazo de renovação está sendo conferido contra o regulamento.
+            A vaga de quem não renovou continua sendo resolvida na virada de temporada.
+          </div>
         </>
       )}
     </Card>
@@ -8916,9 +8938,14 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
                   mais alta do app não pode marcar a ação mais inócua. O ✏️ fica:
                   era o ÚNICO caminho para a ficha de um atleta arquivado, e o
                   <select> de status é o único jeito de mandá-lo direto para ativo. */}
-              <div style={{display:"flex",gap:6}}>
+              {/* flexShrink:0 como na linha dos Aprovados: com DOIS botões, a 375px
+                  o texto da esquerda e os botões pedem mais largura do que o card
+                  tem, e sem isto o "↩️ Reativar" quebra DENTRO do botão e desalinha
+                  a linha. O ✏️ vai no mesmo cinza do Reativar: ele é a ação
+                  secundária aqui, e terracota o deixaria dominando a principal. */}
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
                 <Btn small color="#5E7569" onClick={()=>{ if(confirm(`Reativar ${a.apelido||a.name}? Ele volta para o Backlog do Circuito, aguardando vaga na próxima entrada.`)) desarquivarAtleta(a.id); }}>↩️ Reativar</Btn>
-                <Btn small color="#D85A30" onClick={()=>abrirEditar(a)}>✏️</Btn>
+                <Btn small color="#5E7569" onClick={()=>abrirEditar(a)}>✏️</Btn>
               </div>
             </div>
           </Card>

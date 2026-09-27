@@ -1899,4 +1899,4 @@ secao("A tela não mente sobre a virada antes do servidor responder");
     `as ações que esperam resposta conferem o resultado antes de seguir (achadas: ${seguiuNoSucesso} + ${desfezNaFalha})`);
 }
 
-placar("Regulamento por circuito");
+process.exit(placar("Regulamento por circuito"));

@@ -130,24 +130,24 @@ organizador" da Onda 0.10.
   atleta, o atleta some da lista, o servidor recusa com 403 e **nada aparece**.
   Ele acredita que excluiu. É uma linha de conserto, e enquanto ela não existir
   toda a proteção da v58 é invisível para quem esbarra nela. *(Experiência do Admin)*
-- **0.6.2 — ✅ RESOLVIDO em 27/09/2026.** Duas metades: (a) `LISTAR_TELEFONES`
+- **0.6.2 — ✅ RESOLVIDO em 27/09/2026 *(no fonte; o motor ainda está na v61 — sobe com o de acordo do Juliano)*.** Duas metades: (a) `LISTAR_TELEFONES`
   entrou na `ACOES_ORG` **escopada por circuito** (lê os membros em
   `circuito_atletas` e filtra), com o ramo do BH byte-idêntico ao anterior;
   (b) o erro deixou de morrer no `console.warn` — agora usa a barra de aviso do
   admin, com texto próprio ("não deu para carregar os telefones"), e não repete o
-  aviso a cada troca de aba. 7 asserções em `testes/permissoes.mjs`, uma delas
+  aviso a cada troca de aba. 9 asserções em `testes/permissoes.mjs`, uma delas
   travando que a ação devolve **só `id` e `telefone`** (nunca `pin_hash`).
   *Era:* A tela de inscrições nunca carrega. O organizador não pode ler
   telefones, então todo telefone fica em "carregando…" para sempre, sem
   mensagem, e o botão de WhatsApp fica morto. Cuidado ao corrigir:
   `LISTAR_TELEFONES` hoje devolve o telefone de **todos** os atletas da
   plataforma, sem filtro de circuito — precisa de uma versão escopada primeiro.
-- **0.6.3 — ✅ RESOLVIDO em 27/09/2026.** Ação `DESARQUIVAR_ATLETA` no motor, na
+- **0.6.3 — ✅ RESOLVIDO em 27/09/2026 *(no fonte; o motor ainda está na v61 — sobe com o de acordo do Juliano)*.** Ação `DESARQUIVAR_ATLETA` no motor, na
   allowlist e no `ORG_MEMBRO_FIELD`. Devolve o atleta ao **backlog** (`status`
   "ativo" + `pendente_circuito` true), não para dentro do circuito: entrar numa
   rodada já pareada é `INCLUIR_NO_CIRCUITO`, e só o caminho do backlog respeita o
   corte do último terço (Cap. 11) e o teto de 20. Recusa quem pediu exclusão de
-  dados e quem já foi anonimizado. 13 asserções, incluindo a de ponta a ponta
+  dados e quem já foi anonimizado. 18 asserções, incluindo a de ponta a ponta
   (desarquivar → `INICIAR_ETAPA` → o atleta recebe chave e é pareado) e a do
   caminho do BH.
   **Lição registrada:** a primeira versão gravava a string `"ativo_backlog"`, que
@@ -158,17 +158,19 @@ organizador" da Onda 0.10.
   *Era:* Arquivar é porta de mão única. Ele arquiva um atleta e não
   consegue desarquivar: o botão "Reativar" chama `EDITAR_ATLETA`, que ele não
   tem. Falta uma ação `DESARQUIVAR_ATLETA`.
-- **0.6.4 — ✅ RESOLVIDO em 27/09/2026.** `comprovante-url` passou a aceitar
+- **0.6.4 — ✅ RESOLVIDO em 27/09/2026 *(no fonte; o motor ainda está na v61 — sobe com o de acordo do Juliano)*.** `comprovante-url` passou a aceitar
   telefone+PIN de organizador, com escopo por recurso: só assina comprovante
   cujo `solicitacoes_wo.circuito_id` é o circuito dele, e a autorização corre
-  **antes** do storage. 13 asserções rodando a função de verdade, incluindo as
+  **antes** do storage. 16 asserções rodando a função de verdade, incluindo as
   que provam que **nada é assinado** quando recusa.
   *Era:* Ele decide W.O. sem ver a prova. Abrir o comprovante do W.O.
   justificado exige o PIN do super-admin.
 - **0.6.5 — A janela de pré-inscrição.** Perder `ABRIR_PROXIMA_TEMPORADA` não
   tira dele a virada de temporada (essa nunca foi dele) — tira a capacidade de
   **vender a temporada seguinte enquanto joga a atual**, 3 vezes por ano, com
-  prazo colado (a renovação prioritária fecha 7 dias antes do início). Enquanto
+  prazo colado (a renovação prioritária fecha 7 dias antes do início — ⚠️ **esta frase reproduz
+  a inversão do item 0.6.15**: pelo Cap. 13 a janela **abre** em `início−7` e as
+  vagas só abrem a partir do início). Enquanto
   a janela estiver fechada, **o card "Quero renovar" não existe no app do
   atleta**. Pior: se a temporada virar sem essa janela ter sido aberta, todos os
   atletas viram como **não-pagos**. Desenho proposto: devolver a ação com filtro
@@ -186,12 +188,103 @@ organizador" da Onda 0.10.
   `lembrete_renovacao` (cujo "empurrão nos últimos 3 dias" cai **antes** de a
   janela abrir) e o cálculo do botão de liberar vagas. **Efeito prático: o atleta
   recebe 0 dos 7 dias de prioridade que o regulamento promete.**
+  **Tamanho certo do problema, para decidir com ele na mão** (precisado pelo
+  Guardião do Regulamento em 27/09/2026): hoje **nenhuma vaga é tirada errado**. A
+  ação que tirava saiu do motor, e na virada de temporada a vaga é decidida pelo
+  **pagamento** — que é exatamente o que o Cap. 13 manda. O que está errado hoje é
+  o **prazo que o atleta lê**, em quatro lugares. É erro de informação, não de vaga
+  nem de dinheiro. Continua sendo o único prazo do app que *virá* a custar a vaga
+  dele, e por isso tem de ser resolvido antes de a ação voltar.
   E o app se contradiz na mesma tela: um texto diz *"a janela abre 7 dias antes"*
   e o outro trata a mesma data como encerramento. Um dos dois está errado.
   Dois caminhos: (a) corrigir o app nos quatro pontos (a leitura do regulamento
   é a que vale), ou (b) mudar o Cap. 13 nas duas versões **com aviso prévio e
   re-aceite** — que é a máquina que a Onda 0.10.15 construiu. Não dá para deixar
   como está: é o único prazo do app que custa a vaga do atleta.
+
+- **0.6.17 — O escopo por recurso do comprovante de W.O. é derrotável.** ⛔ *bloqueia
+  nomear o primeiro organizador* — achado do Guardião de Segurança em 27/09/2026,
+  na revisão do 0.6.4.
+  O `comprovante-url` confere que o caminho pedido consta de um W.O. do circuito do
+  organizador. Só que `comprovante_url` **é gravável por quem chama**: o
+  `athlete-action`, no `SOLICITAR_WO`, copia o valor cru do payload, e esse caso
+  **não exige token de sessão** (é a metade habilitante, já registrada no 0.7.1).
+  Então o organizador planta um W.O. no circuito dele apontando para o caminho de
+  **outro** circuito, e a conferência casa com a linha que ele mesmo plantou — e ele
+  baixa a foto/print do W.O. alheio. As três peças, com as linhas: o `.eq`
+  auto-referente em `comprovante-url` (busca por `comprovante_url`), o
+  `comprovante_url: p.comprovanteUrl || null` do `athlete-action`, e o
+  `SOLICITAR_WO` que só exige que o `athleteId` participe do `matchId`.
+  **Inalcançável hoje:** `circuito_organizadores` = 0 linhas e **nenhum** dos 5 W.O.
+  do banco tem comprovante. Passa a existir por um ato deliberado — nomear o
+  primeiro organizador.
+  **Conserto desenhado, e cabe inteiro dentro do `comprovante-url`** (não toca o
+  caminho do atleta): validar no ramo do organizador o formato que o app gera —
+  `wo-<matchId>-<timestamp>.jpg`, e os ids de partida em produção são
+  `[A-Za-z0-9_]+`, sem hífen, então a extração é sem ambiguidade —, tirar o
+  `matchId` do caminho e exigir que **a partida** seja deste circuito. É o mesmo
+  escopo-por-partida que o `admin-action` já faz no `ORG_MATCH_FIELD`, e é prova que
+  o atacante não controla. Não há comprovante legado para acomodar.
+  **Asserção que precisa nascer com ele** (hoje ficaria vermelha): plantar em
+  `solicitacoes_wo` uma linha do circuito do organizador apontando para o caminho de
+  outro circuito, e exigir **403 com zero assinaturas**. Com teste de mutação.
+  Amarrado ao **0.6.7** (base jurídica) e ao **0.7.1** (`athlete-action` sem token).
+
+- **0.6.18 — `writeAtleta` responde "sucesso" quando a única escrita falhou.**
+  Achado do Guardião de Confiabilidade em 27/09/2026. Em circuito **não-BH**,
+  `status` e `pendente_circuito` são colunas sazonais, então `identidade` sai vazio
+  e a única escrita é o `mirrorSazonal` — que é *best-effort* e **engole o erro**
+  (só registra no console e segue). A ação responde `sucesso: true` e o atleta
+  continua como estava. A decisão de best-effort vem da Fase 4B e tem justificativa
+  no BH ("nunca quebrar a operação do BH"); **em circuito não-BH o espelho não é
+  espelho, é o registro principal**, e ali o best-effort está errado.
+  Vale para `ARQUIVAR_ATLETA`, `DESARQUIVAR_ATLETA`, `INCLUIR_NO_CIRCUITO`,
+  `RECUSAR_CIRCUITO` e `DEFINIR_DESCONTO_ATLETA` — é classe, não caso.
+  **Inalcançável hoje:** existe 1 circuito (o BH), e no ramo do BH o `writeAtleta`
+  **lança** o erro de verdade. A tela também se autocorrige, porque roda
+  `loadFromSupabase()` depois da ação — o admin vê "sucesso" e o atleta como antes:
+  confuso, mas sem perda nem corrupção de dado.
+  **Conserto:** `mirrorSazonal` propagar o erro quando `identidade` estiver vazio.
+  Mexe no `writeAtleta`, usado por quase toda ação que escreve atleta → exige as
+  **8 duplas completas**. Nenhuma asserção pega hoje: o upsert do banco falso nunca
+  falha, então o conserto precisa nascer com `banco.recusar(...)`.
+
+- **0.6.19 — Número de capítulo errado em toda tela de circuito não-BH.**
+  Achado do Guardião do Regulamento em 27/09/2026. O `RegulamentoView` **renumera**
+  os capítulos por versão (o `vA-nc-01` tira o capítulo do torneio e reindexa; o
+  `vB-01` tem lista própria de 13), mas as telas de admin citam a numeração do BH,
+  fixa. É off-by-one **sistemático**, não avulso:
+
+  | regra | BH (v03-12/v03-13) | `vA-nc-01` e `vB-01` | o app cita |
+  |---|---|---|---|
+  | Como Participar (último terço, teto, fila) | Cap. 11 | **Cap. 10** | Cap. 11 |
+  | Valor da Temporada | Cap. 12 | Cap. 11 | — |
+  | Estrutura das Rodadas (mínimo 8, nº de rodadas) | Cap. 13 | **Cap. 12** | Cap. 13 |
+
+  **Não é urgente porque nenhum atleta vê número errado** — o texto que ele aceita
+  é internamente coerente; os números errados só aparecem em tela de admin, e
+  apontam para regras que são verdadeiras nas três famílias. É ponteiro errado para
+  regra certa.
+  **O que vale promover ao topo deste item**, porque não é typo: o `IniciarEtapaPanel`
+  diz *"os confrontos serão gerados por **proximidade de rating** … (Cap. 03)"*. O
+  **número está certo** (Cap. 03 é Sistema de Pareamento nas duas famílias) e a
+  **afirmação está errada**: em circuito Sistema B o pareamento é por sorteio ou
+  grupos, nunca por rating. É declaração falsa sobre o que o motor vai fazer, no
+  primeiro botão que um organizador novo aperta.
+
+- **0.6.20 — `autenticarOrganizador` virou cópia em dois lugares.**
+  Achado do Guardião Jurídico em 27/09/2026, ao revisar o 0.6.4. O `comprovante-url`
+  recebeu uma cópia fiel de `autenticarOrganizador` + `_verifyPin` do
+  `admin-action`. **O risco não é elegância:** as duas cópias implementam a trava de
+  5 tentativas e o bloqueio de 15 minutos. Um conserto nessa trava numa não chega na
+  outra, e o sintoma seria silencioso — a função "esquecida" continuaria aceitando
+  tentativas. Cópia fiel hoje, conferida linha a linha; o risco é o tempo.
+  Fica junto do **0.7.1**, que é da mesma família (código de autenticação).
+  As duas também leem a tabela `atletas` inteira, **sem limite**, para achar um
+  atleta por telefone — o hash de PIN de todo mundo em memória a cada tentativa. E
+  o 429 do bloqueio é um oráculo de "este telefone está cadastrado", que também
+  permite travar o PIN de qualquer atleta por 15 minutos. Pré-existente; agora em
+  dois endpoints.
 
 - **0.6.16 — O atleta em backlog não sabe que está em backlog.**
   Achado de 27/09/2026. Quem está `ativo` + `pendente_circuito` (aprovado
@@ -277,10 +370,10 @@ organizador" da Onda 0.10.
 - **0.6.12 —** Ovo e galinha: `NOMEAR_ORGANIZADOR` exige um atleta ativo, e
   circuito novo nasce vazio. A ordem obrigatória (abrir inscrições → o futuro
   organizador se inscreve → aprovar → nomear) não está escrita em lugar nenhum.
-- **0.6.13 — ✅ RESOLVIDO em 27/09/2026.** `LER_COBRANCA_PLATAFORMA` recusa o BH
+- **0.6.13 — ✅ RESOLVIDO em 27/09/2026 *(no fonte; o motor ainda está na v61 — sobe com o de acordo do Juliano)*.** `LER_COBRANCA_PLATAFORMA` recusa o BH
   com 400, como a irmã que escreve. Inerte na tela (o card já é escondido para o
   BH): é defesa em profundidade. 2 asserções.
-- **0.6.14 — ✅ RESOLVIDO em 27/09/2026.** `CobrancaPlataformaCard` desempacotava
+- **0.6.14 — ✅ RESOLVIDO em 27/09/2026 *(no fonte; o motor ainda está na v61 — sobe com o de acordo do Juliano)*.** `CobrancaPlataformaCard` desempacotava
   a resposta duas vezes e mostrava tudo em branco mesmo com configuração salva.
   **Sem asserção** — é front, e nenhum teste executa `src/App.jsx`.
   Consertar isto **acendeu** três coisas que ficavam escondidas atrás dos campos

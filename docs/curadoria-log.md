@@ -13,6 +13,75 @@
 > a cópia original (mais abaixo, sob "2026-09-05 — Bootstrap da curadoria...")
 > é a que fica.
 
+## 2026-09-27 — Onda 0.6, fatia "o organizador consegue trabalhar"
+
+**Publicado?** Não. Commitado e **aguardando o de acordo do Juliano**. O motor
+segue na v61 e o `comprovante-url` na v2.
+
+**Números somados por mim, seção a seção** (não do relato do coordenador):
+`npm run teste` = **583 asserções, 0 falhas** nas 11 seções. Build OK.
+Aritmética: 535 − 1 + 9 + 2 + 36 + 2 = 583. Versões no ar conferidas por
+`motor:listar`: `admin-action` v61, `athlete-action` v21, `login-atleta` v9,
+`comprovante-url` v2.
+
+**Fechados (no fonte):** 0.6.2 (telefones escopados por circuito + o erro deixando
+de morrer no console), 0.6.3 (`DESARQUIVAR_ATLETA`, com as duas guardas de LGPD),
+0.6.4 (comprovante de W.O. para o organizador, com escopo por circuito), 0.6.13
+(leitura da cobrança recusando o BH), 0.6.14 (desempacotamento duplo do card da
+cobrança — e os três defeitos que consertá-lo acendeu).
+
+**Abertos que esta rodada CRIOU** — é o dado mais importante desta entrada, porque
+significa que o ⛔ da Onda 0.6 ficou **mais longe**, não mais perto: 0.6.15 (janela
+dos 7 dias invertida em relação ao Cap. 13), 0.6.16 (o atleta em backlog não sabe
+que está), 0.6.17 (o escopo do comprovante é derrotável — bloqueia nomear),
+0.6.18 (`writeAtleta` respondendo sucesso com a escrita falhada), 0.6.19
+(numeração de capítulo em circuito não-BH, e o "proximidade de rating" falso para
+Sistema B), 0.6.20 (`autenticarOrganizador` virou cópia em dois lugares). Mais o
+0.6.11 de volta à lista. **Isso não é retrocesso: é a primeira vez nesta onda em
+que o acervo registra o preço real de nomear um organizador.**
+
+**O rito funcionou, e é o registro que justifica ele existir.** Primeira rodada:
+**6 dos 8 guardiões deram NO-GO**, todos pela mesma raiz — o motor gravava
+`"ativo_backlog"`, que é rótulo de tela e não valor de banco, com 37 asserções
+verdes exigindo a string errada. Se tivesse subido, o atleta desarquivado
+desapareceria de todas as listas e, no BH, **perderia o login**. Detalhe e a regra
+nova em `docs/GOVERNANCA_AGENTES.md` ("REGRA NOVA, 27/09/2026").
+
+**Dois ganhos de infraestrutura de teste, os dois com alcance maior que a fatia:**
+1. O banco em memória passou a **projetar colunas**. Antes, `select("*")` no lugar
+   de `select("id, telefone")` ficava verde devolvendo `pin_hash` e `isento` de todo
+   atleta do circuito. Enquanto ele não projetava, **toda** asserção da forma "esta
+   ação devolve só X" estava improvada. (Guardião Jurídico.)
+2. O **portão do `atualizar.sh` estava cego para 68% da bateria**: quatro arquivos
+   chamavam `placar(...)` sem `process.exit(...)` e saíam com código 0 mesmo com
+   falha — 395 das 581 asserções, incluindo os 351 do regulamento. Corrigido e
+   provado. (Guardião de Confiabilidade.)
+
+**Sete achados de acervo desta reverificação, todos atendidos:** o CHANGELOG
+dizia "No ar:" para o que não está no ar (virou "A SUBIR — ainda não publicado",
+com "No ar continua: v61 / v2"); os cinco ✅ do ROADMAP ganharam "(no fonte)"; três
+contagens de asserção por item estavam erradas (0.6.2 era 9 e não 7, 0.6.3 era 18 e
+não 13, 0.6.4 era 16 e não 13); o `testes/README.md` passou a contradizer a própria
+tabela depois de completá-la (resolvido); a frase do 0.6.5 reproduzia a inversão que
+o 0.6.15 declara errada (anotada); o `CLAUDE.md` ganhou a convenção de que agora há
+**dois** lugares de backup de motor, e o número de ações virou um comando em vez de
+um número que apodrece.
+
+**Correções de afirmação minhas, nesta rodada:** eu disse que não existia backup do
+`comprovante-url` em lugar nenhum — existia, em `BACKUPS/motor-no-ar-2026-09-07/`,
+e é byte-idêntico ao que está no ar; eu havia procurado só dentro do repositório.
+E eu havia escrito um comentário no `comprovante-url` prometendo que ele "só assina
+o comprovante deste circuito", garantia que o código não dá (item 0.6.17) —
+corrigido, porque a regra 6 do `CLAUDE.md` vale para comentário também.
+
+**Fica para depois da subida, confirmado com o Curador:** `README.md` (versões e as
+ações novas), `docs/curadoria-indice-app-tenis-de-mesa.md:18,144-145`,
+`docs/ESTADO-DEV-app-tenis-de-mesa.md:17`, as cinco notas de fechamento dos
+follow-ups de `LISTAR_TELEFONES` (em `GOVERNANCA_AGENTES.md` e em `docs/historico/`),
+o ✅ de `ORGANIZADOR_ACESSO_COMPARATIVO.md`, e o comentário do `supabase/config.toml`
+que classifica o `comprovante-url` como "não chamada pelo app anônimo" — falso
+desde antes, e mais falso agora que quem chama é o organizador.
+
 ## 2026-09-19 (rodada final) — 3ª revisão do 0.10.15: colisão de numeração e quatro itens fantasma
 
 Segunda passagem minha no mesmo dia, sobre a árvore da **rodada final**. A

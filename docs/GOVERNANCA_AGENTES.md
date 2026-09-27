@@ -57,6 +57,90 @@ sandbox que não compilava, e hoje seria trabalho perdido.
 
 ## Vereditos já emitidos (histórico)
 
+### REGRA NOVA, 27/09/2026 — a asserção pode rodar a função de verdade e ainda assim não proteger nada
+
+Irmã da lição (a) de 19/09, e mais afiada — porque ali o problema era a regex, e
+aqui a asserção **executava o motor** e ainda assim carimbou o defeito.
+
+**O caso.** A fatia "o organizador consegue trabalhar" (Onda 0.6) gravava
+`status: "ativo_backlog"` em duas ações novas. Esse valor **não existe no banco**:
+é o `value` de um `<option>` da tela, que o `salvarEdicao` converte para
+`status: "ativo"` + `pendente_circuito: true` três linhas abaixo. As **37
+asserções da fatia estavam verdes** porque exigiam exatamente a string errada.
+Efeito se tivesse subido: o atleta desarquivado não casava com **nenhuma** das seis
+listas do admin, o `promoverBacklog` nunca o promovia e, no BH — onde a escrita vai
+para a tabela global `atletas` —, o `login-atleta` recusava o acesso dele com
+`cadastro_inativo`. **Seis dos oito guardiões deram NO-GO pela mesma raiz**, e dois
+deles provaram executando: o desarquivado recebia **0 partidas** na virada.
+
+**A regra:** *conferir o valor gravado prova o que o motor quis gravar — não que o
+resto do sistema sabe ler.* Rótulo de tela não é valor de banco, e asserção que
+copia a string do código-sob-teste não testa nada: ela congela a escolha do autor.
+
+**Os dois antídotos, os dois adotados na mesma rodada:**
+
+**(a) Asserção de ponta a ponta, que atravessa o consumidor.** Não "gravou X", e
+sim: desarquivar → `INICIAR_ETAPA` → **exigir que o atleta tenha chave e partidas**.
+Ela é imune ao erro, porque não menciona o valor: se a string voltar a ser errada,
+4 das 6 asserções vermelhas são comportamentais. Quando a regra atravessa mais de
+um componente, a asserção também tem de atravessar.
+
+**(b) O banco de mentira precisa imitar o que o banco de verdade FAZ, não só o que
+ele guarda.** O banco em memória não projetava colunas, então trocar
+`select("id, telefone")` por `select("*")` numa ação lida pelo organizador ficava
+**verde** devolvendo `pin_hash` e `isento` de todo atleta do circuito — `isento` é
+coluna da blindagem, regra inviolável. Achado do Guardião Jurídico. O alcance é
+maior que a fatia: enquanto o banco falso não projetava, **toda** asserção da forma
+"esta ação devolve só X" estava improvada.
+
+**E um terceiro furo, de portão, achado na mesma rodada pelo Guardião de
+Confiabilidade:** `placar()` **devolve** 0 ou 1 e não sai do processo, e quatro
+arquivos o chamavam sem `process.exit(...)`. Eles saíam com código 0 **mesmo
+imprimindo "Falhas:"**, e o `atualizar.sh`, que lê o código de saída, publicaria.
+Eram **395 das 581** asserções cegas, incluindo os **351** do
+`regulamento-por-circuito.mjs` — escritos justamente por causa da lição de 19/09.
+Corrigido e provado: sabotar uma asserção do regulamento agora faz `npm run teste`
+sair com **1**. **Regra: todo arquivo de teste termina em
+`process.exit(placar("..."))`.**
+
+**Lição de método, do coordenador, registrada a pedido do Guardião de
+Confiabilidade:** eu editei o motor **enquanto** três guardiões revisavam o diff
+daquele motor. Eles auditaram uma versão que deixou de existir no meio do parecer,
+e um deles mediu a árvore vermelha sem que houvesse regressão — era mutação de
+outro agente de pé na árvore compartilhada. É reincidência da REGRA NOVA de
+16/09 ("mutação e auditoria não podem ser concorrentes"), agora do lado do
+coordenador. **Regra: pedido de revisão vai com o SHA de um commit, não com um
+diff de árvore viva**; e cada agente que mutar usa pasta de scratchpad com nome
+próprio, senão um sobrescreve a prova do outro.
+
+### Vereditos, 27/09/2026 — Onda 0.6, fatia "o organizador consegue trabalhar"
+
+Itens 0.6.2, 0.6.3, 0.6.4, 0.6.13, 0.6.14. **Primeira rodada: 6 NO-GO, 2
+GO-com-condições.** Depois da correção e do congelamento em commit:
+
+| Dupla | 1ª rodada | Reverificação |
+|---|---|---|
+| Confiabilidade | NO-GO (bateria vermelha, app desalinhado do motor) | **GO-com-condições** — achou o portão cego; refez 15 mutações próprias |
+| Segurança | NO-GO (`ativo_backlog`; comprovante forjável) | **GO-com-condições** — retirou a própria correção mínima, que não fechava o furo; desenhou a que fecha |
+| Regulamento | NO-GO (janela dos 7 dias invertida) | **GO-com-condições** — retirou o próprio ponto 12 depois de conferir a tela |
+| Jurídico | GO-com-condições | **GO** — retirou a condição do texto de consentimento, com argumento melhor que o meu |
+| Experiência do Admin | NO-GO (atleta desaparece da tela; login perdido no BH) | **GO-com-condições** — exigiu desabilitar o botão morto |
+| Experiência do Atleta | NO-GO (provou 0 partidas, executando) | **GO, sem condições** — retirou as duas próprias condições |
+| Designer Visual | NO-GO (botão faz o atleta desaparecer) | **GO-com-condições** |
+| Curador | GO-com-condições | **GO-com-condições** — 7 achados novos de acervo |
+
+**O que ficou FORA da fatia por decisão da revisão:** o item 0.6.11
+(`LIBERAR_NAO_RENOVANTES`) foi implementado e **retirado antes de subir**, porque o
+Guardião do Regulamento mostrou que a regra do prazo está invertida em relação ao
+Cap. 13 (novo item 0.6.15) e que o regulamento `vB-01` **não contém** a regra.
+Retirar foi julgado melhor que documentar "metade pendente": uma ação que tira a
+vaga de quem tinha direito a ela é pior que um botão que não funciona.
+
+**Três retratações de guardião nesta rodada** (Jurídico na condição do texto de
+consentimento, Segurança na correção do comprovante, Atleta e Regulamento em
+condições próprias), todas com o argumento escrito. Vale registrar como saudável:
+o parecer que se corrige em público é o que dá para usar depois.
+
 ### REGRA NOVA, 19/09/2026 — três lições da rodada do 0.10.15
 
 Registradas pelo Curador a pedido do coordenador, no fim da rodada. As três têm

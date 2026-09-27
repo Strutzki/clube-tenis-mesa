@@ -102,6 +102,13 @@ secao("O organizador não alcança o que é só do dono da plataforma");
   // ser dele, mas ESCOPADA por circuito — a proteção virou a seção seguinte.
   const soDoDono = [
     ["LISTAR_ORGANIZADORES", {}, "listar organizadores (devolve nome e telefone)"],
+    // NOMEAR_ORGANIZADOR não tinha asserção nenhuma até 27/09/2026, e é a regra
+    // mais importante da onda: TODO o parecer do Guardião Jurídico se apoia em
+    // "existe uma única porta para criar organizador, e ela é do super-admin".
+    // Uma mutação que a pusesse na ACOES_ORG deixaria um organizador nomear outro
+    // — reabrindo a exposição inteira do item 0.6.7 — e a bateria ficaria verde.
+    ["NOMEAR_ORGANIZADOR", { telefone: "31999990000" }, "nomear outro organizador"],
+    ["REMOVER_ORGANIZADOR", { atletaId: MEMBRO }, "remover um organizador"],
     ["LER_COBRANCA_PLATAFORMA", {}, "ver quanto a plataforma cobra"],
     ["DEFINIR_COBRANCA_PLATAFORMA", { ativa: true }, "mudar quanto a plataforma cobra"],
     ["DEFINIR_ORG_VE_FINANCEIRO", { ver: true }, "ligar o próprio portão do financeiro"],

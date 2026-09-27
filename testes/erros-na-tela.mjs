@@ -175,4 +175,4 @@ secao("O passo 3 da inscrição não culpa a internet do atleta");
     "a lista branca é consultada ANTES do texto genérico, não depois");
 }
 
-placar("Erros na tela");
+process.exit(placar("Erros na tela"));

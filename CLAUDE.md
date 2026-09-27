@@ -38,7 +38,7 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **581 asserções** (conferido ao vivo em 27/09/2026, somando as 11
+Hoje são **583 asserções** (conferido ao vivo em 27/09/2026, somando as 11
 seções que a bateria imprime). **Não cite este número de memória** — ele mudou em
 sete ondas seguidas; rode `npm run teste` e leia. O `atualizar.sh` roda isso
 antes de publicar e se recusa a subir com teste vermelho. O `testes/README.md`
@@ -54,6 +54,17 @@ O banco em memória **projeta colunas** desde 27/09/2026: se o código pede
 `select("id, telefone")`, o teste recebe só essas duas. Sem isso, trocar por
 `select("*")` numa ação lida pelo organizador passava **verde** mesmo passando a
 devolver o `pin_hash` de todos os atletas do circuito.
+
+⚠️ **O portão do `atualizar.sh` já esteve cego para 68% da bateria.** Descoberto
+em 27/09/2026 pelo Guardião de Confiabilidade: `placar()` **devolve** 0 ou 1, não
+sai do processo, e quatro arquivos chamavam `placar(...)` sem `process.exit(...)`
+— então saíam com código 0 mesmo com falha, o `&&` do `npm run teste` seguia
+adiante, e o `atualizar.sh` (que lê o código de saída) publicaria. Eram 395 das
+581 asserções de então, incluindo os **351** do `regulamento-por-circuito.mjs`.
+Corrigido nos quatro, e provado: sabotar uma asserção do regulamento agora faz
+`npm run teste` sair com **1**. **Regra: todo arquivo de teste novo termina em
+`process.exit(placar("..."))`** — imprimir "Falhas:" e sair 0 é pior que não ter
+teste, porque parece proteção.
 
 **Todo teste novo nasce com teste de mutação**: sabote a linha do motor que ele
 protege e exija que a bateria fique vermelha. O harness antigo em `harnesses/`
@@ -192,6 +203,15 @@ saem do Claude; não impede o Juliano de publicar pela própria máquina.
   porque o fonte está à frente do ar. Uma cópia do que está rodando hoje está em
   `JULIANO/CLUBE DO TÊNIS DE MESA/BACKUPS/motor-no-ar-2026-09-07/`.
 
+  **Desde 27/09/2026 há DOIS lugares, e é de propósito:** o fonte do que está no
+  ar passa a ser salvo **dentro do repositório**, em
+  `docs/backups/motor-no-ar-<data>/` — versionado pelo git, sobrevive à máquina e
+  aparece no diff de quem for reverter. As pastas anteriores (07/09, 07/09
+  pós-CORS, 08/09-v57, 19/09) ficam **fora** dele, no caminho acima. Ao reverter,
+  procure nos dois. E antes de publicar uma função pela primeira vez depois desta
+  data, salve o fonte do ar na pasta nova: foi a única condição **irreversível**
+  que os guardiões levantaram na Onda 0.6.
+
 Consequência que já confundiu: **o código no repositório pode estar à frente do
 que está no ar.** O `CHANGELOG.md` registra isso explicitamente (ex.: "edge
 admin-action commitado no fonte, a deployar (v55) quando existir o 1º circuito
@@ -206,8 +226,11 @@ ar** — não presuma que é a do arquivo.
 
 - `src/App.jsx` — **o app inteiro**, ~9.700 linhas. Um arquivo só, React + Vite.
 - `supabase/functions/admin-action/index.ts` — **o motor**, ~1.700 linhas. As
-  44 ações do organizador (INICIAR_ETAPA, AVANCAR_RODADA, PROCESSAR_RODADA,
+  ações do organizador (INICIAR_ETAPA, AVANCAR_RODADA, PROCESSAR_RODADA,
   APLICAR_WO, NOVA_TEMPORADA, financeiro, papéis) saem de um `switch (acao)`.
+  São **46** hoje — e conte em vez de citar de memória, porque este número
+  apodreceu em sete ondas seguidas:
+  `grep -o '^      case "[A-Z_]*"' supabase/functions/admin-action/index.ts | sort -u | wc -l`
 - `supabase/functions/athlete-action/index.ts` — o que o atleta pode fazer
   (ENVIAR_PLACAR, INSCREVER, RENOVAR, SOLICITAR_WO...).
 - `supabase/functions/login-atleta/index.ts` — login por telefone + PIN, token
@@ -285,7 +308,7 @@ gravar rating num circuito que não tem rating.
   lista os arquivos e espera você digitar `S` antes de mandar — leia a lista:
   arquivo temporário esquecido ali viaja junto.
 - **A bateria executa três das funções, e nenhum pedaço do app.**
-  Reconferido em 19/09/2026 rodando `grep` nos testes, não de memória. Quem
+  Reconferido em 27/09/2026 rodando `grep` nos testes, não de memória. Quem
   carrega e executa código de verdade é `carregarFuncao(nome, banco)`
   (`testes/carrega-motor.mjs`) — **é esse o nome**, não `carregarMotor`, que não
   existe. `montarMotor({ funcao: "..." })` escolhe qual carregar (padrão:
@@ -297,7 +320,7 @@ gravar rating num circuito que não tem rating.
     `ACEITAR_REGULAMENTO` (`testes/regulamento-por-circuito.mjs`, seção "O
     re-aceite RODANDO"), com sessão gravada como SHA-256 de verdade, mais o
     cenário do `INSCREVER`;
-  - **`comprovante-url`** — novo em 27/09/2026 (item 0.6.4). São **13 asserções**
+  - **`comprovante-url`** — novo em 27/09/2026 (item 0.6.4). São **16 asserções**
     em `testes/onda-06.mjs` rodando a função de verdade, com um `storage` de
     mentira (`testes/banco-falso.mjs`) que registra o que foi assinado —
     inclusive as asserções de que **nada é assinado** quando a autorização

@@ -211,4 +211,4 @@ secao("Lembrete não marca resultado como comunicado");
     "a fila unificada carimba a categoria em cada mensagem, sem apagar a do item");
 }
 
-placar("Contador de mensagens");
+process.exit(placar("Contador de mensagens"));

@@ -24,7 +24,7 @@ Mudanças que cruzam áreas → mais de um agente.
 - Regras e motor da competição: `guardiao-regulamento` (Opus) + `supervisor-regulamento` (Opus) — **novo**
 - Jurídico/LGPD: `guardiao-juridico` (Opus) + `supervisor-juridico` (Sonnet) — **novo**
 - Confiabilidade/deploy: `guardiao-confiabilidade` (Sonnet) + `supervisor-confiabilidade` (Sonnet) — **novo**
-- Curador do acervo/docs: `curador-projeto` (Sonnet) + `supervisor-curador` (Sonnet) — **novo** (curador, sem veto de código; mantém `INDICE_PROJETO.md` + `CHANGELOG.md`)
+- Curador do acervo/docs: `curador-projeto` (Sonnet) + `supervisor-curador` (Sonnet) — **novo** (curador, sem veto de código; mantém `docs/curadoria-indice-app-tenis-de-mesa.md`, `docs/curadoria-log.md` e `docs/CHANGELOG.md` — o `INDICE_PROJETO.md` citado aqui até 19/09/2026 foi removido em 06/09/2026)
 
 ## O rito é automático desde 07/09/2026
 
@@ -56,6 +56,80 @@ sandbox que não compilava, e hoje seria trabalho perdido.
 6. **Registro** do resultado.
 
 ## Vereditos já emitidos (histórico)
+
+### REGRA NOVA, 19/09/2026 — três lições da rodada do 0.10.15
+
+Registradas pelo Curador a pedido do coordenador, no fim da rodada. As três têm
+a mesma forma: **um portão que parecia proteger, e não protegia** — e nas três o
+que revelou o furo foi *executar*, não *ler*.
+
+**(a) Asserção por regex fica VERDE com a regra quebrada. Provado, não suposto.**
+Toda a proteção do re-aceite (`ACEITAR_REGULAMENTO`) era regex sobre o texto do
+`athlete-action`. O guardião de Regulamento sabotou a regra de **três** jeitos e
+a bateria passou **verde nos três**:
+
+| Sabotagem | Por que a regex não viu | O que passaria a acontecer |
+|---|---|---|
+| `versaoVista !== versaoAtual` → `versaoVista && versaoVista !== versaoAtual` | `/versaoVista !== versaoAtual/` continua casando | `versaoVista` vazio passa a carimbar uma versão que o atleta nunca declarou ter lido |
+| `if (!vinc)` → `if (false && !vinc)` | `/if \(!vinc\)/` continua casando | quem não é do circuito consegue aceitar |
+| enfraquecer `if (!atletaId)` | a regex ancorada na linha do `atletaPorTokenAA` continua casando | o recibo volta a ser **forjável** — exatamente o que a ação existe para impedir |
+
+Substituídas por **7 cenários comportamentais** rodando o `athlete-action` de
+verdade (`carregarFuncao`), cada um com mutação. Não havia desculpa de
+infraestrutura: a função já era carregada no mesmo arquivo de teste e
+`atleta_sessao` já existia no banco falso.
+
+**A regra:** uma asserção que só faz `fonte.indexOf(...)` prova que **um trecho
+de texto está no arquivo** — não que a regra vale. Ela é aceitável para
+*ausência/presença* (um aviso está na tela, um `case` existe); **não** é
+aceitável como a única proteção de uma regra de competição, de consentimento ou
+de autenticação. Se a função dá para carregar, o teste roda a função. Hoje isso
+vale para `admin-action` e `athlete-action`; `src/App.jsx` e `login-atleta`
+seguem só com regex, e **isso é dívida conhecida, não cobertura** — está dito no
+`CLAUDE.md`, Armadilhas.
+
+**(b) Guarda fail-closed escrita nas duas direções vira IMPASSE — e só a bateria
+viu.** Ao construir o carimbo, a guarda do regulamento ficou fail-closed nos dois
+sentidos ao mesmo tempo: **não dava para carimbar** (a ação recusava) **nem para
+virar** (a trava da virada recusava enquanto a versão não fosse carimbada). Cada
+metade, lida sozinha, parecia correta e prudente — o defeito só existe na
+interação, e o coordenador só percebeu **ao rodar a bateria**, não ao reler o
+código que acabara de escrever.
+
+**A regra:** fail-closed protege contra *estado inválido*, e o custo dele é
+sempre **tirar um caminho**. Quando duas guardas fail-closed cercam o mesmo
+estado, pergunte explicitamente **qual é a saída** — qual sequência de ações leva
+do estado de hoje ao estado desejado. Se não existir sequência, não é proteção, é
+travamento. Isto vale especialmente para as travas em sequência obrigatória: o
+procedimento "fechar inscrições → carimbar → virar → reabrir" (ROADMAP 0.10.15)
+é a saída desenhada **depois** deste susto, e é por isso que ele está escrito
+como procedimento e não deixado para o improviso do dia.
+
+**(c) O `no-undef` pega identificador inexistente; NÃO pega propriedade
+inexistente.** O portão novo (`testes/nomes-que-nao-existem.mjs`, `oxlint` com
+`no-undef`, criado depois do `ReferenceError` de `sistemaAtivo` que deixou tela
+branca) **funcionou** nesta rodada: pegou um identificador que o coordenador
+escreveu e não existia.
+
+Mas ele passou **verde** por `state.circuitoSlug` e `state.sistema` — duas
+propriedades que **não existem** no objeto `state` (que tem `nomeCircuito`,
+`regulamentoVersao` e afins; conferido pelo Curador contra a definição em
+`App.jsx:755`). *Nenhuma das duas chegou à árvore congelada* — foram escritas
+durante o trabalho e caíram antes do fim; o `grep` na árvore desta rodada não
+acha nenhuma. O que se registra aqui é o **portão**, não um defeito no ar.
+E a diferença importa: um
+identificador inexistente é `ReferenceError` (explode, tela branca, alguém nota);
+uma propriedade inexistente é `undefined` (não explode — **segue em silêncio** e
+vira comparação falsa, string "undefined" na tela, ou guarda que nunca dispara).
+O modo de falha mais barato de detectar é o que o portão pega; o mais caro é o
+que ele não pega.
+
+**A regra:** `no-undef` **não é** checagem de tipo e ninguém deve tratá-lo como
+tal. Para acesso a propriedade de objeto que existe, o portão continua sendo
+**revisão humana + executar o caminho**. Ao ler um parecer que diga "passou no
+lint", lembre-se de que isso cobre o nome solto, não o `.campo` depois do ponto.
+Um guardião que escrever `state.<algo>` num achado precisa **conferir o campo na
+definição do `state`**, não confiar no lint.
 
 ### REGRA NOVA, 16/09/2026 — mutação e auditoria não podem ser concorrentes
 

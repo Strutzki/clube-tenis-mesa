@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 326 asserções. O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 535 asserções (19/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho.
 
 ## O que ela testa — e por que isso é diferente do que havia antes

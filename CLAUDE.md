@@ -38,8 +38,12 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **385 asserções**. O `atualizar.sh` roda isso antes de publicar e se
-recusa a subir com teste vermelho.
+Hoje são **535 asserções** (conferido ao vivo em 19/09/2026, somando as 10
+seções que a bateria imprime). O `atualizar.sh` roda isso antes de publicar e se
+recusa a subir com teste vermelho. O `testes/README.md` já traz esse mesmo
+número, mas **o corpo dele continua atrasado** (a tabela de arquivos lista 7 dos
+14, e a seção "o que ainda não é testado" cita coisas que já são) — detalhe em
+`docs/curadoria-indice-app-tenis-de-mesa.md`.
 
 Ela carrega o `admin-action` **de verdade** — o mesmo arquivo que vai para o ar —
 e roda contra um banco em memória. Detalhe em `testes/README.md`.
@@ -153,9 +157,15 @@ saem do Claude; não impede o Juliano de publicar pela própria máquina.
   número do projeto já vai dentro do comando.
 
   **O comando exige o nome da função** e recusa rodar sem ele — porque o comando
-  cru do Supabase, sem nome, publica **todas**, e a fonte deste repositório está
-  à frente do ar (a `admin-action` guarda ~178 linhas do financeiro do
-  organizador que ainda não foram liberadas). Ele também recusa `--prune`, que
+  cru do Supabase, sem nome, publica **todas**, e a fonte deste repositório
+  fica **rotineiramente** à frente do que está no ar: o rito de subida (bateria,
+  guardiões, resumo, OK do Juliano) roda com o código já commitado, antes de
+  publicar — então em qualquer momento pode haver função pronta no fonte que
+  ainda não foi liberada. (Justificativa anterior aqui citava "~178 linhas do
+  financeiro do organizador ainda não liberadas" — venceu: o financeiro subiu
+  na v57→v58, ver `docs/CHANGELOG.md` 08/09/2026. O guard-rail continua certo;
+  só a razão citada tinha ficado velha.) O que está pendente de subir, e por
+  quê, está sempre em `docs/CHANGELOG.md`. Ele também recusa `--prune`, que
   apagaria as funções dos outros apps na mesma conta.
 
   **Confira sempre depois de publicar:** `npm run motor:conferir` compara o
@@ -244,7 +254,18 @@ gravar rating num circuito que não tem rating.
 - **O fonte pode não ser o que está no ar.** `circuito-dados` ficou tempos no ar
   sem código nenhum no repositório (recuperada em 07/09/2026, cópia fiel da v2).
   Antes de mexer numa função, rode `npm run motor:listar` e compare a versão com
-  o que o `CHANGELOG.md` diz.
+  o que o `CHANGELOG.md` diz. **Segundo episódio, achado pelo Guardião de
+  Segurança em 19/09/2026:** o `login-atleta` que estava no ar não correspondia
+  a nenhum commit deste repositório — era o `0c91f4c` mais as origens de
+  `localhost`, publicado de uma pasta de rascunho do **projeto de torneios**
+  (que divide o mesmo Supabase), com o `HEAD` deste repo já dois commits à
+  frente. Houve um período sem rollback possível para essa função: "voltar"
+  precisa de uma cópia do que estava rodando, e não havia uma que batesse com
+  nenhum commit. A versão viva foi copiada para
+  `JULIANO/CLUBE DO TÊNIS DE MESA/BACKUPS/motor-no-ar-2026-09-19/ar-login-atleta-v8.ts`
+  (mesma convenção do backup de 07/09 acima) antes do próximo deploy — sem
+  isso, mesmo o "republicar o código antigo" (a única forma de rollback de
+  Edge Function) não teria por onde voltar.
 - **O app de torneios mora no mesmo Supabase.** A função `torneios-api` roda no
   mesmo projeto (`eultwfzzlgcmcikobmmy`) que o circuito. São dois produtos
   diferentes dividindo um banco: mexer em permissão, extensão ou tabela
@@ -256,10 +277,31 @@ gravar rating num circuito que não tem rating.
 - **`atualizar.sh` publica tudo que estiver na pasta.** Desde 07/09/2026 ele
   lista os arquivos e espera você digitar `S` antes de mandar — leia a lista:
   arquivo temporário esquecido ali viaja junto.
-- **A bateria cobre o motor, não o app.** `npm run teste` protege as regras da
-  competição no `admin-action`. O `src/App.jsx`, o `athlete-action` e o
-  `login-atleta` ainda não têm asserção nenhuma — ali o único portão continua
-  sendo "compila?".
+- **A bateria executa duas das quatro funções, e nenhum pedaço do app.**
+  Reconferido em 19/09/2026 rodando `grep` nos testes, não de memória. Quem
+  carrega e executa código de verdade é `carregarFuncao(nome, banco)`
+  (`testes/carrega-motor.mjs`) — **é esse o nome**, não `carregarMotor`, que não
+  existe. Ela é chamada para exatamente duas funções:
+  - **`admin-action`** — é o grosso da bateria, e a razão de a frase antiga
+    dizer "a bateria cobre o motor";
+  - **`athlete-action`** — e isto **cresceu** em 19/09: já não é só a guarda de
+    versão do `INSCREVER`. São **7 cenários comportamentais** do
+    `ACEITAR_REGULAMENTO` (`testes/regulamento-por-circuito.mjs`, seção "O
+    re-aceite RODANDO"), com sessão gravada como SHA-256 de verdade, mais o
+    cenário do `INSCREVER`.
+
+  **`src/App.jsx` e `login-atleta` não são executados por teste nenhum.** O que
+  existe para eles são checagens por regex no texto fonte (`fonte.indexOf(...)`),
+  que pegam ausência/presença de um trecho — **não** comportamento em runtime. O
+  portão dos dois continua sendo "compila?" mais leitura de texto.
+
+  ⚠️ **E regex passa verde com a regra quebrada** — isto não é teoria: em
+  19/09/2026 o guardião de Regulamento sabotou o re-aceite de **três** jeitos
+  (`versaoVista !== versaoAtual` → `versaoVista && versaoVista !== versaoAtual`;
+  `if (!vinc)` → `if (false && !vinc)`; enfraquecer `if (!atletaId)`) e a bateria
+  ficou **verde nas três**, porque a regex continuava casando. Por isso os 7
+  cenários existem. **Regra: se a asserção é regex, ela não protege a regra — só
+  registra que um trecho de texto está lá.**
 
 ## Convenções
 
@@ -271,8 +313,15 @@ gravar rating num circuito que não tem rating.
 - **Um só arquivo.** O `App.jsx` não se divide em módulos.
 - **O motor é o servidor.** Regra de competição se decide na Edge Function; o
   front só reflete. Não recalcule rating nem pontuação no `App.jsx`.
-- **Mudança destrutiva pede confirmação-com-nome** (digitar o nome do circuito),
-  padrão já adotado nas ações que apagam.
+- **Mudança destrutiva pede confirmação-com-nome** (digitar o nome do circuito).
+  Adotado nas ações que apagam (`CancelarCircuitoCard`), no carimbo do
+  regulamento (`DEFINIR_REGULAMENTO_VERSAO`) e — **desde 19/09/2026, no fonte** —
+  na **virada de temporada** (`NOVA_TEMPORADA`), que era a exceção: a ação mais
+  destrutiva do app (arquiva o ranking, apaga partidas e chaves, zera stats de
+  todos os ativos, **não se desfaz**) estava protegida só por dois botões num
+  modal. Era o único ponto em que esta convenção era descrita como "padrão da
+  casa" e não era cumprida — ver ROADMAP 0.10.20. **Não há exceção conhecida
+  hoje**; se você abrir uma, registre aqui o porquê.
 
 ## Git
 

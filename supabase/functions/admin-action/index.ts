@@ -73,6 +73,15 @@ async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Recor
 // do que está lá, e a bateria checa que as duas não divergem.
 const VERSOES_SEM_DESCONTO_ETAPA = new Set(["v03-13", "vA-nc-01", "vB-01"]);
 
+// A que CIRCUITO cada versão pertence. É outra pergunta que a lista acima: ela
+// responde "esta versão promete desconto?", esta responde "esta versão é daqui?".
+// Carimbar `vA-nc-01` no BH passaria na primeira e estragaria a segunda — o
+// Cap. 10, o Torneio Presencial, é do BH e some da tela nas outras versões.
+// Fail-closed: versão fora da família do circuito é recusada pelo carimbo.
+const VERSOES_DO_BH = new Set(["v03-12", "v03-13"]);
+const VERSOES_DE_RATING_NOVO = new Set(["vA-nc-01"]);
+const VERSOES_DO_SISTEMA_B = new Set(["vB-01"]);
+
 // Espelha config no circuito (mesmos nomes de coluna que `configuracao`).
 async function mirrorConfig(circuitoId: string, campos: Record<string, unknown>) {
   try {
@@ -1649,6 +1658,36 @@ Deno.serve(async (req) => {
         if (p.proximaValorCheio !== undefined) upd.proxima_valor_cheio = (p.proximaValorCheio === null ? null : Math.max(0, Math.round(Number(p.proximaValorCheio))));
         if (p.proximaValorDesconto !== undefined) upd.proxima_valor_desconto = (p.proximaValorDesconto === null ? null : Math.max(0, Math.round(Number(p.proximaValorDesconto))));
         if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
+
+        // Mesma guarda do par (versão, preço) que o DEFINIR_REGULAMENTO_VERSAO
+        // faz — pela outra ponta. Sem ela a incoerência continuaria alcançável, e
+        // por um caminho MAIS curto: esta ação está em ACOES_ORG, ou seja, é do
+        // organizador, enquanto o carimbo é só do super-admin. Tirar o desconto
+        // sem trocar o texto é subir o preço de quem entra no meio da temporada
+        // contra o que o regulamento declarado promete.
+        //
+        // Só barra a direção que prejudica o atleta. Conceder desconto sob um
+        // texto que fala em valor integral é decisão comercial do organizador, e
+        // quem paga paga a menos — mesmo raciocínio registrado no carimbo.
+        if (upd.percentual_entrada_meio !== undefined) {
+          const { data: circF, error: errCircF } = await supabase
+            .from("circuitos").select("regulamento_versao").eq("id", circuitoId).maybeSingle();
+          if (errCircF) throw errCircF;
+          const versaoF = String(circF?.regulamento_versao ?? "").trim();
+          const novoPct = Number(upd.percentual_entrada_meio);
+          // Versão em branco não é julgada aqui: o circuito já está com as
+          // inscrições fechadas pelo fail-closed do INSCREVER, e inventar um
+          // segundo modo de falha só esconderia o primeiro.
+          if (versaoF && !VERSOES_SEM_DESCONTO_ETAPA.has(versaoF) && novoPct >= 100) {
+            return jsonResponse({
+              sucesso: false,
+              erro: `O regulamento declarado deste circuito é o ${versaoF}, que promete entrada ` +
+                `reduzida a quem entra no meio da temporada. Cobrar 100% deixaria o app cobrando ` +
+                `mais do que o texto promete. Troque a versão do regulamento antes de tirar o desconto.`,
+            }, 409);
+          }
+        }
+
         await setCfg(circuitoId, upd);
         return jsonResponse({ sucesso: true });
       }
@@ -1795,6 +1834,113 @@ Deno.serve(async (req) => {
       }
 
       // Excluir de vez — SÓ circuito sem jogos/histórico (evita apagar dados de um circuito que rodou).
+      // Troca o regulamento que um circuito EXISTENTE declara. Até 17/09/2026
+      // `regulamento_versao` só era escrito no CRIAR_CIRCUITO, e destravar a
+      // virada do BH exigiria `UPDATE` manual em produção — o que a regra 1 do
+      // projeto proíbe. Esta ação é o caminho legítimo.
+      //
+      // NÃO está em ACOES_ORG: é só do super-admin, por default-deny. Trocar o
+      // regulamento muda o contrato que o atleta aceita; não é operação de
+      // organizador.
+      case "DEFINIR_REGULAMENTO_VERSAO": {
+        const p = payload || {};
+        // `trim` porque o valor é digitado à mão, e é o mesmo cuidado que a
+        // trava do NOVA_TEMPORADA já tem. Sem ele, "v03-13 " viraria um carimbo
+        // que a tela não reconhece — o Cap. 10 sumiria do BH.
+        const versao = String(p.versao ?? "").trim();
+        const confirmacao = String(p.confirmacaoNome ?? "").trim();
+
+        // Vazio fecha as INSCRIÇÕES do circuito em silêncio: o INSCREVER do
+        // athlete-action recusa 409 sem versão desde 14/09. Nunca gravar branco.
+        if (!versao) {
+          return jsonResponse({ sucesso: false, erro: "A versão do regulamento não pode ficar em branco." }, 400);
+        }
+
+        const { data: circR, error: errCircR } = await supabase
+          .from("circuitos").select("id,slug,sistema,nome_circuito,regulamento_versao,percentual_entrada_meio").eq("id", circuitoId).maybeSingle();
+        if (errCircR) throw errCircR;
+        if (!circR) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
+
+        // Confirmação-com-nome, o padrão do projeto para mudança destrutiva —
+        // mas aqui NO MOTOR, não só na tela: o CLAUDE.md diz que o motor é o
+        // servidor, e um carimbo errado é irreversível do ponto de vista do
+        // atleta (ele aceita o texto que estiver no ar naquele instante).
+        const nomeReal = String(circR.nome_circuito ?? "").trim();
+        if (confirmacao !== nomeReal) {
+          return jsonResponse({
+            sucesso: false,
+            erro: `Para trocar o regulamento, digite o nome do circuito exatamente como ele está: "${nomeReal}".`,
+          }, 409);
+        }
+
+        // A versão pertence a ESTE circuito? A lista da trava responde "esta
+        // versão promete desconto?", que é outra pergunta. Carimbar `vA-nc-01`
+        // no BH liberaria a virada E apagaria o Cap. 10 da tela — o torneio é do
+        // BH. Fail-closed: versão fora da família do circuito é recusada.
+        const ehBhR = circuitoId === await bhId();
+        const familia = ehBhR ? VERSOES_DO_BH : (circR.sistema === "B" ? VERSOES_DO_SISTEMA_B : VERSOES_DE_RATING_NOVO);
+        if (!familia.has(versao)) {
+          return jsonResponse({
+            sucesso: false,
+            erro: `A versão "${versao}" não é deste circuito. Aceitas aqui: ${[...familia].join(", ")}.`,
+          }, 409);
+        }
+
+        // Recarimbar a MESMA versão não muda nada, então não pode ser barrado por
+        // nada — inclusive pela guarda do par logo abaixo. Um circuito que já
+        // esteja num par incoerente (por dado antigo) não fica refém de um erro
+        // que o recarimbo nem criaria; e o admin que clica duas vezes não vê um
+        // 409 que não descreve ato nenhum.
+        const atual = String(circR.regulamento_versao ?? "").trim();
+        if (atual === versao) {
+          return jsonResponse({ sucesso: true, dados: { inalterado: true, versao } });
+        }
+
+        // O par (versão, preço) tem de fechar — nas DUAS direções.
+        //
+        // A trava do NOVA_TEMPORADA é um portão de UMA ação; ela não é um
+        // invariante sobre o par. Sem esta guarda, o estado que a trava existe
+        // para proibir é alcançável pelo outro lado, em três passos legítimos:
+        // carimbar v03-13 → virar (o preço vai a 100) → carimbar v03-12 de
+        // volta. Resultado: o texto promete 80% na 2ª etapa e o app cobra 100%.
+        // Achado do guardião de regulamento em 19/09/2026, simulado contra este
+        // motor, não deduzido.
+        //
+        // Lê `circuitos.percentual_entrada_meio` porque é daí que o app tira o
+        // valor que de fato cobra (App.jsx:5026 — a mesma linha que lê
+        // `regulamento_versao`, ou seja, a mesma casa). `null` ali significa
+        // 100 para o app (`?? 100`), então significa 100 aqui também.
+        //
+        // "Promete desconto" é o complemento de VERSOES_SEM_DESCONTO_ETAPA — a
+        // mesma lista que a trava usa, para as duas não poderem divergir.
+        const pctAtualR = Number(circR.percentual_entrada_meio ?? 100);
+        const prometeDesconto = !VERSOES_SEM_DESCONTO_ETAPA.has(versao);
+        const cobraDesconto = Number.isFinite(pctAtualR) && pctAtualR < 100;
+        if (prometeDesconto && !cobraDesconto) {
+          return jsonResponse({
+            sucesso: false,
+            erro: `A versão "${versao}" promete entrada reduzida a quem entra no meio da temporada, ` +
+              `mas este circuito está cobrando ${pctAtualR}% — valor integral. Carimbar assim deixaria ` +
+              `o app cobrando mais do que o regulamento declarado promete. Ajuste o percentual antes, ` +
+              `ou carimbe uma versão sem o desconto por etapa.`,
+          }, 409);
+        }
+        // A direção INVERSA (texto integral + cobrança reduzida) NÃO é barrada, e
+        // não é esquecimento: ela é a janela de transição obrigatória. A trava do
+        // NOVA_TEMPORADA exige carimbar a v03-13 ANTES de virar, e quem vira é que
+        // leva o percentual a 100 — logo existe necessariamente um intervalo com
+        // v03-13 carimbada e 80% ainda cobrado. Barrar aqui criaria um impasse:
+        // não daria para carimbar (o preço ainda é 80) nem para virar (a versão
+        // ainda é v03-12). E o intervalo é inofensivo porque o próprio texto da
+        // v03-13 o cobre: "vigora a partir da temporada 2/2026; a temporada
+        // 1/2026, em curso, segue integralmente pela v03-12". Quem paga, paga a
+        // menos — e o regulamento declarado já diz que é assim.
+
+        const { error: errUpdR } = await supabase.from("circuitos").update({ regulamento_versao: versao }).eq("id", circuitoId);
+        if (errUpdR) throw errUpdR;
+        return jsonResponse({ sucesso: true, dados: { de: atual || null, para: versao } });
+      }
+
       case "EXCLUIR_CIRCUITO": {
         const bhX = await bhId();
         if (circuitoId === bhX) return jsonResponse({ sucesso: false, erro: "O circuito de BH não pode ser excluído." }, 400);

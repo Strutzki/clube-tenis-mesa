@@ -3,6 +3,116 @@
 Histórico do que foi a produção. Mantido pelo agente `curador-projeto`. Mais recente no topo.
 Formato: **data — o quê** (versão do edge/regulamento, notas).
 
+---
+
+### 2026-09-27 — Onda 0.10.15: o carimbo do regulamento, o re-aceite do atleta e o aviso prévio
+
+**No ar:** `admin-action` **v60 → v61**, `athlete-action` **v20 → v21**,
+`login-atleta` **v8 → v9**, front por `git push`.
+**Ordem obrigatória: as três funções primeiro, o app depois.** O app novo mostra
+o card de re-aceite e a tela do carimbo; se ele subir antes do motor, o atleta vê
+um botão que o servidor ainda não sabe atender. Nenhuma migração, nenhuma coluna
+nova (o registro da data do carimbo ficou **de fora** de propósito — é decisão de
+schema, ver 0.10.15 J5).
+
+**O `login-atleta` volta para dentro do pacote.** Na onda de 16/09 ele ficou de
+fora porque carregava uma mudança de outro assunto (o `veFinanceiro` do
+organizador). Essa mudança foi **revertida do repositório**, e no lugar dela ele
+passou a levar a guarda fail-closed do `PARTICIPAR` — que é assunto desta onda.
+O financeiro do organizador **continua** sem subir, amarrado ao 1º circuito
+vendido. Ver ROADMAP 0.10.19 (superado) e 0.10.6.
+
+**O que mudou, em três frases.** O super-admin ganhou como **carimbar** a versão
+do regulamento de um circuito (`DEFINIR_REGULAMENTO_VERSAO`, com
+confirmação-com-nome, e recusando versão que não é da família daquele circuito).
+O atleta cujo circuito mudou de versão passa a ver um card que o leva ao texto
+novo e **colhe o re-aceite autenticado por token de sessão** — não pelo
+`athleteId` que o navegador manda, porque recibo de consentimento não pode ser
+forjável. E o admin ganhou o **aviso prévio** em dois modos: antes do carimbo,
+para todos os ativos; depois, só para quem ainda não re-aceitou.
+
+**O que o atleta e o organizador veem.** Para o BH, enquanto o carimbo **não**
+for dado: quase nada — o card de re-aceite só aparece para quem está numa versão
+diferente da vigente, e hoje ninguém está sendo re-perguntado. O que muda de
+imediato é no painel: aparece a versão do regulamento do circuito (o admin era
+cego para ela), e virar a temporada passa a **exigir digitar o nome do circuito**
+(0.10.20). No instante em que a v03-13 for carimbada, os **12** atletas do roster
+do BH passam a ver o card de re-aceite no primeiro acesso — e mais **2**
+pendentes de inclusão, que o painel não conta mas que veem a pergunta no app
+(ver a nota das contagens abaixo).
+
+**⚠️ PROCEDIMENTO OBRIGATÓRIO NA VIRADA — não é código, e não pode ser
+improvisado no dia.** A trava obriga carimbar a v03-13 **antes** de virar. Nessa
+janela o circuito declara uma versão cujo próprio texto diz que ainda não vigora,
+e quem se inscrever nela recebe recibo `versao_regulamento = v03-13` para uma
+temporada que a v03-13 diz ter corrido pela v03-12. Com as inscrições abertas
+(estão), é alcançável. Logo:
+**fechar inscrições → carimbar v03-13 → `NOVA_TEMPORADA` → reabrir** — ou
+carimbar e virar colados, na mesma sessão. Detalhe em ROADMAP 0.10.15.
+
+**🚩 ANTES DO `git push` — o snapshot dos aceites (J2). Não dá para fazer
+depois.** O `ACEITAR_REGULAMENTO` **sobrescreve** `versao_regulamento` sem
+guardar o valor anterior, e o card de re-aceite vai ao ar junto com o app: o
+**primeiro** atleta que clicar apaga a prova de sob qual texto ele estava.
+**Nenhum** dos atletas do BH está em v03-12 hoje (11 em v03-3, 1 v03-5, 1 v03-8,
+1 v03-11, mais 1 suspenso em v03-3). Salvar em `docs/backups/` um `SELECT` de
+`circuito_atletas` (`atleta_id`, `versao_regulamento`,
+`data_aceite_regulamento`, `aceite_regulamento`) **antes** do push — **sem
+filtrar por status**: as **15** linhas, não as 12 nem as 14. Quem está pendente
+ou suspenso também carrega versão antiga e também pode logar. É leitura, não toca produção, custa um comando — e é a única coisa
+desta lista que, se for esquecida, não tem conserto.
+
+**📐 As três contagens do BH — 12, 14 e 15 — e qual usar.** Conferidas no banco
+em 19/09/2026 (`select` em `circuito_atletas` do BH; leitura, não toca nada).
+Os números divergentes que circulam nos documentos **não se contradizem**: medem
+coisas diferentes, e nenhum documento dizia qual.
+
+| Nº | O que é | Onde vale |
+|---|---|---|
+| **12** | `status='ativo'` **e** `pendente_circuito=false` | é o **roster**: o que o motor pareia (`getAtivosNoCircuito`, `admin-action:177`) e o que o painel conta |
+| **14** | `status='ativo'`, incluindo os **2 pendentes de inclusão** (v03-11, v03-8) | quem **vê** a pergunta do re-aceite no app — por isso o painel podia dizer "✓ todos aceitaram" e estar errado (0.10.15, 2ª rodada) |
+| **15** | **todas** as linhas do BH, incluindo **1 suspenso** (v03-3) | o **snapshot do J2**: copiar tudo, sem filtro de status |
+
+Ao escrever qualquer número aqui, **diga qual dos três é** — foi a confusão
+entre eles que o supervisor do Curador pegou neste rascunho.
+
+**Registro do carimbo (passo (e), Jurídico C3).** Ao carimbar, anotar **aqui**:
+qual versão, **em que data** e **por quem**. Enquanto o J5 não existir no banco,
+este registro manual é a **única** prova de quando o contrato com os atletas
+mudou. Preencher no dia:
+`Carimbo: BH v03-12 → v03-13, em __/__/2026, por ____.`
+
+**Bateria: 474 → 535 asserções, 0 falhas.** Build OK. **12 testes de mutação**
+nesta rodada. O achado de método que os produziu: as asserções do re-aceite eram
+**regex sobre o fonte** e o guardião de Regulamento quebrou a regra de **três**
+jeitos com a bateria **verde** nos três. Foram substituídas por **7 cenários
+comportamentais** rodando o `athlete-action` de verdade, com sessão de mentira e
+cripto de verdade (token gravado como SHA-256, o mesmo formato que a função
+produz). Lição registrada em `GOVERNANCA_AGENTES.md`.
+
+**ROLLBACK — leia antes de publicar.** Não há rollback de Edge Function:
+"voltar" é republicar o código antigo. E **para o `login-atleta` o git não
+serve** — provado por `diff` em 19/09: o HEAD carrega o bloco
+`org_ve_financeiro`/`veFinanceiro` e o que está no ar **não** carrega, então um
+`git show HEAD:...` devolveria um estado que nunca esteve no ar e liberaria o
+financeiro do organizador sem o gatilho. A fonte de rollback das três é a pasta
+de backup, **não** o git:
+`JULIANO/CLUBE DO TÊNIS DE MESA/BACKUPS/motor-no-ar-2026-09-19/` —
+`ar-login-atleta-v8.ts`, `ar-admin-action-v60.ts`, `ar-athlete-action-v20.ts`.
+Para o app: `git revert` do commit do push.
+
+**Conferir depois de publicar:** `npm run motor:conferir` (compara o `verify_jwt`
+de cada função com o `config.toml`) e `npm run motor:listar`. **Além disso:**
+`circuito-dados` e `despachos-do-dia` continuam com `entrypoint_path` apontando
+para uma pasta de rascunho do projeto de torneios, sem redeploy desde 08/09/2026,
+e **sem cópia salva do que está no ar** — não sobem nesta onda, mas seguem sem
+rollback confiável. Registrado no índice de curadoria.
+
+**Revisão:** as **8 duplas completas** (a mudança toca motor e dado pessoal).
+Preencher os vereditos no dia.
+
+---
+
 ## 2026-09-16 — Onda 0.10: o app para de adivinhar qual regulamento o atleta aceita
 
 **No ar:** `athlete-action` **v19 → v20**, `admin-action` **v59 → v60**, front por

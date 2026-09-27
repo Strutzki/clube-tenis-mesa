@@ -164,8 +164,12 @@ secao("O portão do aceite usa a versão do circuito");
   // O resumo do passo 3 é uma lista PRÓPRIA, dentro do InscricaoForm — não é a
   // RegulamentoView. Corrigir só a tela longa deixava o portão do aceite
   // prometendo torneio e nomeando a versão errada.
-  ok(/const versaoReg = \(circ && circ\.regulamento_versao\)/.test(fonte),
+  // Ancorada no `versaoLida`, que é de onde o `versaoReg` passou a vir em
+  // 17/09 — a leitura do circuito, aparada, e sem nenhum fallback por sistema.
+  ok(/const versaoLida = String\(\(circ && circ\.regulamento_versao\) \|\| versaoRetry \|\| ""\)\.trim\(\);/.test(fonte),
     "a versão do formulário de inscrição vem do circuito, não do sistema");
+  ok(!/\(ehB \? "vB-01" : "v03-12"\)/.test(fonte),
+    "e não sobrou fallback por sistema em lugar nenhum do formulário");
   ok(/const comTorneio = VERSOES_COM_TORNEIO\.has\(versaoReg\)/.test(fonte),
     "o resumo do passo 3 sabe se o circuito tem torneio");
   ok(/\(versão \{versaoReg\}\)/.test(fonte),
@@ -331,13 +335,16 @@ secao("Sem saber a versão, não se colhe aceite (fail-closed)");
   // numa falha de leitura, o atleta de um circuito novo leria o regulamento do
   // BH — com torneio e com a taxa — enquanto o servidor carimba a versão dele.
   // O recibo ficaria provadamente falso.
-  ok(/const versaoDesconhecida = !!circuitoId && circuitoId !== CIRCUITO_BH_ID &&/.test(fonte),
-    "o app sabe distinguir 'versão ausente no BH' (ok) de 'versão ausente em circuito novo' (falha)");
-  // O BH tem de ficar de fora da guarda: lá o fallback acerta, e a instrução do
-  // Juliano é não mexer no circuito que está rodando.
-  ok(/circuitoId !== CIRCUITO_BH_ID/.test(fonte),
-    "a guarda exclui o BH explicitamente");
-
+  // ATUALIZADA em 17/09: a guarda deixou de ISENTAR o BH. O argumento que o
+  // isentava — "no BH a versão É a do fallback" — morreu junto com o fallback,
+  // que foi removido no mesmo dia em que nasceu o carimbo da v03-13. A partir do
+  // carimbo, o fallback mentiria: mostraria torneio e os 80% enquanto o servidor
+  // já declara a versão nova. Agora versão ausente é desconhecida em QUALQUER
+  // circuito, o BH inclusive.
+  ok(/const versaoDesconhecida = !!circuitoId && !versaoLida;/.test(fonte),
+    "versão ausente é desconhecida em qualquer circuito — o BH não é mais isento");
+  ok(!/circuitoId !== CIRCUITO_BH_ID && !\(\(circ && circ\.regulamento_versao\)/.test(fonte),
+    "e não sobrou a isenção antiga do BH");
   ok(/if \(step === 3 && versaoDesconhecida\) return/.test(fonte),
     "o passo do aceite é bloqueado quando a versão é desconhecida");
 
@@ -367,10 +374,10 @@ secao("Sem saber a versão, não se colhe aceite (fail-closed)");
   // renderiza o componente. Só leitura do código pegou (Guardião de
   // Confiabilidade), e por isso esta asserção existe.
   const iDecl = fonte.indexOf("const [versaoRetry, setVersaoRetry]");
-  const iUso = fonte.indexOf("const versaoReg = (circ && circ.regulamento_versao) || versaoRetry");
+  const iUso = fonte.indexOf("const versaoLida = String((circ && circ.regulamento_versao) || versaoRetry");
   ok(iDecl > 0 && iUso > 0, "as duas linhas foram encontradas");
   ok(iDecl < iUso,
-    "versaoRetry é declarado ANTES de versaoReg (senão a tela quebra com ReferenceError)");
+    "versaoRetry é declarado ANTES de quem o lê (senão a tela quebra com ReferenceError)");
 }
 
 secao("A regra do valor único sobrevive ao motor — rodando o motor, não lendo o texto");
@@ -669,7 +676,25 @@ secao("O preço do BH não sobe antes do regulamento — e a trava age ANTES de 
     .filter(Boolean);
   const doCriarCircuito = [...motorTxt.matchAll(/regulamento_versao:\s*sistema === "A" \? "([^"]+)" : "([^"]+)"/g)]
     .flatMap(m => [m[1], m[2]]);
-  const CONHECIDAS = [...new Set([...dosDocumentos, ...doCriarCircuito])];
+  //   3. as três FAMÍLIAS carimbáveis do motor. Entraram em 19/09/2026: até
+  //      então a derivação coincidia com a união delas por ACIDENTE, e quem
+  //      acrescentasse uma v03-14 a VERSOES_DO_BH sem publicar o .md ficava
+  //      verde — enquanto o motor passaria a carimbar uma versão que some o
+  //      Cap. 10 do BH (fora de VERSOES_COM_TORNEIO), exibe "valor integral"
+  //      (fora de VERSOES_COM_DESCONTO_ETAPA) e TRAVA A VIRADA PARA SEMPRE
+  //      (fora de VERSOES_SEM_DESCONTO_ETAPA). É o caso perigoso que o
+  //      comentário acima descreve, reaberto pela porta que o carimbo criou.
+  //      (Guardião de Regulamento, R7.)
+  const listaDoMotor = (nome) => {
+    const m = motorTxt.match(new RegExp(`const ${nome} = new Set\\(\\[([^\\]]*)\\]`));
+    return m ? [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1]) : null;
+  };
+  const familias = ["VERSOES_DO_BH", "VERSOES_DE_RATING_NOVO", "VERSOES_DO_SISTEMA_B"].map(n => {
+    const l = listaDoMotor(n);
+    ok(Array.isArray(l) && l.length > 0, `a família ${n} foi lida do motor`);
+    return l || [];
+  }).flat();
+  const CONHECIDAS = [...new Set([...dosDocumentos, ...doCriarCircuito, ...familias])];
   ok(CONHECIDAS.length >= 4,
     `as versões conhecidas foram derivadas do acervo e do motor (achadas: ${CONHECIDAS.join(", ")})`);
   const nasDuas = (prometem || []).filter(v => (naoPrometem || []).includes(v));
@@ -682,6 +707,636 @@ secao("O preço do BH não sobe antes do regulamento — e a trava age ANTES de 
   // E a do motor é de PERMISSÃO: a v03-12, que promete 80%, não pode estar nela.
   ok(!(naoPrometem || []).includes("v03-12"),
     "a v03-12 NÃO libera a virada — é a versão que promete o desconto");
+}
+
+secao("O carimbo da versão: só o super-admin, com o nome, e só da família certa");
+{
+  // Até 17/09/2026 `regulamento_versao` só era escrito no CRIAR_CIRCUITO, e
+  // destravar a virada do BH exigiria `UPDATE` manual em produção — proibido
+  // pela regra 1. Esta ação é o caminho legítimo, e nasce com as três guardas
+  // que os guardiões especificaram antes de ela existir.
+  const carimbar = async (circ, payload) => {
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH, { nome_circuito: "Circuito BH", regulamento_versao: "v03-12" }),
+                  circuito("22222222-2222-2222-2222-222222222222", { slug: "pontos", sistema: "B", nome_circuito: "Circuito SP", regulamento_versao: "vB-01" })],
+      funcoes: { arquivar_partidas_temporada_circuito: () => null },
+    });
+    const r = await comoAdmin(motor, "DEFINIR_REGULAMENTO_VERSAO", { circuitoId: circ, ...payload });
+    return { banco, r, versaoAgora: banco.acha("circuitos", c => c.id === circ)?.regulamento_versao };
+  };
+
+  // 1. O caminho feliz: destrava a virada do BH.
+  {
+    const { r, versaoAgora } = await carimbar(BH, { versao: "v03-13", confirmacaoNome: "Circuito BH" });
+    ok(r.corpo?.sucesso === true, `o carimbo funciona (veio: ${JSON.stringify(r.corpo?.erro ?? true)})`);
+    igual(versaoAgora, "v03-13", "e o circuito passa a declarar a v03-13");
+    igual(r.corpo?.dados, { de: "v03-12", para: "v03-13" }, "a resposta diz de onde para onde");
+  }
+
+  // 2. `trim`, porque o valor é digitado à mão. Sem ele o carimbo "v03-13 " faz
+  //    o Cap. 10 sumir da tela do BH — o torneio é dele.
+  {
+    const { versaoAgora } = await carimbar(BH, { versao: "  v03-13  ", confirmacaoNome: "Circuito BH" });
+    igual(versaoAgora, "v03-13", "espaço em volta é aparado antes de gravar");
+  }
+
+  // 3. Branco NUNCA é gravado: o INSCREVER recusa 409 sem versão, então um
+  //    carimbo vazio fecharia as inscrições do circuito em silêncio.
+  for (const [v, rotulo] of [["", "vazio"], ["   ", "só espaços"], [null, "nulo"]]) {
+    const { r, versaoAgora } = await carimbar(BH, { versao: v, confirmacaoNome: "Circuito BH" });
+    igual(r.status, 400, `carimbo ${rotulo} é recusado`);
+    igual(versaoAgora, "v03-12", `e a versão anterior fica intacta com carimbo ${rotulo}`);
+  }
+
+  // 4. Confirmação-com-nome, e NO MOTOR — não só na tela. Trocar o regulamento
+  //    muda o contrato que o atleta aceita.
+  for (const [nome, rotulo] of [["", "sem nome"], ["circuito bh", "minúscula"], ["Circuito B", "nome incompleto"]]) {
+    const { r, versaoAgora } = await carimbar(BH, { versao: "v03-13", confirmacaoNome: nome });
+    igual(r.status, 409, `carimbo recusado com confirmação "${rotulo}"`);
+    igual(versaoAgora, "v03-12", `e nada muda com confirmação "${rotulo}"`);
+  }
+
+  // 5. A versão tem de ser DA FAMÍLIA do circuito. É outra pergunta que a da
+  //    trava: `vA-nc-01` passa na lista "não promete desconto" e mesmo assim
+  //    apagaria o Cap. 10 do BH.
+  {
+    const { r, versaoAgora } = await carimbar(BH, { versao: "vA-nc-01", confirmacaoNome: "Circuito BH" });
+    igual(r.status, 409, "carimbar a versão de circuito novo NO BH é recusado");
+    ok(/não é deste circuito/.test(String(r.corpo?.erro || "")), "e a mensagem diz o porquê");
+    igual(versaoAgora, "v03-12", "o BH continua na versão dele");
+  }
+  {
+    const { r, versaoAgora } = await carimbar("22222222-2222-2222-2222-222222222222", { versao: "v03-13", confirmacaoNome: "Circuito SP" });
+    igual(r.status, 409, "carimbar a versão do BH num circuito de PONTOS é recusado");
+    igual(versaoAgora, "vB-01", "o circuito B continua na versão dele");
+  }
+
+  // 6. Carimbar a mesma versão é inócuo, não erro — o admin pode repetir sem medo.
+  {
+    const { r, versaoAgora } = await carimbar(BH, { versao: "v03-12", confirmacaoNome: "Circuito BH" });
+    ok(r.corpo?.sucesso === true && r.corpo?.dados?.inalterado === true,
+      "recarimbar a mesma versão responde 'inalterado' em vez de erro");
+    igual(versaoAgora, "v03-12", "e não muda nada");
+  }
+
+  // 7. NÃO é do organizador. Default-deny: o que não está em ACOES_ORG é só
+  //    super-admin. Trocar regulamento não é operação de organizador.
+  const motorTxt2 = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "admin-action", "index.ts"), "utf8");
+  const iOrg = motorTxt2.indexOf("const ACOES_ORG = new Set([");
+  const listaOrg = motorTxt2.slice(iOrg, motorTxt2.indexOf("]);", iOrg));
+  ok(!/DEFINIR_REGULAMENTO_VERSAO/.test(listaOrg),
+    "o carimbo NÃO está na allowlist do organizador — é só do super-admin");
+}
+
+secao("A tela do carimbo: só o super-admin a vê, e ela não é o portão");
+{
+  // Sem tela, a ação do motor era inalcançável e o admin continuava cego para a
+  // versão que o circuito declara — que era o 0.10.7. As asserções abaixo travam
+  // as três decisões da tela; a guarda de verdade está no servidor.
+  const i = fonte.indexOf("function RegulamentoDoCircuitoCard");
+  ok(i > 0, "o card do regulamento foi encontrado");
+  const card = fonte.slice(i, fonte.indexOf("function AdminDashboard"));
+
+  ok(/Em vigor:/.test(card) && /versaoAtual \|\| "não definida"/.test(card),
+    "a tela MOSTRA a versão em vigor — o admin deixa de ser cego para ela");
+
+  // Confirmação-com-nome na tela, além da do motor. O botão não habilita sem
+  // ela; não é a guarda, é para o admin não descobrir o erro depois de apertar.
+  ok(/confirmacao\.trim\(\) === nomeReal/.test(card),
+    "o botão só habilita com o nome do circuito digitado igual");
+  ok(/disabled=\{!podeSalvar\}/.test(card),
+    "e fica desabilitado até lá");
+
+  // A mensagem do motor é específica (versão de outra família, nome errado,
+  // branco) e serve para o admin ler. Trocar por genérico foi o defeito que a
+  // Onda 0.6.1 corrigiu noutro lugar.
+  ok(/e\?\.message \|\| "Não deu para trocar a versão\."/.test(card),
+    "a recusa do servidor chega ao admin com o texto do servidor, não genérico");
+
+  // E só o super-admin vê o card: o motor recusa o organizador por default-deny,
+  // e a tela não oferece o que ele não pode fazer.
+  ok(/\{!modoOrg && \(\s*<RegulamentoDoCircuitoCard/.test(fonte),
+    "o card só aparece para o super-admin, não para o organizador");
+
+  // A tela recarrega depois de carimbar — senão o admin continua vendo a versão
+  // antiga e acha que não funcionou.
+  ok(/await loadFromSupabase\(\);/.test(card),
+    "depois de carimbar, a tela relê do banco");
+}
+
+secao("O re-aceite: o atleta lê o texto inteiro, e o recibo não é forjável");
+{
+  // 0.10.15(b). Nasceu porque o ROADMAP afirmava que a renovação já servia de
+  // re-aceite — falso: o RENOVAR grava só `quer_renovar`, sem texto, sem caixa,
+  // sem carimbar versão. Sem isto, os atletas entram na temporada nova com
+  // preço novo tendo aceitado textos de várias versões atrás.
+  const aa = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "athlete-action", "index.ts"), "utf8");
+  const iAc = aa.indexOf('case "ACEITAR_REGULAMENTO"');
+  ok(iAc > 0, "a ação de re-aceite existe no athlete-action");
+  const acao = aa.slice(iAc, aa.indexOf('case "RENOVAR"', iAc));
+
+  // 1. TOKEN, não athleteId. As outras ações desta função confiam no id do
+  //    payload, e os ids são públicos no ranking — para um recibo de
+  //    consentimento isso significaria que qualquer um aceita pelo outro.
+  ok(/const atletaId = await atletaPorTokenAA\(p\.token\);/.test(acao),
+    "o re-aceite é autenticado por token de sessão, não pelo athleteId do payload");
+  ok(!/p\.athleteId|payload\.athleteId/.test(acao),
+    "e não aceita athleteId vindo do cliente");
+
+  // 2. Fail-closed, como o INSCREVER.
+  ok(/if \(!versaoAtual\)/.test(acao),
+    "sem versão no circuito, não se colhe re-aceite");
+
+  // 3. O atleta declara QUAL versão está aceitando. Se ela mudou entre a tela
+  //    carregar e o clique, recusa — senão carimbaria um texto que ele não leu.
+  ok(/versaoVista !== versaoAtual/.test(acao),
+    "recusa se a versão mudou entre a leitura e o clique");
+
+  // 4. Grava os três campos do aceite, os mesmos que o INSCREVER grava.
+  for (const campo of ["aceite_regulamento: true", "data_aceite_regulamento:", "versao_regulamento: versaoAtual"]) {
+    ok(acao.includes(campo), `o re-aceite grava ${campo.replace(/:.*/, "")}`);
+  }
+  ok(/if \(!vinc\)/.test(acao),
+    "e só de quem é membro do circuito — aceite sem objeto não vale");
+
+  // ── A TELA DO ATLETA ────────────────────────────────────────────────────
+  const iCard = fonte.indexOf("function ReAceiteRegulamentoCard");
+  ok(iCard > 0, "o card de re-aceite do atleta foi encontrado");
+  const cardAtleta = fonte.slice(iCard, fonte.indexOf("function AthleteView"));
+
+  // Só aparece quando há divergência de verdade, e nunca sem saber as duas pontas.
+  ok(/const precisa = !!versaoCircuito && versaoCircuito !== versaoAceita/.test(cardAtleta),
+    "o card só aparece quando o circuito declara versão diferente da aceita");
+
+  // Exibe o REGULAMENTO INTEIRO, não o resumo do portão de inscrição — o resumo
+  // carrega a frase que TIRA o desconto e não a que PROTEGE (Jurídico).
+  ok(/<RegulamentoView onBack=\{\(\)=>setLendo\(false\)\} versao=\{versaoCircuito\}/.test(cardAtleta),
+    "o re-aceite exibe o regulamento completo, não o resumo");
+
+  // Caixa DESENHADA, não `<input type="checkbox">` — o nativo renderiza azul,
+  // cor fora do manual, e era a única caixa de consentimento do app fora do
+  // padrão usado nos aceites de LGPD e CPF. (Designer visual, 19/09/2026.)
+  ok(/role="checkbox" aria-checked=\{marcou\}/.test(cardAtleta) && /disabled=\{!marcou \|\| enviando\}/.test(cardAtleta),
+    "exige a caixa de seleção marcada antes de habilitar o aceite");
+  ok(!/type="checkbox"/.test(cardAtleta),
+    "e a caixa é a do projeto, não a nativa do navegador");
+  // O botão que carimba o aceite legal usa a cor com contraste AA — havia duas
+  // terracotas no tema e ele usava a que reprova (3.87:1 contra 5.34:1).
+  ok(/color=\{T\.terracotaBtn\} full/.test(cardAtleta),
+    "e o botão de confirmar usa a terracota de contraste AA, não a de destaque");
+  ok(/versaoVista: versaoCircuito/.test(cardAtleta),
+    "e manda ao servidor QUAL versão o atleta viu");
+  // Minúscula porque a frase foi reordenada: primeiro tranquiliza, depois
+  // oferece o contato. A ordem antiga pedia uma ação ANTES de dizer que nenhuma
+  // era necessária, e o Juliano decidiu que ignorar é opção legítima.
+  ok(/não aceitar não é abandono/i.test(cardAtleta),
+    "diz que recusar não é abandono — o Cap. 12 pune abandono sem comunicação, e recusar é comunicação");
+  const iTranquiliza = cardAtleta.search(/não aceitar não é abandono/i);
+  const iContato = cardAtleta.indexOf("fale com o organizador");
+  ok(iTranquiliza > 0 && (iContato < 0 || iTranquiliza < iContato),
+    "e tranquiliza ANTES de oferecer o contato — pedir ação antes vira obrigação na cabeça do atleta");
+  ok(/não gera cobrança/.test(cardAtleta),
+    "e que não gera cobrança");
+
+  // ── Os consertos dos guardiões, 18/09 ───────────────────────────────────
+
+  // O `circuitoId` vai DENTRO do payload. O motor lê `payload.circuitoId` e,
+  // sem ele, cai em `bhId()` — o aceite seria gravado contra o BH, qualquer que
+  // fosse o circuito do atleta. Hoje passaria "certo" porque o BH é o único.
+  // (Guardião de Segurança; NO-GO da 1ª rodada.)
+  ok(/payload: \{ circuitoId: CIRCUITO_ATIVO, token: cred\.token, versaoVista: versaoCircuito \}/.test(cardAtleta),
+    "o circuitoId vai dentro do payload, que é de onde o motor lê");
+  ok(!/acao: "ACEITAR_REGULAMENTO", circuitoId:/.test(cardAtleta),
+    "e não no nível de cima, onde o motor o ignora e cai no BH");
+
+  // O card reaparecia depois de aceito: as abas são sub-árvores diferentes no
+  // mesmo slot, e o estado local se perdia na remontagem.
+  ok(/dispatch\(\{ type: "ACEITE_REGULAMENTO_REGISTRADO"/.test(cardAtleta),
+    "o aceite atualiza o espelho local — senão o card volta ao trocar de aba");
+  ok(/case "ACEITE_REGULAMENTO_REGISTRADO"/.test(fonte),
+    "e o reducer sabe tratar isso");
+
+  // O card fica FORA da aba: ele só renderizava sob `meus_jogos`, e a aba é
+  // restaurada do localStorage — quem fechou no Ranking nunca o encontrava.
+  ok(/\{hub\}<ReAceiteRegulamentoCard/.test(fonte),
+    "o card de re-aceite é renderizado fora da aba, acima do conteúdo");
+
+  // A garantia que tranquiliza estava só no WhatsApp.
+  ok(/A temporada em andamento <span style=\{\{fontWeight:700\}\}>não muda<\/span>/.test(cardAtleta),
+    "o card carrega a mesma garantia da mensagem: a temporada em andamento não muda");
+
+  ok(/✓ Aceite registrado/.test(cardAtleta),
+    "e confirma visivelmente o sucesso — para consentimento, sumir não basta");
+
+  // ── A TELA DO ADMIN ─────────────────────────────────────────────────────
+  const cardAdmin = fonte.slice(fonte.indexOf("function RegulamentoDoCircuitoCard"), fonte.indexOf("function AdminDashboard"));
+  ok(/ainda não aceitaram a/.test(cardAdmin),
+    "o admin vê quantos e QUEM ainda não aceitou — sem isso o aviso prévio é cego");
+  // Os PENDENTES DE INCLUSÃO entram na conta. O filtro antigo os excluía com a
+  // justificativa de que "ainda vão passar pelo portão de inscrição normal" — e
+  // o INCLUIR_NO_CIRCUITO do motor não recolhe aceite nenhum, só apaga a flag.
+  // O painel podia dizer "✓ todos os 12 aceitaram" com dois membros em v03-11 e
+  // v03-8. (Guardião de Regulamento, R5, 19/09/2026.)
+  ok(!/a\.status === "ativo" && !a\.pendenteCircuito/.test(cardAdmin),
+    "o painel não exclui mais quem está pendente de inclusão da conta");
+}
+
+secao("O re-aceite RODANDO: sete cenários contra o athlete-action de verdade");
+{
+  // Esta seção existe porque a de cima NÃO BASTA — e isso foi provado, não
+  // suposto. Em 19/09/2026 o guardião de regulamento sabotou a regra de três
+  // jeitos e a bateria ficou VERDE nos três, porque toda a proteção do re-aceite
+  // era regex sobre o fonte:
+  //
+  //   `versaoVista !== versaoAtual` → `versaoVista && versaoVista !== versaoAtual`
+  //        a regex /versaoVista !== versaoAtual/ continua casando, e um
+  //        `versaoVista` vazio passa a carimbar uma versão que o atleta nunca
+  //        declarou ter lido.
+  //   `if (!vinc)` → `if (false && !vinc)`
+  //        a regex /if \(!vinc\)/ continua casando, e quem não é do circuito
+  //        aceita.
+  //   enfraquecer `if (!atletaId)`
+  //        a regex ancorada na linha do `atletaPorTokenAA` continua casando, e o
+  //        recibo volta a ser forjável — que é exatamente o que a ação existe
+  //        para impedir.
+  //
+  // Não havia desculpa de infraestrutura: o `athlete-action` já é carregado de
+  // verdade neste mesmo arquivo, e `atleta_sessao` já existe no banco falso.
+  //
+  // Sessão de mentira, cripto de verdade: o token é gravado como SHA-256 hex,
+  // o mesmo formato que `sha256hexAA` produz. O teste não inventa um atalho.
+  const sha256hex = async (txt) => {
+    const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt));
+    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+  };
+  const daquiAUmaHora = () => new Date(Date.now() + 3600e3).toISOString();
+  const ontem = () => new Date(Date.now() - 86400e3).toISOString();
+
+  const ATL = "aaaaaaaa-0000-0000-0000-000000000001";
+  const FORA = "aaaaaaaa-0000-0000-0000-000000000002";
+  const OUTRO_CIRC = "44444444-4444-4444-4444-444444444444";
+  const TOKEN = "token-de-teste-do-re-aceite";
+
+  // Os campos de competição entram com valor conhecido para a asserção poder
+  // afirmar que o re-aceite NÃO ENCOSTA neles — a Regra 2 do projeto.
+  const COMPETICAO = { rating: 777, saldo_sets: 42, vitorias: 3, derrotas: 1, chave_id: "chave1", wo_count: 1 };
+
+  const montarCenario = async ({ versaoCirc = "v03-13", circuitoAlvo = BH, sessao = true, expirada = false, membro = true } = {}) => {
+    const { banco } = await montarMotor({
+      circuitos: [
+        circuito(BH, { regulamento_versao: versaoCirc }),
+        circuito(OUTRO_CIRC, { slug: "outro", regulamento_versao: versaoCirc }),
+      ],
+      atletas: [atleta(ATL, { nome: "Fulano", status: "ativo", versao_regulamento: "v03-3", aceite_regulamento: true, ...COMPETICAO })],
+      circuito_atletas: [
+        ...(membro ? [{ circuito_id: BH, atleta_id: ATL, status: "ativo", versao_regulamento: "v03-3", ...COMPETICAO }] : []),
+        ...(membro ? [{ circuito_id: OUTRO_CIRC, atleta_id: ATL, status: "ativo", versao_regulamento: "v03-3", ...COMPETICAO }] : []),
+      ],
+      outras: {
+        atleta_sessao: sessao
+          ? [{ id: "s1", atleta_id: ATL, token_hash: await sha256hex(TOKEN), expira_em: expirada ? ontem() : daquiAUmaHora() }]
+          : [],
+      },
+    });
+    const atletaFn = await carregarFuncao("athlete-action", banco);
+    const chamar = (p) => atletaFn.chamar({ acao: "ACEITAR_REGULAMENTO", payload: { circuitoId: circuitoAlvo, ...p } });
+    const versaoGravada = (circId = BH) => {
+      const v = banco.tabelas.circuito_atletas.find(x => x.circuito_id === circId && x.atleta_id === ATL);
+      return v ? v.versao_regulamento : null;
+    };
+    return { banco, chamar, versaoGravada };
+  };
+
+  // 1. CAMINHO FELIZ — e a prova de que competição não se mexe.
+  {
+    const { banco, chamar, versaoGravada } = await montarCenario();
+    const r = await chamar({ token: TOKEN, versaoVista: "v03-13" });
+    igual(r.status, 200, "o aceite legítimo é aceito");
+    igual(r.corpo?.dados?.versao, "v03-13", "e devolve a versão carimbada");
+    igual(versaoGravada(), "v03-13", "a versão do vínculo passa a ser a nova");
+    const glob = banco.tabelas.atletas.find(a => a.id === ATL);
+    igual(glob.aceite_regulamento, true, "o aceite fica registrado");
+    ok(!!glob.data_aceite_regulamento, "com data — sem data o recibo não prova quando");
+    // Regra 2: o BH não é prejudicado. Aqui isso é aritmético.
+    for (const [campo, esperado] of Object.entries(COMPETICAO)) {
+      igual(glob[campo], esperado, `o re-aceite não encosta em ${campo}`);
+    }
+  }
+
+  // 2. `versaoVista` VAZIA — a mutação nº 1 do guardião.
+  {
+    const { chamar, versaoGravada } = await montarCenario();
+    const r = await chamar({ token: TOKEN, versaoVista: "" });
+    igual(r.status, 409, "sem declarar qual versão leu, o aceite é recusado");
+    igual(versaoGravada(), "v03-3", "e nada é carimbado — a versão antiga continua lá");
+  }
+
+  // 3. `versaoVista` DESATUALIZADA (o regulamento mudou enquanto ele lia).
+  {
+    const { chamar, versaoGravada } = await montarCenario();
+    const r = await chamar({ token: TOKEN, versaoVista: "v03-12" });
+    igual(r.status, 409, "declarar uma versão que não é a do circuito é recusado");
+    igual(versaoGravada(), "v03-3", "e nada é carimbado");
+  }
+
+  // 4. SEM TOKEN, TOKEN ERRADO e TOKEN EXPIRADO — a mutação nº 3.
+  {
+    const { chamar, versaoGravada } = await montarCenario();
+    const semToken = await chamar({ versaoVista: "v03-13" });
+    igual(semToken.status, 401, "sem token, o recibo não é emitido");
+    const errado = await chamar({ token: "token-inventado", versaoVista: "v03-13" });
+    igual(errado.status, 401, "com token inventado, também não");
+    igual(versaoGravada(), "v03-3", "e nenhuma das duas tentativas gravou nada");
+  }
+  {
+    const { chamar, versaoGravada } = await montarCenario({ expirada: true });
+    const r = await chamar({ token: TOKEN, versaoVista: "v03-13" });
+    igual(r.status, 401, "sessão expirada não carimba aceite");
+    igual(versaoGravada(), "v03-3", "e não deixa rastro");
+  }
+
+  // 5. NÃO-MEMBRO — a mutação nº 2.
+  {
+    const { banco, chamar } = await montarCenario({ membro: false });
+    const r = await chamar({ token: TOKEN, versaoVista: "v03-13" });
+    igual(r.status, 403, "quem não participa do circuito não aceita o regulamento dele");
+    igual(banco.tabelas.circuito_atletas.length, 0, "e nenhum vínculo é criado pela recusa");
+  }
+
+  // 6. CIRCUITO NÃO-BH — o aceite é do circuito, não global.
+  {
+    const { banco, chamar, versaoGravada } = await montarCenario({ circuitoAlvo: OUTRO_CIRC });
+    const r = await chamar({ token: TOKEN, versaoVista: "v03-13" });
+    igual(r.status, 200, "o aceite vale em circuito que não é o BH");
+    igual(versaoGravada(OUTRO_CIRC), "v03-13", "e carimba o vínculo daquele circuito");
+    igual(versaoGravada(BH), "v03-3", "sem contaminar o vínculo do BH");
+    igual(banco.tabelas.atletas.find(a => a.id === ATL).versao_regulamento, "v03-3",
+      "nem a identidade global — aceite é sazonal, não identidade");
+  }
+
+  // 7. IDEMPOTÊNCIA — aceitar duas vezes não quebra nem duplica.
+  {
+    const { banco, chamar, versaoGravada } = await montarCenario();
+    await chamar({ token: TOKEN, versaoVista: "v03-13" });
+    const r2 = await chamar({ token: TOKEN, versaoVista: "v03-13" });
+    igual(r2.status, 200, "aceitar de novo continua respondendo 200");
+    igual(versaoGravada(), "v03-13", "e a versão segue a mesma");
+    igual(banco.tabelas.circuito_atletas.filter(x => x.circuito_id === BH && x.atleta_id === ATL).length, 1,
+      "sem duplicar o vínculo");
+  }
+}
+
+secao("O par (versão, preço) não pode mentir — nem pelo carimbo, nem pelo financeiro");
+{
+  // Achado do guardião de regulamento em 19/09/2026, SIMULADO contra este motor:
+  // a trava do NOVA_TEMPORADA protege UMA ação, não o par. Em três passos
+  // legítimos — carimbar v03-13, virar (o preço vai a 100), carimbar v03-12 de
+  // volta — chega-se exatamente ao estado que a trava existe para proibir: texto
+  // prometendo 80% na 2ª etapa, app cobrando 100%. Contra o atleta.
+  const PCT_DESC = 80, PCT_CHEIO = 100;
+
+  // O carimbo, pela ponta do super-admin.
+  {
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH, { regulamento_versao: "v03-13", percentual_entrada_meio: PCT_CHEIO, nome_circuito: "Clube do Tênis de Mesa" })],
+    });
+    const r = await comoAdmin(motor, "DEFINIR_REGULAMENTO_VERSAO", { versao: "v03-12", confirmacaoNome: "Clube do Tênis de Mesa" });
+    igual(r.status, 409, "carimbar de volta uma versão que promete desconto, cobrando 100%, é recusado");
+    igual(banco.tabelas.circuitos.find(c => c.id === BH).regulamento_versao, "v03-13",
+      "e a versão gravada não muda — a recusa não deixa rastro");
+  }
+
+  // O estado de HOJE tem de continuar carimbável: v03-12 com 80% é coerente.
+  {
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH, { regulamento_versao: "v03-11", percentual_entrada_meio: PCT_DESC, nome_circuito: "Clube do Tênis de Mesa" })],
+    });
+    const r = await comoAdmin(motor, "DEFINIR_REGULAMENTO_VERSAO", { versao: "v03-12", confirmacaoNome: "Clube do Tênis de Mesa" });
+    igual(r.status, 200, "versão que promete desconto, com desconto cobrado, é carimbável");
+    igual(banco.tabelas.circuitos.find(c => c.id === BH).regulamento_versao, "v03-12", "e grava");
+  }
+
+  // A JANELA DE TRANSIÇÃO não pode ser barrada, senão vira impasse: a trava
+  // exige carimbar a v03-13 ANTES de virar, e quem leva o preço a 100 é a virada.
+  {
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH, { regulamento_versao: "v03-12", percentual_entrada_meio: PCT_DESC, nome_circuito: "Clube do Tênis de Mesa" })],
+    });
+    const r = await comoAdmin(motor, "DEFINIR_REGULAMENTO_VERSAO", { versao: "v03-13", confirmacaoNome: "Clube do Tênis de Mesa" });
+    igual(r.status, 200, "carimbar a v03-13 com 80% ainda cobrado é PERMITIDO — é a janela de transição");
+    igual(banco.tabelas.circuitos.find(c => c.id === BH).regulamento_versao, "v03-13",
+      "senão não daria para carimbar nem para virar, e a temporada travaria para sempre");
+  }
+
+  // O financeiro, pela ponta do ORGANIZADOR — caminho mais curto que o carimbo.
+  {
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH, { regulamento_versao: "v03-12", percentual_entrada_meio: PCT_DESC })],
+    });
+    const r = await comoAdmin(motor, "DEFINIR_FINANCEIRO", { percentualMeio: PCT_CHEIO });
+    igual(r.status, 409, "tirar o desconto sem trocar o texto que o promete é recusado");
+    igual(banco.tabelas.circuitos.find(c => c.id === BH).percentual_entrada_meio, PCT_DESC,
+      "e o percentual gravado não muda");
+  }
+
+  // Sob a v03-13 o percentual cheio é o esperado — a guarda não pode travar isso.
+  {
+    const { motor } = await montarMotor({
+      circuitos: [circuito(BH, { regulamento_versao: "v03-13", percentual_entrada_meio: PCT_CHEIO })],
+    });
+    const r = await comoAdmin(motor, "DEFINIR_FINANCEIRO", { percentualMeio: PCT_CHEIO });
+    igual(r.status, 200, "sob a v03-13, cobrar 100% é exatamente o que o texto diz");
+  }
+}
+
+secao("O app e o motor concordam sobre quais versões existem — lista a lista");
+{
+  // R3: o aviso prévio é a PROVA CONTRATUAL de que o Clube avisou. Ele não pode
+  // aplicar padrão mais frouxo que o ato que anuncia. Antes desta guarda, o
+  // admin podia anunciar "V03-13" (V maiúsculo) para os 12 ativos e só descobrir
+  // no carimbo que o motor recusa — e a maiúscula NÃO é normalizada de propósito
+  // lá ("V03-13" é typo, e typo tem de barrar).
+  //
+  // Esta asserção compara as listas DOS DOIS LADOS. Se o motor ganhar uma
+  // família ou uma versão e o app não, fica vermelho — que é o único jeito de a
+  // cópia não apodrecer.
+  const motorFamilias = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "admin-action", "index.ts"), "utf8");
+  const doMotor = (nome) => {
+    const m = motorFamilias.match(new RegExp(`const ${nome} = new Set\\(\\[([^\\]]*)\\]`));
+    return m ? [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1]).sort() : null;
+  };
+  const doApp = (nome) => {
+    const m = fonte.match(new RegExp(`const ${nome} = new Set\\(\\[([^\\]]*)\\]`));
+    return m ? [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1]).sort() : null;
+  };
+  for (const [noMotor, noApp] of [
+    ["VERSOES_DO_BH", "VERSOES_CARIMBAVEIS_BH"],
+    ["VERSOES_DE_RATING_NOVO", "VERSOES_CARIMBAVEIS_RATING_NOVO"],
+    ["VERSOES_DO_SISTEMA_B", "VERSOES_CARIMBAVEIS_SISTEMA_B"],
+  ]) {
+    const a = doMotor(noMotor), b = doApp(noApp);
+    ok(Array.isArray(a) && a.length > 0, `${noMotor} foi lida do motor`);
+    igual(b, a, `${noApp} no app é idêntica a ${noMotor} no motor`);
+  }
+
+  // E a escolha da família segue a MESMA regra do motor: BH primeiro, senão o
+  // sistema decide. Escrito com as variáveis de módulo que existem de verdade —
+  // `state.circuitoSlug` e `state.sistema` NÃO existem, e foi o primeiro jeito
+  // que escrevi.
+  const escolha = fonte.slice(fonte.indexOf("function versoesCarimbaveis"), fonte.indexOf("function RegulamentoView"));
+  ok(/CIRCUITO_ATIVO === CIRCUITO_BH_ID/.test(escolha),
+    "a família do BH é escolhida pelo id do circuito ativo");
+  ok(/SISTEMA_ATIVO === "B"/.test(escolha),
+    "e o resto pelo sistema — a mesma ordem de decisão do motor");
+
+  // O disparo é BLOQUEADO com alvo fora da família: fila vazia, não lembrete
+  // disfarçado. Anunciar versão que o motor vai recusar é prometer aos atletas
+  // uma coisa que não acontece.
+  ok(/if \(cat === "regulamento" && alvoForaDaFamilia\) return \[\];/.test(fonte),
+    "alvo fora da família não gera mensagem nenhuma");
+  ok(/const alvoForaDaFamilia = !!alvoLimpo && !versoesCarimbaveis\(\)\.has\(alvoLimpo\);/.test(fonte),
+    "e a checagem usa a família do circuito, não um formato genérico");
+
+  // A LEGENDA do campo decide pela mesma condição do gerador. Antes decidia só
+  // por o campo estar preenchido: digitar a versão JÁ EM VIGOR fazia a legenda
+  // prometer "avisando todos" enquanto saía o lembrete. Nenhuma mensagem errada
+  // era enviada, mas o admin podia acreditar que avisou com antecedência sem ter
+  // avisado nada. (Operações, 19/09/2026.)
+  ok(/const alvoEhPrevio = !!alvoLimpo && !alvoForaDaFamilia &&\s*\n\s*alvoLimpo !== String\(state\.regulamentoVersao \|\| ""\)\.trim\(\);/.test(fonte),
+    "a legenda do campo decide pela mesma condição do gerador, não por o campo estar preenchido");
+  const legenda = fonte.slice(fonte.indexOf("{alvoForaDaFamilia"), fonte.indexOf("Em branco, avisa só"));
+  ok(/já é<\/b> a versão em vigor/.test(legenda),
+    "e diz na cara quando a versão digitada já é a em vigor — aí não é aviso prévio");
+
+  // A descrição da categoria conta que existem DOIS modos. Sem isso, o campo só
+  // aparece depois de clicar, e o caminho de descoberta dependia de o admin já
+  // saber que o botão existe — sendo que a consequência de não descobrir é a
+  // violação jurídica que o pacote inteiro existe para evitar.
+  ok(/desc:"Avisa ANTES de trocar \(todos\) ou cobra quem não aceitou a versão em vigor"/.test(fonte),
+    "a descrição da categoria menciona o modo de aviso prévio");
+}
+
+secao("A virada pede o nome do circuito — o padrão que o projeto exige das ações destrutivas");
+{
+  // 0.10.20. O CLAUDE.md já mandava ("Mudança destrutiva pede
+  // confirmação-com-nome"), e a ação MAIS destrutiva do app era a que não pedia.
+  // A incoerência: trocar o TEXTO do regulamento exige digitar o nome e é
+  // reversível (recarimba); virar a temporada apaga partidas e zera stats sem
+  // volta e pedia um clique. E o botão VIZINHO já usava confirm().
+  const painel = fonte.slice(fonte.indexOf("function NovaTemporadaPanel"), fonte.indexOf("function NovaTemporadaPanel") + 6000);
+  ok(/const nomeConfere = confirmacaoNome\.trim\(\) === nomeRealVirada;/.test(painel),
+    "a virada compara o nome digitado com o nome real do circuito");
+  ok(/disabled=\{virando \|\| !nomeConfere\}/.test(painel),
+    "e o botão de virar fica desabilitado enquanto o nome não bate");
+  // A guarda tem de estar DENTRO do onClick também: `disabled` é da tela, e tela
+  // não é portão. (Mesma lição do carimbo.)
+  const iGuardaNome = painel.indexOf("if (virando || !nomeConfere) return;");
+  const iDispatch = painel.indexOf('dispatch({type:"NOVA_TEMPORADA"');
+  ok(iGuardaNome > 0 && iGuardaNome < iDispatch,
+    "e a checagem do nome roda ANTES do dispatch, não só no disabled");
+  // Fechar o modal limpa o campo: senão o nome digitado sobrevive ao cancelar, e
+  // o próximo "Virar…" abre já confirmado — o atrito valeria uma vez só.
+  ok(/const fecharModal = \(\) => \{ setConfirmando\(false\); setConfirmacaoNome\(""\); \};/.test(painel),
+    "e fechar o modal limpa o nome digitado, para o atrito não valer só uma vez");
+}
+
+secao("O aviso prévio: os três conteúdos, e o registro que é a prova");
+{
+  // 0.10.15(c). Não é cortesia: o portão do aceite promete, no texto que os
+  // atletas assinaram, que "o regulamento pode ser atualizado com aviso prévio"
+  // — e o ônus de provar que avisou é do Clube. O registro em
+  // `mensagens_enviadas` (atleta + data + texto + categoria) É a prova.
+  ok(/\{id:"regulamento", icon:"📋", label:"Mudança de Regulamento"/.test(fonte),
+    "existe a categoria de aviso de mudança de regulamento");
+
+  const i = fonte.indexOf('case "regulamento": {');
+  ok(i > 0, "o gerador do aviso foi encontrado");
+  const aviso = fonte.slice(i, fonte.indexOf('case "lembretes"', i));
+
+  // Os TRÊS conteúdos obrigatórios que o Jurídico especificou.
+  ok(/O que muda:/.test(aviso), "o aviso diz O QUE muda");
+  ok(/A temporada em andamento não muda/.test(aviso),
+    "diz que a temporada em andamento NÃO muda — é a garantia que protege quem já está dentro");
+  ok(/O que fazer:/.test(aviso) && /confirme o aceite/.test(aviso),
+    "e diz O QUE FAZER: ler no app e confirmar");
+  ok(/versão \*\$\{versaoEmVigor\}\*/.test(aviso),
+    "nomeia a versão que passou a valer");
+
+  // O aviso NÃO resume o regulamento — manda ler. Resumir foi o que o Jurídico
+  // apontou como perigoso: o resumo carrega a frase que TIRA o desconto e não a
+  // que PROTEGE.
+  ok(!/80%/.test(aviso),
+    "o aviso não tenta resumir cláusulas — manda ler o texto em vigor");
+
+  // Fail-closed: sem versão em vigor, não se manda aviso nenhum.
+  ok(/if \(!versaoEmVigor\) return \[\];/.test(aviso),
+    "sem saber a versão em vigor, nenhum aviso é gerado");
+
+  // A categoria só aparece quando há alguém para avisar — senão o admin não
+  // sabe se é porque todos aceitaram ou porque algo quebrou.
+  // ATUALIZADA em 19/09: a categoria passou a estar disponível sempre que há
+  // atleta ativo, não só quando há divergência. O motivo é o achado J1 do
+  // Jurídico: **antes do carimbo ninguém diverge**, e é justamente aí que o
+  // aviso prévio precisa sair. Com a condição antiga, o aviso só existia depois
+  // da mudança — e por construção nunca podia ser prévio, que é exatamente o
+  // que o portão de aceite promete aos atletas.
+  ok(/if \(c\.id === "regulamento"\) return \(state\.athletes \|\| \[\]\)\.some\(a => a\.status === "ativo" && !a\.pendenteCircuito\);/.test(fonte),
+    "a categoria é oferecida sempre que há atleta ativo — senão o aviso nunca pode ser prévio");
+
+  // ── O MODO AVISO PRÉVIO ─────────────────────────────────────────────────
+  const iAviso = fonte.indexOf('case "regulamento": {');
+  const blocoAviso = fonte.slice(iAviso, fonte.indexOf('case "lembretes"', iAviso));
+
+  ok(/function gerarMensagensCategoria\(cat, state, telefones = \{\}, versaoAlvo = ""\)/.test(fonte),
+    "o gerador aceita uma versão-alvo, que é o que liga o modo prévio");
+  ok(/if \(alvo && alvo !== versaoEmVigor\) \{/.test(blocoAviso),
+    "e troca de modo quando a versão-alvo ainda não foi carimbada");
+
+  // No modo prévio vai para TODOS os ativos, não só os divergentes — antes do
+  // carimbo ninguém diverge, então filtrar por divergência daria lista vazia.
+  ok(/const ativos = \(state\.athletes \|\| \[\]\)\.filter\(a => a\.status === "ativo"\);/.test(blocoAviso),
+    "o aviso prévio vai para TODOS os ativos, não só para quem diverge");
+  // E grava categoria PRÓPRIA: os dois modos gravavam "regulamento", e a chave
+  // de "já enviada" é (atleta, categoria, mês) — então avisar antes marcava o
+  // LEMBRETE posterior como já enviado para todo mundo, e a única mensagem
+  // acionável nunca entrava na fila.
+  ok(/categoria: "regulamento_previo"/.test(blocoAviso),
+    "e o aviso prévio se registra com categoria própria, sem colidir com o lembrete");
+
+  // E o tempo verbal importa: é anúncio, não comunicação de fato consumado.
+  ok(/\*passará a valer\*/.test(blocoAviso),
+    "o aviso prévio está no futuro — 'passará a valer', não 'passou a valer'");
+  ok(/nada agora/.test(blocoAviso),
+    "e diz que o atleta não precisa fazer nada ainda");
+  ok(/passou a valer pela versão/.test(blocoAviso),
+    "o modo lembrete, para depois do carimbo, continua existindo no passado");
+
+  // A MESMA função escolhe quem recebe o aviso e quem aparece como pendente no
+  // painel do admin. Duas listas divergentes seria o pior dos mundos: avisar
+  // quem já aceitou, ou dizer que faltam 3 e mandar para 2.
+  // Medido DENTRO do card do admin, não no arquivo inteiro: contar ocorrências
+  // globais deixava a mutação verde, porque sobravam três usos noutros lugares.
+  // É a mesma armadilha da asserção que contava `percentual_entrada_meio`.
+  const cardAdm = fonte.slice(fonte.indexOf("function RegulamentoDoCircuitoCard"), fonte.indexOf("function AdminDashboard"));
+  ok(/const pendentes = atletasSemAceite\(/.test(cardAdm),
+    "o painel do admin usa a MESMA função do aviso para listar os pendentes");
+  // As TRÊS listas — esta, a do aviso e a do card do atleta — passam a
+  // coincidir. Era a divergência entre elas o achado R5.
+  const corpoSemAceite = fonte.slice(fonte.indexOf("function atletasSemAceite"), fonte.indexOf("function todasMensagensPendentes"));
+  ok(!/!a\.pendenteCircuito/.test(corpoSemAceite),
+    "atletasSemAceite não exclui mais quem está pendente de inclusão");
+  ok(/a\.status === "ativo" &&/.test(corpoSemAceite),
+    "mas continua contando só quem está ativo");
+
+  // O aviso tem de estar na FILA UNIFICADA e no contador. Estava fora: a única
+  // mensagem com promessa contratual pendurada era a única que o admin tinha de
+  // lembrar sozinho. O Jurídico apontou que esta asserção não existia — e que a
+  // bateria passaria com o aviso fora da fila, que era o estado real.
+  const ordem = fonte.match(/const ORDEM_DISPARO = \[([^\]]*)\]/);
+  ok(!!ordem, "a ordem de disparo foi encontrada");
+  const cats = [...(ordem ? ordem[1] : "").matchAll(/"([^"]+)"/g)].map(x => x[1]);
+  ok(cats.includes("regulamento"),
+    `o aviso de regulamento está na fila unificada e no contador (achadas: ${cats.join(", ")})`);
 }
 
 secao("A trava é lista de PERMISSÃO — typo no carimbo fecha o portão, não abre");
@@ -1045,8 +1700,8 @@ secao("Nenhuma tela de regulamento adivinha a versão");
   igual(semVersao, [],
     "toda chamada da RegulamentoView passa a versão — nenhuma cai em fallback cravado");
 
-  ok(/const versaoEfetiva = versao \|\| null;/.test(fonte),
-    "sem versão, a tela não assume a do BH");
+  ok(/const versaoEfetiva = String\(versao \|\| ""\)\.trim\(\) \|\| null;/.test(fonte),
+    "sem versão, a tela não assume a do BH — e apara o espaço, como o motor faz");
   ok(/versaoIncerta && \(/.test(fonte),
     "e avisa na tela que não conseguiu confirmar a versão");
 }
@@ -1140,33 +1795,47 @@ secao("O servidor também não carimba aceite sem saber a versão");
   // recusa o BH por construção e não existe 2º circuito, então o caminho é
   // inalcançável hoje. Está registrado como 0.10.18, com gatilho no dia em que
   // o primeiro circuito não-BH abrir inscrições.
-  // ATENÇÃO à forma desta asserção. A 1ª versão exigia que o defeito
-  // PERMANECESSE (`ok(/regulamento_versao || null/)`) — ou seja, consertar o
-  // 0.10.18 deixaria a bateria vermelha: **a bateria bloquearia a própria
-  // correção**. O supervisor do Regulamento pegou.
-  //
-  // A forma certa aceita os DOIS estados e recusa o terceiro, que é o silêncio:
-  // ou o `PARTICIPAR` recusa sem versão (consertado), ou grava null (o estado
-  // conhecido) E o item continua registrado no ROADMAP. O que não pode é o
-  // código piorar, nem o débito sumir do documento sem o conserto.
+  // ── O PARTICIPAR foi consertado em 17/09/2026 ──────────────────────────
+  // Esta asserção já teve duas formas erradas antes desta. A 1ª afirmava que a
+  // função era fail-closed, o que era FALSO nas duas metades (ela gravava
+  // `aceite_regulamento: true` com `versao_regulamento: null` — recibo de
+  // consentimento que não aponta para texto nenhum, e gravar nulo não é
+  // recusar). A 2ª exigia que o defeito PERMANECESSE, ou seja, a bateria
+  // bloqueava a própria correção. Agora exige o conserto.
   const login = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "login-atleta", "index.ts"), "utf8");
   const iPart = login.indexOf('acao === "PARTICIPAR"');
   const trechoPart = iPart > 0 ? login.slice(iPart) : login;
-  const consertado = /versao_regulamento: versaoDoCircuito/.test(trechoPart)
-    || /if \(!versaoDoCircuito\)/.test(trechoPart);
-  const estadoConhecido = /versao_regulamento: circ\.regulamento_versao \|\| null/.test(trechoPart);
-  ok(consertado || estadoConhecido,
-    "o PARTICIPAR está no estado conhecido (grava null) ou consertado (recusa) — nunca pior que isso");
-  ok(!/versao_regulamento: circ\.regulamento_versao \|\| ["']v03/.test(trechoPart),
-    "e NUNCA carimba uma versão inventada, que é o defeito que o athlete-action tinha");
 
-  // E o defeito conhecido tem de continuar REGISTRADO. Se alguém consertar o
-  // código e a asserção acima ficar vermelha, esta aqui lembra de fechar o item
-  // no ROADMAP junto; se alguém apagar o item do ROADMAP sem consertar o código,
-  // esta fica vermelha primeiro. Débito sem registro é débito esquecido.
-  const roadmap = fs.readFileSync(path.join(RAIZ, "docs", "ROADMAP.md"), "utf8");
-  ok(/0\.10\.18/.test(roadmap) && /PARTICIPAR/.test(roadmap),
-    "a assimetria do PARTICIPAR está registrada no ROADMAP, com gatilho");
+  ok(/const versaoDoCircuito = String\(circ\.regulamento_versao \?\? ""\)\.trim\(\);/.test(trechoPart),
+    "o PARTICIPAR lê a versão com trim, como o INSCREVER e o carimbo fazem");
+  ok(/if \(!versaoDoCircuito\)/.test(trechoPart),
+    "e RECUSA quando não sabe a versão, em vez de gravar nulo");
+  ok(/versao_regulamento: versaoDoCircuito,/.test(trechoPart),
+    "o aceite carimba a versão lida, sem fallback");
+  ok(!/versao_regulamento: circ\.regulamento_versao/.test(trechoPart),
+    "não sobrou o carimbo antigo, que aceitava nulo");
+
+  // A ORDEM: a guarda tem de vir antes de qualquer escrita, senão a recusa
+  // deixa rastro — inclusive o backfill de CPF, que grava dado pessoal.
+  // Medido contra as escritas DA INSCRIÇÃO, não contra qualquer escrita: antes
+  // da guarda há `update` em `atletas` que são o contador de tentativas de PIN —
+  // autenticação, acontecem de qualquer jeito e não têm a ver com inscrever.
+  // A primeira medição que escrevi não fazia essa distinção e acusou por isso.
+  const iGuardaP = trechoPart.indexOf("const versaoDoCircuito");
+  const escritasDaInscricao = ['from("atleta_documento").insert', 'from("circuito_atletas").insert', 'rpc("dedup_por_cpf_hash"'];
+  const iPrimeiraDaInscricao = Math.min(...escritasDaInscricao.map(t => {
+    const k = trechoPart.indexOf(t);
+    return k < 0 ? Number.MAX_SAFE_INTEGER : k;
+  }));
+  ok(iPrimeiraDaInscricao < Number.MAX_SAFE_INTEGER, "as escritas da inscrição foram localizadas");
+  ok(iGuardaP > 0 && iGuardaP < iPrimeiraDaInscricao,
+    "a guarda roda ANTES de gravar CPF ou matrícula — recusa não registra dado pessoal");
+
+  // E as duas funções passam a concordar de verdade — que era a afirmação
+  // falsa que a bateria carimbou por dois dias.
+  const atletaAction = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "athlete-action", "index.ts"), "utf8");
+  ok(/const versaoDoCircuito = String\(circ\.regulamento_versao \?\? ""\)\.trim\(\);/.test(atletaAction),
+    "o INSCREVER do athlete-action usa a mesma forma — agora as duas funções concordam");
 }
 
 secao("A tela não mente sobre a virada antes do servidor responder");
@@ -1200,7 +1869,7 @@ secao("A tela não mente sobre a virada antes do servidor responder");
     "o botão ESPERA o servidor antes de fechar o modal");
   ok(/virando \? "Virando…"/.test(botao),
     "e diz que está esperando, em vez de parecer travado");
-  ok(/if \(virando\) return;/.test(botao),
+  ok(/if \(virando \|\| !nomeConfere\) return;/.test(botao),
     "clique repetido não dispara duas viradas");
 
   // As três asserções acima checam PRESENÇA DE TEXTO, e por isso ficaram verdes
@@ -1211,7 +1880,7 @@ secao("A tela não mente sobre a virada antes do servidor responder");
   // então um `await` seco fecha o modal dos dois jeitos.
   //
   // Estas duas olham a ESTRUTURA: o fechamento tem de estar preso ao resultado.
-  const iFecha = botao.indexOf("setConfirmando(false)");
+  const iFecha = botao.indexOf("fecharModal()");
   const iGuarda = botao.indexOf("if (!r || r.ok !== false)");
   ok(iGuarda > 0 && iGuarda < iFecha,
     "o modal só fecha DEPOIS de conferir que o servidor aceitou — não fecha na recusa");

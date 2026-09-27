@@ -1,0 +1,26 @@
+{
+  "_o_que_e": "Retrato de quem tinha aceitado qual versao do regulamento no circuito BH, tirado ANTES de publicar o pacote do re-aceite (Onda 0.10.15).",
+  "_por_que_existe": "ACEITAR_REGULAMENTO sobrescreve versao_regulamento sem guardar o valor anterior. Assim que o card de re-aceite for ao ar, o primeiro atleta que clicar apaga a prova de sob qual texto ele estava. Depois do push nao ha como reconstruir.",
+  "_quando": "2026-09-27, antes do deploy do admin-action v61 / athlete-action v21 / login-atleta v9 e do push do app",
+  "_circuito": "272dd67c-ea33-41a3-8fb9-1fd909d7f3fa (bh)",
+  "_linhas": 15,
+  "_nota": "Sem filtro de status: as 15 linhas, nao as 12 do roster nem as 14. Quem esta pendente ou suspenso tambem carrega versao antiga e tambem pode entrar no app.",
+  "_distribuicao": { "v03-3": 11, "v03-5": 1, "v03-8": 1, "v03-11": 1, "_obs": "11 em v03-3 inclui 1 suspenso; nenhum atleta estava em v03-12" },
+  "aceites": [
+    {"atleta_id":"4f710743-7637-485d-9474-571a702efb3e","versao_regulamento":"v03-11","data_aceite_regulamento":"2026-08-09T11:48:50.648Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":true},
+    {"atleta_id":"081ca652-efcc-4283-b059-4fe3a623245f","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-06-30T12:45:01.670Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"3f1fa6e9-65c8-40b1-a3b9-123b15d34189","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-07-02T17:05:38.142Z","aceite_regulamento":true,"status":"suspenso","pendente_circuito":false},
+    {"atleta_id":"6bf199b8-da51-4a9b-807a-33388f20b35c","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-07-05T12:55:45.860Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"966f203b-c2f5-4c05-80d2-706e702ecb3f","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-06-30T15:53:37.408Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"a5593ec5-1009-4af8-9d42-b19204aeccaf","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-07-01T22:48:38.394Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"a951f9fe-749b-4462-af91-f013efff594b","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-06-30T11:07:56.077Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"acf9b43a-d80f-4adb-9149-adb453d540c3","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-07-01T09:54:23.895Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"b1f755e5-3ba4-46b0-a423-cb8c86889f6d","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-06-30T12:36:44.023Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"c199360e-b479-43ab-8be4-4843fdc21040","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-07-02T00:00:29.907Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"ca153502-383e-447f-8ef2-7cda89ac2775","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-06-29T22:45:32.996Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"dbc5c8d6-3d1e-4d74-b810-2a7689b8d515","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-06-29T21:40:15.720Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"f3f9e9e0-880c-4f3a-9f6e-3360ccf55c4c","versao_regulamento":"v03-3","data_aceite_regulamento":"2026-06-30T14:09:55.056Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"7c490959-4865-4c0f-adaa-b1cdc70935a3","versao_regulamento":"v03-5","data_aceite_regulamento":"2026-07-11T11:51:59.560Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":false},
+    {"atleta_id":"e2685174-d130-4d79-95fd-5df794db925c","versao_regulamento":"v03-8","data_aceite_regulamento":"2026-07-27T16:31:24.027Z","aceite_regulamento":true,"status":"ativo","pendente_circuito":true}
+  ]
+}

@@ -444,11 +444,20 @@ atleta inscrito."*
 
 ### Gatilho: antes de nomear o 1º organizador
 
-- **0.10.6 — `login-atleta` precisa subir como v9.** O que está no ar (v8)
-  difere do repositório em **uma coisa**: o `LOGIN_ORGANIZADOR` não devolve
-  `org_ve_financeiro`. Consequência: a aba Financeiro **nunca apareceria** para o
-  organizador. Dormente hoje (0 organizadores, e o BH é excluído desse fluxo por
-  `slug !== "bh"`), e o portão real do servidor está no ar desde a v58.
+- **0.10.6 — `login-atleta` precisa subir como v9.** ⚠️ **Descrição corrigida em
+  19/09/2026 — o diff contra o ar se inverteu.** Quando este item foi escrito, o
+  repositório estava **à frente** do ar por conter o `org_ve_financeiro` no
+  `LOGIN_ORGANIZADOR`. Hoje é o contrário: esse trecho foi **removido do
+  repositório** (decisão 3 do 0.10.15 — a liberação do financeiro do organizador
+  segue amarrada ao 1º circuito vendido), e o que o repositório tem a mais que o
+  ar é a **guarda fail-closed do `PARTICIPAR`** (0.10.18). Ou seja: a v9 sobe por
+  causa do regulamento, **não** do financeiro.
+
+  **O que continua pendente deste item:** a aba Financeiro **nunca apareceria**
+  para o organizador, porque nem o ar nem o repositório devolvem
+  `org_ve_financeiro`. Dormente (0 organizadores, e o BH é excluído desse fluxo
+  por `slug !== "bh"`), e o portão real do servidor está no ar desde a v58.
+  Gatilho: o 1º circuito vendido — não esta onda.
   *Nota de método, do Guardião de Segurança:* `supabase functions download`
   devolve o código **transpilado** — para comparar fonte com o que está no ar,
   só pela MCP.
@@ -496,11 +505,204 @@ atleta inscrito."*
 
 - **0.10.14 — `circuitos` tem RLS `USING (true)` e `pix_chave` legível pelo
   `anon`.** Pré-existente, não desta mudança. *(Segurança)*
+- **0.10.25 — A `RegulamentoView` vira porta de entrada e não está pronta pra
+  isso.** Três violações do manual da marca, todas **pré-existentes**, todas no
+  cabeçalho, apontadas pelo designer visual em 19/09/2026 com print ao vivo em
+  390px. Deixaram de ser canto esquecido porque o card de re-aceite do 0.10.15(b)
+  leva os 12 atletas do BH para lá, obrigatoriamente, no primeiro acesso:
+  1. **terracota como fundo de largura inteira** (`App.jsx`, `header` da
+     `RegulamentoView`) — o manual diz "usar com moderação, **nunca como fundo
+     grande**";
+  2. **logo na versão SELO renderizado a 38px** (`logoWrap`) — o manual pede
+     mínimo de 120px de diâmetro e a versão ÍCONE abaixo disso; o texto do selo
+     já está ilegível nesse tamanho;
+  3. ~~branco puro no título~~ **FEITO em 19/09** — trocado por `T.offwhite`.
+  Os dois primeiros são decisão de design, não conserto óbvio: mexer no
+  cabeçalho muda uma tela que todo mundo vê. Fica para uma rodada com o Visual
+  decidindo o desenho, não para o meio de uma onda de regulamento.
+
+  *(Nasceu numerado **0.10.23** em 19/09/2026, mas `0.10.23` e `0.10.24` já
+  estavam ocupados desde 15/09 — o documento ficou com quatro itens e dois
+  números. Renumerado para 0.10.25 pelo Curador na mesma data; um parecer do
+  Visual que diga "0.10.23" e fale de marca refere-se a **este** item.)*
+
+- **0.10.26 — O card do admin aponta para as Mensagens por texto, não por link.**
+  O `RegulamentoDoCircuitoCard` diz "vá em Mensagens → Mudança de Regulamento",
+  mas não leva. Um link de verdade exige passar `setTab` como prop até o card.
+  Pequeno, e fecha o caminho entre "vejo quem falta" e "aviso quem falta".
+  (Operações, 19/09/2026. Nasceu numerado **0.10.24**, número já ocupado desde
+  15/09 — renumerado para 0.10.26 pelo Curador em 19/09/2026.)
+
+- **0.10.27 — `circuito-dados` e `despachos-do-dia` não têm rollback possível.**
+  Gatilho: **antes do próximo deploy de qualquer uma das duas** — e, de todo
+  modo, antes do 2º circuito, porque `circuito-dados` é o porteiro dos circuitos
+  privados.
+
+  Conferido ao vivo em 19/09/2026 (`list_edge_functions` no projeto
+  `eultwfzzlgcmcikobmmy`, não lido de doc): o `entrypoint_path` das duas —
+  `circuito-dados` **v4** e `despachos-do-dia` **v6**, ambas sem redeploy desde
+  **08/09/2026** — ainda aponta para uma pasta de **rascunho do projeto de
+  torneios**
+  (`.../JULIANO-APP-TORNEIO/.../scratchpad/publicar-so-cors/...`), não para este
+  repositório. `admin-action` e `athlete-action`, redeployadas em 17/09, já
+  apontam para `/Users/strutzki/clube-tenis-mesa-v2/...`.
+
+  **É o mesmo achado que o Guardião de Segurança fez no `login-atleta`** (ver
+  `CLAUDE.md`, Armadilhas — "o fonte pode não ser o que está no ar"), só que
+  abrange **mais funções do que ele nomeou**. E a consequência é a mesma: como
+  não há rollback de Edge Function — "voltar" é republicar o código antigo — e o
+  fonte do repositório pode não ser o que está rodando, **não existe por onde
+  voltar**. Para o `login-atleta` isso foi resolvido salvando a versão viva em
+  `BACKUPS/motor-no-ar-2026-09-19/ar-login-atleta-v8.ts`; para estas duas
+  **não há cópia equivalente**.
+
+  **Conserto:** baixar as duas pela MCP (o `supabase functions download` devolve
+  código **transpilado** e não serve para comparar com o fonte — nota de método
+  do Guardião de Segurança, 0.10.6), salvar em
+  `BACKUPS/motor-no-ar-<data>/`, conferir contra o repositório, e republicar
+  **deste** repositório para o `entrypoint_path` passar a apontar para cá.
+  `circuito-dados` já esteve no ar **sem código nenhum no repositório** uma vez
+  (recuperada em 07/09/2026); é a função com o pior histórico de procedência do
+  projeto.
+
+  *(Curador, 19/09/2026 — achado além do que a rodada pediu. Sinalizado, não
+  corrigido: mexer em deploy não é mandato do Curador, e isto precisa do rito de
+  subida como qualquer publicação.)*
+
 - **0.10.15 — A virada do BH para a v03-13: o que falta, em ordem.**
   Gatilho: **antes da próxima virada de temporada do BH**. O motor já recusa a
   virada (409) enquanto `circuitos.regulamento_versao` do BH não estiver numa
   versão sem desconto por etapa — a trava existe para nenhum destes passos ser
   esquecido. **Não é uma lista de desejos: é pré-requisito.**
+
+  **STATUS EM 19/09/2026 — construído, ainda não publicado.** (a), (b) e (c)
+  estão no fonte (`src/App.jsx`, `admin-action`, `athlete-action`; árvore
+  provada por hash, bateria **535/0**, build OK). **As 8 duplas fecharam** e as
+  correções da 2ª rodada foram aplicadas, com **12 testes de mutação** (5 no
+  motor, 7 no app) provando que cada regra nova fica vermelha quando sabotada.
+  Nada disto está no ar.
+
+  **O que a 2ª rodada de revisão mudou (19/09/2026):**
+  - **O par (versão, preço) virou invariante do motor.** A trava do
+    `NOVA_TEMPORADA` protegia UMA ação, não o par — o guardião de Regulamento
+    SIMULOU e chegou ao estado proibido por outro caminho: carimbar v03-13 →
+    virar (preço vai a 100) → carimbar v03-12 de volta = texto prometendo 80%
+    com o app cobrando 100%. Agora o `DEFINIR_REGULAMENTO_VERSAO` e o
+    `DEFINIR_FINANCEIRO` recusam (409) a combinação que prejudica o atleta. A
+    direção inversa (texto integral, cobrança reduzida) continua **permitida de
+    propósito**: é a janela de transição obrigatória, e barrá-la criaria um
+    impasse em que não se pode carimbar nem virar.
+  - **O aviso prévio deixou de colidir com o lembrete.** Os dois gravavam
+    `categoria: "regulamento"`, e a chave de "já enviada" é (atleta, categoria,
+    mês): avisar antes marcava o lembrete posterior como já enviado para todo
+    mundo, e a única mensagem acionável nunca entrava na fila. O prévio agora se
+    registra como `regulamento_previo`.
+  - **A versão-alvo do aviso passou a ser validada** contra as mesmas três
+    famílias do motor, espelhadas no app com asserção que compara as duas
+    listas. Sem isso o admin podia anunciar "V03-13" aos 12 do roster e só descobrir
+    no carimbo que o motor recusa (a maiúscula não é normalizada de propósito).
+  - **As três listas de "quem falta aceitar" passaram a coincidir.** Os 2
+    atletas pendentes de inclusão (em v03-11 e v03-8) ficavam fora do aviso e
+    da conta do painel, mas viam a pergunta no app — o painel podia dizer "✓
+    todos os 12 aceitaram". O comentário que justificava excluí-los era
+    factualmente falso: o `INCLUIR_NO_CIRCUITO` não recolhe aceite nenhum.
+  - **As asserções do re-aceite eram teatro.** Eram regex sobre o fonte; o
+    guardião quebrou a regra de três jeitos (aceite sem declarar versão,
+    não-membro aceitando, recibo forjável) e a bateria ficou VERDE nos três.
+    Substituídas por **7 cenários comportamentais** rodando o `athlete-action`
+    de verdade, cada um com mutação.
+  - **0.10.20 FEITO** — a virada passou a exigir confirmação-com-nome. Era a
+    ação mais destrutiva do app e a única sem o padrão que o `CLAUDE.md` manda;
+    o botão vizinho ("Cancelar pré-abertura") já usava `confirm()`. Deixou de
+    ser teórico porque a trava do regulamento cai no instante do carimbo.
+  - **Visual:** o botão "Confirmar aceite" usava a terracota que reprova no
+    WCAG AA (3.87:1) tendo `T.terracotaBtn` (5.34:1) definido para isto na linha
+    10; a caixa do aceite era `<input type="checkbox">` nativa, que renderiza
+    AZUL (cor fora do manual) e era a única caixa de consentimento do app fora do
+    padrão; o rodapé jurídico estava no contraste mais fraco do card.
+
+  **PROCEDIMENTO OBRIGATÓRIO NA VIRADA (R2, não é código):** a trava força
+  carimbar a v03-13 **antes** de virar, e nessa janela o circuito declara uma
+  versão cujo próprio texto diz que ainda não vigora — e a `RegulamentoView`
+  sempre mostra a versão corrente, então o texto que de fato governa a temporada
+  em curso deixa de ser exibível no segundo do carimbo. Duas consequências são
+  benignas (a cláusula de transição resolve em favor do atleta); a terceira não:
+  **quem se inscrever nessa janela recebe recibo `versao_regulamento = v03-13`
+  para uma temporada que a v03-13 diz ter corrido pela v03-12.** Com as
+  inscrições abertas (estão), é alcançável. Logo:
+  **fechar inscrições → carimbar v03-13 → `NOVA_TEMPORADA` → reabrir**, ou
+  carimbar e virar colados, na mesma sessão.
+
+  **ROLLBACK — o `login-atleta` não sai do git.** Provado em 19/09 pelo guardião
+  de Confiabilidade, com `diff`: o HEAD do git carrega o bloco
+  `org_ve_financeiro`/`veFinanceiro` e **o que está no ar não carrega**. Um
+  `git show HEAD:...` devolveria um estado que nunca esteve no ar — e liberaria
+  o financeiro do organizador sem o gatilho do 1º circuito vendido, exatamente o
+  que a Segurança mandou reverter. A fonte de rollback desta função é
+  `JULIANO/CLUBE DO TÊNIS DE MESA/BACKUPS/motor-no-ar-2026-09-19/ar-login-atleta-v8.ts`.
+  Para `admin-action` e `athlete-action` o git continua correto (conferido por
+  duas vias), **mas copiar as duas para `BACKUPS/` antes de publicar** é um `cp`
+  e acabamos de provar que "o git deveria bastar" falha em silêncio.
+
+  **(e) — o carimbo precisa de registro datado.** Entre "avisar" e "carimbar",
+  anotar em lugar durável (CHANGELOG + a pasta do Juliano) **qual versão foi
+  carimbada, em que data e por quem**. Enquanto o J5 não existir no banco, este
+  registro manual é a única prova de quando o contrato mudou. (Jurídico, C3.)
+  - **(a) FEITO** — `DEFINIR_REGULAMENTO_VERSAO` (super-admin,
+    confirmação-com-nome, `trim`, recusa versão fora da família do circuito).
+    As três exigências (recusar vazio, recusar versão de outro circuito,
+    `trim`) e os três consertos de tela (trim simétrico, fallback do BH morto,
+    `PARTICIPAR` fechado = 0.10.18) — todos no fonte.
+  - **(b) FEITO** — `ACEITAR_REGULAMENTO` no `athlete-action`: autenticado por
+    TOKEN de sessão (não pelo `athleteId` do payload — recibo de consentimento
+    não pode ser forjável), fail-closed sem versão, recusa se a versão mudou
+    entre a tela carregar e o clique, grava `versao_regulamento` +
+    `data_aceite_regulamento`. Mostra o bloco de transição do Cap. 12 (não o
+    resumo do portão), como o Jurídico pediu (peça 1).
+  - **(c) FEITO, com a decisão de 18/09 embutida** — aviso prévio com dois
+    modos: ANTES do carimbo (mensagem a TODOS os ativos, no futuro do
+    presente — é o que o torna de fato prévio) e DEPOIS (lembrete só a quem
+    ainda não deu o re-aceite). Entra na fila de disparo do admin logo após
+    "resultados" (antes ficava fora da lista e nunca aparecia).
+  - **Ainda ABERTO dentro do 0.10.15:** **(J5)** não existe registro da DATA
+    do carimbo — `DEFINIR_REGULAMENTO_VERSAO` só grava `regulamento_versao`,
+    não quando trocou; decisão de schema (armadilha 4 do `CLAUDE.md` — coluna
+    nova em `circuitos` derruba o app pro `anon` se o grant não vier junto),
+    fica como gatilho separado, não decidida nesta rodada.
+
+    **(J2) — 🚩 BLOQUEIA O PUSH. É o único item desta lista que não dá para
+    fazer depois.** Não existe snapshot dos aceites de HOJE, e ele precisa ser
+    tirado **antes de o app subir**, não antes de carimbar. Motivo: o
+    `ACEITAR_REGULAMENTO` **sobrescreve** `versao_regulamento` no lugar, sem
+    guardar o valor anterior — então **o primeiro atleta que re-aceitar apaga a
+    prova** de sob qual texto ele estava. Como o card de re-aceite vai ao ar com
+    o app, a janela entre o push e o primeiro clique é de minutos, e não é
+    controlável. **Nenhum** atleta do BH está em v03-12 hoje (11 v03-3, 1 v03-5,
+    1 v03-8, 1 v03-11, mais 1 suspenso em v03-3 — conferido no banco em
+    19/09/2026); depois do push, esse estado só existe por arqueologia — e nem
+    isso, se ninguém tiver copiado.
+
+    **Conserto: um `SELECT` de `circuito_atletas` (atleta_id,
+    versao_regulamento, data_aceite_regulamento, aceite_regulamento) salvo em
+    `docs/backups/` antes do `git push` — das 15 linhas do BH, SEM FILTRAR POR
+    STATUS.** Não são "as 12" nem "as 14": pendente e suspenso também carregam
+    versão antiga e também logam.
+    (Ver a tabela das três contagens no rascunho do `CHANGELOG.md`.) É
+    leitura, não toca produção, e custa um comando. *(Jurídico J2; mesmo achado
+    do Regulamento C2, que apontou o fallback do BH pelo outro lado.)*
+
+    **(b2)**
+    liquidar as 3 pendências de pagamento — não verificado nesta rodada,
+    confirmar contagem antes de carimbar. **(d)/(e)/(f)** seguem como
+    processo de publicação, não código — nada disto muda com o que foi
+    construído. **0.10.22 continua aberto** — o (b) construído nesta rodada
+    dá ao atleta um botão "Ler o regulamento" **só dentro do card de
+    re-aceite**, ou seja, só quando a versão dele diverge da vigente. Quem já
+    está em dia (inclusive todo mundo, hoje, antes do primeiro re-aceite)
+    continua sem nenhum caminho para reler o texto estando logado — o item
+    0.10.22 não foi fechado por este trabalho, só ficou mais visível que ele
+    é pré-requisito do (c) também no sentido inverso: quem aceita hoje não
+    consegue voltar a conferir o que aceitou.
 
   **(a) Construir o carimbo.** Hoje `regulamento_versao` é escrito em um lugar
   só, `CRIAR_CIRCUITO`. **Nenhuma ação altera a versão de um circuito existente**,
@@ -537,12 +739,50 @@ atleta inscrito."*
   renovação é o momento natural de re-colher o aceite". **Era falso.**
   `athlete-action` → `RENOVAR` grava só `quer_renovar` e `renovacao_em`: não
   exibe texto, não pede caixa de seleção, não grava `versao_regulamento`. O
-  aceite só é colhido no `INSCREVER`. E dos 14 atletas ativos, **nenhum** tem
-  v03-12: 11 em v03-3, 1 v03-5, 1 v03-8, 1 v03-11. Sem construir isto, a
+  aceite só é colhido no `INSCREVER`. E dos **14** com `status='ativo'` (os 12 do
+  roster **mais** os 2 pendentes de inclusão — ver a tabela das três contagens no
+  rascunho do `CHANGELOG.md`), **nenhum** tem v03-12: 11 em v03-3, 1 v03-5,
+  1 v03-8, 1 v03-11. Sem construir isto, a
   temporada nova roda **com preço diferente** e os atletas entram tendo aceitado
   textos de várias versões atrás, cujo único ato terá sido apertar "quero
   renovar". O re-aceite tem de ser **passo próprio e obrigatório**, anterior ou
   simultâneo à virada. *(Guardião Jurídico, 13/09/2026.)*
+
+  **DECISÃO DO JULIANO, 18/09/2026: quem não re-aceitar NÃO sai do pareamento.**
+  *"não tira do pareamento se não der o aceite, mantém."* O Jurídico tinha
+  sugerido travar a participação na temporada nova até o aceite ser dado. O
+  Juliano decidiu o contrário, e a decisão é dele: o atleta continua sendo
+  pareado e jogando normalmente, com ou sem re-aceite.
+
+  O que sobra como mecanismo, e é o que foi construído: o atleta **vê** o aviso
+  ao abrir o app, com o texto em vigor e a caixa de aceite; o admin **vê** quem
+  ainda não aceitou; e o aviso prévio sai por mensagem, com registro. Ninguém é
+  impedido de jogar. A consequência a registrar, para não haver surpresa depois:
+  **o Clube pode chegar à temporada nova com atletas jogando sob uma versão que
+  não aceitaram** — o risco que o (c) e a visibilidade do admin existem para
+  reduzir, e que não some com eles.
+
+  **DECISÃO DO JULIANO, 19/09/2026: "segue".** Com essa ordem curta, coube a
+  mim decidir três coisas no lugar dele durante a construção — registradas
+  aqui, com o motivo de cada uma, para não passarem por decisão dele sem
+  terem sido:
+  1. **Construí o aviso prévio (c)**, na forma que o Jurídico recomendou —
+     dois modos, mensagem a todos antes do carimbo e lembrete a quem falta
+     depois. Não era obrigatório para destravar a virada (só (a) e (b) são
+     pré-requisito técnico), mas o Cap. 12 promete o aviso e o item já estava
+     especificado; construir junto evita uma segunda rodada de revisão.
+  2. **Não construí o registro da data do carimbo** — é decisão de schema
+     (coluna nova em `circuitos`, armadilha 4 do `CLAUDE.md`: sem grant ao
+     `anon` na mesma migração, o app cai para todo mundo) e muda o que fica
+     gravado permanentemente. Fica como gatilho separado (J5, acima), não
+     decisão implícita numa sessão sem ele.
+  3. **Reverti o `veFinanceiro` que uma versão anterior do `login-atleta`
+     tinha devolvido** — a liberação do financeiro do organizador está
+     retida até o 1º circuito vendido, por decisão do Juliano já registrada
+     no `CHANGELOG.md` (08 e 07/09/2026). Publicar o `login-atleta` para
+     corrigir o fail-closed do `PARTICIPAR` (0.10.18) não pode, de passagem,
+     antecipar uma liberação amarrada a outro gatilho — mesmo que o campo já
+     estivesse no fonte antes desta sessão.
 
   Quatro peças que faltavam na primeira redação deste item, sem as quais ele se
   improvisa na hora *(Jurídico, 14/09/2026)*:
@@ -681,15 +921,18 @@ atleta inscrito."*
   então o atleta **nunca vê o preço combinado antes de pagar**, e não há isenção
   persistente. *(Guardião de Operações, 13/09/2026.)*
 
-- **0.10.20 — A virada de temporada não pede confirmação-com-nome.** Gatilho:
-  **junto com 0.10.15**, que é quando a trava sai da frente.
+- **0.10.20 — ✅ FEITO (19/09/2026, no fonte — não publicado). A virada de
+  temporada não pedia confirmação-com-nome.** Construído junto do 0.10.15, que
+  é quando a trava sai da frente; sobe no mesmo pacote. O texto abaixo é o
+  registro do porquê.
   O `CLAUDE.md` estabelece o padrão da casa: *"mudança destrutiva pede
   confirmação-com-nome (digitar o nome do circuito)"*, e o `CancelarCircuitoCard`
   já o implementa (`App.jsx:7313-7398`). A `NOVA_TEMPORADA` **não** — é a ação
   mais destrutiva do app (arquiva o ranking, apaga partidas e chaves, zera stats
   de todos os ativos, **não pode ser desfeita**) e hoje está protegida só por dois
-  botões num modal. Não bloqueia agora porque a trava do regulamento impede
-  qualquer virada do BH; vira a única barreira no dia em que a trava cair.
+  botões num modal. Não bloqueava agora porque a trava do regulamento impede
+  qualquer virada do BH; vira a única barreira no dia em que a trava cair — e é
+  exatamente por isso que foi fechado antes de a trava cair.
   *(Guardião de Operações, por iniciativa própria; o supervisor dele condicionou
   o APROVADO a este registro — eu tinha deixado o achado sem levar ao documento.)*
 
@@ -729,10 +972,20 @@ atleta inscrito."*
 
 - **0.10.22 — O atleta logado não tem como reler o regulamento.** Gatilho:
   **antes do aviso prévio do 0.10.15(c)** — é o mesmo momento e o mesmo público.
-  Só existem **dois** pontos de entrada da `RegulamentoView` (`App.jsx:1575` e
-  `:1670`): o link "Regulamento oficial" da tela de login e o "Ver regulamento"
-  do fluxo de inscrição. **Nenhum dos dois é alcançável depois do login.** Quem
-  já é do clube precisaria **deslogar** para ler o texto que aceitou.
+  **Contagem atualizada em 19/09/2026 (o item continua ABERTO).** Eram **dois**
+  pontos de entrada da `RegulamentoView`; hoje são **três**, e o terceiro não
+  fecha o item:
+  - `App.jsx:1595` — link "Regulamento oficial" da tela de login;
+  - `App.jsx:1690` — "Ver regulamento" do fluxo de inscrição;
+  - `App.jsx:9897` — **novo**, dentro da `ReAceiteRegulamentoCard` (0.10.15(b)).
+
+  Os dois primeiros seguem **inalcançáveis depois do login**. O terceiro é
+  alcançável logado, mas **condicional**: o card só renderiza para quem tem
+  `versao_regulamento` diferente da vigente do circuito. Quem está **em dia** —
+  o que inclui *todo mundo* depois do primeiro re-aceite, e é justamente o
+  estado em que a pessoa quer conferir o que aceitou — continua sem porta. Quem
+  já é do clube e está em dia precisaria **deslogar** para ler o texto que
+  aceitou. (As duas primeiras linhas diziam `:1575` e `:1670`; o arquivo andou.)
 
   Isso é mais grave do que "a cláusula de transição só aparece para quem abre o
   Cap. 12": a cláusula **não tem porta de entrada nenhuma** a partir de onde o
@@ -740,8 +993,10 @@ atleta inscrito."*
   que ela protege. Some-se a isso que a `RenovacaoCard` mostra só o preço final
   calculado, sem versão de regulamento e sem aviso de que algo mudou.
 
-  **Conserto:** um caminho para a `RegulamentoView` a partir da área do atleta,
-  passando `versao={state.regulamentoVersao}` como o link público já faz.
+  **Conserto:** um caminho **incondicional** para a `RegulamentoView` a partir
+  da área do atleta — o `:9897` já provou que a tela recebe os parâmetros certos
+  de dentro do logado (`versao`, `sistema`, `circuitoNome`); falta só um ponto
+  de entrada que não dependa de a versão estar divergente.
   Barato, e destrava o 0.10.15(c) — não adianta avisar "mudou o regulamento" se
   a pessoa não consegue abrir o regulamento.
 
@@ -802,19 +1057,32 @@ atleta inscrito."*
   — mas qualquer linha inserida sem a coluna pega 80 do banco. Migração de uma
   linha: `SET DEFAULT 100` nas duas. *(Guardiões do Regulamento e de Segurança.)*
 
-- **0.10.18 — O `PARTICIPAR` do `login-atleta` grava aceite sem saber a versão.**
-  Gatilho: **antes do primeiro circuito não-BH abrir inscrições.**
-  `login-atleta/index.ts:314` grava `aceite_regulamento: true` com
+- **0.10.18 — ✅ FEITO (19/09/2026, no fonte — não publicado). O `PARTICIPAR`
+  do `login-atleta` gravava aceite sem saber a versão.**
+  A guarda está em `login-atleta/index.ts` (hoje `:266-276`): lê
+  `String(circ.regulamento_versao ?? "").trim()`, recusa **409
+  `versao_regulamento_indisponivel`** se vazio — colocada junto das outras
+  guardas do circuito, **antes do backfill de CPF**, para uma tentativa recusada
+  não chegar a registrar dado pessoal — e o insert em `circuito_atletas` (`:328`)
+  passou a carimbar a variável em vez de `circ.regulamento_versao || null`.
+  Isso muda o gatilho do 0.10.19: **o `login-atleta` deixou de estar fora do
+  pacote** (ver abaixo). O texto original do achado segue como registro.
+
+  Gatilho original: **antes do primeiro circuito não-BH abrir inscrições.**
+  `login-atleta/index.ts:314` (numeração de antes do conserto) gravava
+  `aceite_regulamento: true` com
   `versao_regulamento: circ.regulamento_versao || null`. Com a versão ausente,
   nasce um **recibo de consentimento que não aponta para texto nenhum**. É o
   mesmo defeito que a Onda 0.10 fechou no `athlete-action` (que agora recusa
   409), na função irmã — e o `PARTICIPAR` é um fluxo de aceite de verdade: é o
   card "Entre em outro circuito aberto reusando o seu cadastro".
 
-  **Por que não foi corrigido junto:** o `PARTICIPAR` recusa o BH por construção
-  (`circ.slug === "bh"` → 400) e não existe 2º circuito, então é inalcançável
-  hoje. Corrigi-lo obrigaria a publicar o `login-atleta`, que nesta onda ficou
-  **fora do pacote** (ver abaixo) por carregar uma mudança de escopo alheio.
+  **Por que não foi corrigido junto — razão VENCIDA em 19/09/2026:** o
+  `PARTICIPAR` recusa o BH por construção (`circ.slug === "bh"` → 400) e não
+  existe 2º circuito, então era inalcançável. Corrigi-lo obrigaria a publicar o
+  `login-atleta`, que carregava uma mudança de escopo alheio (`veFinanceiro`).
+  **Essa objeção caiu quando o `veFinanceiro` foi revertido do arquivo** — sem
+  a carona, publicar o `login-atleta` passou a custar só o que ele mesmo mudou.
 
   **Conserto:** a mesma guarda do `INSCREVER` — `String(circ.regulamento_versao
   ?? "").trim()`, recusar 409 se vazio, **antes** do insert em
@@ -826,19 +1094,35 @@ atleta inscrito."*
   dizer o que o código faz, e agora exige que este item continue existindo aqui.
   *(Segurança A1; mesmo achado do Regulamento C3.)*
 
-- **0.10.19 — O `login-atleta` está fora do pacote da Onda 0.10, de propósito.**
-  Gatilho: **quando alguém for publicar o financeiro do organizador.**
-  O arquivo **não foi tocado** nesta onda. O que o faria subir como "v9" é o
-  repositório estar à frente do ar desde o pacote anterior — e o que está à
-  frente é **funcional e de outro assunto**: o `LOGIN_ORGANIZADOR` passou a ler
-  `org_ve_financeiro` e a devolver `veFinanceiro`, que o app usa para mostrar ou
-  esconder a aba "Pagam." do organizador.
+- **0.10.19 — ⚠️ SUPERADO em 19/09/2026. O `login-atleta` ficou fora do pacote
+  da Onda 0.10 (16/09) de propósito — mas voltou para dentro.**
+  Gatilho original: **quando alguém for publicar o financeiro do organizador.**
 
-  Nada na 0.10 depende disso, e o efeito hoje é nulo (`org_ve_financeiro = false`
-  no único circuito, e o BH não admite organizador). Entraria de carona numa onda
-  sobre regulamento, sem asserção e sem constar do resumo aprovado — se desse
-  errado, ninguém procuraria a causa ali. Quando subir, sobe com nome próprio.
-  *(Segurança C1; o Juliano foi avisado e não objetou.)*
+  **O que mudou.** Escrito em 16/09, este item dizia "o arquivo **não foi
+  tocado** nesta onda". **Isso deixou de valer:** em 19/09 o `login-atleta`
+  recebeu a guarda fail-closed do `PARTICIPAR` (0.10.18) — que é assunto da
+  própria Onda 0.10 — e, no mesmo movimento, **perdeu** o `veFinanceiro` que era
+  a única razão de ele estar de fora. A carona foi desfeita em vez de
+  embarcada: ver a decisão 3 registrada dentro do 0.10.15.
+
+  Resultado: o `login-atleta` **sobe com o pacote, como v8 → v9**, e o que ele
+  carrega agora é exatamente o assunto da onda, com nome próprio no resumo — que
+  era a condição que este item exigia. O que **continua** amarrado ao gatilho
+  original é só o **financeiro do organizador** (`org_ve_financeiro` /
+  `veFinanceiro`): esse não entra, e o 0.10.6 registra o que falta dele.
+
+  **Texto original, como registro do critério** (ele continua certo; só não se
+  aplica mais a este arquivo): o que o faria subir como "v9" era o repositório
+  estar à frente do ar desde o pacote anterior, e o que estava à frente era
+  **funcional e de outro assunto** — o `LOGIN_ORGANIZADOR` lia
+  `org_ve_financeiro` e devolvia `veFinanceiro`, que o app usa para mostrar ou
+  esconder a aba "Pagam." do organizador. Nada na 0.10 dependia disso, e o
+  efeito é nulo (`org_ve_financeiro = false` no único circuito, e o BH não
+  admite organizador). Entraria de carona numa onda sobre regulamento, sem
+  asserção e sem constar do resumo aprovado — se desse errado, ninguém
+  procuraria a causa ali. Quando subir, sobe com nome próprio.
+  *(Segurança C1; o Juliano foi avisado e não objetou. Superação registrada
+  pelo Curador em 19/09/2026.)*
 
 ## Onda 1 — Piloto real ⬅️ **é aqui que estamos**
 

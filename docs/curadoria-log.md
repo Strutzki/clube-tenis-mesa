@@ -13,6 +13,290 @@
 > a cópia original (mais abaixo, sob "2026-09-05 — Bootstrap da curadoria...")
 > é a que fica.
 
+## 2026-09-19 (rodada final) — 3ª revisão do 0.10.15: colisão de numeração e quatro itens fantasma
+
+Segunda passagem minha no mesmo dia, sobre a árvore da **rodada final**. A
+entrada anterior (logo abaixo) continua válida para o que ela cobriu; esta
+registra o que mudou depois dela.
+
+**Congelamento conferido, não aceito de palavra.** Os **8 md5** que o
+coordenador declarou batem com o que li: `src/App.jsx`, `admin-action`,
+`athlete-action`, `regulamento-por-circuito.mjs`, `contador-mensagens.mjs`,
+`ROADMAP.md`, `CLAUDE.md`, `testes/README.md`. Editei `docs/**` e `CLAUDE.md`
+(mandato); **não toquei** em `src/`, `supabase/` nem `testes/`.
+
+**Bateria somada por mim, seção a seção** — 4 + 38 + 20 + 24 + 25 + 24 + 11 + 16
++ 22 + 351 = **535, 0 falhas**. Confere com o número que o coordenador já tinha
+posto no `CLAUDE.md` e no `testes/README.md`. Build não rerrodei: a árvore de
+código está intocada desde a verificação dele.
+
+### O achado da rodada: o ROADMAP tinha quatro itens e dois números
+
+Os dois itens criados nesta rodada nasceram `0.10.23` e `0.10.24` — **ocupados
+desde 15/09** por outros dois. Renumerei os **novos** (os antigos já estavam
+citados neste log e em pareceres): marca no cabeçalho da `RegulamentoView` →
+**0.10.25**; link do card do admin → **0.10.26**. Cada um levou nota de
+procedência, para quem procurar o número antigo num parecer de hoje.
+
+Vale como lição de curadoria, não só como conserto: **numerar item novo sem
+varrer os números já usados** é barato de fazer e caro de achar depois — dois
+pareceres podem citar "0.10.23" querendo dizer coisas opostas. Um `grep` de dez
+segundos evita.
+
+### O padrão que se repetiu: "feito no bloco de status, aberto na entrada-mãe"
+
+O coordenador me avisou de **um** caso (0.10.20) e pediu que eu conferisse os
+demais. Eram **quatro**, todos com a mesma forma — o bloco de status do 0.10.15
+registrava o feito, e a entrada-mãe do item seguia no texto original, lendo como
+trabalho pendente:
+
+| Item | Como lia | Verdade em 19/09 |
+|---|---|---|
+| 0.10.20 | "a virada não pede confirmação-com-nome" | FEITO no fonte |
+| 0.10.18 | "grava aceite sem saber a versão" + "por que não foi corrigido" | FEITO (`login-atleta:266-276`, 409) |
+| 0.10.19 | "o arquivo **não foi tocado** nesta onda" | **falso** — foi tocado; item SUPERADO |
+| 0.10.6 | "o repo difere do ar em **uma coisa**: `org_ve_financeiro`" | **invertido** — esse trecho saiu do repo |
+
+O 0.10.19 e o 0.10.6 são os graves, porque não são "status atrasado": são
+**afirmações que o código contradiz**. O `login-atleta` recebeu a guarda do
+0.10.18 e perdeu o `veFinanceiro`; com isso ele **volta para dentro do pacote**
+(v8 → v9) e a razão pela qual estava fora deixou de existir. Quem publicasse
+lendo só o 0.10.19 concluiria que o `login-atleta` não sobe.
+
+### 0.10.22: premissa corrigida, item segue aberto
+
+Dizia "só existem **dois** pontos de entrada da `RegulamentoView`". São três
+(`App.jsx:1595`, `:1690`, `:9897`) — o terceiro nasceu do 0.10.15(b). Não fecha
+o item: é **condicional**, só renderiza para quem diverge da versão vigente.
+Quem está em dia — todo mundo, depois do primeiro re-aceite — continua sem
+porta. Reescrevi mantendo o item aberto e dizendo por quê.
+
+### CLAUDE.md: três correções
+
+1. "A bateria cobre o motor, não o app" ficou imprecisa de novo. Hoje a bateria
+   **executa** `admin-action` e `athlete-action` (esta com **8 cenários**, não
+   só a guarda do `INSCREVER`) e **nada do app**. Reescrita com a distinção que
+   importa: o que é executado × o que é lido por regex.
+2. O texto citava `carregarMotor`. **Essa função não existe** — é
+   `carregarFuncao` (`testes/carrega-motor.mjs:31`), conferido por `grep`, e é
+   chamada para exatamente duas funções. Um nome errado num documento que
+   instrui sessões futuras manda a próxima pessoa procurar o que não há.
+3. A convenção de confirmação-com-nome dizia "padrão já adotado nas ações que
+   apagam" — a virada era a exceção silenciosa, e deixou de ser. Passou a
+   nomear os três pontos e a pedir registro de qualquer exceção nova.
+
+### Governança: três lições registradas
+
+(a) **Asserção por regex fica verde com a regra quebrada** — com a tabela das 3
+mutações nomeadas que provaram isso no re-aceite. (b) **Duas guardas
+fail-closed cercando o mesmo estado = impasse** (nem carimbar nem virar), visto
+só ao rodar a bateria; é a origem do procedimento obrigatório da virada.
+(c) **`no-undef` não pega propriedade inexistente** em objeto que existe.
+Conferi (c) antes de registrar: `state.circuitoSlug` e `state.sistema` de fato
+não existem (o `state` está em `App.jsx:755`) **e não chegaram à árvore
+congelada** — registrei como lição de portão, explicitamente **não** como
+defeito no ar, para o documento não acusar um bug que não existe.
+
+### CHANGELOG: rascunho, não histórico
+
+Escrevi a entrada da publicação **no topo, marcada ⏳ RASCUNHO — NÃO
+PUBLICADO**, com aviso em citação para quem abrir o arquivo querendo saber o
+que está no ar. Traz versões (`admin-action` v60→v61, `athlete-action` v20→v21,
+`login-atleta` v8→v9), a **ordem** (as três funções primeiro, app depois, com o
+porquê), o procedimento obrigatório da virada, as fontes de rollback (a pasta
+`BACKUPS/`, **não** o git, para o `login-atleta`) e uma **linha em branco para
+o registro datado do carimbo** — o passo (e), que enquanto o J5 não existir no
+banco é a única prova de quando o contrato mudou. No dia: datar e mover.
+
+**Nada foi publicado.** O histórico real continua terminando em 16/09, e
+conferi que a entrada de 16/09 descreve só o que de fato foi ao ar.
+
+### 0.10.27: o achado sem número ganhou número
+
+O `entrypoint_path` de `circuito-dados` (v4) e `despachos-do-dia` (v6)
+apontando para pasta de rascunho do projeto de torneios — achado meu na rodada
+anterior — vivia **só neste índice**. Virou o ROADMAP **0.10.27**, porque quem
+procura trabalho a fazer olha o ROADMAP, não o log do curador. Sinalizado, não
+corrigido: deploy não é mandato do Curador.
+
+### Varredura além do pacote: três docs que ninguém citou nesta onda
+
+Fui olhar o que a onda não tocou, e é onde estava o drift mais silencioso.
+
+**`ESTADO-DEV-app-tenis-de-mesa.md` — o pior caso do dia.** É o documento que o
+`CLAUDE.md` manda ler primeiro ("Comece por ele") e listava as Edge Functions
+**seis deploys atrasadas** (admin-action v54, athlete-action v17, login-atleta
+v5, circuito-dados v2, sem `despachos-do-dia`). Um doc de entrada errado é pior
+que um doc de canto errado: ele calibra tudo que a pessoa lê depois. Corrigido,
+com aviso de que a linha envelhece a cada deploy e ponteiro para
+`npm run motor:listar` — porque a correção de hoje também envelhece. Marquei o
+resto do documento como não-revisado (segue sendo o retrato de 05/set), para a
+correção pontual não dar ao arquivo inteiro uma aparência de atualidade que ele
+não tem.
+
+**Referências órfãs a `INDICE_PROJETO.md`.** O arquivo foi removido em
+06/09/2026; o próprio `curadoria-log.md` abriu o "alinhar referências" como
+follow-up opcional naquele dia e **ninguém fechou em duas semanas**. Corrigi em
+`docs/agente-curador-projeto.md` e `docs/GOVERNANCA_AGENTES.md`.
+
+⚠️ **Deixei duas de propósito, e elas são as que mais doem:**
+`.claude/agents/curador-projeto.md:55` e `.claude/agents/supervisor-curador.md:27`
+mandam manter/consultar `INDICE_PROJETO.md`. Isso é **configuração de agente**,
+não acervo — fora do meu mandato, e não é coisa que eu mude por conta própria
+nem a pedido de outro agente. O efeito prático é concreto: todo Curador e todo
+Supervisor-Curador que nascer vai procurar um arquivo inexistente e pode
+concluir que o índice "sumiu". **Precisa do OK do Juliano** — é uma troca de
+nome em duas linhas.
+
+**`LEIA-ME.md`** dizia "40 documentos"; contei: são 37 + o LEIA-ME, mais 12 em
+`historico/`. Era a outra metade da mesma pendência de 06/09. Fechada.
+
+**VEREDITO: Curador GO (curadoria) — supervisor-curador APROVADO na 2ª
+iteração.** A 1ª devolveu REVISAR com dois itens (a contradição 12×14 e uma
+órfã que eu tinha deixado passar); ambos fechados, detalhe abaixo.
+
+### Devolvido pelo supervisor (REVISAR) — e ele estava certo
+
+**"12" × "14" atletas ativos do BH, na mesma entrada do rascunho.** Eu propaguei
+"14 ativos" para o CHANGELOG copiando a frase do ROADMAP **sem conferir**, e a
+entrada ficou se contradizendo a duas dezenas de linhas de distância. É
+exatamente a falha que a regra da casa proíbe: número por impressão.
+
+**Fui ao banco** (leitura, `select` em `circuito_atletas` do BH, 19/09/2026). Os
+dois números estavam **certos** — mediam coisas diferentes, e nenhum documento
+dizia qual. São **três**:
+
+| Nº | O que é | Onde vale |
+|---|---|---|
+| **12** | `status='ativo'` **e** `pendente_circuito=false` | o **roster** — o que o motor pareia (`getAtivosNoCircuito`, `admin-action:177`, que filtra `pendente_circuito=false`) e o que o painel conta |
+| **14** | `status='ativo'`, incluindo os **2 pendentes de inclusão** (v03-11, v03-8) | quem **vê** a pergunta do re-aceite no app — a origem do bug "o painel dizia ✓ todos aceitaram" da 2ª rodada |
+| **15** | **todas** as linhas do BH, incluindo **1 suspenso** (v03-3) | o escopo certo do **snapshot do J2** |
+
+Consequência que só apareceu por causa disso: **o snapshot do J2 que eu tinha
+escrito estava com o escopo errado.** Eu dizia "os 14 ativos"; o certo é copiar
+as **15 linhas, sem filtrar por status** — pendente e suspenso também carregam
+versão antiga e também conseguem logar, logo também podem sobrescrever o campo.
+Um snapshot filtrado teria perdido exatamente as 3 pessoas mais fáceis de
+esquecer. Corrigido no ROADMAP e no CHANGELOG, com a tabela acima embutida no
+rascunho para o choque não voltar.
+
+Verifiquei também todas as outras ocorrências de 12/14/15 nos documentos: são
+consistentes com esse modelo (o "14 atletas ativos" do CHANGELOG de 10/09 é
+`status='ativo'` e segue correto como registro histórico).
+
+**Erro meu, achado na mesma varredura:** escrevi "a tabela do `testes/README.md`
+lista 7 de **15** arquivos". São **14** (`ls testes/*.mjs`). Contei e corrigi no
+índice e no `CLAUDE.md`. Eu tinha acabado de criticar contagem não conferida e
+cometi uma na mesma página.
+
+**Órfã que eu deixei passar:** o supervisor apontou que corrigi
+`docs/agente-curador-projeto.md` e esqueci `docs/agente-supervisor-curador.md:10`
+— o espelho do mandato dele, com a mesma referência a `INDICE_PROJETO.md`, e
+dentro de `docs/`, ou seja, do meu mandato. Corrigido. Ele concordou com o
+limite que tracei em `.claude/agents/` (configuração, não acervo).
+
+### O que precisa do OK do Juliano (não fiz)
+
+Nada de conteúdo com efeito real foi alterado por mim: não toquei em texto de
+regulamento, política, marca nem código. Tudo acima é acervo — status, números,
+numeração, procedência e registro de lição.
+
+Depende dele: **(1)** a publicação em si; **(2)** o preenchimento do carimbo
+datado no dia; **(3)** o **snapshot do J2 antes do push**, que é o único aberto
+irreversível; e **(4)** trocar `INDICE_PROJETO.md` pelo nome real do índice nas
+duas linhas de `.claude/agents/` — configuração, que eu não mexo.
+
+## 2026-09-19 — Curadoria do 0.10.15 (a)+(b)+(c): construído, nada publicado
+
+**Árvore congelada, provada por hash (md5, duas leituras idênticas), antes e
+depois desta rodada:** `src/App.jsx`, `admin-action`, `athlete-action`,
+`login-atleta`, `testes/regulamento-por-circuito.mjs`, `testes/erros-na-
+tela.mjs` — nenhum tocado por mim. `docs/ROADMAP.md` também estava na lista
+de hashes congelados (para prova de proveniência dos guardiões), mas é
+acervo — editei, como o meu mandato permite e esta rodada pediu.
+
+**Números conferidos ao vivo, não só lidos:** `npm run teste` → **474
+asserções, 0 falhas** (soma das 10 suítes, batendo com o número que me foi
+passado). `npm run build` → OK.
+
+**Corrigido (rotina, baixo risco):**
+- `CLAUDE.md`: contagem de asserções "385" → **474**. A justificativa do
+  guard-rail de `motor:publicar` ("~178 linhas do financeiro do organizador
+  ainda não liberadas") estava **vencida** — o financeiro foi ao ar na
+  v57→v58 (08/09/2026, ver `CHANGELOG.md`) — troquei por uma razão que não
+  expira a cada deploy: o fonte fica rotineiramente à frente do ar pelo
+  próprio rito de subida (bateria/guardiões/resumo/OK antes de publicar).
+  Também corrigi a afirmação "`athlete-action` e `login-atleta` ainda não
+  têm asserção nenhuma": `testes/regulamento-por-circuito.mjs` passou a
+  rodar o `athlete-action` de verdade (`carregarMotor`) para a guarda do
+  `INSCREVER` — só o `App.jsx` e o `login-atleta` seguem sem execução real,
+  só checagem por regex no texto fonte.
+- `CLAUDE.md`, Armadilhas: estendida a entrada "o fonte pode não ser o que
+  está no ar" com o achado do Guardião de Segurança — o `login-atleta` que
+  está no ar não corresponde a nenhum commit deste repositório (publicado de
+  uma pasta de rascunho do **projeto de torneios**, HEAD deste repo já dois
+  commits à frente). Cópia salva em `JULIANO/CLUBE DO TÊNIS DE MESA/BACKUPS/
+  motor-no-ar-2026-09-19/ar-login-atleta-v8.ts` — confirmei que o arquivo
+  existe nesse caminho antes de escrever a referência.
+- `docs/curadoria-indice-app-tenis-de-mesa.md`: versões de edge corrigidas
+  para as reais (`list_edge_functions` ao vivo no projeto
+  `eultwfzzlgcmcikobmmy`, não `npm run motor:listar` — mesmo efeito, outra
+  ferramenta): admin-action **v60**, athlete-action **v20** (o índice estava
+  em v58/v19, atrás da Onda 0.10 que foi ao ar em 16/09). "Estado" e o
+  parágrafo do Regulamento A atualizados para 19/09.
+
+**Achado meu, além do que foi pedido — confirmado ao vivo, não inferido:**
+lendo o `entrypoint_path` de cada função no `list_edge_functions`, o mesmo
+padrão do `login-atleta` (achado do Guardião de Segurança) também vale para
+**`circuito-dados`** e **`despachos-do-dia`** — as três com `updated_at` de
+08/09/2026 e `entrypoint_path` apontando para a mesma pasta de rascunho do
+projeto de torneios (`.../JULIANO-APP-TORNEIO/.../scratchpad/publicar-so-
+cors/...`). `admin-action` e `athlete-action`, redeployados em 17/09, já
+apontam corretamente para `/Users/strutzki/clube-tenis-mesa-v2/...`. Não fiz
+cópia de segurança de `circuito-dados`/`despachos-do-dia` equivalente à do
+`login-atleta` — sinalizado em `docs/curadoria-indice-app-tenis-de-mesa.md`,
+não corrigido: mexer em deploy/backup de motor não é rotina do meu mandato.
+
+**Registrado em `docs/ROADMAP.md`, item 0.10.15** (não é rotina — é decisão e
+progresso de conteúdo, mas registrar o que já foi decidido/construído está
+dentro do meu mandato, diferente de decidir por conta própria):
+- Bloco de status "construído, não publicado" para (a) `DEFINIR_REGULAMENTO_
+  VERSAO`, (b) `ACEITAR_REGULAMENTO` e (c) o aviso prévio (dois modos),
+  verificado por leitura direta do diff de cada arquivo contra `HEAD`
+  (`git diff HEAD -- src/App.jsx supabase/functions/**`), não por relato.
+- A decisão do Juliano de 19/09 ("segue") e as três decisões tomadas em nome
+  dele, com o motivo de cada uma — igual ao formato já usado para a decisão
+  de 18/09 ("não tira do pareamento").
+- Os itens abertos nomeados como o que ficaram: **J5** (registro da data do
+  carimbo — confirmei por leitura do diff do `admin-action` que
+  `DEFINIR_REGULAMENTO_VERSAO` só grava `regulamento_versao`, nenhuma
+  coluna de data), **J2** (snapshot dos aceites de hoje — não achei nada no
+  diff que grave um snapshot antes do primeiro re-aceite), **(b2)** (não
+  reverificado nesta rodada — só sinalizado que precisa ser conferido antes
+  do carimbo), e **0.10.22** — conferi que o botão "Ler o regulamento"
+  construído nesta rodada só existe **dentro do card de re-aceite**
+  (aparece só quando a versão do atleta diverge da vigente); quem já está em
+  dia não ganhou entrada nenhuma para o regulamento estando logado. Registrei
+  isso como o item continuando aberto, não fechado por engano.
+
+**Não escrevi no `CHANGELOG.md`** — confirmado que é a decisão certa: a
+última entrada (16/09) descreve só o que foi ao ar (`athlete-action`
+v19→v20, `admin-action` v59→v60), e o trabalho desta rodada (0.10.15
+(a)+(b)+(c)) não subiu. Escrever agora anteciparia uma entrada de publicação
+sem publicação — contra o rito.
+
+**Não escrevi vereditos de guardião** — não é meu mandato; a tabela "J1..J5"
+citada nesta rodada veio de achados do Guardião Jurídico/Segurança ainda não
+formalizados em `docs/GOVERNANCA_AGENTES.md` (não encontrei essas siglas lá
+nem em nenhum outro doc — vieram só da conversa desta sessão). Sinalizo que,
+quando a rodada de revisão fechar, a entrada de veredito da Onda 0.10.15
+nesse arquivo é o lugar certo para formalizá-las — não escrevi por conta
+própria porque não sou eu quem redige veredito de guardião.
+
+**Verificação final:** reconferi os mesmos 6 hashes congelados ao terminar —
+idênticos aos do início. Só `docs/` foi editado (`CLAUDE.md`,
+`docs/ROADMAP.md`, `docs/curadoria-indice-app-tenis-de-mesa.md`, este log).
+
 ## 2026-09-15 — Supervisão do parecer R1+R2: pendência de R3 antes de seguir
 
 **Não sou o curador-projeto — sou o Supervisor de Curadoria, registrando aqui

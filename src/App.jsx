@@ -787,7 +787,11 @@ function reducer(state, action) {
         status: "pendente", key: null,
         aceiteRegulamento: aceiteRegulamento || false,
         dataAceiteRegulamento: dataAceite || null,
-        versaoRegulamento: action.payload.versaoRegulamento || "v03-12", // espelho local; a verdade é o carimbo do servidor
+        // Espelho local otimista; a verdade é o carimbo do servidor. Tinha
+        // `|| "v03-12"` aqui — o último fallback cravado do arquivo. Nunca
+        // dispara mais (o formulário recusa sem versão desde 13/09), mas é a
+        // mesma classe de mentira: preferir `null` a inventar uma versão.
+        versaoRegulamento: action.payload.versaoRegulamento || null,
         aceiteLGPD: aceiteLGPD || false,
         dataAceiteLGPD: dataAceite || null,
         inscritoEm: dataAceite || new Date().toISOString(),
@@ -954,6 +958,22 @@ function reducer(state, action) {
         a.id === athleteId ? { ...a, querRenovar, renovacaoEm: querRenovar ? new Date().toISOString() : null } : a
       );
       return { ...state, athletes };
+    }
+
+    case "ACEITE_REGULAMENTO_REGISTRADO": {
+      // O re-aceite já foi gravado no servidor; isto atualiza o espelho local.
+      // Sem ele, o card sumia só por um `useState` do próprio componente — e as
+      // abas do atleta são sub-árvores DIFERENTES no mesmo slot, então trocar de
+      // aba desmonta e remonta o card, o estado local volta a `false`, e a mesma
+      // pergunta reaparece para quem acabou de responder. O aceite não se perde
+      // (está no servidor), mas o atleta acha que o botão não funcionou e passa
+      // a ignorar o card — inclusive nas versões futuras que forem de verdade.
+      // (Guardião do Atleta, 18/09/2026.)
+      const { athleteId, versao } = action.payload;
+      return { ...state, athletes: state.athletes.map(a =>
+        a.id === athleteId
+          ? { ...a, versaoRegulamento: versao, aceiteRegulamento: true, dataAceiteRegulamento: new Date().toISOString() }
+          : a) };
     }
 
     case "LIBERAR_NAO_RENOVANTES": {
@@ -1694,7 +1714,7 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
               <div style={{fontSize:11.5,color:T.cinza,lineHeight:1.5}}>{av.texto}</div>
             </div>
           ) : null; })()}
-          <button onClick={() => setVerReg(true)} style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>📋 Ver regulamento ({(escolhido.regulamento_versao || (escolhido.sistema === "B" ? "vB-01" : "v03-12"))} · {escolhido.sistema === "B" ? "pontos" : "rating"})</button>
+          <button onClick={() => setVerReg(true)} style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>📋 Ver regulamento ({String(escolhido.regulamento_versao || "").trim() || "versão não confirmada"} · {escolhido.sistema === "B" ? "pontos" : "rating"})</button>
           <button onClick={() => setConfirmado(true)} style={{width:"100%",background:T.terracota,color:T.verde,border:"none",borderRadius:12,padding:14,fontSize:15,fontWeight:800,cursor:"pointer"}}>Continuar para inscrição →</button>
         </div>
       </div>
@@ -1919,11 +1939,22 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
     } catch (e) { console.warn("Retentativa da versão do regulamento falhou:", e.message); }
     setTentandoVersao(false);
   }
-  const versaoReg = (circ && circ.regulamento_versao) || versaoRetry || (ehB ? "vB-01" : "v03-12");
-  // Só é seguro cair no fallback quando ele acerta: no BH, cuja versão É a do
-  // fallback. Em qualquer outro circuito, versão ausente significa que a leitura
-  // falhou — e aí o texto exibido pode não ser o que o servidor vai carimbar.
-  const versaoDesconhecida = !!circuitoId && circuitoId !== CIRCUITO_BH_ID && !((circ && circ.regulamento_versao) || versaoRetry);
+  // `trim` para casar com o motor, que apara o carimbo antes de gravar. Sem
+  // simetria, o mesmo valor que o servidor aceita ("v03-13 ") não seria
+  // reconhecido aqui: o Cap. 10 sumiria da tela do BH e a cláusula de transição
+  // junto, enquanto o athlete-action — que trima — carimbaria "v03-13" no
+  // aceite. O atleta receberia recibo de um texto que não viu.
+  const versaoLida = String((circ && circ.regulamento_versao) || versaoRetry || "").trim();
+  // SEM fallback, nem para o BH. O `|| (ehB ? "vB-01" : "v03-12")` que estava
+  // aqui acertava por coincidência — porque a versão guardada do BH era
+  // idêntica ao literal — e passa a mentir no segundo seguinte ao carimbo da
+  // v03-13: a tela mostraria torneio e os 80% enquanto o servidor carimba a
+  // versão nova. Achado pelo guardião de Regulamento e pelo do Atleta.
+  const versaoReg = versaoLida;
+  // E o BH deixa de ser isento da guarda: versão ausente é versão desconhecida
+  // em QUALQUER circuito, porque o argumento que isentava o BH ("a versão dele
+  // É a do fallback") morre junto com o fallback.
+  const versaoDesconhecida = !!circuitoId && !versaoLida;
   // Mesma regra do RegulamentoView: o resumo abaixo é o PORTÃO do aceite, e
   // prometia torneio a quem não tem.
   const comTorneio = VERSOES_COM_TORNEIO.has(versaoReg);
@@ -2396,6 +2427,27 @@ const VERSOES_COM_TORNEIO = new Set(["v03-12", "v03-13"]);
 // Fail-closed: versão desconhecida não promete desconto nenhum.
 const VERSOES_COM_DESCONTO_ETAPA = new Set(["v03-12"]);
 
+// Quais versões podem ser CARIMBADAS em cada tipo de circuito. Espelho das três
+// listas do `admin-action` (VERSOES_DO_BH / VERSOES_DE_RATING_NOVO /
+// VERSOES_DO_SISTEMA_B). Existe para o AVISO PRÉVIO não prometer aos atletas uma
+// versão que o motor vai recusar depois: sem isto o admin podia anunciar
+// "V03-13" (V maiúsculo) para todo mundo e só descobrir no carimbo — e a
+// maiúscula NÃO é normalizada de propósito lá ("V03-13" é typo, e typo tem de
+// barrar). O aviso é a prova contratual; ele não pode aplicar padrão mais frouxo
+// que o ato que ele anuncia. (Guardião de Regulamento, R3, 19/09/2026.)
+// A bateria compara as duas listas — se o motor ganhar uma família e o app não,
+// fica vermelho.
+const VERSOES_CARIMBAVEIS_BH = new Set(["v03-12", "v03-13"]);
+const VERSOES_CARIMBAVEIS_RATING_NOVO = new Set(["vA-nc-01"]);
+const VERSOES_CARIMBAVEIS_SISTEMA_B = new Set(["vB-01"]);
+function versoesCarimbaveis() {
+  // Mesma decisão do motor (`admin-action`, no DEFINIR_REGULAMENTO_VERSAO):
+  // circuito é o BH? família do BH. Senão, o sistema decide.
+  if (CIRCUITO_ATIVO === CIRCUITO_BH_ID) return VERSOES_CARIMBAVEIS_BH;
+  if (SISTEMA_ATIVO === "B") return VERSOES_CARIMBAVEIS_SISTEMA_B;
+  return VERSOES_CARIMBAVEIS_RATING_NOVO;
+}
+
 function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
   const [capAberto, setCapAberto] = useState(null);
 
@@ -2430,7 +2482,9 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
   // as duas coisas que o texto pode prometer e o circuito não ter) e um aviso
   // visível, porque uma tela de regulamento calada sobre a própria versão é pior
   // que uma tela que assume o que não sabe.
-  const versaoEfetiva = versao || null;
+  // `trim` pelo mesmo motivo do portão do aceite: o motor apara o carimbo, e sem
+  // simetria "v03-13 " renderizaria o texto errado — sem o Cap. 10, que é do BH.
+  const versaoEfetiva = String(versao || "").trim() || null;
   const versaoIncerta = !versaoEfetiva;
   // A cláusula de transição é da v03-13 e SÓ dela: fala da mudança de preço do
   // BH entre a temporada 1/2026 e a 2/2026. Num circuito novo (vA-nc-01, vB-01)
@@ -3043,7 +3097,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
       <div style={s.header}>
         <div style={s.logoWrap}><img src={LOGO} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
         <div style={{flex:1,marginLeft:10}}>
-          <div style={{fontSize:14,fontWeight:800,color:"#fff"}}>Regulamento Oficial</div>
+          <div style={{fontSize:14,fontWeight:800,color:T.offwhite}}>Regulamento Oficial</div>
           <div style={{fontSize:10,color:"rgba(255,255,255,0.65)"}}>Clube do Tênis de Mesa · {versaoLabel}</div>
         </div>
         <button style={s.backBtn} onClick={onBack}>← Voltar</button>
@@ -3260,6 +3314,12 @@ const CATEGORIAS_MENSAGEM = [
   {id:"torneio",    icon:"🎯", label:"Convocação Torneio",    desc:"Notifica os Top 8 classificados"},
   {id:"renovacao",  icon:"🎟️", label:"Convite de Renovação",  desc:"Convida os atletas a renovar (só com a próxima temporada aberta)"},
   {id:"lembrete_renovacao", icon:"🔔", label:"Lembrete de Renovação", desc:"Empurrão nos últimos 3 dias do prazo de prioridade"},
+  // Aviso prévio de mudança de regulamento (0.10.15(c), 18/09/2026). Não é
+  // cortesia: o portão do aceite promete, no texto que os atletas assinaram,
+  // que "o regulamento pode ser atualizado com aviso prévio" — e o ônus de
+  // provar que avisou é do Clube. O registro desta categoria em
+  // `mensagens_enviadas` (atleta + data + texto) É a prova.
+  {id:"regulamento", icon:"📋", label:"Mudança de Regulamento", desc:"Avisa ANTES de trocar (todos) ou cobra quem não aceitou a versão em vigor"},
 ];
 
 // Temporada completa = todas as rodadas configuradas já jogadas E processadas.
@@ -3301,7 +3361,12 @@ function mensagemJaEnviada(mensagensEnviadas, atletaId, categoriaItem, matchId, 
   );
 }
 
-function gerarMensagensCategoria(cat, state, telefones = {}) {
+// `versaoAlvo` liga o modo AVISO PRÉVIO: o admin anuncia uma versão que ainda
+// NÃO foi carimbada, para TODOS os ativos, no futuro do presente. Sem ele, o
+// aviso só existia depois do carimbo — e por construção nunca podia ser prévio,
+// que é justamente o que o portão de aceite promete aos atletas. (Guardião
+// Jurídico, J1, 18/09/2026.)
+function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
   const nomeCircuito = state.nomeCircuito || "Clube do Tênis de Mesa";
   const ativos = state.athletes.filter(a => estaNoRanking(a, state.matches));
   const rodadaAtual = state.keys[0]?.currentRound || 1;
@@ -3369,6 +3434,69 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
           }
         ];
       }).filter(Boolean).flat();
+    }
+
+    case "regulamento": {
+      // O AVISO PRÉVIO. Os três conteúdos que o Guardião Jurídico exigiu:
+      // (1) o que muda, (2) a partir de quando, (3) que a temporada em curso
+      // não é afetada. O texto NÃO tenta resumir o regulamento — manda ler,
+      // porque foi exatamente o resumo que o Jurídico apontou como perigoso
+      // (ele carrega a frase que tira o desconto e não a que protege).
+      const versaoEmVigor = String(state.regulamentoVersao || "").trim();
+      const alvo = String(versaoAlvo || "").trim();
+
+      // MODO AVISO PRÉVIO: versão-alvo informada e ainda não carimbada. Vai
+      // para TODOS os ativos (não só os divergentes — antes do carimbo ninguém
+      // diverge), no futuro do presente. É o que torna o aviso de fato prévio.
+      if (alvo && alvo !== versaoEmVigor) {
+        // Inclui quem está PENDENTE DE INCLUSÃO. O comentário que justificava
+        // excluí-los dizia que "eles ainda vão passar pelo portão de inscrição
+        // normal" — e era FALSO: o INCLUIR_NO_CIRCUITO do motor só faz
+        // `writeAtleta(..., { pendente_circuito: false })`, não recolhe aceite
+        // nenhum. Excluídos aqui, eles viam a pergunta no app mas não recebiam o
+        // aviso nem entravam na conta do painel — que podia dizer "todos os 12
+        // aceitaram" com dois membros em v03-11 e v03-8. (Guardião de
+        // Regulamento, R5, 19/09/2026, com o dado de produção na mão.)
+        const ativos = (state.athletes || []).filter(a => a.status === "ativo");
+        return ativos.map(a => ({
+          atleta: a,
+          // Categoria PRÓPRIA no registro. Os dois modos gravavam "regulamento",
+          // e a chave de "já enviada" é (atleta, categoria, mês) — então a
+          // sequência que este pacote existe para permitir (avisar → carimbar →
+          // lembrar), dentro do mesmo par mensal, marcava o LEMBRETE como já
+          // enviado para todo mundo: a categoria mostrava "tudo enviado" e a
+          // única mensagem acionável ("entre no app e aceite") nunca entrava na
+          // fila. Achado por três guardiões independentes em 18-19/09/2026.
+          categoria: "regulamento_previo",
+          categoriaLabel: "Regulamento — aviso prévio",
+          msg: `📋 *${nomeCircuito} — Aviso: o regulamento vai mudar*\n\n` +
+               `Olá ${nomeExibicao(a).split(" ")[0]}!\n\n` +
+               `O regulamento do circuito *passará a valer* pela versão *${alvo}*.\n\n` +
+               `*A temporada em andamento não muda.* O que você já aceitou continua valendo ` +
+               `para ela; a versão nova vale daqui para frente.\n\n` +
+               `*Quando:* a partir da próxima temporada. A temporada de agora termina pelas ` +
+               `regras que você já aceitou.\n\n` +
+               `*O que fazer:* nada agora. Quando a mudança entrar em vigor, o app vai te mostrar ` +
+               `o texto novo e pedir sua confirmação.\n\n` +
+               `Se a versão nova não te servir, você pode simplesmente *não renovar* para a ` +
+               `temporada seguinte — sem cobrança nenhuma. Ninguém é inscrito sem se inscrever.\n\n` +
+               `Queremos que você saiba antes. Qualquer dúvida, é só chamar. 🏓`,
+        }));
+      }
+
+      // MODO LEMBRETE: a versão já está em vigor e há quem não tenha aceitado.
+      if (!versaoEmVigor) return [];
+      return atletasSemAceite(state).map(a => ({
+        atleta: a,
+        msg: `📋 *${nomeCircuito} — Mudança no Regulamento*\n\n` +
+             `Olá ${nomeExibicao(a).split(" ")[0]}!\n\n` +
+             `O regulamento do circuito passou a valer pela versão *${versaoEmVigor}*.\n\n` +
+             `*O que muda:* abra o app e leia o texto em vigor — ele está completo lá.\n\n` +
+             `*A temporada em andamento não muda.* O que você já aceitou continua valendo ` +
+             `para ela; a versão nova vale daqui para frente.\n\n` +
+             `*O que fazer:* entre no app, toque em "Ler o regulamento ${versaoEmVigor}" e confirme o aceite.\n\n` +
+             `Qualquer dúvida, é só chamar. 🏓`,
+      }));
     }
 
     case "lembretes": {
@@ -3516,23 +3644,60 @@ function gerarMensagensCategoria(cat, state, telefones = {}) {
 // Todas as mensagens pendentes de TODAS as categorias por-atleta juntas —
 // alimenta tanto o contador do Dashboard (chamada sem telefone) quanto a
 // fila unificada de disparo em Mensagens (chamada com telefone de verdade).
+// Quem ainda não aceitou a versão que o circuito declara. É a lista que o aviso
+// prévio usa e a que o admin vê no painel — as duas têm de dizer o mesmo.
+function atletasSemAceite(state) {
+  const emVigor = String(state.regulamentoVersao || "").trim();
+  if (!emVigor) return [];
+  // Inclui quem está PENDENTE DE INCLUSÃO — mesma razão do aviso prévio: o
+  // `INCLUIR_NO_CIRCUITO` do motor não recolhe aceite nenhum (só apaga a flag),
+  // então esperar o portão de inclusão é esperar por algo que não acontece. As
+  // TRÊS listas — esta, a do aviso e a do card do atleta — passam a coincidir;
+  // era a divergência entre elas que fazia o painel poder dizer "todos os 12
+  // aceitaram" com dois membros em versões antigas. (R5, 19/09/2026.)
+  return (state.athletes || []).filter(a =>
+    a.status === "ativo" &&
+    String(a.versaoRegulamento || "").trim() !== emVigor);
+}
+
 function todasMensagensPendentes(state, telefones = {}) {
   const inicioDoMes = calcularInicioDoMes(state);
   // Prioridade de disparo: primeiro o mais imediato (resultado de jogo recém-validado
   // e lembrete de prazo), depois confrontos, e por fim os informativos. Assim o que
   // é urgente não fica no fim da fila "despachar tudo".
-  const ORDEM_DISPARO = ["resultados", "lembretes", "lembrete_renovacao", "confrontos", "renovacao", "backlog", "ranking", "torneio"];
+  // "regulamento" estava FORA desta lista, e por isso o aviso nunca aparecia no
+  // contador do painel nem no "despachar tudo" — a única mensagem com promessa
+  // contratual pendurada era a única que o admin tinha de lembrar sozinho.
+  // Entra logo depois dos resultados: é urgente, mas não mais que um jogo
+  // recém-validado. (Guardião Jurídico, J3.)
+  const ORDEM_DISPARO = ["resultados", "regulamento", "lembretes", "lembrete_renovacao", "confrontos", "renovacao", "backlog", "ranking", "torneio"];
   const cats = ORDEM_DISPARO
     .map(id => CATEGORIAS_MENSAGEM.find(c => c.id === id))
     .filter(Boolean);
   return cats.flatMap(c =>
     gerarMensagensCategoria(c.id, state, telefones)
-      .map(item => ({ ...item, categoria: c.id, categoriaLabel: c.label }))
+      // A categoria do ITEM vem por último de propósito: o aviso prévio traz a
+      // dele ("regulamento_previo") e não pode ser reescrita para "regulamento",
+      // senão volta a colidir com o lembrete na deduplicação.
+      .map(item => ({ categoria: c.id, categoriaLabel: c.label, ...item }))
   ).filter(m => !mensagemJaEnviada(state.mensagensEnviadas, m.atleta?.id, m.categoria, m.matchId, inicioDoMes));
 }
 
 function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsStatus }) {
   const [categoria, setCategoria] = useState("confrontos"); // confrontos | resultados | lembretes | torneio | ranking | coletivas
+  // Versão-alvo do AVISO PRÉVIO: o admin anuncia uma mudança que ainda NÃO
+  // carimbou. Vazio = modo lembrete (avisa quem não aceitou o que já está em
+  // vigor). Preenchido = modo prévio (avisa TODOS, no futuro do presente).
+  const [versaoAlvo, setVersaoAlvo] = useState("");
+  // A versão-alvo do aviso é validada AQUI, contra a mesma família que o motor
+  // usa no carimbo. O aviso é a prova contratual de que o Clube avisou; ele não
+  // pode aplicar padrão mais frouxo que o ato que anuncia. Fora da família, o
+  // disparo é bloqueado — anunciar uma versão que o motor vai recusar é prometer
+  // aos atletas uma coisa que não vai acontecer. (R3, 19/09/2026.)
+  const alvoLimpo = String(versaoAlvo || "").trim();
+  const alvoForaDaFamilia = !!alvoLimpo && !versoesCarimbaveis().has(alvoLimpo);
+  const alvoEhPrevio = !!alvoLimpo && !alvoForaDaFamilia &&
+    alvoLimpo !== String(state.regulamentoVersao || "").trim();
   const [disparoIdx, setDisparoIdx] = useState(null); // índice do atleta atual no fluxo sequencial
   const [disparados, setDisparados] = useState([]); // ids já disparados nesta sessão
   const [filaCongelada, setFilaCongelada] = useState([]); // fila fixada ao iniciar (não encolhe ao marcar)
@@ -3572,7 +3737,12 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsSta
   // gerarMensagensCategoria (nível superior) — evita duplicar a lógica que já
   // causou bug uma vez (mensagem "presa" por categoria/matchId dessincronizados).
   function getMensagens(cat) {
-    return gerarMensagensCategoria(cat, state, telefones);
+    // Alvo fora da família não gera mensagem NENHUMA — nem o aviso prévio (que
+    // prometeria uma versão impossível) nem o lembrete (que sairia por baixo do
+    // pano, com o admin achando que estava avisando de outra coisa). Fila vazia
+    // + legenda vermelha dizendo o porquê.
+    if (cat === "regulamento" && alvoForaDaFamilia) return [];
+    return gerarMensagensCategoria(cat, state, telefones, versaoAlvo);
   }
 
 
@@ -3628,6 +3798,12 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsSta
   const categorias = CATEGORIAS_MENSAGEM.filter(c => {
     if (c.id === "torneio") return temporadaCompletaCheck(state);
     if (c.id === "renovacao" || c.id === "lembrete_renovacao") return state.proximaAberta;
+    // Só aparece quando há alguém para avisar. Sem isto, o admin veria uma
+    // categoria vazia e não saberia se é porque todos aceitaram ou porque algo
+    // quebrou — a mesma ambiguidade que o contador de mensagens já teve.
+    // Disponível quando há atleta ativo, não só quando há divergência: antes do
+    // carimbo ninguém diverge, e é justamente aí que o aviso prévio precisa sair.
+    if (c.id === "regulamento") return (state.athletes || []).some(a => a.status === "ativo" && !a.pendenteCircuito);
     return true;
   });
 
@@ -3640,8 +3816,10 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsSta
     return mensagemJaEnviada(state.mensagensEnviadas, atletaId, cat, matchId, inicioDoMes);
   }
 
-  const mensagensPendentes = mensagensTodas.filter(m => !jaEnviada(m.atleta?.id, m.matchId));
-  const mensagensJaEnviadas = mensagensTodas.filter(m => jaEnviada(m.atleta?.id, m.matchId));
+  // `m.categoria` quando o item traz a dele (aviso prévio) — sem isso, o prévio
+  // e o lembrete continuariam dividindo a mesma chave de "já enviada".
+  const mensagensPendentes = mensagensTodas.filter(m => !jaEnviada(m.atleta?.id, m.matchId, m.categoria || categoria));
+  const mensagensJaEnviadas = mensagensTodas.filter(m => jaEnviada(m.atleta?.id, m.matchId, m.categoria || categoria));
   // A fila de disparo usa só as pendentes.
   const mensagens = mensagensPendentes;
 
@@ -3896,7 +4074,7 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsSta
         const isSelected = categoria === cat.id;
         // Mesma função usada em todo o resto (mensagemJaEnviada) — uma só
         // fonte de verdade pra "já foi enviada", sem duplicar a regra aqui.
-        const enviados = msgs.filter(m => jaEnviada(m.atleta?.id, m.matchId, cat.id)).length;
+        const enviados = msgs.filter(m => jaEnviada(m.atleta?.id, m.matchId, m.categoria || cat.id)).length;
         const pendentes = msgs.length - enviados;
         return (
           <div key={cat.id} onClick={()=>setCategoria(cat.id)} style={{
@@ -3910,6 +4088,32 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsSta
                   {cat.icon} {cat.label}
                 </div>
                 <div style={{fontSize:11,color:"#7d9188",marginTop:2}}>{cat.desc}</div>
+                {cat.id === "regulamento" && isSelected && (
+                  <div onClick={e=>e.stopPropagation()} style={{marginTop:8}}>
+                    <label style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>
+                      Avisar ANTES de trocar (opcional)
+                    </label>
+                    <input value={versaoAlvo} onChange={e=>setVersaoAlvo(e.target.value)} placeholder="ex: v03-13"
+                      style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"#F0EAE0",padding:"7px 9px",fontSize:13,width:"100%",outline:"none",boxSizing:"border-box"}}/>
+                    {/* A legenda decide pela MESMA condição do gerador
+                        (`alvo && alvo !== versaoEmVigor`). Antes decidia só por
+                        o campo estar preenchido: digitar a versão que JÁ está em
+                        vigor fazia a legenda prometer "avisando todos" enquanto
+                        o que saía era o lembrete. Nenhuma mensagem errada era
+                        enviada, mas o admin podia acreditar que tinha avisado
+                        com antecedência sem ter avisado nada. (Operações,
+                        19/09/2026.) */}
+                    <div style={{fontSize:11,color:T.cinza,marginTop:5,lineHeight:1.6}}>
+                      {alvoForaDaFamilia
+                        ? <span style={{color:T.vermelho}}>A versão <b>{versaoAlvo.trim()}</b> não é deste circuito — aqui só existem {[...versoesCarimbaveis()].join(", ")}. O motor vai recusar o carimbo, então o aviso prometeria algo que não acontece.</span>
+                        : alvoEhPrevio
+                          ? <>Avisando <b style={{color:T.offwhite}}>todos os ativos</b> de que a {versaoAlvo.trim()} <b>vai passar</b> a valer. Ninguém precisa fazer nada ainda.</>
+                          : versaoAlvo.trim()
+                            ? <>A {versaoAlvo.trim()} <b>já é</b> a versão em vigor — então isto é o lembrete normal, para quem ainda não aceitou. Não é aviso prévio.</>
+                            : <>Em branco, avisa só quem ainda não aceitou a versão em vigor. Preencha para avisar <b style={{color:T.offwhite}}>antes</b> de carimbar — é o que o regulamento promete aos atletas.</>}
+                    </div>
+                  </div>
+                )}
                 {msgs.length > 0 && historicoPronto && (
                   <div style={{fontFamily:T.mono,fontSize:10,color:enviados===msgs.length?T.verde2:T.cinza,marginTop:4}}>
                     {enviados} de {msgs.length} já enviada(s)
@@ -4617,6 +4821,16 @@ const MSGS_ATLETA = new Set([
   // Fail-closed do aceite no servidor (13/09/2026): sem a versão do regulamento
   // não se colhe aceite, e o atleta precisa ver o motivo em vez de um genérico.
   "Não foi possível confirmar a versão do regulamento deste circuito. Tente de novo em instantes.",
+  // Re-aceite (18/09/2026): a versão mudou entre a tela carregar e o clique.
+  // O atleta tem de saber que precisa reler, em vez de ver um erro genérico.
+  "O regulamento mudou enquanto você lia. Recarregue e leia a versão nova antes de aceitar.",
+  "Você não participa deste circuito.",
+  // Sessão expirada. Sem esta, o servidor devolvia sessao_invalida, o app caía
+  // no texto genérico de tentar de novo, e tentar de novo sem logar falha
+  // igual — em loop. (Guardião do Atleta, 18/09/2026.)
+  // ATENÇÃO a aspas em comentário dentro deste bloco: a asserção extrai TUDO
+  // entre aspas daqui e trata como mensagem da lista. Já me pegou duas vezes.
+  "Sua sessão expirou. Entre de novo para confirmar o aceite.",
   "Placar inválido.",
   "Partida não encontrada.",
   "Esta partida já foi encerrada.",
@@ -7540,6 +7754,128 @@ function DespachosDoDiaCard({ fetchDespachos, chamarAdminAction, loadFromSupabas
   );
 }
 
+// Mostra qual regulamento o circuito DECLARA, e deixa trocar. Duas coisas que
+// não existiam até 18/09/2026: o admin não via a versão em tela nenhuma (ela só
+// aparecia para o atleta), e não havia ação para mudá-la — `regulamento_versao`
+// só era escrito no CRIAR_CIRCUITO.
+//
+// Trocar o regulamento muda o CONTRATO que o atleta aceita, então a tela trata
+// como mudança destrutiva: confirmação-com-nome, o padrão do projeto. O motor
+// exige o mesmo nome por baixo — a tela não é o portão.
+function RegulamentoDoCircuitoCard({ versaoAtual, nomeCircuito, athletes, chamarAdminAction, loadFromSupabase }) {
+  const [abrir, setAbrir] = useState(false);
+  const [versao, setVersao] = useState("");
+  const [confirmacao, setConfirmacao] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [resultado, setResultado] = useState(null); // {ok:bool, msg:string}
+
+  // Quem já aceitou a versão em vigor e quem não. Conta todo ATIVO, incluindo
+  // quem está pendente de inclusão.
+  //
+  // O comentário anterior dizia que os pendentes "ainda vão passar pelo portão
+  // de inscrição normal" e por isso podiam ficar de fora. Era FALSO: o
+  // `INCLUIR_NO_CIRCUITO` do motor só faz `writeAtleta(..., {pendente_circuito:
+  // false})` — não recolhe aceite nenhum. Com o filtro antigo, este painel podia
+  // exibir "✓ Todos os 12 aceitaram" enquanto dois membros seguiam em v03-11 e
+  // v03-8, que é exatamente a divergência de listas que o card dizia evitar.
+  // (Guardião de Regulamento, R5, 19/09/2026, com o dado de produção na mão.)
+  const ativos = (athletes || []).filter(a => a.status === "ativo");
+  // MESMA função que o aviso prévio usa para escolher a quem mandar. Se as duas
+  // listas divergissem, o admin veria "3 pendentes" e a mensagem iria para 2 —
+  // ou pior, o contrário.
+  const pendentes = atletasSemAceite({ athletes, regulamentoVersao: versaoAtual });
+
+  const nomeReal = String(nomeCircuito || "").trim();
+  const versaoLimpa = String(versao).trim();
+  // O botão só habilita quando os dois campos batem com o que o motor vai
+  // exigir. Não é a guarda — a guarda está no servidor —, é para o admin não
+  // descobrir o erro só depois de apertar.
+  const podeSalvar = !!versaoLimpa && confirmacao.trim() === nomeReal && !salvando;
+
+  async function carimbar() {
+    if (!podeSalvar) return;
+    setSalvando(true); setResultado(null);
+    try {
+      const r = await chamarAdminAction("DEFINIR_REGULAMENTO_VERSAO", { versao: versaoLimpa, confirmacaoNome: confirmacao.trim() });
+      await loadFromSupabase();
+      const d = r?.dados || {};
+      setResultado({ ok: true, msg: d.inalterado
+        ? `O circuito já declarava ${d.versao}. Nada mudou.`
+        : `Pronto: ${d.de || "(nenhuma)"} → ${d.para}.` });
+      setVersao(""); setConfirmacao("");
+    } catch (e) {
+      // A mensagem do motor é específica (versão de outra família, nome errado,
+      // branco) e serve para o admin ler — não trocar por texto genérico.
+      setResultado({ ok: false, msg: e?.message || "Não deu para trocar a versão." });
+    } finally { setSalvando(false); }
+  }
+
+  return (
+    <Card style={{marginTop:8}}>
+      <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>📋 Regulamento deste circuito</div>
+      <div style={{fontSize:12,color:"#9db3a8",marginBottom:8,lineHeight:1.6}}>
+        Em vigor: <span style={{fontFamily:T.mono,fontWeight:700,color:T.offwhite}}>{versaoAtual || "não definida"}</span>
+        {" — "}é o texto que o atleta lê e aceita ao se inscrever.
+      </div>
+
+      {/* Quem ainda não re-aceitou. Sem isto, o aviso prévio do 0.10.15(c) é
+          cego: não dá para saber a quem avisar nem quando parar de avisar. */}
+      {versaoAtual && pendentes.length > 0 && (
+        <div style={{background:"rgba(216,90,48,0.08)",border:"1px solid rgba(216,90,48,0.25)",borderRadius:10,padding:"9px 11px",marginBottom:10}}>
+          <div style={{fontSize:12,color:T.offwhite,fontWeight:700,marginBottom:4}}>
+            {pendentes.length} atleta(s) ainda não aceitaram a {versaoAtual}
+          </div>
+          {/* Um nome por linha. Concatenados com " · " viravam um parágrafo
+              corrido de 12 nomes com parênteses em 390px — e a única razão deste
+              bloco existir é dar para escanear QUEM falta. */}
+          <div style={{fontSize:11,color:"#9db3a8",lineHeight:1.7}}>
+            {pendentes.map(a => (
+              <div key={a.id}>{nomeExibicao(a)} <span style={{fontFamily:T.mono,color:T.cinza}}>({a.versaoRegulamento || "sem registro"})</span></div>
+            ))}
+          </div>
+          <div style={{fontSize:11,color:T.cinzaSuave,marginTop:6,lineHeight:1.6}}>
+            Eles veem um aviso ao abrir o app, com o texto em vigor e a caixa de aceite.
+            {" "}Para avisar por WhatsApp, vá em <span style={{color:T.offwhite,fontWeight:700}}>Mensagens → Mudança de Regulamento</span>.
+          </div>
+        </div>
+      )}
+      {versaoAtual && pendentes.length === 0 && ativos.length > 0 && (
+        <div style={{fontSize:12,color:T.verde2,marginBottom:10}}>
+          ✓ Todos os {ativos.length} atletas ativos aceitaram a {versaoAtual}.
+        </div>
+      )}
+
+      {!abrir ? (
+        <Btn small color="#5E7569" onClick={()=>{setAbrir(true); setResultado(null);}}>Trocar a versão…</Btn>
+      ) : (
+        <div style={{background:"rgba(194,90,69,0.08)",border:"1px solid rgba(194,90,69,0.25)",borderRadius:10,padding:"10px 12px"}}>
+          <div style={{fontSize:12,color:"#9db3a8",marginBottom:8,lineHeight:1.6}}>
+            Trocar a versão muda <span style={{color:T.offwhite,fontWeight:700}}>o que o atleta aceita</span>. Quem já
+            se inscreveu mantém a versão que aceitou; quem entrar depois aceita a nova.
+            Avise os atletas <span style={{color:T.offwhite,fontWeight:700}}>antes</span> de trocar.
+          </div>
+          <label style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>Nova versão</label>
+          <input value={versao} onChange={e=>setVersao(e.target.value)} placeholder="ex: v03-13"
+            style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:8,outline:"none",boxSizing:"border-box"}}/>
+          <label style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>Digite o nome do circuito para confirmar</label>
+          <input value={confirmacao} onChange={e=>setConfirmacao(e.target.value)} placeholder={nomeReal}
+            style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:10,outline:"none",boxSizing:"border-box"}}/>
+          <div style={{display:"flex",gap:8}}>
+            <Btn small color={T.vermelho} onClick={carimbar} disabled={!podeSalvar}>{salvando ? "Trocando…" : "Trocar a versão"}</Btn>
+            <Btn small color="#4a5d56" onClick={()=>{setAbrir(false); setVersao(""); setConfirmacao(""); setResultado(null);}} disabled={salvando}>Cancelar</Btn>
+          </div>
+        </div>
+      )}
+
+      {resultado && (
+        <div style={{marginTop:8,fontSize:12,lineHeight:1.6,color: resultado.ok ? T.verde2 : T.vermelho}}>
+          {resultado.ok ? "✓ " : "⚠️ "}{resultado.msg}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg, msgsStatus }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
   // Ressincroniza quando o nome muda no banco (recarga, troca de circuito, ou
@@ -7865,6 +8201,21 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
         <NovaTemporadaPanel state={state} dispatch={dispatch} />
       )}
 
+      {/* O carimbo do regulamento. Só do super-admin — o motor recusa o
+          organizador por default-deny, e a tela não o oferece. Antes de existir,
+          o admin era CEGO para a versão que o circuito declara (0.10.7) e não
+          havia caminho legítimo para trocá-la: destravar a virada exigiria SQL
+          na mão em produção, que a regra 1 proíbe. */}
+      {!modoOrg && (
+        <RegulamentoDoCircuitoCard
+          versaoAtual={state.regulamentoVersao}
+          nomeCircuito={state.nomeCircuito}
+          athletes={state.athletes}
+          chamarAdminAction={chamarAdminAction}
+          loadFromSupabase={loadFromSupabase}
+        />
+      )}
+
       <Card style={{marginTop:8}}>
         <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>⚙️ Configuração do circuito</div>
         <div style={{fontSize:11,color:"#7d9188",marginBottom:8}}>O nome aparece no cabeçalho e nos títulos das mensagens. O teto é fixo em 20 atletas por circuito.</div>
@@ -7941,6 +8292,23 @@ function AbrirProximaPanel({ state, dispatch }) {
 function NovaTemporadaPanel({ state, dispatch }) {
   const [confirmando, setConfirmando] = useState(false);
   const [virando, setVirando] = useState(false);
+  // Confirmação-com-nome, 0.10.20. O CLAUDE.md já mandava ("Mudança destrutiva
+  // pede confirmação-com-nome, padrão já adotado nas ações que apagam") e esta,
+  // que é a mais destrutiva do app, era a que não pedia.
+  //
+  // A incoerência ficou gritante em 19/09: trocar o TEXTO do regulamento passou
+  // a exigir digitar o nome do circuito, e é reversível (basta recarimbar);
+  // virar a temporada apaga partidas e zera stats sem volta e pedia um clique. E
+  // o botão VIZINHO, "Cancelar pré-abertura", já usava `confirm()` — a ação mais
+  // destrutiva tinha menos atrito que a menos destrutiva ao lado.
+  //
+  // Enquanto a trava do regulamento segurava a virada do BH, isto era teórico.
+  // A trava cai no instante em que alguém carimbar a v03-13. (Operações,
+  // 19/09/2026.)
+  const [confirmacaoNome, setConfirmacaoNome] = useState("");
+  const nomeRealVirada = String(state.nomeCircuito || "").trim();
+  const nomeConfere = confirmacaoNome.trim() === nomeRealVirada;
+  const fecharModal = () => { setConfirmando(false); setConfirmacaoNome(""); };
   const ativos = state.athletes.filter(a => a.status === "ativo");
   const nome = state.proximaNome || state.nomeCircuito || "Clube do Tênis de Mesa";
   const dataTxt = state.proximaDataInicio ? new Date(state.proximaDataInicio+"T00:00:00").toLocaleDateString("pt-BR") : "não definida";
@@ -7959,7 +8327,7 @@ function NovaTemporadaPanel({ state, dispatch }) {
       </div>
 
       {confirmando && (
-        <div onClick={()=>setConfirmando(false)}
+        <div onClick={fecharModal}
           style={{position:"fixed",inset:0,background:"rgba(17,28,25,0.92)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div onClick={e=>e.stopPropagation()}
             style={{background:T.verdeCard,borderRadius:16,padding:22,maxWidth:380,width:"100%",border:"1px solid rgba(216,90,48,0.45)",boxShadow:"0 20px 50px rgba(0,0,0,0.5)"}}>
@@ -7967,9 +8335,14 @@ function NovaTemporadaPanel({ state, dispatch }) {
             <div style={{fontSize:13,color:"#c9d4ce",marginBottom:18,lineHeight:1.6}}>
               Isto <b style={{color:"#e79b8c"}}>zera pontos, vitórias e derrotas</b> de <b>{ativos.length} atleta(s)</b>, <b>arquiva</b> e remove as partidas da temporada atual, e <b>carrega os pagamentos da próxima</b>. O rating é preservado. <b style={{color:"#e79b8c"}}>Esta ação não pode ser desfeita.</b>
             </div>
+            <label style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>
+              Digite o nome do circuito para confirmar
+            </label>
+            <input value={confirmacaoNome} onChange={e=>setConfirmacaoNome(e.target.value)} placeholder={nomeRealVirada} disabled={virando}
+              style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:14,outline:"none",boxSizing:"border-box"}}/>
             <div style={{display:"flex",gap:10}}>
               <Btn onClick={async ()=>{
-                if (virando) return;                       // clique repetido não dispara duas viradas
+                if (virando || !nomeConfere) return;       // clique repetido não dispara duas viradas
                 setVirando(true);
                 try {
                   const r = await dispatch({type:"NOVA_TEMPORADA",payload:{}});
@@ -7980,11 +8353,11 @@ function NovaTemporadaPanel({ state, dispatch }) {
                   // recusa, e o admin sairia da tela de aviso achando que virou.
                   // Com a trava do regulamento, a recusa deixou de ser azar de
                   // rede e virou o caminho garantido na próxima virada do BH.
-                  if (!r || r.ok !== false) setConfirmando(false);
+                  if (!r || r.ok !== false) fecharModal();
                 }
                 finally { setVirando(false); }
-              }} color="#c25a45" full disabled={virando}>{virando ? "Virando…" : "Sim, virar temporada"}</Btn>
-              <Btn onClick={()=>setConfirmando(false)} color="#5E7569" full disabled={virando}>Cancelar</Btn>
+              }} color={T.vermelho} full disabled={virando || !nomeConfere}>{virando ? "Virando…" : "Sim, virar temporada"}</Btn>
+              <Btn onClick={fecharModal} color="#5E7569" full disabled={virando}>Cancelar</Btn>
             </div>
           </div>
         </div>
@@ -9430,6 +9803,158 @@ function VisitanteCircuitos({ circuitos = [], onAbrir }) {
   );
 }
 
+// RE-ACEITE do regulamento: aparece quando o circuito declara uma versão
+// DIFERENTE da que este atleta aceitou. É o 0.10.15(b), e nasceu porque o
+// ROADMAP afirmava que a renovação já servia de re-aceite — e era falso: o
+// `RENOVAR` grava só `quer_renovar`, sem texto, sem caixa de seleção, sem
+// carimbar versão.
+//
+// O que ele EXIBE é o regulamento inteiro, não o resumo do portão de inscrição.
+// O Jurídico foi específico: o resumo carrega a frase que TIRA o desconto e não
+// carrega a que PROTEGE — no re-aceite o atleta leria só a metade ruim.
+function ReAceiteRegulamentoCard({ state, dispatch, athlete }) {
+  const [lendo, setLendo] = useState(false);
+  const [marcou, setMarcou] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [pronto, setPronto] = useState(false);
+  const [confirmado, setConfirmado] = useState(false);
+
+  // O "✓ Aceite registrado" se despede sozinho. Como o card vive FORA do
+  // conteúdo da aba — o que foi a correção certa, senão ele reaparecia pedindo
+  // aceite a cada troca —, o banner verde passou a acompanhar o atleta por todas
+  // as abas pelo resto da sessão. O guardião do Atleta nomeou bem: "é falta de
+  // saída, não excesso de pedido". Uma confirmação deve se anunciar uma vez.
+  useEffect(() => {
+    if (!confirmado) return;
+    const t = setTimeout(() => setConfirmado(false), 8000);
+    return () => clearTimeout(t);
+  }, [confirmado]);
+
+  const versaoCircuito = String(state.regulamentoVersao || "").trim();
+  const versaoAceita = String(athlete?.versaoRegulamento || "").trim();
+  // Só aparece quando há DIVERGÊNCIA e sabemos as duas pontas. Sem a versão do
+  // circuito não se pede aceite nenhum — mesmo fail-closed do resto da onda.
+  const precisa = !!versaoCircuito && versaoCircuito !== versaoAceita && !pronto;
+  if (confirmado && !precisa) {
+    return (
+      <Card style={{border:"1px solid rgba(127,174,143,0.35)",marginBottom:8}}>
+        <div style={{fontSize:13,color:T.verde2,fontWeight:700}}>✓ Aceite registrado</div>
+        <div style={{fontSize:12,color:"#9db3a8",marginTop:4,lineHeight:1.6}}>
+          Você aceitou o regulamento <span style={{fontFamily:T.mono,color:T.offwhite}}>{versaoCircuito}</span>. Obrigado!
+        </div>
+      </Card>
+    );
+  }
+  if (!precisa) return null;
+
+  async function aceitar() {
+    setEnviando(true); setErro("");
+    try {
+      const cred = getAtletaCred();
+      if (!cred || !cred.token) {
+        const local = new Error("Entre de novo para confirmar o aceite.");
+        local.__doServidor = false; // escrita aqui, não veio do motor
+        throw local;
+      }
+      const res = await fetch(`${SUPA_URL}/functions/v1/athlete-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+        // `circuitoId` vai DENTRO do payload. O `athlete-action` lê
+        // `payload.circuitoId` (linha 168) e, sem ele, cai em `bhId()` — então
+        // mandar no nível de cima faz o aceite ser gravado contra o BH,
+        // qualquer que seja o circuito do atleta. Hoje passaria "certo" porque
+        // o BH é o único circuito: **passa pelo motivo errado**, que é a pior
+        // forma de um teste ficar verde.
+        //
+        // O supervisor de Regulamento me avisou desta armadilha, com o número
+        // da linha, quando pediu o teste comportamental do INSCREVER. Escrevi a
+        // asserção lá e caí nela aqui. Achado pelo guardião de Segurança.
+        body: JSON.stringify({ acao: "ACEITAR_REGULAMENTO",
+          payload: { circuitoId: CIRCUITO_ATIVO, token: cred.token, versaoVista: versaoCircuito } }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.sucesso) throw new Error(data.erro || "Não deu para registrar o aceite.");
+      // Atualiza o espelho local, como o RENOVAR faz. Sem isto o card volta ao
+      // trocar de aba, porque o `pronto` abaixo é só do componente e ele é
+      // desmontado na troca.
+      dispatch({ type: "ACEITE_REGULAMENTO_REGISTRADO", payload: { athleteId: athlete.id, versao: versaoCircuito } });
+      setPronto(true);
+      // Para consentimento, o card sumir não basta: o atleta merece ver que
+      // funcionou, não apenas notar que a pergunta desapareceu.
+      setConfirmado(true);
+    } catch (e) {
+      // `mensagemParaAtleta` é o filtro do que vem do SERVIDOR. A mensagem de
+      // token ausente é escrita aqui mesmo, então passa direto — mandá-la pelo
+      // filtro a transformava em genérico e ainda quebrava a asserção que exige
+      // que toda entrada da lista branca exista no motor.
+      const doServidor = e?.__doServidor !== false;
+      setErro(doServidor ? mensagemParaAtleta(e?.message) : e.message);
+    } finally { setEnviando(false); }
+  }
+
+  if (lendo) {
+    return <RegulamentoView onBack={()=>setLendo(false)} versao={versaoCircuito}
+      sistema={SISTEMA_ATIVO} circuitoNome={state.nomeCircuito} />;
+  }
+
+  return (
+    <Card style={{border:"1px solid rgba(216,90,48,0.35)",marginBottom:8}}>
+      <div style={{fontSize:13,fontWeight:700,color:T.offwhite,marginBottom:6}}>📋 O regulamento mudou</div>
+      <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.7,marginBottom:10}}>
+        Este circuito passou a valer pela versão <span style={{fontFamily:T.mono,fontWeight:700,color:T.offwhite}}>{versaoCircuito}</span>.
+        {versaoAceita
+          ? <> Você aceitou a <span style={{fontFamily:T.mono}}>{versaoAceita}</span>.</>
+          : <> Não temos registro de qual versão você aceitou.</>}
+        {" "}Leia a versão em vigor e confirme.
+      </div>
+      {/* A garantia que tranquiliza estava SÓ na mensagem de WhatsApp. O canal
+          mais provável de ser lido primeiro é o app — e era o que tinha a
+          informação mais incompleta. (Guardião do Atleta, 18/09/2026.) */}
+      <div style={{fontSize:12,color:T.verde2,lineHeight:1.7,marginBottom:10}}>
+        A temporada em andamento <span style={{fontWeight:700}}>não muda</span>. O que você já
+        aceitou continua valendo para ela; a versão nova vale daqui para frente.
+      </div>
+
+      <button onClick={()=>setLendo(true)}
+        style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>
+        📖 Ler o regulamento {versaoCircuito} — leia com calma
+      </button>
+
+      {/* Caixa DESENHADA, não `<input type="checkbox">`. O nativo não tem
+          `accent-color` em nenhum CSS do projeto, então renderiza AZUL no Chrome
+          e no Safari — cor que o manual da marca não tem. E era a única caixa de
+          consentimento do app fora do padrão: os aceites de LGPD e de CPF já
+          usam esta. (Designer visual, 19/09/2026.) */}
+      <div onClick={()=>setMarcou(!marcou)} role="checkbox" aria-checked={marcou} tabIndex={0}
+        onKeyDown={e=>{ if (e.key === " " || e.key === "Enter") { e.preventDefault(); setMarcou(!marcou); } }}
+        style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:10,cursor:"pointer"}}>
+        <div style={{width:20,height:20,borderRadius:5,border:`1px solid ${marcou?T.terracota:"rgba(255,255,255,0.3)"}`,background:marcou?T.terracota:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{marcou && <span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}</div>
+        <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>Li o regulamento <span style={{fontFamily:T.mono,color:T.offwhite}}>{versaoCircuito}</span> na íntegra e aceito.</div>
+      </div>
+
+      {/* `T.terracotaBtn`, não `T.terracota`: branco sobre #D85A30 dá 3.87:1 e
+          reprova no WCAG AA para texto de 14px; sobre #B8461F dá 5.34:1. A linha
+          10 deste arquivo já define a segunda exatamente para isto — o botão que
+          carimba o aceite legal estava usando a errada das duas. */}
+      <Btn onClick={aceitar} disabled={!marcou || enviando} color={T.terracotaBtn} full>
+        {enviando ? "Registrando…" : "Confirmar aceite"}
+      </Btn>
+
+      {/* Recusar NÃO é abandono. O Cap. 12 pune "abandono sem comunicação", e
+          recusar pelo app É comunicação — mas quem recusa não tem de deduzir
+          isso sozinho. Exigência do Guardião Jurídico. */}
+      <div style={{fontSize:11,color:T.cinzaSuave,marginTop:10,lineHeight:1.6}}>
+        Sem pressa: <span style={{color:T.offwhite}}>não aceitar não é abandono</span> — você
+        continua jogando normalmente, não perde rating e não gera cobrança. Pode deixar para depois.
+        Se preferir recusar formalmente, fale com o organizador pelo grupo do circuito.
+      </div>
+
+      {erro && <div style={{fontSize:12,color:T.vermelho,marginTop:8}}>⚠️ {erro}</div>}
+    </Card>
+  );
+}
+
 function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, circuitosAtleta, onVoltarLista }) {
   const hub = <HubCircuitosAtleta circuitos={circuitosAtleta} circuitoSelId={circuitoSelId} onVoltarLista={onVoltarLista} />;
   let content = null;
@@ -9437,7 +9962,12 @@ function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, cir
   else if (tab === "ranking") content = <RankingView state={state} currentAthleteId={athlete.id} />;
   else if (tab === "tabela") content = <TabelaView state={state} athlete={athlete} />;
   else if (tab === "comunidade") content = <ComunidadeView state={state} currentAthleteId={athlete.id} />;
-  return <>{hub}{content}</>;
+  // O re-aceite fica FORA da aba, acima de tudo. Ele só renderizava sob
+  // `tab === "meus_jogos"`, e a aba é restaurada do localStorage: quem fechou o
+  // app no Ranking reabria no Ranking e NUNCA encontrava o card. A frase do
+  // ROADMAP — "o atleta vê o aviso ao abrir o app" — só valia para quem abria
+  // em Jogos. (Guardião Jurídico J4, achado também pelo do Atleta.)
+  return <>{hub}<ReAceiteRegulamentoCard state={state} dispatch={dispatch} athlete={athlete} />{content}</>;
 }
 
 // Tela de escolha de circuito, logo após o login, pra atleta em >1 circuito.

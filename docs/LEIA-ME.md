@@ -1,6 +1,6 @@
 # LEIA-ME — pacote para subir ao projeto do Claude
 
-Esta pasta reúne **tudo que a sessão de desenvolvimento produziu** sobre o app do Clube do Tênis de Mesa, pronto para ser **adicionado** ao projeto do Claude. São 40 documentos + este LEIA-ME.
+Esta pasta reúne **tudo que a sessão de desenvolvimento produziu** sobre o app do Clube do Tênis de Mesa, pronto para ser **adicionado** ao projeto do Claude. São **37 documentos** em `docs/` + este LEIA-ME, mais **12** planos de fases concluídas em `docs/historico/` (registro do *porquê*, não plano ativo) e `docs/backups/`. *(Dizia "40"; contagem conferida e corrigida pelo Curador em 19/09/2026 — era uma pendência aberta desde 06/09/2026 no `curadoria-log.md`.)*
 
 ## Regra de ouro (por que é seguro)
 Você só vai **ADICIONAR arquivos novos** ao projeto. **Não apague nem substitua nada** que já está lá. Adicionar arquivo novo não quebra nada.

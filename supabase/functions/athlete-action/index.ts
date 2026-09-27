@@ -48,6 +48,27 @@ async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Recor
 }
 // Escreve update de atleta roteando por circuito (blindagem cross-tenant):
 // BH -> atletas (fonte do app) + espelho; nao-BH -> identidade em atletas, sazonal so em circuito_atletas.
+// Resolve o atleta a partir do token de sessão. Mesma implementação do
+// `login-atleta` (que guarda só o hash do token), repetida aqui porque esta
+// função não tinha nenhuma verificação de sessão — todas as ações confiam no
+// `athleteId` do payload. Para o RE-ACEITE isso não serve: os ids são públicos
+// no ranking, e um recibo de consentimento forjável não prova nada.
+//
+// Usada SÓ pelo ACEITAR_REGULAMENTO. As demais ações seguem como estavam; mudar
+// o modelo de autenticação delas é outra onda (e outro risco).
+async function sha256hexAA(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function atletaPorTokenAA(token: unknown): Promise<string | null> {
+  if (!token || typeof token !== "string") return null;
+  const hash = await sha256hexAA(token);
+  const { data } = await supabase.from("atleta_sessao").select("id,atleta_id,expira_em").eq("token_hash", hash).maybeSingle();
+  if (!data) return null;
+  if (new Date(data.expira_em) < new Date()) return null; // expirada: não renova nem apaga aqui
+  return data.atleta_id;
+}
+
 async function writeAtleta(circuitoId: string, atletaId: string, campos: Record<string, unknown>) {
   const bh = await bhId();
   if (circuitoId === bh) {
@@ -350,6 +371,62 @@ Deno.serve(async (req) => {
         const { error } = await supabase.from("atletas").update(upd).eq("id", athleteId);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
+      }
+
+      // RE-ACEITE do regulamento. O aceite original é colhido no INSCREVER; este
+      // é para quando o circuito TROCA de versão e o atleta já é membro.
+      //
+      // Por que ele existe (0.10.15(b), 18/09/2026): o ROADMAP dizia que "a
+      // renovação é o momento natural de re-colher o aceite". Era falso — o
+      // `RENOVAR` logo abaixo grava só `quer_renovar`, não exibe texto, não pede
+      // caixa de seleção e não carimba versão. Sem esta ação, os atletas entram
+      // numa temporada com preço novo tendo aceitado textos de várias versões
+      // atrás, e o único ato deles terá sido apertar "quero renovar".
+      case "ACEITAR_REGULAMENTO": {
+        const p = payload || {};
+
+        // Autenticado por TOKEN DE SESSÃO, não pelo `athleteId` do payload como
+        // as outras ações desta função. Os ids dos atletas são públicos no
+        // ranking: para renovar isso passa, para um RECIBO DE CONSENTIMENTO não
+        // — qualquer um aceitaria pelo outro, e o recibo não provaria nada.
+        const atletaId = await atletaPorTokenAA(p.token);
+        // Texto pronto para o atleta ler, não um código. A lista branca do app
+        // exige que toda mensagem que chega à tela exista literalmente aqui — e
+        // "sessao_invalida" viraria o genérico "tente de novo", que é errado:
+        // tentar de novo sem logar falha igual, em loop.
+        if (!atletaId) return jsonResponse({ sucesso: false, erro: "Sua sessão expirou. Entre de novo para confirmar o aceite." }, 401);
+
+        const { data: circAc, error: eCircAc } = await supabase.from("circuitos")
+          .select("regulamento_versao").eq("id", circuitoId).maybeSingle();
+        if (eCircAc) throw eCircAc;
+        if (!circAc) return jsonResponse({ sucesso: false, erro: "Circuito não encontrado." }, 404);
+
+        // Fail-closed, como o INSCREVER: sem versão não se carimba aceite.
+        const versaoAtual = String(circAc.regulamento_versao ?? "").trim();
+        if (!versaoAtual) {
+          return jsonResponse({ sucesso: false, erro: "Não foi possível confirmar a versão do regulamento deste circuito. Tente de novo em instantes." }, 409);
+        }
+
+        // O atleta declara QUAL versão está aceitando. Se ela mudou entre a tela
+        // carregar e o clique, recusa em vez de carimbar uma versão que ele não
+        // leu — é o mesmo cuidado que faz o INSCREVER recusar sem versão.
+        const versaoVista = String(p.versaoVista ?? "").trim();
+        if (versaoVista !== versaoAtual) {
+          return jsonResponse({ sucesso: false, erro: "O regulamento mudou enquanto você lia. Recarregue e leia a versão nova antes de aceitar." }, 409);
+        }
+
+        // Tem de ser membro DESTE circuito — senão o aceite não tem objeto.
+        const { data: vinc, error: eVinc } = await supabase.from("circuito_atletas")
+          .select("atleta_id,status").eq("circuito_id", circuitoId).eq("atleta_id", atletaId).maybeSingle();
+        if (eVinc) throw eVinc;
+        if (!vinc) return jsonResponse({ sucesso: false, erro: "Você não participa deste circuito." }, 403);
+
+        await writeAtleta(circuitoId, atletaId, {
+          aceite_regulamento: true,
+          data_aceite_regulamento: new Date().toISOString(),
+          versao_regulamento: versaoAtual,
+        });
+        return jsonResponse({ sucesso: true, dados: { versao: versaoAtual } });
       }
 
       case "RENOVAR": {

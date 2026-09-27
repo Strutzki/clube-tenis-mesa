@@ -1,6 +1,6 @@
 # Estado do desenvolvimento — App do Clube do Tênis de Mesa (multi-circuito)
 
-**Atualizado: 05/set/2026.** Documento de estado escrito pela sessão de desenvolvimento (pasta do código). **Fonte de verdade continua sendo o app em produção + Supabase**, não este doc. Substitui, em atualidade, o `RETOMADA-app-clube-tenis-mesa.md` de julho (que está superado).
+**Atualizado: 05/set/2026** (conteúdo), com correções pontuais do Curador em 19/09/2026 — veja as marcas "corrigido em 19/09/2026" abaixo; o resto do documento **não** foi revisado nessa data e continua com o retrato de 05/set. Documento de estado escrito pela sessão de desenvolvimento (pasta do código). **Fonte de verdade continua sendo o app em produção + Supabase**, não este doc. Substitui, em atualidade, o `RETOMADA-app-clube-tenis-mesa.md` de julho (que está superado).
 
 ## Regra vigente
 - Regulamento **A (rating/CBTM): v03-12** — 1ª rodada até dia **15**, 2ª rodada até dia **27**.
@@ -14,7 +14,8 @@
 - Identidade + **rating global**: tabela `atletas`. Sazonal **por circuito**: `circuito_atletas`. Config: `circuitos` (o BH usa `configuracao`).
 - Supabase: projeto `clube-tenis-mesa`, id `eultwfzzlgcmcikobmmy`, schema `public`.
 - Front: `src/App.jsx` (SPA único, ~9 mil linhas). Deploy: `atualizar.sh` → Vercel.
-- Backend (Edge Functions) no ar: **admin-action v54**, **athlete-action v17**, **login-atleta v5**, **circuito-dados v2**, + comprovante-url, anonimizar-atleta, resetar-pin-atleta, backup.
+- Backend (Edge Functions) no ar — **corrigido em 19/09/2026 pelo Curador; estava seis deploys atrasado** (dizia admin-action v54, athlete-action v17, login-atleta v5, circuito-dados v2, e nem listava `despachos-do-dia`). Conferido ao vivo (`list_edge_functions`, projeto `eultwfzzlgcmcikobmmy`, 19/09/2026): **admin-action v60**, **athlete-action v20**, **login-atleta v8**, **circuito-dados v4**, **despachos-do-dia v6**, + comprovante-url, anonimizar-atleta, resetar-pin-atleta, backup, torneios-api (este é do app de torneios, outro produto no mesmo projeto).
+  ⚠️ **Esta linha envelhece a cada deploy.** Não confie nela para investigar bug de motor: rode `npm run motor:listar`. A fonte de verdade das versões é `docs/curadoria-indice-app-tenis-de-mesa.md` (seção "Backend"), e o que está pendente de subir está em `docs/CHANGELOG.md`.
 
 ## O que JÁ está no ar (desde julho até 05/set)
 - Fundação multi-circuito (Modelo B) + roteamento por circuito.
@@ -33,7 +34,7 @@
 - **8 duplas de agentes** (guardião + supervisor): Segurança, Atleta, Admin, Marca, Regulamento/Motor, Jurídico/LGPD, Confiabilidade/Deploy, Curador. Detalhe em `GOVERNANCA_AGENTES.md`.
 
 ## ⚠️ Divergência a confirmar com o Juliano (não resolver sozinho)
-O `INDICE.md` do projeto diz "**não anunciar o Sistema B nem a plataforma como prontos**". Na prática, o motor B e boa parte do multi-circuito **já estão no ar** — mas **nenhum 2º circuito real rodou ainda** (o piloto é o próximo passo). Ou seja: pronto tecnicamente, ainda não validado em campo. **O Juliano decide o que pode ser comunicado como pronto.**
+O índice de curadoria (`docs/curadoria-indice-app-tenis-de-mesa.md`) diz "**não anunciar o Sistema B nem a plataforma como prontos**" — *referência corrigida em 19/09/2026: este texto citava um `INDICE.md` que foi **removido** em 06/09/2026.* Na prática, o motor B e boa parte do multi-circuito **já estão no ar** — mas **nenhum 2º circuito real rodou ainda** (o piloto é o próximo passo). Ou seja: pronto tecnicamente, ainda não validado em campo. **O Juliano decide o que pode ser comunicado como pronto.**
 
 ## Próximos passos (roadmap)
 1. **Piloto real** — abrir um 2º circuito de verdade e rodar uma temporada curta.

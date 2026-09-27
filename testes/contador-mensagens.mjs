@@ -189,8 +189,13 @@ secao("Lembrete não marca resultado como comunicado");
   // E a fila unificada tem de continuar carimbando a categoria em cada item,
   // senão o `atual.categoria` vira undefined e a guarda cai no estado da tela,
   // que ali não corresponde ao item.
-  ok(/\.map\(item => \(\{ \.\.\.item, categoria: c\.id, categoriaLabel: c\.label \}\)\)/.test(fonte),
-    "a fila unificada carimba a categoria em cada mensagem");
+  // A ORDEM importa e mudou em 19/09: o spread do item vem DEPOIS do padrão da
+  // categoria, para que um item que traz a própria categoria (o aviso prévio,
+  // "regulamento_previo") não seja reescrito para a da categoria da lista. Com a
+  // ordem antiga (`...item` primeiro) o prévio voltava a colidir com o lembrete
+  // na deduplicação, que é o bug que três guardiões acharam.
+  ok(/\.map\(item => \(\{ categoria: c\.id, categoriaLabel: c\.label, \.\.\.item \}\)\)/.test(fonte),
+    "a fila unificada carimba a categoria em cada mensagem, sem apagar a do item");
 }
 
 placar("Contador de mensagens");

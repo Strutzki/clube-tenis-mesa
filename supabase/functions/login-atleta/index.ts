@@ -262,6 +262,20 @@ Deno.serve(async (req) => {
       if (circ.slug === "bh") return jsonResponse({ sucesso: false, erro: "bh_cadastro_direto" }, 400);
       if (!circ.ativo) return jsonResponse({ sucesso: false, erro: "circuito_inativo" }, 400);
       if (!circ.inscricoes_abertas) return jsonResponse({ sucesso: false, erro: "inscricoes_fechadas" }, 400);
+      // Fail-closed: sem saber a versão do regulamento, não se colhe aceite.
+      // Até 17/09/2026 esta função gravava `aceite_regulamento: true` com
+      // `versao_regulamento: null` — um recibo de consentimento que não aponta
+      // para texto nenhum. Gravar nulo NÃO é recusar, e a bateria chegou a
+      // afirmar que isto era fail-closed (era falso nas duas metades; o
+      // guardião de Segurança pegou).
+      //
+      // Fica AQUI, junto das outras guardas do circuito, antes de qualquer
+      // escrita — inclusive antes do backfill de CPF, para uma tentativa
+      // recusada não chegar a registrar dado pessoal.
+      const versaoDoCircuito = String(circ.regulamento_versao ?? "").trim();
+      if (!versaoDoCircuito) {
+        return jsonResponse({ sucesso: false, erro: "versao_regulamento_indisponivel" }, 409);
+      }
 
       // 3) Já é membro deste circuito?
       const { data: mem } = await supabase.from("circuito_atletas")
@@ -311,7 +325,7 @@ Deno.serve(async (req) => {
       const { error: eMem } = await supabase.from("circuito_atletas").insert({
         circuito_id: circuitoId, atleta_id: a.id,
         status: "ativo", pendente_circuito: true, saldo_temp: 0, vitorias: 0, derrotas: 0,
-        aceite_regulamento: true, data_aceite_regulamento: now, versao_regulamento: circ.regulamento_versao || null,
+        aceite_regulamento: true, data_aceite_regulamento: now, versao_regulamento: versaoDoCircuito,
         inscrito_em: now,
       });
       if (eMem) {
@@ -346,12 +360,20 @@ Deno.serve(async (req) => {
       if (a.status !== "ativo") return jsonResponse({ sucesso: false, erro: "cadastro_inativo" }, 403);
 
       const { data: vinc } = await supabase.from("circuito_organizadores")
-        .select("circuito_id, circuitos!inner(id,slug,nome_circuito,sistema,pareamento,ativo,org_ve_financeiro)")
+        // `org_ve_financeiro` REMOVIDO daqui de propósito, 19/09/2026. Ele
+        // estava no repositório e não no ar, e o CHANGELOG registra que essa
+        // metade do financeiro do organizador "deploya com o 1º circuito
+        // vendido" — decisão do Juliano, condição que ainda não ocorreu.
+        // Publicar o login-atleta por causa do fail-closed do PARTICIPAR não
+        // pode antecipar uma liberação que ele amarrou a outro gatilho.
+        // (Retificação do guardião de Segurança, que antes recomendara subir
+        // junto e reviu ao ler o CHANGELOG.)
+        .select("circuito_id, circuitos!inner(id,slug,nome_circuito,sistema,pareamento,ativo)")
         .eq("atleta_id", a.id);
       const circuitos = (vinc ?? [])
         .map((v: any) => v.circuitos)
         .filter((c: any) => c && c.ativo && c.slug !== "bh")
-        .map((c: any) => ({ id: c.id, slug: c.slug, nome: c.nome_circuito, sistema: c.sistema, pareamento: c.pareamento, veFinanceiro: !!c.org_ve_financeiro }));
+        .map((c: any) => ({ id: c.id, slug: c.slug, nome: c.nome_circuito, sistema: c.sistema, pareamento: c.pareamento }));
       return jsonResponse({ sucesso: true, dados: { ok: true, circuitos } });
     }
 

@@ -2006,6 +2006,35 @@ secao("A correção das rodadas fixas entra na v03-13 e NÃO reescreve a v03-12"
     "o documento da v03-12 continua com a redação original — é registro do que foi assinado");
 }
 
+secao("Os dois silêncios que sobraram no regulamento de pontos (0.6.27)");
+{
+  // Achados pelo Guardião do Regulamento em 27/09/2026, revisando a própria correção.
+  // Cada um com a linha do motor que o sustenta — o texto não afirma nada que eu não
+  // tenha visto rodando.
+
+  // ── 1) pagamento confirmado é pré-requisito para SER PAREADO ──────────────
+  const motor = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "admin-action", "index.ts"), "utf8");
+  ok(/exigePagamento\) q = q\.eq\("pagamento_confirmado", true\)/.test(motor),
+    "o motor filtra por pagamento_confirmado ao montar os ativos do circuito");
+  const chamadasComFinanceiro = (motor.match(/getAtivosNoCircuito\(circuitoId, !!\w+\?\.financeiro_ativo\)/g) || []).length;
+  ok(chamadasComFinanceiro >= 2,
+    `e passa o flag do financeiro ao iniciar etapa e ao avançar rodada (${chamadasComFinanceiro} chamadas)`);
+  ok(/O pagamento é <span style=\{s\.dest\}>confirmado pelo administrador<\/span>[\s\S]{0,240}não é incluído nos confrontos<\/span>/.test(fonte),
+    "e o regulamento de PONTOS passou a dizer isso — era o 4º silêncio da mesma família");
+  ok(!/após a aprovação do administrador, passa a ser pareado nas rodadas/.test(fonte),
+    "a primeira frase do Cap. 10 não implica mais que APROVAÇÃO BASTA");
+  ok(/depois de aprovado pelo administrador, entra na fila para ser pareado/.test(fonte),
+    "ela diz que o aprovado entra na FILA — não que já está pareado");
+
+  // ── 2) a temporada continua se os ativos caírem abaixo de 8 ───────────────
+  ok(/São necessários ao menos 2 atletas ativos para gerar uma rodada/.test(motor),
+    "o motor exige apenas 2 ativos para avançar a rodada — ou seja, a temporada continua abaixo de 8");
+  ok(/cair abaixo de 8, a temporada <span style=\{s\.dest\}>continua normalmente<\/span>/.test(fonte),
+    "e o regulamento de pontos passou a dizer que continua — era o 5º silêncio");
+  ok(/a queda não interrompe o circuito/.test(fonte),
+    "com a frase que fecha a dúvida do atleta pagante de um circuito que esvazia");
+}
+
 secao("A promessa 'esse número é fixo' é obrigada no motor, não só escrita");
 {
   // O PREÇO DE TER CORRIGIDO O TEXTO, achado pelo Guardião Jurídico em 27/09/2026.

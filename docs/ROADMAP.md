@@ -274,8 +274,24 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   Ou se corrige o texto, ou se corrige o motor — mas as duas falsas não podem
   sobreviver ao primeiro atleta que aceitar o `vB-01`.
 
-- **0.6.27 — ⛔ PORTÃO DA ABERTURA DO CIRCUITO DE PONTOS: dois silêncios que sobraram
-  no `vB-01`.** Achados pelo Guardião do Regulamento em 27/09/2026, na revisão da
+- **0.6.27 — ✅ RESOLVIDO em 27/09/2026 (no fonte).** *Dois silêncios que sobraram no
+  `vB-01`, e o primeiro era o que mais provavelmente morderia num circuito pago.*
+  **Decisão do Juliano: "resolver as duas coisas pendentes".**
+  1. **Pagamento como pré-requisito de pareamento, escrito no Cap. 11:** *"O pagamento é
+     confirmado pelo administrador. Enquanto não confirmado, o atleta não é incluído nos
+     confrontos da rodada — nem na entrada, nem nas rodadas seguintes."* Espelha a frase
+     que o regulamento de rating já tinha. **E a primeira frase do Cap. 10 foi
+     corrigida**: dizia *"após a aprovação do administrador, passa a ser pareado"*, o que
+     implicava que aprovação basta; agora diz que o aprovado *"entra na fila para ser
+     pareado"*.
+  2. **A temporada continua abaixo de 8, escrito no Cap. 10:** *"se, durante a temporada,
+     o número de ativos cair abaixo de 8, a temporada continua normalmente com quem
+     ficou: a queda não interrompe o circuito."*
+  8 asserções novas, cada uma com a linha do motor que a sustenta
+  (`exigePagamento) q = q.eq("pagamento_confirmado", true)`, as duas chamadas com
+  `!!financeiro_ativo`, e o `São necessários ao menos 2 atletas ativos` do
+  `AVANCAR_RODADA`). 3 mutações, 3 vermelhas.
+  *Descrição original, mantida como registro:* Achados pelo Guardião do Regulamento em 27/09/2026, na revisão da
   própria correção — são o 4º e o 5º da mesma família, e o primeiro é o que mais
   provavelmente morde num circuito **vendido**:
   1. **Pagamento confirmado é pré-requisito para ser pareado**, e o `vB-01` não diz.

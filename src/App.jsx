@@ -3264,15 +3264,29 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
             impedir o atleta de jogar. Silêncio aqui é pior que letra miúda: ele podia
             ser aprovado e não entrar, e descobrir só na hora. Acrescentadas em
             27/09/2026, com a linha do motor que sustenta cada uma. */}
-        <p style={s.p}>A inscrição é feita pelo próprio app. O atleta entra em <span style={s.dest}>0 pontos</span> e, após a aprovação do administrador, passa a ser pareado nas rodadas.</p>
+        {/* A primeira frase dizia "após a aprovação do administrador, passa a ser
+            pareado" — o que implica que APROVAÇÃO BASTA. Com o financeiro do circuito
+            ligado, não basta: o motor pareia a partir de
+            `getAtivosNoCircuito(circuitoId, !!financeiro_ativo)`, que filtra
+            `pagamento_confirmado`, tanto no INICIAR_ETAPA quanto no AVANCAR_RODADA — e o
+            promoverBacklog filtra igual. Num circuito VENDIDO essa é a regra que o
+            atleta encontra primeiro. Corrigido em 27/09/2026 (Guardião do Regulamento);
+            o regulamento de rating já dizia isso com letra. */}
+        <p style={s.p}>A inscrição é feita pelo próprio app. O atleta entra em <span style={s.dest}>0 pontos</span> e, depois de aprovado pelo administrador, entra na fila para ser pareado nas rodadas.</p>
         <p style={s.p}><span style={s.dest}>O circuito tem um teto de atletas por temporada</span> — até 20, definido pelo organizador. Se estiver cheio, a inscrição aprovada fica em <span style={s.dest}>fila de espera</span> e entra quando abrir vaga: aprovação não é o mesmo que vaga garantida.</p>
         <p style={s.p}><span style={s.dest}>Não há entrada nas duas últimas rodadas</span> da temporada. Quem for aprovado nesse período estreia na temporada seguinte, e aí desde a primeira rodada.</p>
-        <p style={s.p}>A temporada só começa com <span style={s.dest}>no mínimo 8 atletas</span> ativos. Com menos que isso, o início é adiado.</p>
+        <p style={s.p}>A temporada só começa com <span style={s.dest}>no mínimo 8 atletas</span> ativos. Com menos que isso, o início é adiado — o administrador pode prorrogar as inscrições ou esperar. Mas se, <span style={s.dest}>durante</span> a temporada, o número de ativos cair abaixo de 8, a temporada <span style={s.dest}>continua normalmente</span> com quem ficou: a queda não interrompe o circuito.</p>
       </div>
     );
     if (id===11) return (
       <div>
         <p style={s.p}>Quando o circuito tem valor de temporada, ele é informado na inscrição/renovação. <span style={s.dest}>Abandono</span> durante a temporada leva a <span style={s.dest}>bloqueio de 1 temporada</span> (não há rating a debitar).</p>
+        {/* O 4º silêncio da mesma família, e o que mais provavelmente morde num circuito
+            VENDIDO. Espelha a frase que o regulamento de rating já tem ("enquanto não
+            confirmado, o atleta não é incluído nos confrontos"). Linha do motor:
+            `getAtivosNoCircuito(circuitoId, !!financeiro_ativo)` filtra
+            `pagamento_confirmado`. */}
+        <p style={s.p}>O pagamento é <span style={s.dest}>confirmado pelo administrador</span>. Enquanto não confirmado, o atleta <span style={s.dest}>não é incluído nos confrontos</span> da rodada — nem na entrada, nem nas rodadas seguintes. É um valor único por temporada, sem cobrança mensal nem parcelamento.</p>
       </div>
     );
     if (id===12) return (

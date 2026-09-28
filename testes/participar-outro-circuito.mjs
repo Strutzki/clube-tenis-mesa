@@ -360,6 +360,18 @@ secao("E a tela do atleta oferece o regulamento antes do PIN");
     "a leitura dos circuitos abertos inclui a coluna `sistema`");
   ok(/getVersoesRegulamento:[\s\S]{0,160}?regulamento_versao/.test(fonte),
     "e existe a leitura que traz a versão do regulamento por circuito");
+
+  // A flag que separa "não consegui ler" de "o circuito não tem versão" nasceu como
+  // CÓDIGO MORTO: era gravada e ninguém lia, então a tela usava uma frase só e
+  // mandava o atleta insistir num circuito que nunca vai ter regulamento. Se ela
+  // voltar a não ser consumida, esta asserção fica vermelha.
+  const gravaFlag = (fonte.match(/_versaoIndisponivel/g) || []).length;
+  ok(gravaFlag >= 2, `a flag _versaoIndisponivel é gravada E lida (${gravaFlag} ocorrências — 1 só significa código morto)`);
+  ok(/circ\._versaoIndisponivel/.test(bloco),
+    "e é a tela que a lê, para escolher entre 'tente de novo' e 'avise o organizador'");
+  ok(/Tentar de novo não resolve|Tentar de novo nao resolve|tentar de novo não resolve/i.test(bloco)
+     || /avise o organizador do circuito/.test(bloco),
+    "no caso de circuito sem regulamento, a tela NÃO manda insistir");
 }
 
 secao("Em circuito de PONTOS, nenhuma tela do atleta mostra RATING");

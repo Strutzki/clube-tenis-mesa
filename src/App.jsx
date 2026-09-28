@@ -1901,37 +1901,36 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
       </div>
 
       {fase === "auth" && <>
-        {/* Jogos presenciais: quem usa ESTE fluxo já está estabelecido em outro
-            circuito, ou seja, é justamente a população com mais chance de estar em
-            outra cidade — e era a única que não recebia este aviso. O atleta novo
-            recebe, no fluxo irmão. */}
-        {(circ && (circ.cidade || circ.uf)) && (
-          <div style={{background:"rgba(156,111,62,0.12)",border:"1px solid rgba(156,111,62,0.4)",borderRadius:10,padding:"10px 12px",marginTop:14}}>
-            <div style={{fontSize:12.5,color:T.offwhite,fontWeight:700,marginBottom:3}}>📍 Jogos presenciais em {[circ.cidade, circ.uf].filter(Boolean).join("/")}</div>
-            <div style={{fontSize:11.5,color:T.cinza,lineHeight:1.5}}>As partidas deste circuito são disputadas pessoalmente nessa região. Confirme que você consegue jogar aí antes de continuar — se a região não for a sua, o organizador não vai aprovar a inscrição.</div>
-          </div>
-        )}
-        {/* Em que temporada esta participação vai valer. Sem isto a tela de sucesso
-            promete "em breve", que na reta final da temporada pode significar MESES:
-            pelo Cap. 11 as duas últimas rodadas não recebem entrada. */}
-        {(() => { const av = circ ? avisoFaseInscricao(circ) : null; return av ? (
-          <div style={{background:`${av.cor}1e`,border:`1px solid ${av.cor}`,borderRadius:10,padding:"11px 13px",marginTop:14}}>
-            <div style={{fontSize:12.5,color:T.offwhite,fontWeight:800,marginBottom:3}}>🗓️ {av.titulo}</div>
-            <div style={{fontSize:11.5,color:T.cinza,lineHeight:1.5}}>{av.texto}</div>
-          </div>
-        ) : null; })()}
-        {/* O REGULAMENTO DESTE circuito, antes do PIN. Cada circuito tem o seu, e
-            pode ser de outro sistema: o do BH é de rating, um circuito de pontos
-            tem pontuação, pareamento e encerramento diferentes. Sem esta tela, o
-            atleta era registrado aceitando um texto que nunca abriu. */}
+        {/* O REGULAMENTO DESTE circuito vem ANTES do PIN: consentimento antes de
+            credencial. Cada circuito tem o seu, e pode ser de outro sistema — o do BH
+            é de rating, um de pontos tem pontuação, pareamento e encerramento
+            diferentes. Sem esta tela, o atleta era registrado aceitando um texto que
+            nunca abriu.
+            Os OUTROS dois avisos (cidade e fase) ficam DEPOIS do PIN, logo acima do
+            botão: eles não pedem ação, e acima do formulário empurravam o campo de
+            telefone para fora da primeira tela em TODOS os iPhones (medido pelo
+            Designer Visual: 820px numa área visível de 800px no maior deles). Como o
+            botão é o momento da decisão, "confirme antes de continuar" continua sendo
+            lido antes de continuar. */}
         <div style={{background:T.verdeCard,border:`1px solid ${bloqueado?"rgba(194,90,69,0.5)":"rgba(255,255,255,0.1)"}`,borderRadius:12,padding:13,marginTop:14}}>
           <div style={{fontSize:11,fontFamily:T.mono,letterSpacing:1,textTransform:"uppercase",color:T.cinza,marginBottom:6}}>Regulamento deste circuito</div>
           {bloqueado ? (
-            <div style={{fontSize:12,color:"#f8c4b4",lineHeight:1.6}}>
-              Não consegui carregar o regulamento deste circuito agora, e sem ele a
-              participação não pode ser confirmada — você tem que poder ler antes de aceitar.
-              <span style={{display:"block",color:T.cinzaSuave,marginTop:6}}>Volte e tente de novo em alguns instantes. Se continuar assim, avise o organizador.</span>
-            </div>
+            /* Duas frases DIFERENTES, porque os dois casos pedem ação diferente.
+               A primeira versão usava uma só e mandava o atleta "tentar de novo" num
+               circuito que nunca vai ter regulamento — escondendo a ação útil atrás
+               de um "se continuar assim". A flag vem da leitura (`_versaoIndisponivel`):
+               true = a consulta FALHOU; false = o circuito realmente não tem versão. */
+            (circ && circ._versaoIndisponivel) ? (
+              <div style={{fontSize:12,color:"#f8c4b4",lineHeight:1.6}}>
+                Não consegui carregar o regulamento agora, e sem ele a participação não pode ser confirmada — você tem que poder ler antes de aceitar.
+                <span style={{display:"block",color:T.cinzaSuave,marginTop:6}}>Volte e tente de novo em alguns instantes.</span>
+              </div>
+            ) : (
+              <div style={{fontSize:12,color:"#f8c4b4",lineHeight:1.6}}>
+                Este circuito ainda não tem regulamento definido, e sem ele a participação não pode ser confirmada.
+                <span style={{display:"block",color:T.cinzaSuave,marginTop:6}}>Não é problema do seu aparelho — avise o organizador do circuito. Tentar de novo não resolve.</span>
+              </div>
+            )
           ) : (
             <>
               <div style={{fontSize:12,color:"rgba(240,234,224,0.85)",lineHeight:1.6,marginBottom:10}}>
@@ -1942,7 +1941,7 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
                   falam DESTE circuito. Nenhuma diz que o dele continua lá. */}
               {sistemaCirc === "B" && (
                 <div style={{fontSize:11.5,color:T.cinzaSuave,lineHeight:1.6,marginBottom:10,background:"rgba(106,157,122,0.1)",borderRadius:8,padding:"8px 10px"}}>
-                  🛡️ <strong style={{color:T.offwhite}}>Seu rating não muda aqui.</strong> Ele continua correndo no circuito de rating, em paralelo. Neste circuito o que conta são os pontos, e você começa em zero.
+                  🛡️ <strong style={{color:T.offwhite}}>Seu rating não muda aqui.</strong> Ele continua correndo no circuito de rating, em paralelo. Aqui o que conta são os pontos, e você começa em zero.
                 </div>
               )}
               <button onClick={()=>setVerReg(true)} style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.4)",borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:"pointer"}}>📖 Ler o regulamento {versaoReg} — leia com calma</button>
@@ -1964,6 +1963,27 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
         <input style={input} value={tel} onChange={e=>setTel(e.target.value)} placeholder="31999999999" type="tel"/>
         <label style={label}>Seu PIN</label>
         <input style={input} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="••••" type="password" inputMode="numeric"/>
+
+        {/* Jogos presenciais: quem usa ESTE fluxo já está estabelecido em outro
+            circuito, ou seja, é justamente a população com mais chance de estar em
+            outra cidade — e era a única que não recebia este aviso. */}
+        {(circ && (circ.cidade || circ.uf)) && (
+          <div style={{background:"rgba(156,111,62,0.12)",border:"1px solid rgba(156,111,62,0.4)",borderRadius:10,padding:"10px 12px",marginTop:14}}>
+            <div style={{fontSize:12.5,color:T.offwhite,fontWeight:700,marginBottom:3}}>📍 Jogos presenciais em {[circ.cidade, circ.uf].filter(Boolean).join("/")}</div>
+            <div style={{fontSize:11.5,color:T.cinzaSuave,lineHeight:1.5}}>As partidas deste circuito são disputadas pessoalmente nessa região. Confirme que você consegue jogar aí antes de continuar — se a região não for a sua, o organizador não vai aprovar a inscrição.</div>
+          </div>
+        )}
+        {/* Em que temporada esta participação vai valer. Sem isto, a tela de sucesso
+            promete "em breve", que na reta final da temporada pode significar MESES:
+            pelo Cap. 11 as duas últimas rodadas não recebem entrada. Fica aqui, e não
+            no topo, pelo motivo do comentário lá em cima. */}
+        {(() => { const av = circ ? avisoFaseInscricao(circ) : null; return av ? (
+          <div style={{background:`${av.cor}1e`,border:`1px solid ${av.cor}`,borderRadius:10,padding:"11px 13px",marginTop:10}}>
+            <div style={{fontSize:12.5,color:T.offwhite,fontWeight:800,marginBottom:3}}>🗓️ {av.titulo}</div>
+            <div style={{fontSize:11.5,color:T.cinzaSuave,lineHeight:1.5}}>{av.texto}</div>
+          </div>
+        ) : null; })()}
+
         {erro && <div style={{fontSize:12,color:"#f8c4b4",marginTop:10}}>{erro}</div>}
         {(() => { const dis = bloqueado||!aceiteReg||!tel.trim()||pin.length<4||enviando; return (
           <button style={btn(dis)} disabled={dis} onClick={()=>enviar(false)}>{enviando?"Confirmando…":"Participar →"}</button>
@@ -8985,7 +9005,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
       {backlog.length > 0 && <>
         <SecTitle>🗂️ Backlog do Circuito ({backlog.length})</SecTitle>
         <div style={{fontSize:11,color:"#7d9188",marginBottom:8,marginTop:-4}}>
-          Na fila para entrar sozinhos na próxima oportunidade permitida (virada de temporada, ou próximo par fora do último terço). Vêm de dois caminhos: <strong style={{color:"#F0EAE0"}}>inscrição aprovada por você</strong>, ou <strong style={{color:"#F0EAE0"}}>atleta de outro circuito</strong> que entrou reusando o cadastro do Clube — esse último não passou por triagem sua, e o selo no card diz qual é qual. Você pode antecipar a entrada agora, recusar (revisa de novo depois) ou arquivar (some do backlog).
+          Na fila para entrar sozinhos na próxima oportunidade permitida (virada de temporada, ou próximo par fora do último terço). Vêm de dois caminhos: <strong style={{color:"#F0EAE0"}}>inscrição aprovada por você</strong>, ou <strong style={{color:"#F0EAE0"}}>atleta de outro circuito</strong> que entrou reusando o cadastro do Clube — esse último <strong style={{color:"#F0EAE0"}}>não passou por triagem sua</strong>. Não dá para distinguir os dois no card: as duas origens chegam aqui iguais em toda coluna que o app lê, e o selo mostra só o recibo do aceite. Você pode antecipar a entrada agora, recusar (revisa de novo depois) ou arquivar (some do backlog).
         </div>
         {backlog.map(a => (
           <Card key={a.id} style={{border:"1px solid rgba(167,139,250,0.25)"}}>
@@ -8993,13 +9013,18 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
               <div>
                 <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}</div>
                 <div style={{fontSize:11,color:"#9db3a8"}}>{telefones[a.id] || "···"} · {SISTEMA_ATIVO === "B" ? `${a.saldoTemp || 0} pts` : `Rating: ${a.rating}`}</div>
-                {/* De onde ele veio. Quem entra por "Participar de outro circuito"
-                    NÃO passou por INSCRICAO_VALIDAR: ninguém neste circuito o
-                    examinou. O aceite do regulamento, porém, é dele e é datado —
-                    então o selo mostra as duas coisas: a origem e o recibo. */}
+                {/* ⚠️ Este selo NÃO diz de onde o atleta veio — e a primeira versão
+                    dele dizia, errado. `aceite_regulamento` e `data_aceite_regulamento`
+                    são gravados pelas DUAS origens (inscrição aprovada por você, e
+                    participação reusando o cadastro), então ele marcava todo mundo e
+                    afirmava uma origem que não sabe. E nenhuma coluna distingue as
+                    duas: as duas chegam ao backlog como `ativo` + `pendente_circuito`.
+                    Distinguir pediria coluna nova em tabela lida pelo visitante, que é
+                    a armadilha nº 1 deste projeto. Então o selo diz o que o dado
+                    prova: o RECIBO do aceite. Pego pelo Designer Visual, 27/09/2026. */}
                 {a.aceiteRegulamento && a.dataAceiteRegulamento && !a.ultimaRecusaCircuitoEm && (
                   <div style={{fontSize:10,color:"#7fae8f",marginTop:2}}>
-                    🔁 Entrou reusando o cadastro do Clube · aceitou {a.versaoRegulamento || "o regulamento"} em {new Date(a.dataAceiteRegulamento).toLocaleDateString("pt-BR")}
+                    📋 Aceitou {a.versaoRegulamento || "o regulamento"} em {new Date(a.dataAceiteRegulamento).toLocaleDateString("pt-BR")}
                   </div>
                 )}
                 {a.ultimaRecusaCircuitoEm && (

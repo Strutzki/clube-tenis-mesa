@@ -63,7 +63,7 @@ encerramento diferentes.
   se o pedido viesse sem os campos. Agora o servidor exige nome e CPF do
   responsável, e recusa antes de gravar qualquer dado pessoal.
 
-**Bateria: 583 → 663 asserções, 0 falhas.** A seção nova imprime **80**, das quais
+**Bateria: 583 → 666 asserções, 0 falhas.** A seção nova imprime **83**, das quais
 **~45 rodam o `login-atleta` de verdade** — é a **primeira vez** que essa função é
 executada pela bateria, que passou de três para **quatro** Edge Functions — e o resto
 são checagens de fonte na tela. **12 testes de mutação, 12 vermelhos.**

@@ -32,7 +32,7 @@ Nas ações destrutivas/estruturais, o diálogo **repete o nome do circuito**: "
 | Rating global (Modelo B) contamina o BH | Circuito de teste com **atletas DISJUNTOS** (inscrições novas). O teste2 está vazio → seguro |
 | `NOVA_TEMPORADA` fora do BH | Já travada no servidor (erro). Limitação conhecida |
 | Seletor manda slug/vazio | Sempre o UUID exato; nunca slug |
-| EXCLUIR_ATLETA / LISTAR_TELEFONES globais | Já no backlog (Fase B); mitigado por operador único + confirmação-com-nome + atletas disjuntos |
+| EXCLUIR_ATLETA / LISTAR_TELEFONES globais | Já no backlog (Fase B); mitigado por operador único + confirmação-com-nome + atletas disjuntos | *(Follow-up FECHADO em 27/09/2026: `LISTAR_TELEFONES` entrou na allowlist do organizador, ESCOPADA por circuito — Onda 0.6.2, no ar na `admin-action` v62. 9 asserções em `testes/permissoes.mjs`, uma delas travando que a ação devolve só `id` e `telefone`.)*
 | Reversão | Front via git; seletor default BH; teste2 deletável |
 
 ## Ordem de implementação (passos verificáveis)

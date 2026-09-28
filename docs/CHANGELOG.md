@@ -9,9 +9,27 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 **A SUBIR — ainda não publicado** (falta o de acordo do Juliano): `login-atleta`
 **v9 → v10**, front por `git push`.
-**Ordem obrigatória: o motor primeiro, o app depois.** O servidor passou a
-**recusar** participação sem aceite declarado; se o app subir antes, o botão
-"Participar" do atleta responde erro. Nenhuma migração, nenhuma coluna nova.
+
+**⚠️ A ORDEM INVERTE EM RELAÇÃO À ONDA ANTERIOR: APP PRIMEIRO, motor depois.** Não é
+esquecimento — a regra nunca foi "motor primeiro". A regra, formulada pelo Guardião
+de Confiabilidade e agora escrita no `CLAUDE.md`, é: **sobe primeiro o lado que
+tolera a versão antiga do outro.** Aqui o motor novo **recusa** o que o app velho
+manda (sem aceite declarado → 400, e o bundle velho nem tem tradução para esse erro:
+cairia em "Não foi possível concluir"). Já o app novo é **compatível para frente**:
+conferido no fonte que está no ar, o v9 lê só os campos que conhece e **ignora**
+`aceiteRegulamento` e `versaoRegulamento`, gravando o mesmo que hoje. Logo a janela
+"app novo + motor velho" é melhor que o estado atual, e a inversa quebra o botão.
+
+**E a melhor jogada é não ter janela nenhuma:** publicar as duas metades **antes** de
+criar o 2º circuito. Com 1 circuito no banco, as duas portas do "Participar" estão
+mortas (a de dentro não renderiza com lista vazia; a de fora exige a página pública
+de um circuito não-BH, que não existe), então nenhum atleta pode estar no fluxo em
+nenhuma das ordens. Nenhuma migração, nenhuma coluna nova.
+
+**Backup obrigatório antes de publicar, e não existia:** o `login-atleta` **v9** —
+a função do login de **todos** os atletas — não tinha cópia em pasta nenhuma. Salvo
+em `docs/backups/motor-no-ar-2026-09-27/ar-login-atleta-v9.ts`, com o método de
+verificação e o limite dele escritos no LEIA-ME.
 
 **O que muda, e por que agora.** O Juliano achou isto testando a inscrição, ao
 perguntar *"como vou saber se é o regulamento correto?"*. O fluxo "Participar de
@@ -33,20 +51,72 @@ encerramento diferentes.
   servidor compara com a do circuito. Divergência (tela velha aberta, carimbo
   trocado no meio do caminho) é recusada em vez de virar consentimento de um texto
   que não é o vigente. É o molde do `ACEITAR_REGULAMENTO`.
+  **Precisão que dois guardiões cobraram, e é regra 6 do `CLAUDE.md`:** não escreva
+  "o servidor exige o aceite". O app manda o campo e o botão trava até a caixa ser
+  marcada — a caixa é trava **de front**, e nenhum servidor prova que um humano leu.
+  O que o servidor exige **de fato**, e está testado em runtime, é: *não grava
+  consentimento sem versão declarada, e recusa se a versão declarada não for a
+  vigente.* O que a mudança conserta é a plataforma ter deixado de **registrar
+  recibo sem tela por trás**.
 - **De carona, uma brecha que ninguém tinha visto:** o responsável legal de menor
   de 18 era exigido **só pela tela**. O servidor aceitava um menor sem responsável
   se o pedido viesse sem os campos. Agora o servidor exige nome e CPF do
   responsável, e recusa antes de gravar qualquer dado pessoal.
 
-**Bateria: 583 → 627 asserções, 0 falhas.** 38 novas rodando o `login-atleta` **de
-verdade** — é a **primeira vez** que essa função é executada pela bateria, que
-passou de três para **quatro** Edge Functions — mais 6 checagens de fonte na tela.
-**8 testes de mutação, 8 vermelhos.**
+**Bateria: 583 → 648 asserções, 0 falhas.** A seção nova imprime **65**, das quais
+**~45 rodam o `login-atleta` de verdade** — é a **primeira vez** que essa função é
+executada pela bateria, que passou de três para **quatro** Edge Functions — e o resto
+são checagens de fonte na tela. **12 testes de mutação, 12 vermelhos.**
 
-**Uma asserção mirou curto e a própria bateria pegou:** uma das checagens de fonte
-olhava uma janela fixa de 9.000 caracteres a partir do início da função, e a
-condição do botão estava a 9.524. Trocada por uma janela ancorada na função
-inteira. Vale o registro: número fixo em asserção de fonte é armadilha.
+**O que a revisão dos 8 guardiões desenterrou, e que mudou esta fatia depois do
+primeiro commit** — vale listar, porque três coisas passavam **verdes**:
+
+1. **A guarda do menor era fail-OPEN, e era o próprio defeito que ela vinha
+   consertar.** Ela toda vivia dentro de `if (nasc)`: bastava **omitir** a data de
+   nascimento para nenhuma checagem acontecer, e o menor entrava com
+   `data_nascimento: null`. Provado rodando pelo Guardião Jurídico. E quem se
+   beneficia de omitir a idade é o **próprio menor**, que tem o PIN na mão — não é
+   invasor atacando terceiro, é o titular contornando a proteção que existe para ele.
+   Agora a data é obrigatória, e idade que não dá para calcular é **recusa**.
+2. **O 2º caminho do fluxo não recebia o circuito — e é o caminho principal.** O
+   atleta digita o telefone na página de inscrição, o app detecta o cadastro e
+   oferece "você já é do Clube, participe reusando seu cadastro". Essa invocação não
+   passava `circ` nem `sistema`: o cartão nascia bloqueado dizendo "fale com o
+   organizador", com o botão morto — e se só o bloqueio fosse consertado, o sistema
+   cairia no padrão "A" e mostraria o regulamento de **rating** num circuito de
+   **pontos**, que é exatamente o defeito da fatia. Pego pelo Designer Visual e pelo
+   Guardião de Confiabilidade, independentemente. **A bateria não via**: as checagens
+   de fonte recortam o corpo da função, e o defeito estava no ponto de chamada.
+3. **A fronteira dos 18 anos não estava protegida.** Os cenários eram 15 e 36 anos;
+   trocar `idade < 18` por `idade < 17` deixava a bateria verde, e o jovem de **17** é
+   o caso real mais provável. Agora há cenário de véspera e de dia seguinte.
+4. **A guarda do BH passava pelo motivo errado.** A única linha entre este fluxo e o
+   circuito de produção é `if (circ.slug === "bh")`. Sabotá-la ficava **verde**, porque
+   o cenário do BH não espelhava a produção e a chamada morria em
+   `inscricoes_fechadas`. Agora o cenário tem `inscricoes_abertas: true` e
+   `regulamento_versao`, e o teste confere o código de erro, não só o status.
+5. **Quem já tinha documento nunca tinha a idade conferida** — o bloco do menor vivia
+   dentro do `if (!doc)`. Agora a idade é lida do arquivo.
+
+**Mais o que a revisão mandou dizer ao atleta e ao admin, e que não estava dito:**
+o rating dele **não muda** no circuito de pontos (o regulamento `vB-01` diz quatro
+vezes que "não há rating", e as quatro falam do circuito novo — nenhuma dizia que o
+dele continua correndo lá); a tela do atleta deixou de imprimir "RATING" em circuito
+de pontos, no perfil e no ranking; o aviso de **fase** entrou no fluxo, porque
+"o admin vai te incluir em breve" pode significar **meses** na reta final da
+temporada; a caixa de **jogos presenciais** foi copiada do fluxo irmão (quem usa este
+fluxo é justamente quem tem mais chance de estar em outra cidade, e era o único que
+não era avisado); uma falha de rede deixou de ser renderizada como culpa do
+organizador; e a tela de criação de circuito, que dizia "pronto para inscrições",
+passou a dizer que ele **nasce com as inscrições fechadas** — o que o Juliano
+descobriria por ausência, não por erro.
+
+**Duas lições sobre a própria bateria, e a diferença entre elas importa:** (a) uma
+checagem de fonte olhava uma janela **fixa** de 9.000 caracteres e a condição estava
+a 9.524 — ficou **vermelha**, falhou para o lado seguro; (b) pior: janela ancorada na
+função é fiel ao **corpo** e **cega para quem invoca**. Padrão novo, registrado no
+`CLAUDE.md`: quando uma prop é o que faz a tela funcionar, conte os pontos de chamada
+e exija a prop em **todos**.
 
 **Decisão registrada junto (ROADMAP 0.6.22):** o 2º circuito será **novo** e de
 pontos, não o BH mudando de sistema. O sistema do BH está **cravado no motor**

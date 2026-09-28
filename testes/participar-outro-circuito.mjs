@@ -45,7 +45,12 @@ async function cenario(campos = {}) {
   return montarMotor({
     funcao: "login-atleta",
     circuitos: [
-      circuito(BH),
+      // O fixture do BH ESPELHA a produção (`inscricoes_abertas: true`,
+      // `regulamento_versao: "v03-12"`). Sem isso, sabotar a guarda do BH deixava a
+      // bateria verde: a chamada morria em `inscricoes_fechadas`, e não no
+      // `bh_cadastro_direto` que é a guarda de verdade. Pego pelo Guardião de
+      // Segurança — é a única linha entre este fluxo e o circuito de produção.
+      circuito(BH, { inscricoes_abertas: true, regulamento_versao: "v03-12" }),
       circuito(CIRC, { slug: "sp", sistema: "B", regulamento_versao: VERSAO_B,
                        inscricoes_abertas: true, ativo: true, ...campos }),
     ],
@@ -142,6 +147,8 @@ secao("Com o aceite certo, entra — reusando o cadastro, sem tocar no rating");
   const { motor } = await cenario();
   const r = await motor.chamar(pedido({ circuitoId: BH }));
   igual(r.status, 400, "e o BH não entra por aqui — lá o cadastro é direto");
+  igual(r.corpo?.erro, "bh_cadastro_direto",
+    "e pelo motivo CERTO: a guarda do BH, não um efeito colateral de inscrições fechadas");
 }
 
 secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
@@ -185,6 +192,70 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
   const r = await motor.chamar(pedido({ dataNascimento: "1990-05-10" }));
   igual(r.status, 200, "maior de 18 entra sem responsável");
 }
+{
+  // A FRONTEIRA. Os fixtures acima são 15 e 36 anos — nenhum encosta nos 18, e o
+  // Guardião de Confiabilidade provou que trocar `idade < 18` por `idade < 17`
+  // deixava a bateria VERDE. O jovem de 17 é o caso real mais provável.
+  const menosUmDia = (anos) => {
+    const d = new Date(); d.setFullYear(d.getFullYear() - anos); d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  };
+  const maisUmDia = (anos) => {
+    const d = new Date(); d.setFullYear(d.getFullYear() - anos); d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  };
+  const { motor } = await cenario();
+  const dezessete = await motor.chamar(pedido({ dataNascimento: menosUmDia(18) }));
+  igual(dezessete.status, 400, "faltando UM DIA para 18, ainda é menor: recusa sem responsável");
+  igual(dezessete.corpo?.erro, "responsavel_obrigatorio", "com o erro do responsável");
+
+  const { motor: m2 } = await cenario();
+  const dezoito = await m2.chamar(pedido({ dataNascimento: maisUmDia(18) }));
+  igual(dezoito.status, 200, "e um dia DEPOIS de completar 18, entra sem responsável");
+}
+{
+  // O buraco FAIL-OPEN que o Guardião Jurídico provou rodando: a guarda inteira
+  // vivia dentro de `if (nasc)`, então bastava OMITIR a data para nenhuma
+  // checagem acontecer — o documento era gravado com `data_nascimento: null` e o
+  // menor entrava. E quem se beneficia de omitir a idade é o próprio menor, que
+  // tem o PIN na mão: é o titular contornando a proteção que existe para ele.
+  const { motor, banco } = await cenario();
+  const r = await motor.chamar(pedido({ dataNascimento: undefined }));
+  igual(r.status, 400, "OMITIR a data de nascimento é recusado — não é mais caminho livre");
+  igual(r.corpo?.erro, "data_nascimento_obrigatoria", "com erro próprio");
+  igual(banco.linhas("atleta_documento").length, 0, "e nada de dado pessoal gravado");
+  igual(banco.linhas("circuito_atletas").filter(l => l.circuito_id === CIRC).length, 0, "nem vínculo");
+
+  const { motor: m2 } = await cenario();
+  const vazia = await m2.chamar(pedido({ dataNascimento: "" }));
+  igual(vazia.status, 400, "data vazia também");
+}
+{
+  // O 2º buraco: quem JÁ TEM documento não passava pelo backfill, então a idade
+  // dele nunca era conferida. Agora é lida do arquivo.
+  const hash = await pinGuardado(PIN);
+  const nascMenor = (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 15); return d.toISOString().slice(0, 10); })();
+  async function comDocumento(docExtra) {
+    return montarMotor({
+      funcao: "login-atleta",
+      circuitos: [circuito(BH, { inscricoes_abertas: true, regulamento_versao: "v03-12" }),
+                  circuito(CIRC, { slug: "sp", sistema: "B", regulamento_versao: VERSAO_B, inscricoes_abertas: true, ativo: true })],
+      atletas: [atleta(ATL, { nome: "Atleta do BH", telefone: TEL, pin_hash: hash, rating: 720 })],
+      circuito_atletas: [{ id: "ca-bh", circuito_id: BH, atleta_id: ATL, status: "ativo", pendente_circuito: false, saldo_temp: 0, vitorias: 0, derrotas: 0 }],
+      funcoes: FUNCOES_DO_BANCO,
+      outras: { atleta_documento: [{ atleta_id: ATL, cpf_hash: "ja-tem", data_nascimento: nascMenor, ...docExtra }] },
+    });
+  }
+  const { motor, banco } = await comDocumento({ responsavel_nome: null, responsavel_cpf_hash: null });
+  const r = await motor.chamar(pedido());
+  igual(r.status, 400, "menor com documento SEM responsável no arquivo é recusado");
+  igual(r.corpo?.erro, "responsavel_obrigatorio", "com o mesmo erro");
+  igual(banco.linhas("circuito_atletas").filter(l => l.circuito_id === CIRC).length, 0, "e sem vínculo");
+
+  const { motor: m2 } = await comDocumento({ responsavel_nome: "Mãe do atleta", responsavel_cpf_hash: "hash-do-resp" });
+  const ok2 = await m2.chamar(pedido());
+  igual(ok2.status, 200, "com responsável no arquivo, o menor entra");
+}
 
 secao("E a tela do atleta oferece o regulamento antes do PIN");
 {
@@ -206,12 +277,44 @@ secao("E a tela do atleta oferece o regulamento antes do PIN");
     "o fluxo abre o regulamento do circuito ALVO (antes ele não mencionava regulamento)");
   ok(/sistema=\{sistemaCirc\}/.test(bloco),
     "e com o SISTEMA do circuito alvo — senão mostraria as regras do circuito errado");
-  ok(/aceiteRegulamento:\s*true,\s*versaoRegulamento:\s*versaoReg/.test(bloco),
+  ok(/aceiteRegulamento:\s*aceiteReg,\s*versaoRegulamento:\s*versaoReg/.test(bloco),
     "o pedido declara o aceite e a versão que o atleta viu");
-  ok(/semVersao\s*\|\|\s*!aceiteReg/.test(bloco),
-    "e o botão fica travado sem o aceite, e também se o circuito não tiver versão");
+  ok(!/aceiteRegulamento:\s*true/.test(bloco),
+    "e o aceite NÃO é cravado como true no cliente — é a mesma classe do defeito que esta fatia consertou");
+  ok(/bloqueado\s*\|\|\s*!aceiteReg/.test(bloco),
+    "o botão fica travado sem o aceite, e também se faltar a versão OU o sistema");
+  ok(/const bloqueado = semVersao \|\| semSistema/.test(bloco),
+    "e 'bloqueado' cobre as duas ignorâncias: sem texto e sem sistema");
+  ok(/sistemaBruto === "B" \? "B" : \(sistemaBruto === "A" \? "A" : null\)/.test(bloco),
+    "o sistema é FAIL-CLOSED: ausente vira null, nunca o padrão 'A' (que mostraria rating num circuito de pontos)");
   ok(/const semVersao = !versaoReg/.test(bloco),
     "fail-closed na tela também: sem versão, ninguém confirma");
+
+  // ⚠️ ESTA É A ASSERÇÃO QUE FALTAVA, e a lição vale mais que ela. As checagens
+  // acima recortam o CORPO da função — e o defeito mais grave desta fatia estava
+  // num PONTO DE CHAMADA, 300 linhas adiante, fora da janela: o segundo caminho
+  // (`InscricaoForm` → `modoParticipar`) não passava `circ`, então o cartão nascia
+  // bloqueado acusando o organizador, e o sistema cairia no padrão "rating".
+  // Dois guardiões provaram, independentemente, que tirar `circ=` da chamada que
+  // funciona deixava a bateria INTEIRA verde.
+  // Padrão novo: quando uma prop é o que faz a tela funcionar, conte os pontos de
+  // chamada e exija a prop em TODOS.
+  const chamadas = fonte.match(/<ParticiparFlow[\s\S]*?\/>/g) || [];
+  ok(chamadas.length >= 2, `o fluxo é invocado de ${chamadas.length} lugares (esperado ao menos 2)`);
+  const semCirc = chamadas.filter((c) => !/\bcirc=/.test(c));
+  igual(semCirc.length, 0, "TODA invocação de <ParticiparFlow> passa `circ=` — sem ele a tela não sabe qual regulamento mostrar");
+  // A chamada que monta o `circ` INLINE é a que pode perder o sistema — a outra
+  // passa o objeto do RPC, que já traz a coluna. Então a cobrança é sobre essa.
+  const inline = chamadas.filter((c) => /circ=\{\{/.test(c));
+  igual(inline.filter((c) => !/sistema/.test(c)).length, 0,
+    "a invocação que monta o circuito inline leva o sistema explicitamente");
+
+  // E a coluna que sustenta tudo isso: se `sistema` sair do select, a tela passa a
+  // mostrar o regulamento errado sem uma única asserção vermelha.
+  ok(/getCircuitosAbertos:[\s\S]{0,240}?sistema/.test(fonte),
+    "a leitura dos circuitos abertos inclui a coluna `sistema`");
+  ok(/getVersoesRegulamento:[\s\S]{0,160}?regulamento_versao/.test(fonte),
+    "e existe a leitura que traz a versão do regulamento por circuito");
 }
 
 process.exit(placar("Participar de outro circuito"));

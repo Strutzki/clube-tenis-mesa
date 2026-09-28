@@ -103,19 +103,6 @@ async function atletaPorToken(token: unknown): Promise<string | null> {
   return data.atleta_id;
 }
 
-// Idade a partir de "AAAA-MM-DD". Devolve null quando NAO DA PARA SABER — e quem
-// chama tem de tratar null como desconhecido, nunca como maior de idade.
-function idadeDeISO(iso: string | null | undefined): number | null {
-  const t = String(iso ?? "").trim();
-  if (!t) return null;
-  const d = new Date(t + "T00:00:00Z");
-  if (isNaN(d.getTime())) return null;
-  const h = new Date();
-  let anos = h.getUTCFullYear() - d.getUTCFullYear();
-  const dm = h.getUTCMonth() - d.getUTCMonth();
-  if (dm < 0 || (dm === 0 && h.getUTCDate() < d.getUTCDate())) anos--;
-  return anos;
-}
 async function acharAtleta(tel: string): Promise<any | null> {
   const alvo = normTel(tel);
   if (alvo.length < 10) return null;
@@ -290,30 +277,6 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: false, erro: "versao_regulamento_indisponivel" }, 409);
       }
 
-      // ACEITE DE VERDADE (27/09/2026). Até aqui esta função gravava
-      // `aceite_regulamento: true` sem que o atleta tivesse visto regulamento
-      // nenhum: o fluxo "Participar de outro circuito" tinha três telas
-      // (identificação, CPF, pronto) e NENHUMA mencionava regulamento. O recibo
-      // apontava para a versão certa e para um texto que o atleta nunca abriu.
-      // Isso importa mais agora que existe circuito de PONTOS: quem vem do BH
-      // (rating) entraria "aceitando" um regulamento com pontuação, pareamento e
-      // encerramento diferentes.
-      //
-      // O molde é o do ACEITAR_REGULAMENTO: o atleta DECLARA qual versão está
-      // aceitando, e o servidor compara com a do circuito. Se divergir — tela
-      // velha aberta, ou carimbo trocado no meio do caminho — recusa, em vez de
-      // registrar consentimento de um texto que não é o que está valendo.
-      if (p.aceiteRegulamento !== true) {
-        return jsonResponse({ sucesso: false, erro: "aceite_regulamento_obrigatorio" }, 400);
-      }
-      const versaoDeclarada = String(p.versaoRegulamento ?? "").trim();
-      if (!versaoDeclarada) {
-        return jsonResponse({ sucesso: false, erro: "versao_regulamento_obrigatoria" }, 400);
-      }
-      if (versaoDeclarada !== versaoDoCircuito) {
-        return jsonResponse({ sucesso: false, erro: "versao_regulamento_divergente" }, 409);
-      }
-
       // 3) Já é membro deste circuito?
       const { data: mem } = await supabase.from("circuito_atletas")
         .select("atleta_id").eq("circuito_id", circuitoId).eq("atleta_id", a.id).maybeSingle();
@@ -322,9 +285,7 @@ Deno.serve(async (req) => {
       const now = new Date().toISOString();
 
       // 4) Backfill de CPF: só se o atleta ainda NÃO tem documento.
-      const { data: doc } = await supabase.from("atleta_documento")
-        .select("atleta_id,data_nascimento,responsavel_nome,responsavel_cpf_hash")
-        .eq("atleta_id", a.id).maybeSingle();
+      const { data: doc } = await supabase.from("atleta_documento").select("atleta_id").eq("atleta_id", a.id).maybeSingle();
       if (!doc) {
         const temCpf = String(p.cpf ?? "").replace(/\D/g, "").length > 0;
         if (!temCpf) return jsonResponse({ sucesso: false, erro: "cpf_obrigatorio" }, 400);
@@ -337,31 +298,6 @@ Deno.serve(async (req) => {
         const ex = Array.isArray(dd) ? dd[0] : dd;
         if (ex?.existe && ex?.atleta_id && ex.atleta_id !== a.id) {
           return jsonResponse({ sucesso: false, erro: "cpf_conflito" }, 409); // CPF é de outro cadastro
-        }
-        // MENOR DE IDADE (27/09/2026). O campo do responsável era opcional aqui:
-        // a única trava era a tela, que desabilita o botão sem nome e CPF válido
-        // do responsável. Trava de um lado só contraria a regra da casa — o
-        // portão é o servidor.
-        //
-        // ⚠️ A PRIMEIRA VERSÃO DESTA GUARDA ERA FAIL-OPEN, e o Guardião Jurídico
-        // provou rodando: ela toda vivia dentro de `if (nasc)`, então bastava
-        // OMITIR `dataNascimento` para nenhuma checagem acontecer — o documento
-        // era gravado com `data_nascimento: null` e o menor entrava. E quem se
-        // beneficia de omitir a idade é o próprio menor, que tem o PIN na mão:
-        // não é invasor atacando terceiro, é o titular contornando a proteção que
-        // existe para ele (art. 14 da LGPD). Agora a data é OBRIGATÓRIA aqui, e
-        // idade que não dá para calcular é recusa, não liberação.
-        const idade = idadeDeISO(p.dataNascimento);
-        if (idade === null) {
-          return jsonResponse({ sucesso: false, erro: "data_nascimento_obrigatoria" }, 400);
-        }
-        if (idade < 0 || idade > 120) {
-          return jsonResponse({ sucesso: false, erro: "data_nascimento_invalida" }, 400);
-        }
-        if (idade < 18) {
-          if (!String(p.responsavelNome ?? "").trim() || !String(p.responsavelCpf ?? "").trim()) {
-            return jsonResponse({ sucesso: false, erro: "responsavel_obrigatorio" }, 400);
-          }
         }
         let respCpfHash: string | null = null;
         if (p.responsavelCpf) {
@@ -383,21 +319,6 @@ Deno.serve(async (req) => {
           return jsonResponse({ sucesso: false, erro: "falha_documento" }, 500);
         }
         await supabase.from("atletas").update({ cpf_verificado: true }).eq("id", a.id);
-      } else {
-        // Atleta que JÁ tem documento não passa pelo backfill — e por isso a idade
-        // dele nunca era conferida aqui (2º buraco provado pelo Guardião Jurídico).
-        // Lê do arquivo: se for menor, o responsável tem de JÁ estar registrado.
-        const idadeArquivo = idadeDeISO(doc.data_nascimento);
-        if (idadeArquivo !== null && idadeArquivo < 18) {
-          if (!String(doc.responsavel_nome ?? "").trim() || !String(doc.responsavel_cpf_hash ?? "").trim()) {
-            return jsonResponse({ sucesso: false, erro: "responsavel_obrigatorio" }, 400);
-          }
-        }
-        // `data_nascimento` nula no arquivo = idade DESCONHECIDA, e aqui isto passa.
-        // É deliberado e está registrado no ROADMAP: a única origem de documento sem
-        // data é o `INSCREVER`, que não tem guarda de menor nenhuma (item próprio).
-        // Recusar aqui trancaria adulto de cadastro antigo por um defeito de outra
-        // porta. Quando o `INSCREVER` exigir a data, esta ressalva morre.
       }
 
       // 5) Cria o vínculo no circuito (pendente de inclusão pelo admin). NUNCA toca no rating nacional.

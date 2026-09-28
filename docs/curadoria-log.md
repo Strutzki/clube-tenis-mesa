@@ -13,6 +13,103 @@
 > a cópia original (mais abaixo, sob "2026-09-05 — Bootstrap da curadoria...")
 > é a que fica.
 
+## 2026-09-27 — 0.6.21: ciência do regulamento ao entrar num 2º circuito
+
+**Publicado?** Não. Commitado e **aguardando o de acordo do Juliano**. `login-atleta`
+segue na v9.
+
+**Entrada própria, e não dentro da da Onda 0.6, por três razões** (decisão do Curador
+nesta rodada): aquela fatia **foi publicada** e esta está a subir — fundi-las tiraria
+do log a única coisa que ele faz melhor que o CHANGELOG, que é dizer o que estava no
+ar e quando; o achado é **do Juliano**, não de guardião nem meu; e esta fatia traz
+duas lições de método próprias.
+
+**Como o defeito foi achado, e isto é o registro mais importante desta entrada.** O
+Juliano estava **usando o app**, testando uma inscrição, e perguntou: *"aparece um
+regulamento, mas como vou saber se é o regulamento correto?"*. Daí saiu que o fluxo
+"Participar de outro circuito" tinha três telas — identificação, CPF, pronto — e
+**nenhuma mencionava regulamento**, enquanto o servidor gravava `aceite_regulamento:
+true` com a versão do circuito. Recibo de consentimento apontando para um texto que o
+atleta nunca abriu. **Nenhuma bateria acha isso e nenhum guardião tinha achado em três
+rodadas.** O item já existia no ROADMAP como 0.10.10, escrito pelo Jurídico, e estava
+parado na seção "antes do 1º circuito de terceiro".
+
+**Ficou urgente por outra decisão dele, no mesmo dia:** o 2º circuito será de
+**PONTOS** (ROADMAP 0.6.22). Um atleta do BH entraria registrado como tendo aceitado
+um regulamento com pontuação, pareamento e encerramento diferentes.
+
+**Números, somados seção a seção:** `npm run teste` = **648 asserções, 0 falhas**, em
+12 seções, com código de saída 0. A seção nova imprime 65. Build OK. **12 testes de
+mutação, 12 vermelhos.** A bateria passou a executar **quatro** Edge Functions: o
+`login-atleta` é executado pela primeira vez.
+
+**O que a rodada dos 8 guardiões mudou depois do primeiro commit** — e três coisas
+passavam **verdes**: a guarda do menor era **fail-open** (bastava omitir a data de
+nascimento); o **segundo caminho** do fluxo — o principal — não recebia o circuito e
+nascia bloqueado acusando o organizador; a **fronteira dos 18 anos** não estava
+coberta (os cenários eram 15 e 36; `idade < 17` passava verde); a **guarda do BH**
+passava pelo motivo errado; e quem já tinha documento nunca tinha a idade conferida.
+Detalhe no `docs/CHANGELOG.md`.
+
+**Vereditos:** Atleta, Jurídico, Regulamento, Segurança, Confiabilidade, Admin e
+Curador em GO-com-condições; **Designer Visual em NO-GO**, pelo segundo caminho do
+fluxo — e foi ele quem achou. Todas as condições atendidas neste commit.
+
+**Duas lições de método, e a diferença entre elas é o que vale:**
+1. Asserção de fonte com janela de **tamanho fixo** mira fora quando o arquivo cresce.
+   Esta falhou para o lado **seguro** (ficou vermelha e foi vista), ao contrário da
+   lição das regex de 19/09, em que a bateria ficava **verde**. Sem essa distinção,
+   alguém "conserta" a próxima aumentando o número — e é a correção errada.
+2. Janela ancorada na função é fiel ao **corpo** e **cega para quem invoca**. Padrão
+   novo no `CLAUDE.md`: quando uma prop é o que faz a tela funcionar, conte os pontos
+   de chamada e exija a prop em **todos**.
+
+**E uma regra de operação que estava implícita e virou explícita:** a ordem de
+publicar **não é fixa**. Sobe primeiro o lado que tolera a versão antiga do outro —
+nesta fatia é o **app** (o motor novo recusa o que o app velho manda), o inverso da
+Onda 0.6. Está escrita no `CLAUDE.md`.
+
+**Acervo desta rodada, incluindo os itens que venceram porque a Onda 0.6 subiu:**
+- **0.10.10 marcado ✅**, resolvido pelo 0.6.21 — o mesmo defeito estava ✅ num item e
+  **aberto** em outro, 500 linhas de distância, e o aberto ficava na seção onde se
+  procura trabalho a fazer.
+- **`README.md`**: dizia "82 asserções" e que "o `athlete-action` e o `login-atleta`
+  seguem sem teste" — na porta de entrada do repositório, no dia em que o
+  `login-atleta` ganhou asserção. E a tabela de versões estava **seis deploys atrás**.
+- **`docs/curadoria-indice`**: dizia "executa duas funções"; e a linha que o
+  `ESTADO-DEV` aponta como fonte de verdade das versões estava dois deploys atrás.
+- **`docs/ESTADO-DEV`**: versões atualizadas, com o registro de que este número
+  apodrece e a instrução de rodar `motor:listar` em vez de citar dali.
+- **Cinco notas de fechamento** do follow-up do `LISTAR_TELEFONES`
+  (`GOVERNANCA_AGENTES`, `historico/PLANO_PAPEIS` ×1, `PLANO_FASE_A`, `PLANO_FASE_A2`)
+  e o ✅ de `ORGANIZADOR_ACESSO_COMPARATIVO`, que era **falso** e agora está confirmado.
+- **`supabase/config.toml`**: o comentário classificava o `comprovante-url` como "não
+  chamada pelo app anônimo" — falso desde antes, e mais falso agora que quem a chama
+  é o organizador. Reescrito para dizer que o `verify_jwt` ali **não** é a
+  autenticação.
+
+**Fica para o Juliano, e é dele com advogado:** o 0.6.7 segue aberto e ficou mais
+visível. O Jurídico retirou, com argumento melhor que o meu, a condição de corrigir a
+frase do consentimento — porque **não existe controle de versão para o texto de
+privacidade** (só para o regulamento e para o CPF), então editar a frase hoje
+destruiria o valor probatório dos aceites já colhidos sem produzir um novo. O conserto
+certo é **criar o aceite versionado de privacidade e colher re-aceite**, no molde do
+`ACEITAR_REGULAMENTO`. Registrado no 0.6.7.
+
+**Quatro itens novos abertos por esta rodada:** 0.6.23 (o `vB-01` mente em dois pontos
+e cala em três — ⛔ portão da abertura do circuito de pontos), 0.6.24 (o `INSCREVER`
+não tem guarda de menor nenhuma — a porta de serviço ficou mais rígida que a porta da
+frente), 0.6.25 (seis ações do `login-atleta` sem asserção, `SESSAO` à frente),
+0.6.26 (`INSCRICAO_VALIDAR` escreve `rating_inicial` global mesmo em circuito de
+pontos).
+
+**Pendência que eu NÃO fiz e que aponto pela quarta vez:** os 16 arquivos de
+`.claude/agents/*.md` dizem *"`npm run teste` — 82 asserções que carregam o
+`admin-action` real"*. O número real é 648 e são quatro funções. É o texto que **todo
+guardião lê antes de emitir parecer** — quem confiar nele subestima a cobertura por
+quase 8×. Não mexi porque são arquivos de **configuração dos agentes**, e a correção
+foi pedida por um agente: levo ao Juliano em vez de editar por conta.
+
 ## 2026-09-27 — Onda 0.6, fatia "o organizador consegue trabalhar"
 
 **Publicado?** Não. Commitado e **aguardando o de acordo do Juliano**. O motor

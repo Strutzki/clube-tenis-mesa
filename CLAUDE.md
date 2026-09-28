@@ -38,12 +38,13 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **627 asserções** (conferido ao vivo em 27/09/2026, somando as 12
+Hoje são **648 asserções** (conferido ao vivo em 27/09/2026, somando as 12
 seções que a bateria imprime). **Não cite este número de memória** — ele mudou em
 sete ondas seguidas; rode `npm run teste` e leia. O `atualizar.sh` roda isso
 antes de publicar e se recusa a subir com teste vermelho. O `testes/README.md`
 traz o mesmo número, e desde 27/09/2026 a tabela de arquivos dele está completa
-(os 15) — era a dívida antiga registrada em
+(todos os que existem — confira com `ls testes/*.mjs`, não pelo número: esta frase
+já nasceu velha uma vez, no mesmo dia) — era a dívida antiga registrada em
 `docs/curadoria-indice-app-tenis-de-mesa.md`.
 
 Ela carrega **quatro Edge Functions de verdade** — `admin-action`,
@@ -157,6 +158,27 @@ intercepta todo comando que publica — `git push`, `publicar.command`,
 pela conexão do Supabase. Ele não deixa o comando rodar direto: para e pede a
 confirmação do Juliano na tela, dizendo o que iria ao ar. Vale para comandos que
 saem do Claude; não impede o Juliano de publicar pela própria máquina.
+
+## A ordem de publicar NÃO é fixa
+
+Regra formulada pelo Guardião de Confiabilidade em 27/09/2026, depois de duas ondas
+seguidas em que a ordem foi **oposta**:
+
+> **Sobe primeiro o lado que TOLERA a versão antiga do outro.**
+> - Se o app novo **chama** o que o motor velho não tem → **motor primeiro**
+>   (Onda 0.6: o botão "Reativar" chamava uma ação nova).
+> - Se o motor novo **recusa** o que o app velho manda → **app primeiro**
+>   (item 0.6.21: o servidor passou a exigir o aceite declarado; o app novo é
+>   compatível para frente, porque o motor velho **ignora** campos que não conhece).
+> - Se **nenhum dos dois** tolera o outro, a mudança precisa de **duas etapas**: o
+>   servidor aceita as duas formas → sobe o app → o servidor aperta.
+> - E quando o caminho novo ainda é **inalcançável** (circuito que não existe, papel
+>   que ninguém ocupa), a melhor jogada não é escolher a ordem: é **subir os dois
+>   antes de ligar o gatilho**.
+
+Não confie na memória da onda anterior. Pergunte, para cada metade: *o que acontece
+se esta subir e a outra ainda não?* — e leia o código do que está no ar, não o do
+repositório.
 
 ## Publicar tem duas metades — e elas andam separadas
 
@@ -340,6 +362,18 @@ gravar rating num circuito que não tem rating.
   existe para eles são checagens por regex no texto fonte (`fonte.indexOf(...)`),
   que pegam ausência/presença de um trecho — **não** comportamento em runtime. O
   portão dos dois continua sendo "compila?" mais leitura de texto.
+
+  ⚠️ **Janela de asserção de fonte se ancora em fronteira sintática, nunca em
+  contagem de caracteres** — e mesmo ancorada, ela é cega para os pontos de chamada.
+  Duas lições de 27/09/2026, e a diferença entre elas importa. (a) Uma checagem
+  recortava 9.000 caracteres a partir do início da função e a condição estava a
+  9.524: ficou **vermelha**, ou seja falhou para o lado seguro, e por isso foi vista.
+  (b) Pior: a janela ancorada na função é fiel ao **corpo** dela e por isso não vê
+  quem a **invoca** — o defeito mais grave da fatia 0.6.21 era uma prop que faltava
+  num ponto de chamada 300 linhas adiante, e dois guardiões provaram, independentes,
+  que remover essa prop deixava a bateria **inteira verde**. Padrão: quando uma prop
+  é o que faz a tela funcionar, **conte os pontos de chamada e exija a prop em
+  todos**.
 
   ⚠️ **E regex passa verde com a regra quebrada** — isto não é teoria: em
   19/09/2026 o guardião de Regulamento sabotou o re-aceite de **três** jeitos

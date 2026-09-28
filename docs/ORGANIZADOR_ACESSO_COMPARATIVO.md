@@ -38,7 +38,7 @@ O organizador vê hoje as **mesmas 8 abas** do super-admin. No dia a dia dele, b
 | Validar placar | ✅ **Desfazer** (até processar a rodada) | Manter. |
 | Rejeitar placar | ✅ reversível (valida de novo) | Manter. |
 | Registrar pagamento | ✅ **Estornar** | Manter. |
-| Arquivar atleta | ✅ reversível (reativar) | Confirmar que o botão de reativar aparece pro organizador. |
+| Arquivar atleta | ✅ reversível (reativar) | **CONFIRMADO em 27/09/2026**: o ✅ era falso — o botão chamava `EDITAR_ATLETA`, que o organizador não tem. Agora existe `DESARQUIVAR_ATLETA`, na allowlist (Onda 0.6.3, no ar na v62). |
 | Configs (inscrições, público, auto-validar…) | ✅ é só religar | Manter. |
 | Aprovar/recusar inscrição | ✅ em geral reversível | Manter. |
 | **Processar rodada** | ❌ **SEM volta** (calcula pontos/rating) | **Ponto crítico.** Hoje tem confirmação, mas não dá pra desfazer. Opções abaixo. |

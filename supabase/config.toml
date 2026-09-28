@@ -31,8 +31,13 @@ verify_jwt = false
 [functions.despachos-do-dia]
 verify_jwt = false
 
-# --- Nao sao chamadas direto pelo app anonimo: o portao do Supabase exige
-#     token antes de a funcao rodar. Continuam assim. ---
+# --- Portao LIGADO. Atencao ao que isto significa de verdade, porque o comentario
+#     anterior aqui ensinava errado ("nao sao chamadas direto pelo app anonimo"):
+#     o `comprovante-url` E chamado pelo navegador, com a chave publicavel — que e
+#     um JWT valido e por isso PASSA pelo portao. Desde 27/09/2026 quem o chama pode
+#     ser o ORGANIZADOR, nao so o super-admin. Ou seja: o `verify_jwt` aqui nao e a
+#     autenticacao; quem autentica e a propria funcao, por PIN global ou por
+#     telefone+PIN de organizador. Nao conte com este portao como segunda tranca. ---
 
 [functions.comprovante-url]
 verify_jwt = true

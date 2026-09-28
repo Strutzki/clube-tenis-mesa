@@ -121,6 +121,12 @@ fica fora do pareamento), **0.6.7** (base jurídica — pede advogado, não cód
 **0.6.10**, **0.6.11**, **0.6.12**, e o gatilho paralelo "antes de nomear o 1º
 organizador" da Onda 0.10.
 
+**E dois travões NOVOS, nascidos na própria fatia de 27/09** — por isso ela fechou
+5 itens e o ⛔ ficou mais longe, não mais perto: **0.6.17** (o escopo do comprovante
+de W.O. é derrotável; o código já está em produção na v3, inalcançável só porque
+não existe organizador) e **0.6.18** (`writeAtleta` respondendo sucesso com a
+escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
+
 ### Trava o organizador de trabalhar
 
 - **0.6.1 — ✅ RESOLVIDO em 08/09/2026.** O app não mostrava os erros do
@@ -224,6 +230,73 @@ organizador" da Onda 0.10.
   **38 asserções rodando o `login-atleta` de verdade** — é a primeira vez que essa
   função é executada pela bateria — mais 6 checagens de fonte na tela. 8 testes de
   mutação, 8 vermelhos.
+
+- **0.6.23 — ⛔ PORTÃO DA ABERTURA DO CIRCUITO DE PONTOS: o `vB-01` mente em dois
+  pontos e cala em três.** Achado do Guardião do Regulamento em 27/09/2026, ao
+  revisar o 0.6.21. Ele leu o texto inteiro, não só os títulos: **a matemática está
+  certa** (pontuação, pareamento por sorteio ou grupos, bye rotativo, W.O., os cinco
+  primeiros desempates — tudo confere com o motor). O que falta é a camada
+  administrativa. **Fechar antes de `inscricoes_abertas = true` no circuito novo** —
+  não antes de criá-lo: ele pode existir fechado enquanto o texto é escrito.
+
+  **Duas afirmações FALSAS — o texto promete o que o motor recusa. Piores que silêncio:**
+  1. Cap. 12: *"O número de etapas da temporada é **configurável por circuito**."* O
+     motor fixa 6 rodadas e o `DEFINIR_RODADAS` recusa de saída. A mesma promessa
+     falsa está em `docs/REGULAMENTOS_NOVOS_CIRCUITOS.md` e precisa cair junto.
+  2. Cap. 09, 6º critério de desempate: *"**Sorteio registrado pelo admin**"*. O motor
+     ordena por UUID (`localeCompare`). Não há sorteio, não há registro, e nada
+     aparece na tela. Precisa de empate quíntuplo para bater — raro, não impossível
+     num circuito pequeno.
+
+  **Três omissões que o motor aplica CONTRA o atleta:** teto de 20 e fila de espera
+  (ser aprovado e **não entrar**); corte do último terço (entrar tarde e esperar a
+  virada); mínimo de 8 para abrir (a temporada não começar).
+
+  Ou se corrige o texto, ou se corrige o motor — mas as duas falsas não podem
+  sobreviver ao primeiro atleta que aceitar o `vB-01`.
+
+- **0.6.24 — ⛔ O `INSCREVER` não tem guarda de menor de idade NENHUMA.** Achado
+  independente do Guardião Jurídico e do de Segurança em 27/09/2026, e os dois o
+  classificaram acima do que eles mesmos vieram cobrar. A comparação é o que dói:
+  **a porta de serviço ficou mais rígida que a porta da frente.**
+  O `PARTICIPAR` (atleta existente entrando num 2º circuito) passou a exigir data de
+  nascimento e, se menor, nome e CPF do responsável — pelo servidor. O `INSCREVER`,
+  que é a **porta de entrada de todo atleta novo** e o **único caminho para o BH**,
+  não tem nada: a única linha é `if (p.responsavelCpf)`, que valida o dígito **se o
+  campo vier**. A trava é só a tela.
+  E há um efeito de ordem que anula parte do conserto: o documento do atleta nasce no
+  `INSCREVER`; quando ele depois chama o `PARTICIPAR`, a guarda nova lê a idade **do
+  arquivo** — que o `INSCREVER` pode ter gravado nula. Hoje isso passa de propósito
+  (recusar trancaria adulto de cadastro antigo), e a ressalva morre quando este item
+  fechar. Momento ideal para fechar: `atleta_documento` tem **0 linhas**.
+  Art. 14 da LGPD: dado de criança e adolescente pede consentimento específico e
+  destacado de um dos pais. Amarrado ao **0.6.7** e ao **0.7.2**.
+
+- **0.6.25 — O `login-atleta` tem seis ações sem asserção nenhuma.** A fatia 0.6.21
+  fez a bateria executar essa função pela primeira vez, mas só no `PARTICIPAR`.
+  Seguem descobertas: **`SESSAO`** (prioridade — é o caminho silencioso de todo
+  atleta que reabre o app; uma quebra ali **desloga todo mundo** sem ninguém clicar
+  em nada), **`LOGIN`**, **`PRECO`** (devolve preço: é dinheiro), `DEFINIR_PIN`,
+  `LOGIN_ORGANIZADOR` e `LOGOUT_SESSAO`. Não é condição de nenhuma onda: a regra da
+  casa é "regra **nova** nasce com asserção", não "toda regra antiga vira asserção
+  nesta onda". *(Correção de escopo: o `RENOVAR` não é desta função — mora no
+  `athlete-action`.)*
+
+- **0.6.26 — `INSCRICAO_VALIDAR` escreve `rating_inicial` na tabela GLOBAL, mesmo em
+  circuito de pontos.** Achado da Experiência do Admin em 27/09/2026. O guard do
+  Sistema B no `writeAtleta` apaga `rating`, `rating_pico` e `rating_historico` da
+  escrita de identidade — **mas não `rating_inicial`**, que também não está nas
+  colunas sazonais. Então aprovar um atleta **federado** num circuito de **pontos**
+  sobrescreve o `atletas.rating_inicial` dele, que é global e compartilhado com o BH.
+  Alcance real, para não superdimensionar: `rating_inicial` não entra em conta de
+  competição nenhuma — aparece no perfil e na exportação de dados do atleta. E o
+  gatilho é estreito (circuito B + federado + entrando pela inscrição, não pelo
+  `PARTICIPAR`). Mas é escrita de identidade cruzando circuito, que é exatamente o
+  que a regra 2 do `CLAUDE.md` existe para impedir. Conserto: um
+  `delete identidade.rating_inicial` junto dos outros três.
+  **No mesmo lugar, e da mesma família:** num circuito de pontos, o painel do admin
+  exibe e **ordena por** rating, e o gate "Rating obrigatório para federado" obriga o
+  admin a digitar um número que o circuito nunca lê.
 
 - **0.6.22 — Decisão tomada em 27/09/2026: o 2º circuito será de PONTOS, e será um
   circuito NOVO.** Não é o BH mudando de sistema.
@@ -720,7 +793,13 @@ atleta inscrito."*
 
 ### Gatilho: antes do 1º circuito de terceiro (e pede advogado)
 
-- **0.10.10 — O app registra um aceite que o atleta nunca deu.** Ao entrar num
+- **0.10.10 — ✅ RESOLVIDO em 27/09/2026, pelo item 0.6.21.** O mesmo defeito
+  chegou por outra porta: o Juliano o achou **usando o app**, testando a inscrição,
+  ao perguntar "como vou saber se é o regulamento correto?". O conserto fechou as
+  duas pontas (a tela mostra o regulamento do circuito alvo e exige o aceite; o
+  servidor exige que o atleta declare a versão e a compara com a do circuito).
+  Detalhe e as 38 asserções em 0.6.21. *Descrição original, mantida como registro:*
+  Ao entrar num
   **segundo** circuito, `login-atleta:314` grava `aceite_regulamento: true` com
   data e versão — e o `ParticiparFlow`, única tela desse fluxo, **nunca mostra o
   regulamento** nem tem checkbox. Hoje a exposição é **exatamente zero** (o

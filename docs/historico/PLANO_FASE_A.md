@@ -49,7 +49,7 @@ Validado com leitura de código + SQL real. `CIRCUITO_ATIVO` = id do BH (confirm
 
 **Limitações conhecidas → backlog Fase B (registrar, não corrigir agora):**
 - `EXCLUIR_ATLETA` é **global** (deleta identidade compartilhada; cascade em `circuito_atletas` de TODOS os circuitos; `RESTRICT` em partidas). ALTO risco cross-tenant — mitigado na Fase A por operador único + confirmação-com-nome + atletas disjuntos; escopar/trocar por arquivamento na Fase B.
-- `LISTAR_TELEFONES` é global (leitura cross-circuito) — só super-admin; escopar depois.
+- `LISTAR_TELEFONES` é global (leitura cross-circuito) — só super-admin; escopar depois. *(Follow-up FECHADO em 27/09/2026: `LISTAR_TELEFONES` entrou na allowlist do organizador, ESCOPADA por circuito — Onda 0.6.2, no ar na `admin-action` v62. 9 asserções em `testes/permissoes.mjs`, uma delas travando que a ação devolve só `id` e `telefone`.)*
 - `AVANCAR_RODADA` faz fallback `keyId="key_1"` (chave do BH) se `chaveAtual` vier null num não-BH — endurecer pra nunca cair em key_1 fora do BH.
 - `ENVIAR_PLACAR`/auto-validar lê `configuracao(id=1)` (BH) pra qualquer circuito — não fere o BH; circuito novo herda o auto-validar do BH.
 - `NOVA_TEMPORADA` travada fora do BH (virada multi-circuito é fase futura).

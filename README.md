@@ -12,7 +12,7 @@ Este arquivo é o **mapa do que existe**. Como mexer sem quebrar está no
 ```bash
 npm install          # só na primeira vez
 npm run dev          # abre o app na sua máquina, em localhost
-npm run teste        # a bateria: 82 asserções sobre o motor de verdade
+npm run teste        # a bateria: 627 asserções sobre 4 Edge Functions de verdade
 npm run build        # verifica se o app compila
 npm run lint         # confere o estilo do código
 ```
@@ -52,18 +52,20 @@ no mesmo projeto.** São dois produtos dividindo um banco.
 
 | Função | No ar | O que faz |
 |---|---|---|
-| `admin-action` | v54 | **O motor.** 44 ações do organizador — ver tabela abaixo. |
-| `athlete-action` | v17 | O que o atleta faz: `ENVIAR_PLACAR`, `INSCREVER`, `RENOVAR`, `ATUALIZAR_PERFIL`, `SOLICITAR_WO`, `CANCELAR_WO`, `SALVAR_BIO_CRED`, `SOLICITAR_EXCLUSAO`. |
-| `login-atleta` | v6 | Entrada e sessão: `LOGIN`, `LOGIN_ORGANIZADOR`, `DEFINIR_PIN`, `SESSAO`, `LOGOUT_SESSAO`, `PARTICIPAR` (entrar num 2º circuito), `PRECO`. |
-| `circuito-dados` | v2 | Porteiro de leitura de um circuito. Aberto serve a qualquer um; privado exige provar vínculo (PIN ou token). Devolve só colunas de exibição. |
-| `despachos-do-dia` | v4 | Tela única de "o que fazer hoje" por papel. |
-| `comprovante-url` | v1 | Link temporário para o comprovante de pagamento. |
+| `admin-action` | v62 | **O motor.** 46 ações do organizador — ver tabela abaixo. |
+| `athlete-action` | v21 | O que o atleta faz: `ENVIAR_PLACAR`, `INSCREVER`, `RENOVAR`, `ATUALIZAR_PERFIL`, `SOLICITAR_WO`, `CANCELAR_WO`, `SALVAR_BIO_CRED`, `SOLICITAR_EXCLUSAO`, `ACEITAR_REGULAMENTO`. |
+| `login-atleta` | v9 | Entrada e sessão: `LOGIN`, `LOGIN_ORGANIZADOR`, `DEFINIR_PIN`, `SESSAO`, `LOGOUT_SESSAO`, `PARTICIPAR` (entrar num 2º circuito), `PRECO`. |
+| `circuito-dados` | v4 | Porteiro de leitura de um circuito. Aberto serve a qualquer um; privado exige provar vínculo (PIN ou token). Devolve só colunas de exibição. |
+| `despachos-do-dia` | v6 | Tela única de "o que fazer hoje" por papel. |
+| `comprovante-url` | v3 | Link assinado temporário para o comprovante de W.O. (bucket privado). Desde 27/09/2026 aceita o organizador do circuito, não só o super-admin. |
 | `anonimizar-atleta` | v1 | Direito de exclusão (LGPD). |
 | `resetar-pin-atleta` | v1 | Reset do PIN do atleta. |
 | `backup-clube-tenis-mesa` | v5 | Backup dos dados. |
 
 **Confira sempre com `npm run motor:listar`** — a coluna "no ar" acima é de
-07/09/2026, e o código no repositório pode estar à frente do que está rodando.
+**27/09/2026** (conferida ao vivo), e o código no repositório **rotineiramente** está
+à frente do que está rodando: o rito de subida roda com o código já commitado, antes
+de publicar. O `docs/CHANGELOG.md` diz o que está pendente de subir, e por quê.
 
 ### As ações do `admin-action`
 
@@ -170,6 +172,12 @@ Levantadas ao mapear o banco em 07/09/2026, sem decisão tomada:
   linhas. Nada apaga registro velho.
 - **`partidas_historico` sem chave primária** — nada impede a mesma partida
   arquivada duas vezes.
-- **A bateria só cobre o motor.** `npm run teste` protege as regras da
-  competição no `admin-action` (82 asserções, ver `testes/README.md`). O front,
-  o `athlete-action` e o `login-atleta` seguem sem teste.
+- **A bateria cobre o servidor, não o front.** `npm run teste` carrega e executa
+  **quatro Edge Functions de verdade** — `admin-action` (o grosso),
+  `athlete-action`, `comprovante-url` e `login-atleta` (este só no `PARTICIPAR`;
+  `LOGIN`, `SESSAO` e `RENOVAR` seguem descobertos). São 627 asserções em
+  27/09/2026 — **confira rodando, não cite de memória**: este número mudou em oito
+  ondas seguidas, e ficou errado por 7 vezes aqui. Ver `testes/README.md`.
+  **O front (`src/App.jsx`) não é executado por teste nenhum**: o que existe são
+  checagens por regex no texto fonte, que registram que um trecho está lá e **não**
+  provam comportamento.

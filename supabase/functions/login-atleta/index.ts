@@ -370,6 +370,12 @@ Deno.serve(async (req) => {
         // segunda e por coercao de tipo, nao por desenho. Acrescentar o `!== null`
         // transformaria idade desconhecida em liberacao silenciosa.
         // (Observacao do Guardiao Juridico, 27/09/2026.)
+        // ⚠️ E seja preciso sobre o que a bateria protege AQUI: ela protege a PRIMEIRA
+        // camada (a guarda do null acima, cuja mutacao fica vermelha). A segunda — a
+        // coercao — e rede de seguranca SEM assercao propria: acrescentar `!== null`
+        // sozinho deixa a bateria VERDE, porque hoje e inocuo. O que fica vermelho, em
+        // 5 assercoes, e a COMBINACAO: tirar a guarda do null E acrescentar o `!== null`.
+        // Nao leia "duas camadas" como "duas camadas testadas".
         if (idade < 18) {
           if (!String(p.responsavelNome ?? "").trim() || !String(p.responsavelCpf ?? "").trim()) {
             return jsonResponse({ sucesso: false, erro: "responsavel_obrigatorio" }, 400);

@@ -33,8 +33,20 @@ verify_jwt = false
 
 # --- Portao LIGADO. Atencao ao que isto significa de verdade, porque o comentario
 #     anterior aqui ensinava errado ("nao sao chamadas direto pelo app anonimo"):
-#     o `comprovante-url` E chamado pelo navegador, com a chave publicavel — que e
-#     um JWT valido e por isso PASSA pelo portao. Desde 27/09/2026 quem o chama pode
+#     o `comprovante-url` E chamado pelo navegador, com a chave publicavel, e ela
+#     PASSA por este portao — verificado ao vivo em 27/09/2026 (POST com
+#     `sb_publishable_...` responde 400 "pin e path sao obrigatorios", ou seja chegou
+#     dentro da funcao).
+#     ⚠️ E NAO E porque ela seja um JWT: a chave publicavel NAO e um JWT (um JWT tem
+#     tres partes separadas por ponto; ela tem uma, e prefixo `sb_publishable_`). O
+#     gateway do Supabase aceita a chave publicavel nova, e e por isso que passa.
+#     A primeira versao deste comentario dizia "e um JWT valido" — falso, e contradizia
+#     o CLAUDE.md, que esta CERTO ao avisar que "a chave que o app envia nao e um JWT,
+#     entao a queda seria total, nao parcial". Errar isto AQUI e pior que em qualquer
+#     outro lugar: quem concluir que ligar o verify_jwt e inofensivo e liga-lo numa das
+#     cinco funcoes que precisam ficar em `false` para login, painel e telas publicas
+#     de TODO MUNDO. (Pego pelo Guardiao de Confiabilidade.)
+#     Desde 27/09/2026 quem o chama pode
 #     ser o ORGANIZADOR, nao so o super-admin. Ou seja: o `verify_jwt` aqui nao e a
 #     autenticacao; quem autentica e a propria funcao, por PIN global ou por
 #     telefone+PIN de organizador. Nao conte com este portao como segunda tranca. ---

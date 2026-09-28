@@ -217,7 +217,15 @@ const db = {
   updateConfig: (data) => supaFetch("configuracao?id=eq.1", { method:"PATCH", body: JSON.stringify(data) }),
 
   // Circuitos com inscrições abertas (leitura pública — só campos públicos). Fatia 2/inscrição por circuito.
-  getCircuitosAbertos: () => supaFetch(`circuitos?select=id,slug,nome_circuito,nome_exibicao,cidade,uf,sistema&ativo=eq.true&inscricoes_abertas=eq.true&publico=eq.true&order=nome_circuito.asc`),
+  // `getCircuitosAbertos` FOI REMOVIDA em 27/09/2026: os dois fluxos (inscrição e
+  // "participar de outro circuito") passaram a usar o RPC abaixo, e ela ficou com
+  // zero chamadores. Pior que código morto: havia uma asserção da bateria ancorada
+  // nela, então apagá-la numa limpeza futura deixaria a bateria vermelha sem defeito
+  // nenhum, e a dependência VIVA (o RPC devolver `sistema`) ficava sem guarda.
+  // ⚠️ O contrato de colunas do RPC vive NO BANCO, e a bateria não o alcança: se
+  // `circuitos_abertos_vagas` parar de devolver `sistema`, a tela mostra o
+  // regulamento errado e nenhuma asserção fica vermelha. Ao mexer no RPC, confira
+  // `pg_get_functiondef` antes. (Guardião de Confiabilidade, 27/09/2026.)
   // Fatia 6: mesma lista de abertos, porém com info de vagas (ativos, max, cheio) via RPC seguro.
   getCircuitosAbertosVagas: () => supaFetch(`rpc/circuitos_abertos_vagas`, { method: "POST", body: "{}" }),
   getVersoesRegulamento: () => supaFetch(`circuitos?select=id,regulamento_versao&ativo=eq.true&inscricoes_abertas=eq.true&publico=eq.true`),

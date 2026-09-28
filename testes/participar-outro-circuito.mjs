@@ -284,6 +284,21 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
   const ok2 = await m2.chamar(pedido());
   igual(ok2.status, 200, "com responsável no arquivo, o menor entra");
 
+  // A METADE QUE FALTAVA: nome preenchido e hash do CPF vazio. A asserção anterior
+  // cobria "sem nome" e deixava passar "com nome, sem CPF" — e essa forma é
+  // alcançável de verdade, porque o `INSCREVER` grava `responsavel_nome` sempre que
+  // vier, e o `responsavel_cpf_hash` SÓ se o CPF vier. Mutação: tirar a metade do
+  // hash da condição ficava VERDE. (Guardião de Confiabilidade.)
+  const { motor: m4, banco: b4 } = await comDocumento({ responsavel_nome: "Mãe do atleta", responsavel_cpf_hash: null });
+  const soNomeArquivo = await m4.chamar(pedido());
+  igual(soNomeArquivo.status, 400, "menor com NOME do responsável mas sem o CPF no arquivo é recusado");
+  igual(soNomeArquivo.corpo?.erro, "responsavel_obrigatorio", "com o mesmo erro");
+  igual(b4.linhas("circuito_atletas").filter(l => l.circuito_id === CIRC).length, 0, "e sem vínculo");
+
+  const { motor: m5 } = await comDocumento({ responsavel_nome: null, responsavel_cpf_hash: "hash-do-resp" });
+  const soHash = await m5.chamar(pedido());
+  igual(soHash.status, 400, "e o inverso também: CPF sem nome não basta");
+
   // ── A RESSALVA DELIBERADA, fixada em asserção a pedido do Guardião Jurídico ──
   // Documento com `data_nascimento` NULA passa. É intencional, não esquecimento, e
   // o motivo é da TELA: o `ParticiparFlow` tem duas fases e só coleta a data se o
@@ -354,10 +369,23 @@ secao("E a tela do atleta oferece o regulamento antes do PIN");
   igual(inline.filter((c) => !/sistema/.test(c)).length, 0,
     "a invocação que monta o circuito inline leva o sistema explicitamente");
 
-  // E a coluna que sustenta tudo isso: se `sistema` sair do select, a tela passa a
-  // mostrar o regulamento errado sem uma única asserção vermelha.
-  ok(/getCircuitosAbertos:[\s\S]{0,240}?sistema/.test(fonte),
-    "a leitura dos circuitos abertos inclui a coluna `sistema`");
+  // ⚠️ AQUI A BATERIA TEM UM LIMITE, e é importante escrevê-lo em vez de fingir
+  // que não existe. A versão anterior desta asserção guardava o select de
+  // `getCircuitosAbertos` — uma função que ficou com ZERO chamadores quando os dois
+  // fluxos passaram a usar o RPC. Ou seja: ela guardava código morto, e a
+  // dependência viva ficava sem guarda. Apagar a função morta deixava a bateria
+  // vermelha SEM defeito nenhum, que foi exatamente o que aconteceu.
+  // O que sustenta a tela hoje é o RPC `circuitos_abertos_vagas` devolver a coluna
+  // `sistema` — e isso vive **no banco**, fora do alcance de qualquer teste daqui.
+  // Então o que dá para travar é só que a tela use o RPC certo. Se ele parar de
+  // devolver `sistema`, a tela mostra o regulamento errado e NADA fica vermelho.
+  // (Guardião de Confiabilidade, 27/09/2026.)
+  ok(/getCircuitosAbertosVagas:[\s\S]{0,120}?circuitos_abertas_vagas|getCircuitosAbertosVagas:[\s\S]{0,120}?circuitos_abertos_vagas/.test(fonte),
+    "existe a leitura por RPC que traz sistema, cidade e fase de uma vez");
+  const usosRpc = (fonte.match(/db\.getCircuitosAbertosVagas\(\)/g) || []).length;
+  igual(usosRpc, 2, "e os DOIS fluxos (inscrição e participar) usam esse RPC — não o select cru");
+  ok(!/getCircuitosAbertos:/.test(fonte),
+    "a leitura antiga foi removida: asserção ancorada em código morto guarda o nada");
   ok(/getVersoesRegulamento:[\s\S]{0,160}?regulamento_versao/.test(fonte),
     "e existe a leitura que traz a versão do regulamento por circuito");
 

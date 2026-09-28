@@ -38,7 +38,7 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **666 asserções** (conferido ao vivo em 27/09/2026, somando as 12
+Hoje são **672 asserções** (conferido ao vivo em 27/09/2026, somando as 12
 seções que a bateria imprime). **Não cite este número de memória** — ele mudou em
 sete ondas seguidas; rode `npm run teste` e leia. O `atualizar.sh` roda isso
 antes de publicar e se recusa a subir com teste vermelho. O `testes/README.md`
@@ -87,7 +87,17 @@ revisão.
 bateria **e com teste de mutação** (sabotar a linha, ver a bateria ficar
 vermelha, restaurar). Sem isso, a regra não está protegida.
 
-**3. Revisão pelos guardiões.** Chame os agentes de `.claude/agents/`, cada
+**3. Revisão pelos guardiões.** ⚠️ **Congele a árvore num commit e mande o SHA**,
+nunca um diff de árvore viva — e **se a árvore andar durante a revisão, avise o
+guardião com o SHA novo em vez de deixá-lo descobrir.** As duas coisas foram
+aprendidas do jeito caro em 27/09/2026: na primeira rodada três guardiões
+auditaram uma versão que deixou de existir no meio do parecer, e um deles mediu a
+árvore vermelha sem haver regressão (era mutação de outro agente de pé na árvore
+compartilhada); na segunda, um guardião só percebeu o commit novo porque confere o
+`HEAD` no fim por hábito — sem isso teria dado GO para um código que ninguém tinha
+revisado. E cada agente que mutar usa pasta de scratchpad com **nome próprio**,
+senão um sobrescreve a prova do outro.
+ Chame os agentes de `.claude/agents/`, cada
 guardião **com o supervisor dele**. Se o supervisor devolver (REVISAR), corrija
 e refaça — o parecer só vale depois de APROVADO pelo supervisor.
 

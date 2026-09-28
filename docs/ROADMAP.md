@@ -268,7 +268,12 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   `INSCREVER`; quando ele depois chama o `PARTICIPAR`, a guarda nova lê a idade **do
   arquivo** — que o `INSCREVER` pode ter gravado nula. Hoje isso passa de propósito
   (recusar trancaria adulto de cadastro antigo), e a ressalva morre quando este item
-  fechar. Momento ideal para fechar: `atleta_documento` tem **0 linhas**.
+  fechar. **PRAZO, e não é "algum dia"** (precisado pelo Guardião Jurídico): a ressalva do
+  0.6.21 — documento com data nula passa — é inócua **hoje** porque
+  `atleta_documento` tem 0 linhas, mas fica **viva na primeira inscrição nova em
+  produção**, porque o CPF é obrigatório desde a Fatia 5 e todo `INSCREVER` novo cria
+  documento. E o que vai gerar inscrições novas é justamente **o 2º circuito de
+  pontos abrindo**. Logo: **fechar antes de o 2º circuito abrir inscrições.**
   Art. 14 da LGPD: dado de criança e adolescente pede consentimento específico e
   destacado de um dos pais. Amarrado ao **0.6.7** e ao **0.7.2**.
 

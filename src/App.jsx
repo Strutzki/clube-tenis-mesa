@@ -6437,7 +6437,7 @@ async function baixarCartaComoImagem(props, nomeArquivo) {
   });
 }
 
-function AtletaCard({ apelido, foto, estilo = "Clássico", membroDesde: membroDesdeTxt, posicao, rating, vitorias, derrotas, historico = [], width = 320 }) {
+function AtletaCard({ apelido, foto, estilo = "Clássico", membroDesde: membroDesdeTxt, posicao, rating, saldo = 0, vitorias, derrotas, historico = [], width = 320 }) {
   const wrapRef = useRef(null);
   const r = rarityOf(posicao);
   const estColor = ESTILO_CORES[estilo] || T.terracota;
@@ -6522,9 +6522,12 @@ function AtletaCard({ apelido, foto, estilo = "Clássico", membroDesde: membroDe
               <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.5)" }}>Ranking atual</div>
               <div style={{ fontFamily:T.serif, fontSize:px(30), lineHeight:.9, marginTop:px(2) }}>{posicao != null ? `${posicao}º` : "—"}</div>
             </div>
+            {/* O cartão que o atleta COMPARTILHA. Em circuito de pontos ele mostrava
+                o rating de outro circuito — e este sai do app, vai para o WhatsApp.
+                Mesma correção dos outros três lugares. */}
             <div style={{ textAlign:"center" }}>
-              <div style={{ fontFamily:T.serif, fontSize:px(44), lineHeight:.85, color:T.terracota, textShadow:"0 2px 10px rgba(216,90,48,.35)" }}>{rating}</div>
-              <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.55)", marginTop:px(2) }}>Rating</div>
+              <div style={{ fontFamily:T.serif, fontSize:px(44), lineHeight:.85, color:T.terracota, textShadow:"0 2px 10px rgba(216,90,48,.35)" }}>{SISTEMA_ATIVO === "B" ? (saldo ?? 0) : rating}</div>
+              <div style={{ fontFamily:T.mono, fontSize:px(8), letterSpacing:1.6, textTransform:"uppercase", color:"rgba(240,234,224,.55)", marginTop:px(2) }}>{SISTEMA_ATIVO === "B" ? "Pontos" : "Rating"}</div>
             </div>
             <div style={{ textAlign:"right" }}>
               <div style={{ fontFamily:T.serif, fontSize:px(22), lineHeight:.9 }}>
@@ -6600,6 +6603,7 @@ function CartaModal({ athlete, posicao, onClose, podeBaixar = false }) {
           membroDesde={membroDesde(athlete.inscritoEm)}
           posicao={posicao}
           rating={athlete.rating}
+          saldo={athlete.saldoTemp || 0}
           vitorias={athlete.wins || 0}
           derrotas={athlete.losses || 0}
           historico={athlete.historico || []}
@@ -10569,12 +10573,23 @@ function AthleteGames({ state, dispatch, athlete }) {
           </div>
           {classificado && <div style={{fontFamily:T.mono,fontSize:8,color:T.cinza,marginTop:10,letterSpacing:0.5}}>✓ ZONA DE CLASSIFICAÇÃO</div>}
         </div>
-        <div style={{flex:1,background:T.verdeCard,borderRadius:10,padding:"14px 16px"}}>
-          <div style={{textAlign:"center"}}>
-            <div style={{fontFamily:T.mono,fontSize:8,color:T.cinza,letterSpacing:1.5,marginBottom:6}}>RATING</div>
-            <div style={{fontFamily:T.serif,fontSize:30,color:T.offwhite,lineHeight:1}}>{ratingAnimado}</div>
+        {/* Em circuito de PONTOS esta caixa SAI. Ela mostrava "RATING" com o número
+            de OUTRO circuito, colada numa caixa "PONTOS", numa tela cujo regulamento
+            nega o rating quatro vezes — e esta é a tela de ATERRISSAGEM do atleta, a
+            primeira que ele vê ao entrar. A faixa que tranquiliza ("seu rating não
+            muda aqui") era desmentida três toques depois pela própria tela.
+            Não inventamos um número no lugar: POSIÇÃO e PONTOS, na caixa ao lado,
+            já são as métricas reais deste circuito. Pego pela Experiência do Atleta
+            em 27/09/2026, depois de eu ter consertado os outros dois lugares e
+            deixado passar justamente o pior. */}
+        {SISTEMA_ATIVO !== "B" && (
+          <div style={{flex:1,background:T.verdeCard,borderRadius:10,padding:"14px 16px"}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontFamily:T.mono,fontSize:8,color:T.cinza,letterSpacing:1.5,marginBottom:6}}>RATING</div>
+              <div style={{fontFamily:T.serif,fontSize:30,color:T.offwhite,lineHeight:1}}>{ratingAnimado}</div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div style={{fontFamily:T.serif,fontSize:26,color:T.offwhite,lineHeight:1,marginBottom:4}}>Meus jogos</div>

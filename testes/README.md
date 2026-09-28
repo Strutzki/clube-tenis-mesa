@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 627 asserções (27/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 663 asserções (27/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -86,7 +86,17 @@ As mutações já verificadas nesta bateria:
 | `comprovante-url` sem conferir o vínculo de organizador | 2 vermelhas |
 | `comprovante-url` assinando caminho diferente do pedido | 1 vermelha |
 | `NOMEAR_ORGANIZADOR`/`REMOVER_ORGANIZADOR` concedidas ao organizador | 2 vermelhas — e revelou que `REMOVER_ORGANIZADOR` responderia **200**: um organizador removeria outro |
-| **Participar de outro circuito — 27/09/2026 (8 sabotagens, 8 vermelhas)** | |
+| **Participar de outro circuito — 27/09/2026 (15 sabotagens, 15 vermelhas)** | |
+| `idade < 18` → `idade < 17` (a FRONTEIRA) | 2 vermelhas — ficava **verde** antes: os cenários eram 15 e 36 anos, nenhum encostava nos 18 |
+| data de nascimento volta a ser opcional (era **fail-open**) | 1 vermelha |
+| data absurda (1850, 2030) volta a passar | 4 vermelhas |
+| menor que JÁ TEM documento volta a passar | 3 vermelhas |
+| guarda do BH removida | 2 vermelhas — ficava **verde** antes: o cenário do BH não espelhava a produção e a chamada morria em `inscricoes_fechadas` |
+| app: qualquer das DUAS portas do fluxo perde o `circ` | 1 vermelha cada — ficava **verde** antes: as checagens olhavam o corpo da função, não os pontos de chamada |
+| app: o sistema volta a cair no padrão "A" | 1 vermelha |
+| app: a coluna `sistema` sai do select dos circuitos | 1 vermelha |
+| app: o aceite volta a ser cravado como `true` | 2 vermelhas |
+| **combinação**: tirar a guarda do `null` **e** acrescentar `!== null` no `< 18` | 5 vermelhas — o `!== null` **sozinho** é inócuo (verde, e corretamente), mas o par abriria a porta |
 | cai a exigência do aceite do regulamento | 5 vermelhas |
 | "aceite" passa a bastar qualquer valor verdadeiro em vez de `true` | 1 vermelha |
 | cai a exigência de o atleta declarar QUAL versão aceitou | 1 vermelha |

@@ -231,6 +231,23 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
   igual(vazia.status, 400, "data vazia também");
 }
 {
+  // Data ABSURDA também é recusa. A mutação desta linha ficava VERDE — a regra
+  // estava certa no código e desprotegida na bateria. E ela é a guarda contra o
+  // PRÓXIMO movimento: com a data obrigatória, quem quer entrar sem responsável
+  // passa a mentir. Data plausível é indetectável; data absurda é pega aqui.
+  const { motor, banco } = await cenario();
+  const antiga = await motor.chamar(pedido({ dataNascimento: "1850-01-01" }));
+  igual(antiga.status, 400, "data absurda no passado é recusada");
+  igual(antiga.corpo?.erro, "data_nascimento_invalida", "com erro próprio");
+
+  const { motor: m2, banco: b2 } = await cenario();
+  const futura = await m2.chamar(pedido({ dataNascimento: "2030-01-01" }));
+  igual(futura.status, 400, "e data no futuro também");
+  igual(futura.corpo?.erro, "data_nascimento_invalida", "idem");
+  igual(b2.linhas("atleta_documento").length, 0, "e nada é gravado em nenhum dos dois");
+  igual(banco.linhas("atleta_documento").length, 0, "nem no primeiro");
+}
+{
   // O 2º buraco: quem JÁ TEM documento não passava pelo backfill, então a idade
   // dele nunca era conferida. Agora é lida do arquivo.
   const hash = await pinGuardado(PIN);
@@ -246,6 +263,17 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
       outras: { atleta_documento: [{ atleta_id: ATL, cpf_hash: "ja-tem", data_nascimento: nascMenor, ...docExtra }] },
     });
   }
+  async function comDocumentoSemData() {
+    return montarMotor({
+      funcao: "login-atleta",
+      circuitos: [circuito(BH, { inscricoes_abertas: true, regulamento_versao: "v03-12" }),
+                  circuito(CIRC, { slug: "sp", sistema: "B", regulamento_versao: VERSAO_B, inscricoes_abertas: true, ativo: true })],
+      atletas: [atleta(ATL, { nome: "Atleta do BH", telefone: TEL, pin_hash: hash, rating: 720 })],
+      circuito_atletas: [{ id: "ca-bh", circuito_id: BH, atleta_id: ATL, status: "ativo", pendente_circuito: false, saldo_temp: 0, vitorias: 0, derrotas: 0 }],
+      funcoes: FUNCOES_DO_BANCO,
+      outras: { atleta_documento: [{ atleta_id: ATL, cpf_hash: "ja-tem", data_nascimento: null, responsavel_nome: null, responsavel_cpf_hash: null }] },
+    });
+  }
   const { motor, banco } = await comDocumento({ responsavel_nome: null, responsavel_cpf_hash: null });
   const r = await motor.chamar(pedido());
   igual(r.status, 400, "menor com documento SEM responsável no arquivo é recusado");
@@ -255,6 +283,23 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
   const { motor: m2 } = await comDocumento({ responsavel_nome: "Mãe do atleta", responsavel_cpf_hash: "hash-do-resp" });
   const ok2 = await m2.chamar(pedido());
   igual(ok2.status, 200, "com responsável no arquivo, o menor entra");
+
+  // ── A RESSALVA DELIBERADA, fixada em asserção a pedido do Guardião Jurídico ──
+  // Documento com `data_nascimento` NULA passa. É intencional, não esquecimento, e
+  // o motivo é da TELA: o `ParticiparFlow` tem duas fases e só coleta a data se o
+  // servidor pedir CPF. Quem já tem documento nunca chega a essa fase — então não
+  // existe passo onde ele possa informar a data. Recusar ali produziria um 400 que
+  // o atleta não tem como resolver sozinho: beco sem saída, não incômodo.
+  // A única origem de documento sem data é o `INSCREVER`, que não tem guarda de
+  // menor nenhuma (ROADMAP 0.6.24) — e para o menor que passou por lá a violação
+  // já aconteceu na porta da frente; fechar aqui não o protege, só o impede de
+  // entrar no 2º circuito.
+  // QUANDO O 0.6.24 FECHAR, esta asserção fica vermelha de propósito: é o sinal de
+  // que a ressalva morreu. Não "conserte" — apague, e troque pela recusa.
+  const { motor: m3 } = await comDocumentoSemData();
+  const semData = await m3.chamar(pedido());
+  igual(semData.status, 200,
+    "documento com data de nascimento NULA passa — deliberado, ver ROADMAP 0.6.24");
 }
 
 secao("E a tela do atleta oferece o regulamento antes do PIN");
@@ -315,6 +360,55 @@ secao("E a tela do atleta oferece o regulamento antes do PIN");
     "a leitura dos circuitos abertos inclui a coluna `sistema`");
   ok(/getVersoesRegulamento:[\s\S]{0,160}?regulamento_versao/.test(fonte),
     "e existe a leitura que traz a versão do regulamento por circuito");
+}
+
+secao("Em circuito de PONTOS, nenhuma tela do atleta mostra RATING");
+{
+  // Mesmo padrão da asserção acima, um nível acima: em vez de contar pontos de
+  // chamada, conta os lugares que rotulam um número como "Rating" PARA O ATLETA e
+  // exige a ramificação por sistema em todos.
+  //
+  // Por que isto existe: o regulamento de pontos (`vB-01`) diz QUATRO vezes que
+  // "não há rating", e a tela mostrava "RATING <número do outro circuito>" — em
+  // três lugares. Eu consertei dois e deixei passar justamente o pior: a tela de
+  // ATERRISSAGEM, a primeira que o atleta vê ao entrar, colada numa caixa
+  // "PONTOS". A Experiência do Atleta pegou, e pediu esta asserção porque
+  // **nenhum** dos consertos estava protegido — foi assim que o terceiro lugar
+  // chegou até ali.
+  const { readFileSync } = await import("node:fs");
+  const fonte = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+
+  // (a) o rótulo em maiúsculo da tela de aterrissagem
+  const maiusculos = [...fonte.matchAll(/>RATING<\/div>/g)];
+  ok(maiusculos.length > 0, `o rótulo RATING existe na tela (${maiusculos.length} lugar(es))`);
+  const desprotegidos = maiusculos.filter((m) => {
+    const antes = fonte.slice(Math.max(0, m.index - 900), m.index);
+    return !/SISTEMA_ATIVO\s*!==\s*"B"/.test(antes) && !/SISTEMA_ATIVO\s*===\s*"B"/.test(antes);
+  });
+  igual(desprotegidos.length, 0,
+    "TODO rótulo RATING da tela do atleta está dentro de uma ramificação por sistema");
+
+  // (b) os três lugares nomeados, cada um com a sua ramificação
+  ok(/SISTEMA_ATIVO !== "B" && \([\s\S]{0,400}?>RATING<\/div>/.test(fonte),
+    "a caixa RATING da tela de aterrissagem SAI em circuito de pontos");
+  ok(/SISTEMA_ATIVO === "B" \? \(eu\.saldoTemp \|\| 0\) : eu\.rating/.test(fonte),
+    "no perfil, a caixa mostra pontos em circuito de pontos");
+  ok(/SISTEMA_ATIVO === "B"[\s\S]{0,200}?saldoTemp \|\| 0\} pts/.test(fonte),
+    "e no ranking, a linha mostra pts em vez de Rating");
+  ok(/SISTEMA_ATIVO === "B" \? \(saldo \?\? 0\) : rating/.test(fonte),
+    "e o cartão que o atleta COMPARTILHA também — esse sai do app, vai para o WhatsApp");
+
+  // (c) e a prop que o cartão precisa para isso não pode desaparecer: sem ela,
+  // `saldo` é ReferenceError e a tela QUEBRA em circuito de pontos. Foi um erro
+  // meu nesta mesma fatia — o build não avisa, porque é JavaScript.
+  ok(/function AtletaCard\(\{[^}]*\bsaldo\b/.test(fonte),
+    "o AtletaCard declara a prop `saldo` (sem ela, a tela quebra em circuito de pontos)");
+  ok(/saldo=\{athlete\.saldoTemp/.test(fonte),
+    "e quem o invoca passa essa prop");
+
+  // As exibições de rating do painel do ADMIN ficam de fora de propósito: são
+  // outra plateia e estão registradas no ROADMAP 0.6.26, junto do gate de rating
+  // obrigatório para federado e da ordenação por rating em circuito de pontos.
 }
 
 process.exit(placar("Participar de outro circuito"));

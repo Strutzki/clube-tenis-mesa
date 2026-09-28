@@ -355,9 +355,21 @@ Deno.serve(async (req) => {
         if (idade === null) {
           return jsonResponse({ sucesso: false, erro: "data_nascimento_obrigatoria" }, 400);
         }
+        // Data absurda tambem e recusa. Nao e preciosismo: com a data obrigatoria, o
+        // proximo movimento de quem quer entrar sem responsavel e MENTIR. Mentir com
+        // data plausivel (1990) e indetectavel em qualquer fluxo autodeclarado e nao
+        // tem conserto. Mentir com data absurda TEM: sem esta linha, "1850" da idade
+        // ~176, que nao e `< 18`, e o menor passaria como adulto.
         if (idade < 0 || idade > 120) {
           return jsonResponse({ sucesso: false, erro: "data_nascimento_invalida" }, 400);
         }
+        // ⚠️ NAO reescreva a linha abaixo como `idade !== null && idade < 18`.
+        // Parece limpeza e e o oposto: hoje `null < 18` e `true` em JavaScript (null
+        // vira 0), entao mesmo se a guarda de cima cair o caso nulo continua caindo
+        // aqui e cobrando responsavel. Ou seja, o fail-closed tem DUAS camadas, e a
+        // segunda e por coercao de tipo, nao por desenho. Acrescentar o `!== null`
+        // transformaria idade desconhecida em liberacao silenciosa.
+        // (Observacao do Guardiao Juridico, 27/09/2026.)
         if (idade < 18) {
           if (!String(p.responsavelNome ?? "").trim() || !String(p.responsavelCpf ?? "").trim()) {
             return jsonResponse({ sucesso: false, erro: "responsavel_obrigatorio" }, 400);

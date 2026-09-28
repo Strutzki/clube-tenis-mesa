@@ -202,6 +202,50 @@ organizador" da Onda 0.10.
   re-aceite** — que é a máquina que a Onda 0.10.15 construiu. Não dá para deixar
   como está: é o único prazo do app que custa a vaga do atleta.
 
+- **0.6.21 — ✅ RESOLVIDO em 27/09/2026 (no fonte).** *"Participar de outro
+  circuito" gravava aceite de um regulamento que o atleta nunca viu.*
+  Achado pelo Juliano em 27/09/2026, testando a inscrição, ao perguntar: *"como vou
+  saber se é o regulamento correto?"*. O fluxo tinha três telas — identificação,
+  CPF, pronto — e **nenhuma mencionava regulamento**; o `login-atleta` gravava
+  `aceite_regulamento: true` com a versão certa do circuito. Recibo de
+  consentimento apontando para um texto que o atleta nunca abriu. E a rede do
+  re-aceite **não pegava**, porque a versão gravada já era a do circuito: não havia
+  divergência para o app detectar.
+  Ficou urgente com a **decisão do Juliano de criar o 2º circuito por PONTOS**
+  (caminho 1 da 0.6.22): um atleta vindo do BH (rating) entraria "aceitando" um
+  regulamento com pontuação, pareamento e encerramento diferentes.
+  **Conserto:** a tela mostra o regulamento do circuito ALVO, com o sistema dele,
+  e exige o aceite antes do PIN; o servidor passou a exigir que o atleta
+  **declare** qual versão aceitou e compara com a do circuito (molde do
+  `ACEITAR_REGULAMENTO`), recusando divergência. **De carona, a brecha do menor de
+  idade:** o responsável legal era exigido só pela tela — o servidor aceitava um
+  menor sem responsável se o pedido viesse sem os campos. Agora é o servidor que
+  exige.
+  **38 asserções rodando o `login-atleta` de verdade** — é a primeira vez que essa
+  função é executada pela bateria — mais 6 checagens de fonte na tela. 8 testes de
+  mutação, 8 vermelhos.
+
+- **0.6.22 — Decisão tomada em 27/09/2026: o 2º circuito será de PONTOS, e será um
+  circuito NOVO.** Não é o BH mudando de sistema.
+  A pergunta do Juliano foi se o BH poderia virar pontos na próxima temporada. Não
+  pode, hoje, e por dois motivos que valem ficar escritos:
+  1. **O sistema do BH está cravado no motor**: `getSistema` faz
+     `if (circuitoId === bh) return "A"` e nem lê a coluna `circuitos.sistema`.
+  2. **Não existe ação para trocar o sistema** de circuito nenhum — ele é definido
+     só no `CRIAR_CIRCUITO`.
+  **E mudar a coluna na mão seria o pior cenário:** o app lê a coluna
+  (`setSistemaAtivo`) e passaria a mostrar pontos — selo, desempates do ranking,
+  regulamento `vB-01` — enquanto o motor continuaria calculando **rating**. Tela e
+  motor discordando.
+  O que o caminho 2 (o BH virar pontos) exigiria, se um dia for a decisão: ação
+  nova para trocar o sistema, só entre temporadas e com confirmação-por-nome;
+  tirar a linha cravada; um regulamento (o `vB-01` não descreve o BH — sem torneio
+  de encerramento, entrada diferente) e re-aceite dos 14; e duas decisões de dado:
+  **`saldo_temp` muda de significado** (no A acumula variação de rating; no B são
+  pontos, 2/1) e **o rating congela** (no B o motor nunca escreve rating), com o
+  histórico de posições das temporadas antigas calculado por outro critério. O
+  pareamento também muda: rating por proximidade no A, sorteio ou grupos no B.
+
 - **0.6.17 — O escopo por recurso do comprovante de W.O. é derrotável.** ⛔ *bloqueia
   nomear o primeiro organizador* — achado do Guardião de Segurança em 27/09/2026,
   na revisão do 0.6.4.

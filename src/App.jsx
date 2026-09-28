@@ -1783,8 +1783,18 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
 // "B" => textos do modelo de pontos (regulamento vB-01, sem rating).
 // ── PARTICIPAR — atleta EXISTENTE entra num 2º circuito (reusa o cadastro nacional) ──
 // 2 fases: (1) telefone + PIN; (2) se o servidor pedir, coleta CPF (backfill) e reenvia.
-function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFechar }) {
+function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFechar, circ }) {
   const [fase, setFase] = useState("auth"); // auth | cpf | ok
+  // Regulamento do circuito ALVO — não o do circuito em que o atleta já está.
+  // É o ponto do conserto de 27/09/2026: quem vem do BH (rating) para um circuito
+  // de PONTOS estava entrando registrado como tendo aceitado um regulamento que
+  // nunca viu, com pontuação, pareamento e encerramento diferentes.
+  // `trim` para casar com o servidor, que apara antes de comparar.
+  const versaoReg = String((circ && circ.regulamento_versao) || "").trim();
+  const sistemaCirc = (circ && circ.sistema) === "B" ? "B" : "A";
+  const semVersao = !versaoReg; // fail-closed na tela, igual ao servidor
+  const [verReg, setVerReg] = useState(false);
+  const [aceiteReg, setAceiteReg] = useState(false);
   const [tel, setTel] = useState(telefoneInicial);
   const [pin, setPin] = useState("");
   const [cpf, setCpf] = useState("");
@@ -1816,6 +1826,10 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
     if (s.includes("cpf_conflito")) return "Esse CPF já está em outro cadastro. Fale com o admin.";
     if (s.includes("cpf_invalido")) return "CPF inválido — confira os números.";
     if (s.includes("inscricoes_fechadas")) return "As inscrições desse circuito fecharam.";
+    if (s.includes("aceite_regulamento_obrigatorio") || s.includes("versao_regulamento_obrigatoria")) return "Confirme que leu e aceita o regulamento deste circuito.";
+    if (s.includes("versao_regulamento_divergente")) return "O regulamento deste circuito mudou enquanto você lia. Volte e abra de novo para ver a versão em vigor.";
+    if (s.includes("versao_regulamento_indisponivel")) return "Este circuito ainda não tem o regulamento definido. Fale com o organizador.";
+    if (s.includes("responsavel_obrigatorio")) return "Para menor de 18 anos, o nome e o CPF do responsável legal são obrigatórios.";
     if (s.includes("circuito")) return "Circuito indisponível.";
     return "Não foi possível concluir. Tente de novo.";
   }
@@ -1824,7 +1838,10 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
     if (enviando) return;
     setErro(""); setEnviando(true);
     try {
-      const payload = { telefone: tel.replace(/\D/g,""), pin, circuitoId };
+      // O atleta DECLARA qual versão está aceitando; o servidor compara com a do
+      // circuito e recusa se divergir (tela velha, ou carimbo trocado no meio).
+      const payload = { telefone: tel.replace(/\D/g,""), pin, circuitoId,
+        aceiteRegulamento: true, versaoRegulamento: versaoReg };
       if (comCpf) {
         payload.cpf = cpf.replace(/\D/g,"");
         payload.cpfConsent = true;
@@ -1841,6 +1858,9 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
       setErro(traduz(s));
     }
   }
+
+  // Regulamento do circuito ALVO, com o sistema dele — é o que o atleta vai jogar.
+  if (verReg) return <RegulamentoView onBack={() => setVerReg(false)} sistema={sistemaCirc} circuitoNome={circuitoNome} versao={versaoReg} />;
 
   if (fase === "ok") return (
     <div style={box}><div style={{...card, display:"flex", flexDirection:"column", justifyContent:"center", textAlign:"center"}}>
@@ -1861,12 +1881,36 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
       </div>
 
       {fase === "auth" && <>
+        {/* O REGULAMENTO DESTE circuito, antes do PIN. Cada circuito tem o seu, e
+            pode ser de outro sistema: o do BH é de rating, um circuito de pontos
+            tem pontuação, pareamento e encerramento diferentes. Sem esta tela, o
+            atleta era registrado aceitando um texto que nunca abriu. */}
+        <div style={{background:T.verdeCard,border:`1px solid ${semVersao?"rgba(194,90,69,0.5)":"rgba(255,255,255,0.1)"}`,borderRadius:12,padding:13,marginTop:14}}>
+          <div style={{fontSize:11,fontFamily:T.mono,letterSpacing:1,textTransform:"uppercase",color:T.cinza,marginBottom:6}}>Regulamento deste circuito</div>
+          {semVersao ? (
+            <div style={{fontSize:12,color:"#f8c4b4",lineHeight:1.6}}>Este circuito ainda não tem o regulamento definido, então a participação não pode ser confirmada. Fale com o organizador.</div>
+          ) : (
+            <>
+              <div style={{fontSize:12,color:"rgba(240,234,224,0.85)",lineHeight:1.6,marginBottom:10}}>
+                Este circuito é por <strong style={{color:T.offwhite}}>{sistemaCirc === "B" ? "pontos" : "rating"}</strong> — {sistemaCirc === "B" ? "vitória vale 2, derrota 1, sem rating" : "rating tipo CBTM, que sobe e desce"}. {sistemaCirc === "B" ? "As regras são diferentes das do circuito de rating." : ""} Leia antes de confirmar.
+              </div>
+              <button onClick={()=>setVerReg(true)} style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,padding:11,fontSize:13,fontWeight:700,cursor:"pointer"}}>📋 Ler o regulamento ({versaoReg})</button>
+              <div onClick={()=>setAceiteReg(!aceiteReg)} style={{display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer",marginTop:12}}>
+                <div style={{width:20,height:20,borderRadius:5,border:`1px solid ${aceiteReg?T.terracota:"rgba(255,255,255,0.3)"}`,background:aceiteReg?T.terracota:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{aceiteReg && <span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}</div>
+                <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>Li e aceito o regulamento <span style={{fontFamily:T.mono,color:T.offwhite}}>{versaoReg}</span> do {circuitoNome}.</div>
+              </div>
+            </>
+          )}
+        </div>
         <label style={label}>WhatsApp (com DDD)</label>
         <input style={input} value={tel} onChange={e=>setTel(e.target.value)} placeholder="31999999999" type="tel"/>
         <label style={label}>Seu PIN</label>
         <input style={input} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="••••" type="password" inputMode="numeric"/>
         {erro && <div style={{fontSize:12,color:"#f8c4b4",marginTop:10}}>{erro}</div>}
-        <button style={btn(!tel.trim()||pin.length<4||enviando)} disabled={!tel.trim()||pin.length<4||enviando} onClick={()=>enviar(false)}>{enviando?"Confirmando…":"Participar →"}</button>
+        {(() => { const dis = semVersao||!aceiteReg||!tel.trim()||pin.length<4||enviando; return (
+          <button style={btn(dis)} disabled={dis} onClick={()=>enviar(false)}>{enviando?"Confirmando…":"Participar →"}</button>
+        ); })()}
+        {!semVersao && !aceiteReg && <div style={{fontSize:11,color:T.cinza,marginTop:8,textAlign:"center"}}>Confirme o aceite do regulamento para continuar.</div>}
       </>}
 
       {fase === "cpf" && <>
@@ -1902,12 +1946,25 @@ function ParticiparOutroCircuito({ athlete }) {
   const [sel, setSel] = useState(null);
   useEffect(() => {
     let vivo = true;
-    db.getCircuitosAbertos()
-      .then(cs => { if (vivo) setLista((Array.isArray(cs) ? cs : []).filter(c => c.slug !== "bh")); })
+    // Traz a VERSÃO do regulamento junto, mesmo padrão do fluxo de inscrição:
+    // sem ela não há como mostrar ao atleta o que ele está aceitando, e o
+    // servidor passou a recusar participação sem aceite declarado.
+    Promise.allSettled([db.getCircuitosAbertos(), db.getVersoesRegulamento()])
+      .then(([rAbertos, rVersoes]) => {
+        if (!vivo) return;
+        const cs = rAbertos.status === "fulfilled" && Array.isArray(rAbertos.value) ? rAbertos.value : [];
+        let arr = cs.filter(c => c.slug !== "bh");
+        const versoes = rVersoes.status === "fulfilled" ? rVersoes.value : null;
+        if (Array.isArray(versoes)) {
+          const porId = Object.fromEntries(versoes.map(v => [v.id, v.regulamento_versao]));
+          arr = arr.map(c => ({ ...c, regulamento_versao: porId[c.id] || null }));
+        }
+        setLista(arr);
+      })
       .catch(() => { if (vivo) setLista([]); });
     return () => { vivo = false; };
   }, []);
-  if (sel) return <ParticiparFlow circuitoId={sel.id} circuitoNome={sel.nome_exibicao || sel.nome_circuito} telefoneInicial={athlete?.telefone || ""} onFechar={() => setSel(null)} />;
+  if (sel) return <ParticiparFlow circuitoId={sel.id} circuitoNome={sel.nome_exibicao || sel.nome_circuito} telefoneInicial={athlete?.telefone || ""} onFechar={() => setSel(null)} circ={sel} />;
   if (!lista || lista.length === 0) return null; // nada a oferecer
   return (
     <div style={{background:T.verdeCard,border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:16,margin:"0 0 14px"}}>

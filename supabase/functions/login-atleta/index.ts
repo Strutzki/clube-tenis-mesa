@@ -277,6 +277,30 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: false, erro: "versao_regulamento_indisponivel" }, 409);
       }
 
+      // ACEITE DE VERDADE (27/09/2026). Até aqui esta função gravava
+      // `aceite_regulamento: true` sem que o atleta tivesse visto regulamento
+      // nenhum: o fluxo "Participar de outro circuito" tinha três telas
+      // (identificação, CPF, pronto) e NENHUMA mencionava regulamento. O recibo
+      // apontava para a versão certa e para um texto que o atleta nunca abriu.
+      // Isso importa mais agora que existe circuito de PONTOS: quem vem do BH
+      // (rating) entraria "aceitando" um regulamento com pontuação, pareamento e
+      // encerramento diferentes.
+      //
+      // O molde é o do ACEITAR_REGULAMENTO: o atleta DECLARA qual versão está
+      // aceitando, e o servidor compara com a do circuito. Se divergir — tela
+      // velha aberta, ou carimbo trocado no meio do caminho — recusa, em vez de
+      // registrar consentimento de um texto que não é o que está valendo.
+      if (p.aceiteRegulamento !== true) {
+        return jsonResponse({ sucesso: false, erro: "aceite_regulamento_obrigatorio" }, 400);
+      }
+      const versaoDeclarada = String(p.versaoRegulamento ?? "").trim();
+      if (!versaoDeclarada) {
+        return jsonResponse({ sucesso: false, erro: "versao_regulamento_obrigatoria" }, 400);
+      }
+      if (versaoDeclarada !== versaoDoCircuito) {
+        return jsonResponse({ sucesso: false, erro: "versao_regulamento_divergente" }, 409);
+      }
+
       // 3) Já é membro deste circuito?
       const { data: mem } = await supabase.from("circuito_atletas")
         .select("atleta_id").eq("circuito_id", circuitoId).eq("atleta_id", a.id).maybeSingle();
@@ -298,6 +322,29 @@ Deno.serve(async (req) => {
         const ex = Array.isArray(dd) ? dd[0] : dd;
         if (ex?.existe && ex?.atleta_id && ex.atleta_id !== a.id) {
           return jsonResponse({ sucesso: false, erro: "cpf_conflito" }, 409); // CPF é de outro cadastro
+        }
+        // MENOR DE IDADE (27/09/2026). O campo do responsável era opcional aqui:
+        // a única trava era a tela, que desabilita o botão sem nome e CPF válido
+        // do responsável. Trava de um lado só contraria a regra da casa — o
+        // portão é o servidor. Agora, se a data de nascimento informada disser
+        // menos de 18, responsável passa a ser obrigatório.
+        const nasc = String(p.dataNascimento ?? "").trim();
+        if (nasc) {
+          const dob = new Date(nasc + "T00:00:00Z");
+          if (!isNaN(dob.getTime())) {
+            const hoje = new Date();
+            let idade = hoje.getUTCFullYear() - dob.getUTCFullYear();
+            const dm = hoje.getUTCMonth() - dob.getUTCMonth();
+            if (dm < 0 || (dm === 0 && hoje.getUTCDate() < dob.getUTCDate())) idade--;
+            if (idade < 18) {
+              if (!String(p.responsavelNome ?? "").trim()) {
+                return jsonResponse({ sucesso: false, erro: "responsavel_obrigatorio" }, 400);
+              }
+              if (!String(p.responsavelCpf ?? "").trim()) {
+                return jsonResponse({ sucesso: false, erro: "responsavel_obrigatorio" }, 400);
+              }
+            }
+          }
         }
         let respCpfHash: string | null = null;
         if (p.responsavelCpf) {

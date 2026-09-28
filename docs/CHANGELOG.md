@@ -5,6 +5,57 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-09-27 — Ciência do regulamento ao entrar num 2º circuito (0.6.21)
+
+**A SUBIR — ainda não publicado** (falta o de acordo do Juliano): `login-atleta`
+**v9 → v10**, front por `git push`.
+**Ordem obrigatória: o motor primeiro, o app depois.** O servidor passou a
+**recusar** participação sem aceite declarado; se o app subir antes, o botão
+"Participar" do atleta responde erro. Nenhuma migração, nenhuma coluna nova.
+
+**O que muda, e por que agora.** O Juliano achou isto testando a inscrição, ao
+perguntar *"como vou saber se é o regulamento correto?"*. O fluxo "Participar de
+outro circuito" tinha três telas — identificação, CPF, pronto — e **nenhuma
+mencionava regulamento**, enquanto o servidor gravava `aceite_regulamento: true`
+com a versão do circuito. Recibo de consentimento apontando para um texto que o
+atleta nunca abriu; e o re-aceite não pegava, porque a versão gravada já era a
+correta.
+
+Ficou urgente com a decisão dele de criar o **2º circuito por pontos**: quem vem
+do BH (rating) entraria "aceitando" um regulamento com pontuação, pareamento e
+encerramento diferentes.
+
+- **Tela:** o fluxo mostra o regulamento do circuito **alvo**, com o sistema dele
+  ("este circuito é por pontos — vitória vale 2, derrota 1, sem rating"), e o
+  botão só destrava com o aceite marcado. Sem versão carimbada no circuito, a tela
+  nem oferece confirmar — fail-closed nas duas pontas.
+- **Servidor:** o atleta passa a **declarar** qual versão está aceitando, e o
+  servidor compara com a do circuito. Divergência (tela velha aberta, carimbo
+  trocado no meio do caminho) é recusada em vez de virar consentimento de um texto
+  que não é o vigente. É o molde do `ACEITAR_REGULAMENTO`.
+- **De carona, uma brecha que ninguém tinha visto:** o responsável legal de menor
+  de 18 era exigido **só pela tela**. O servidor aceitava um menor sem responsável
+  se o pedido viesse sem os campos. Agora o servidor exige nome e CPF do
+  responsável, e recusa antes de gravar qualquer dado pessoal.
+
+**Bateria: 583 → 627 asserções, 0 falhas.** 38 novas rodando o `login-atleta` **de
+verdade** — é a **primeira vez** que essa função é executada pela bateria, que
+passou de três para **quatro** Edge Functions — mais 6 checagens de fonte na tela.
+**8 testes de mutação, 8 vermelhos.**
+
+**Uma asserção mirou curto e a própria bateria pegou:** uma das checagens de fonte
+olhava uma janela fixa de 9.000 caracteres a partir do início da função, e a
+condição do botão estava a 9.524. Trocada por uma janela ancorada na função
+inteira. Vale o registro: número fixo em asserção de fonte é armadilha.
+
+**Decisão registrada junto (ROADMAP 0.6.22):** o 2º circuito será **novo** e de
+pontos, não o BH mudando de sistema. O sistema do BH está **cravado no motor**
+(`getSistema` devolve "A" sem ler a coluna) e não existe ação para trocá-lo —
+mexer na coluna na mão faria a tela mostrar pontos enquanto o motor calcula
+rating.
+
+---
+
 ### 2026-09-27 — Onda 0.6, fatia "o organizador consegue trabalhar" (5 itens)
 
 **NO AR desde 27/09/2026, 20:17–20:46 (de acordo do Juliano: "pode")**:

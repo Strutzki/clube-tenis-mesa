@@ -38,7 +38,7 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **583 asserções** (conferido ao vivo em 27/09/2026, somando as 11
+Hoje são **627 asserções** (conferido ao vivo em 27/09/2026, somando as 12
 seções que a bateria imprime). **Não cite este número de memória** — ele mudou em
 sete ondas seguidas; rode `npm run teste` e leia. O `atualizar.sh` roda isso
 antes de publicar e se recusa a subir com teste vermelho. O `testes/README.md`
@@ -46,8 +46,9 @@ traz o mesmo número, e desde 27/09/2026 a tabela de arquivos dele está complet
 (os 15) — era a dívida antiga registrada em
 `docs/curadoria-indice-app-tenis-de-mesa.md`.
 
-Ela carrega **três Edge Functions de verdade** — `admin-action`,
-`athlete-action` e `comprovante-url`, os mesmos arquivos que vão para o ar — e
+Ela carrega **quatro Edge Functions de verdade** — `admin-action`,
+`athlete-action`, `comprovante-url` e `login-atleta`, os mesmos arquivos que vão
+para o ar — e
 roda contra um banco em memória. Detalhe em `testes/README.md`.
 
 O banco em memória **projeta colunas** desde 27/09/2026: se o código pede
@@ -307,12 +308,12 @@ gravar rating num circuito que não tem rating.
 - **`atualizar.sh` publica tudo que estiver na pasta.** Desde 07/09/2026 ele
   lista os arquivos e espera você digitar `S` antes de mandar — leia a lista:
   arquivo temporário esquecido ali viaja junto.
-- **A bateria executa três das funções, e nenhum pedaço do app.**
+- **A bateria executa quatro das funções, e nenhum pedaço do app.**
   Reconferido em 27/09/2026 rodando `grep` nos testes, não de memória. Quem
   carrega e executa código de verdade é `carregarFuncao(nome, banco)`
   (`testes/carrega-motor.mjs`) — **é esse o nome**, não `carregarMotor`, que não
   existe. `montarMotor({ funcao: "..." })` escolhe qual carregar (padrão:
-  `admin-action`). Ela é chamada para três funções:
+  `admin-action`). Ela é chamada para quatro funções:
   - **`admin-action`** — é o grosso da bateria, e a razão de a frase antiga
     dizer "a bateria cobre o motor";
   - **`athlete-action`** — e isto **cresceu** em 19/09: já não é só a guarda de
@@ -324,9 +325,18 @@ gravar rating num circuito que não tem rating.
     em `testes/onda-06.mjs` rodando a função de verdade, com um `storage` de
     mentira (`testes/banco-falso.mjs`) que registra o que foi assinado —
     inclusive as asserções de que **nada é assinado** quando a autorização
-    recusa, que é a ordem que importa.
+    recusa, que é a ordem que importa;
+  - **`login-atleta`** — novo em 27/09/2026. São **38 asserções** em
+    `testes/participar-outro-circuito.mjs` rodando a função de verdade, cobrindo o
+    `PARTICIPAR` (entrada de atleta existente num 2º circuito): o aceite do
+    regulamento declarado pelo atleta, a comparação com a versão do circuito, e o
+    responsável legal obrigatório para menor de 18. Precisa de duas funções de
+    banco no cenário (`get_cpf_pepper` e `dedup_por_cpf_hash`), que o banco em
+    memória serve pelo parâmetro `funcoes`.
 
-  **`src/App.jsx` e `login-atleta` não são executados por teste nenhum.** O que
+  **`src/App.jsx` não é executado por teste nenhum** (o `login-atleta` passou a
+  ser, em 27/09/2026, mas só no `PARTICIPAR` — o `LOGIN` e o `SESSAO` seguem sem
+  asserção). O que
   existe para eles são checagens por regex no texto fonte (`fonte.indexOf(...)`),
   que pegam ausência/presença de um trecho — **não** comportamento em runtime. O
   portão dos dois continua sendo "compila?" mais leitura de texto.

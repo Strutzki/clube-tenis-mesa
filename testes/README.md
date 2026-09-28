@@ -4,14 +4,14 @@
 npm run teste
 ```
 
-Hoje são 583 asserções (27/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 627 asserções (27/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
 
 A bateria **carrega e executa as Edge Functions de verdade**: os mesmos arquivos
-que o `npm run motor:publicar` sobe. Hoje são três — `admin-action` (o grosso),
-`athlete-action` e `comprovante-url` — e `montarMotor({ funcao: "..." })` escolhe
+que o `npm run motor:publicar` sobe. Hoje são quatro — `admin-action` (o grosso),
+`athlete-action`, `comprovante-url` e `login-atleta` — e `montarMotor({ funcao: "..." })` escolhe
 qual. Não há cópia da lógica dentro do teste.
 
 Isso importa porque o harness anterior
@@ -27,6 +27,7 @@ que é útil; não prova nada sobre o código que está no ar.
 | `sistema-b.mjs` | Sistema B: pontos V=2/D=1, W.O. que não anula, bye do ímpar, e a garantia de que um circuito de pontos **nunca** escreve rating |
 | `isolamento.mjs` | Operar um circuito não toca em outro; escopo do organizador; exclusão global × por circuito; virada de temporada; freio do PIN |
 | `permissoes.mjs` | A allowlist do organizador, o portão do financeiro, e o escopo por circuito do `LISTAR_TELEFONES` (inclusive: a ação devolve só `id` e `telefone`) |
+| `participar-outro-circuito.mjs` | Atleta existente entrando num 2º circuito (`PARTICIPAR` do `login-atleta`, rodando de verdade): aceite do regulamento declarado, versão conferida contra a do circuito, e responsável legal obrigatório para menor de 18 |
 | `onda-06.mjs` | Onda 0.6: desarquivar (e a prova de que o desarquivado volta a ser pareado), as duas guardas de LGPD, a recusa do BH na leitura da cobrança, e o comprovante de W.O. do organizador — este roda a função `comprovante-url` |
 | `mensagens.mjs` | Registro de mensagens enviadas: o motor não pode responder "sucesso" com a gravação falhando |
 | `contador-mensagens.mjs` | O contador de pendentes e os textos da barra de aviso do admin (checagem por regex no fonte do app) |
@@ -85,6 +86,15 @@ As mutações já verificadas nesta bateria:
 | `comprovante-url` sem conferir o vínculo de organizador | 2 vermelhas |
 | `comprovante-url` assinando caminho diferente do pedido | 1 vermelha |
 | `NOMEAR_ORGANIZADOR`/`REMOVER_ORGANIZADOR` concedidas ao organizador | 2 vermelhas — e revelou que `REMOVER_ORGANIZADOR` responderia **200**: um organizador removeria outro |
+| **Participar de outro circuito — 27/09/2026 (8 sabotagens, 8 vermelhas)** | |
+| cai a exigência do aceite do regulamento | 5 vermelhas |
+| "aceite" passa a bastar qualquer valor verdadeiro em vez de `true` | 1 vermelha |
+| cai a exigência de o atleta declarar QUAL versão aceitou | 1 vermelha |
+| cai a comparação entre a versão declarada e a do circuito | 4 vermelhas |
+| circuito sem regulamento carimbado passa a aceitar gente | 1 vermelha |
+| cai a guarda do menor de idade inteira | 6 vermelhas |
+| responsável: cai a exigência do nome | 1 vermelha |
+| responsável: cai a exigência do CPF | 1 vermelha |
 | uma asserção qualquer do `regulamento-por-circuito.mjs` | **prova do portão**: `npm run teste` agora sai com código **1**; antes saía **0** |
 
 ## O portão: todo arquivo termina em `process.exit(placar(...))`
@@ -109,8 +119,9 @@ regulamento. Corrigido, e provado sabotando uma asserção do regulamento: o
   registra que um trecho de texto está lá — **não** prova comportamento. Para
   **texto de tela** isso é o certo, porque a afirmação é literalmente "esta frase
   está aqui"; para regra, não serve.
-- `login-atleta` e `circuito-dados` — o carregador já serve para elas; faltam as
-  asserções. O `athlete-action` **já é executado** (8 cenários: os 7 do
+- `circuito-dados` — o carregador já serve para ela; faltam as asserções. E o
+  `login-atleta` só é coberto no `PARTICIPAR`: o `LOGIN`, o `SESSAO` e o
+  `RENOVAR` seguem sem asserção nenhuma. O `athlete-action` **já é executado** (8 cenários: os 7 do
   `ACEITAR_REGULAMENTO` mais o do `INSCREVER`), e o `comprovante-url` também
   (16 asserções, desde 27/09/2026).
 - Pareamento e geração de jogos (`INICIAR_ETAPA`, `AVANCAR_RODADA`).

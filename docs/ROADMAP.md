@@ -182,7 +182,24 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   atletas viram como **não-pagos**. Desenho proposto: devolver a ação com filtro
   **por campo** — calendário livre, valores e chave PIX só com o portão ligado.
 
-- **0.6.15 — A janela dos 7 dias está invertida, e isso já atinge o atleta hoje.**
+- **0.6.15 — ✅ RESOLVIDO em 28/09/2026 (no fonte).** *A janela dos 7 dias estava
+  invertida, e isso atingia o atleta todo dia.* Decisão do Juliano: *"arrumar esses dois
+  pontos"*.
+  **A causa de fundo eram TRÊS contas separadas** — o card do admin, a mensagem de
+  renovação e o lembrete —, e eram três justamente porque nada as obrigava a concordar.
+  Agora é **uma** função, `janelaRenovacao()`, com a constante `DIAS_PRIORIDADE_RENOVACAO`
+  num lugar só. A janela **abre** em `início − 7` e **fecha no início**; as vagas só
+  abrem depois disso, como o Cap. 13 manda.
+  O que mudou na prática: o card deixou de dizer "prazo encerrado" no dia em que a
+  prioridade **começa**; a mensagem de renovação deixou de mandar *"confirme até
+  {início−7}"* e passou a dizer *"a sua prioridade vale até {início}"*; e o lembrete
+  "dos últimos 3 dias", que disparava entre `início−10` e `início−7` — **antes de a
+  janela abrir** —, passou a disparar nos 3 dias antes do fim.
+  **26 asserções, e são de um tipo que o projeto não tinha:** `App.jsx` não é executado
+  por teste nenhum, mas `janelaRenovacao` é função **pura**, então ela é extraída do
+  fonte e **executada** com datas reais. Conta de data só se protege assim.
+  **8 mutações, 8 vermelhas** — cada uma reintroduz uma metade do defeito original.
+  *Descrição original, mantida como registro:*
   ⬅️ *achado de 27/09/2026, na revisão do 0.6.11* — **decisão do Juliano, não minha.**
   O Cap. 13 (v03-12 §prioridade de renovação, idem v03-13, e é o texto que o
   atleta lê na tela) diz: *"nos 7 dias anteriores ao início, os atletas do
@@ -329,7 +346,19 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
      (`LIBERAR_NAO_RENOVANTES` não existe), mas a tela e as mensagens já falam de prazo
      — inclusive para atleta de circuito B, cujo regulamento não menciona prioridade.
 
-- **0.6.24 — ⛔ O `INSCREVER` não tem guarda de menor de idade NENHUMA.** Achado
+- **0.6.24 — ✅ RESOLVIDO em 28/09/2026 (no fonte).** *O `INSCREVER` não tinha guarda de
+  menor de idade nenhuma.* Decisão do Juliano: *"arrumar esses dois pontos"*.
+  A porta da frente passou a exigir, **no servidor**: data de nascimento obrigatória
+  (fail-closed — idade que não dá para calcular é recusa), data absurda recusada, e nome
+  **e** CPF do responsável para menor de 18. Mesmo desenho do `PARTICIPAR`, inclusive o
+  comentário que proíbe reescrever `idade < 18` como `idade !== null && idade < 18`,
+  que pareceria limpeza e transformaria idade desconhecida em liberação silenciosa.
+  As três recusas entraram na lista de mensagens que o app mostra inteiras ao atleta,
+  porque cada uma diz o que ele precisa fazer.
+  **21 asserções rodando o `athlete-action` de verdade**, incluindo a fronteira dos 18
+  (véspera e dia seguinte) e a prova de que a recusa **não grava nada** — nem o atleta,
+  nem o documento. **6 mutações, 6 vermelhas.**
+  *Descrição original, mantida como registro:* Achado
   independente do Guardião Jurídico e do de Segurança em 27/09/2026, e os dois o
   classificaram acima do que eles mesmos vieram cobrar. A comparação é o que dói:
   **a porta de serviço ficou mais rígida que a porta da frente.**

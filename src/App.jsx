@@ -1636,6 +1636,45 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
 // Aviso honesto sobre O QUE a inscrição significa AGORA, conforme a fase do circuito
 // (Cap. 11 do regulamento). Toda inscrição passa por aprovação do admin e cai na fila;
 // aqui a gente só deixa claro em qual temporada ela provavelmente vai valer.
+// ── A JANELA DE RENOVAÇÃO PRIORITÁRIA — uma conta só, para as três telas ─────
+// Cap. 13 do regulamento (v03-12:318 / v03-13:343, e o mesmo texto que o atleta lê):
+//   "nos 7 dias ANTERIORES ao início, os atletas do circuito atual e os aprovados
+//    aguardando vaga têm prioridade para renovar e garantir a vaga"
+//   "APÓS o prazo de prioridade, as vagas não confirmadas abrem para a fila de espera"
+//
+// Logo a janela vai de `início − 7` ATÉ `início`, e as vagas abrem a partir do INÍCIO.
+//
+// ⚠️ O app tratava `início − 7` como o FIM do prazo, em três lugares independentes —
+// o card do admin, a mensagem de renovação e o lembrete. Efeito prático: o atleta
+// recebia ZERO dos 7 dias de prioridade que o regulamento promete a ele, e o lembrete
+// "dos últimos 3 dias" disparava ANTES de a janela abrir. E o app se contradizia na
+// mesma tela: um texto dizia "a janela abre 7 dias antes" (certo) e o outro tratava a
+// mesma data como encerramento.
+// Achado pelo Guardião do Regulamento em 27/09/2026, corrigido por decisão do Juliano.
+// Três contas separadas eram o que permitia a divergência: agora é uma.
+const DIAS_PRIORIDADE_RENOVACAO = 7;
+function janelaRenovacao(dataInicioISO) {
+  if (!dataInicioISO) return null;
+  const inicio = new Date(String(dataInicioISO) + "T00:00:00");
+  if (isNaN(inicio.getTime())) return null;
+  const abre = new Date(inicio);
+  abre.setDate(abre.getDate() - DIAS_PRIORIDADE_RENOVACAO);
+  const agora = new Date();
+  const DIA = 1000 * 60 * 60 * 24;
+  return {
+    inicio,                                   // o dia em que a temporada começa
+    abre,                                     // início − 7: a janela ABRE
+    fecha: inicio,                            // o prazo é o próprio início
+    jaAbriu: agora >= abre,
+    aberta: agora >= abre && agora < inicio,  // dentro dos 7 dias de prioridade
+    encerrada: agora >= inicio,               // só aqui as vagas abrem para a fila
+    diasAteFechar: (inicio - agora) / DIA,    // quanto falta para o prazo
+    fechaTxt: inicio.toLocaleDateString("pt-BR"),
+    abreTxt: abre.toLocaleDateString("pt-BR"),
+    fechaISO: inicio.toISOString().slice(0, 10),
+  };
+}
+
 function avisoFaseInscricao(circ) {
   if (!circ || !circ.fase) return null;
   const num = circ.temporada_numero || 1;
@@ -3823,12 +3862,11 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
       // mostra o valor certo do atleta.
       if (!state.proximaAberta) return [];
       const rotulo = state.proximaRotulo ? `Temporada ${state.proximaRotulo}` : "próxima temporada";
-      let prazoTxt = "";
-      if (state.proximaDataInicio) {
-        const prazo = new Date(state.proximaDataInicio + "T00:00:00");
-        prazo.setDate(prazo.getDate() - 7);
-        prazoTxt = ` — confirme até *${fmtDate(prazo.toISOString().slice(0,10))}*`;
-      }
+      // O prazo é o INÍCIO da temporada, não 7 dias antes dele: a janela de
+      // prioridade ABRE em início−7 e vai ATÉ o início (Cap. 13). Antes esta linha
+      // mandava o atleta confirmar até o dia em que a prioridade dele começava.
+      const janRen = janelaRenovacao(state.proximaDataInicio);
+      const prazoTxt = janRen ? ` — a sua prioridade vale até *${fmtDate(janRen.fechaISO)}*` : "";
       const fmtR = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
       const cheioC = state.proximaValorCheio, finalC = state.proximaValorDesconto;
       const pctOff = (cheioC && finalC != null && cheioC > 0) ? Math.round((1 - finalC/cheioC)*100) : 0;
@@ -3850,12 +3888,15 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
       // Empurrão nos últimos 3 dias da janela de prioridade, só pra quem não
       // sinalizou renovação nem pagou a próxima.
       if (!state.proximaAberta || !state.proximaDataInicio) return [];
-      const prazo = new Date(state.proximaDataInicio + "T00:00:00");
-      prazo.setDate(prazo.getDate() - 7);
-      const diasAteEnc = (prazo - new Date()) / (1000*60*60*24);
+      // "Últimos 3 dias" agora são os 3 dias antes do INÍCIO — o fim de verdade da
+      // janela. Antes a conta partia de início−7, então o lembrete disparava entre
+      // início−10 e início−7: ANTES de a prioridade do atleta começar.
+      const janLem = janelaRenovacao(state.proximaDataInicio);
+      if (!janLem) return [];
+      const diasAteEnc = janLem.diasAteFechar;
       if (diasAteEnc > 3 || diasAteEnc < 0) return [];
       const rotulo = state.proximaRotulo ? `Temporada ${state.proximaRotulo}` : "próxima temporada";
-      const prazoStr = fmtDate(prazo.toISOString().slice(0,10));
+      const prazoStr = fmtDate(janLem.fechaISO);
       const fmtR = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
       const cheioC = state.proximaValorCheio, finalC = state.proximaValorDesconto;
       const pctOff = (cheioC && finalC != null && cheioC > 0) ? Math.round((1 - finalC/cheioC)*100) : 0;
@@ -5068,6 +5109,13 @@ const MSGS_ATLETA = new Set([
   // entre aspas daqui e trata como mensagem da lista. Já me pegou duas vezes.
   "Sua sessão expirou. Entre de novo para confirmar o aceite.",
   "Placar inválido.",
+  // Guarda de menor de idade no INSCREVER (27/09/2026). A porta da frente nao tinha
+  // nenhuma, e a tela era a unica trava — o servidor aceitava menor sem responsavel se
+  // o pedido viesse sem os campos. As tres frases abaixo sao recusas que o atleta tem
+  // de ler inteiras, porque cada uma diz o que ele precisa fazer.
+  "Informe a data de nascimento para concluir a inscrição.",
+  "Confira a data de nascimento: o ano informado não parece válido.",
+  "Para menor de 18 anos, o nome e o CPF do responsável legal são obrigatórios.",
   "Partida não encontrada.",
   "Esta partida já foi encerrada.",
   "Você não participa desta partida.",
@@ -8682,12 +8730,12 @@ function RenovacaoAdminPanel({ state, dispatch }) {
   const naoRenov = circuito.filter(a => !a.querRenovar && !pago(a));
   const pagos = circuito.filter(a => pago(a));
   const dataIni = state.proximaAberta ? state.proximaDataInicio : state.dataInicioTemporada;
-  let prazoTxt = null, prazoPassou = false;
-  if (dataIni) {
-    const prazo = new Date(dataIni+"T00:00:00"); prazo.setDate(prazo.getDate()-7);
-    prazoTxt = prazo.toLocaleDateString("pt-BR");
-    prazoPassou = new Date() >= prazo;
-  }
+  // Uma conta só, a mesma das duas mensagens. `prazoPassou` passou a significar
+  // "a janela FECHOU" (início), e não "a janela abriu" (início−7), que era o
+  // significado invertido que fazia o atleta perder os 7 dias de prioridade.
+  const jan = janelaRenovacao(dataIni);
+  const prazoTxt = jan ? jan.fechaTxt : null;
+  const prazoPassou = !!jan && jan.encerrada;
   return (
     <Card style={{marginTop:8,border:"1px solid rgba(167,139,250,0.28)"}}>
       <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>🔄 Renovação da temporada</div>

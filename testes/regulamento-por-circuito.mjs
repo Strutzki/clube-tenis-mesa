@@ -2006,6 +2006,212 @@ secao("A correção das rodadas fixas entra na v03-13 e NÃO reescreve a v03-12"
     "o documento da v03-12 continua com a redação original — é registro do que foi assinado");
 }
 
+secao("A janela de renovação prioritária — EXECUTANDO a conta, não lendo o texto");
+{
+  // Item 0.6.15. O Cap. 13 (v03-12:318 / v03-13:343, e o texto que o atleta lê) diz:
+  //   "nos 7 dias ANTERIORES ao início ... têm prioridade para renovar"
+  //   "APÓS o prazo de prioridade, as vagas não confirmadas abrem para a fila"
+  // Logo a janela vai de início−7 ATÉ o início. O app tratava início−7 como o FIM, em
+  // TRÊS contas separadas — e eram três justamente porque nada as obrigava a concordar.
+  // Efeito: o atleta recebia ZERO dos 7 dias, e o lembrete "dos últimos 3 dias"
+  // disparava ANTES de a janela abrir.
+  //
+  // ⚠️ E AQUI A BATERIA FAZ ALGO QUE NÃO FAZ EM NENHUM OUTRO PEDAÇO DO APP: `App.jsx`
+  // não é executado por teste nenhum, mas `janelaRenovacao` é uma função PURA — só
+  // depende de `Date`. Então ela é extraída do fonte e EXECUTADA aqui. Não é regex:
+  // são datas reais entrando e saindo. É o único jeito de proteger conta de data, que
+  // é exatamente onde o erro morava.
+  const inicioFn = bruto.indexOf("const DIAS_PRIORIDADE_RENOVACAO");
+  const fimFn = bruto.indexOf("function avisoFaseInscricao", inicioFn);
+  ok(inicioFn > 0 && fimFn > inicioFn, "a função da janela foi localizada no fonte");
+  const codigoJanela = bruto.slice(inicioFn, fimFn);
+  const janelaRenovacao = new Function(`${codigoJanela}; return janelaRenovacao;`)();
+
+  const emDias = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); };
+
+  // ── o formato da janela ───────────────────────────────────────────────────
+  {
+    const j = janelaRenovacao(emDias(30));
+    const diasEntre = (j.inicio - j.abre) / (1000*60*60*24);
+    igual(Math.round(diasEntre), 7, "a janela dura 7 dias: abre em início−7 e fecha no início");
+    igual(j.fecha.getTime(), j.inicio.getTime(), "o PRAZO é o próprio início — não 7 dias antes dele");
+  }
+
+  // ── o dia a dia, que é onde o erro se via ────────────────────────────────
+  {
+    const longe = janelaRenovacao(emDias(30));
+    ok(!longe.jaAbriu, "faltando 30 dias, a janela ainda NÃO abriu");
+    ok(!longe.aberta, "e não está aberta");
+    ok(!longe.encerrada, "nem encerrada");
+
+    const dentro = janelaRenovacao(emDias(3));
+    ok(dentro.jaAbriu && dentro.aberta, "faltando 3 dias para o início, a janela está ABERTA");
+    ok(!dentro.encerrada, "e o prazo NÃO passou — era exatamente aqui que o app dizia que tinha passado");
+
+    const vespera = janelaRenovacao(emDias(1));
+    ok(vespera.aberta && !vespera.encerrada, "na véspera do início, ainda dá tempo de renovar");
+
+    const comecou = janelaRenovacao(emDias(-1));
+    ok(comecou.encerrada, "depois de a temporada começar, a janela encerrou");
+    ok(!comecou.aberta, "e deixou de estar aberta — é só aqui que as vagas abrem para a fila");
+  }
+
+  // ── o lembrete dos "últimos 3 dias" ──────────────────────────────────────
+  {
+    const dispara = (d) => { const j = janelaRenovacao(emDias(d)); return j.diasAteFechar <= 3 && j.diasAteFechar >= 0; };
+    ok(!dispara(10), "o lembrete NÃO dispara faltando 10 dias — antes ele disparava justo aí, fora da janela");
+    ok(!dispara(7),  "nem faltando 7, que é quando a prioridade apenas COMEÇA");
+    ok(dispara(2),   "dispara faltando 2 dias para o prazo");
+    ok(!dispara(-1), "e não dispara depois que a temporada começou");
+  }
+
+  // ── entrada inválida não vira data mágica ────────────────────────────────
+  // `try/catch` de propósito: sem a guarda de data inválida, a função LANÇA
+  // (`toISOString` de Invalid Date é RangeError) e derruba o arquivo de teste inteiro
+  // antes de imprimir falha nenhuma. Sabotar a guarda parecia "verde" no meu aferidor
+  // de mutação por causa disso — o defeito era do aferidor. Capturando, a mesma
+  // sabotagem vira uma asserção vermelha limpa, que é o que se quer ler.
+  const janelaSegura = (entrada) => { try { return janelaRenovacao(entrada); } catch (e) { return `LANÇOU: ${e.message}`; } };
+  igual(janelaSegura(null), null, "sem data de início, não há janela");
+  igual(janelaSegura(""), null, "data vazia idem");
+  igual(janelaSegura("abacaxi"), null, "e data inválida devolve null — não inventa prazo nem explode");
+  igual(janelaSegura("2026-13-45"), null, "data impossível idem");
+
+  // ── UMA conta só: era a multiplicidade que permitia a divergência ────────
+  // Nenhuma subtração literal de 7 sobrou: a única existe dentro da função, e usa a
+  // CONSTANTE nomeada. Era a multiplicidade de contas soltas que permitia as três
+  // telas discordarem entre si sem ninguém notar.
+  const soltas = (fonte.match(/getDate\(\)\s*-\s*7\b/g) || []).length;
+  igual(soltas, 0, "não sobrou nenhuma subtração de 7 dias solta pelas telas");
+  ok(/const DIAS_PRIORIDADE_RENOVACAO = 7;/.test(fonte),
+    "o prazo de 7 dias é uma constante nomeada, num lugar só");
+  ok(/getDate\(\) - DIAS_PRIORIDADE_RENOVACAO/.test(fonte),
+    "e a única subtração do app usa essa constante");
+  const usos = (fonte.match(/janelaRenovacao\(/g) || []).length;
+  ok(usos >= 4, `e as telas a chamam em vez de refazer a conta (${usos} ocorrências: a declaração e os usos)`);
+
+  // ── COMO AS TELAS LEEM a janela: a função certa não basta se quem a usa lê
+  //    o campo errado. Sabotar o card para `jaAbriu` passava verde antes disto.
+  ok(/const prazoPassou = !!jan && jan\.encerrada;/.test(fonte),
+    "o card do admin chama de 'prazo passou' o FECHAMENTO da janela, não a abertura dela");
+  ok(!/prazoPassou = !!jan && jan\.jaAbriu/.test(fonte),
+    "e não o contrário — que é exatamente o significado invertido que tirava os 7 dias do atleta");
+  ok(/const diasAteEnc = janLem\.diasAteFechar;/.test(fonte),
+    "o lembrete conta os dias até o FECHAMENTO");
+  ok(/prazoStr = fmtDate\(janLem\.fechaISO\)/.test(fonte),
+    "e anuncia ao atleta a data de fechamento, não a de abertura");
+
+  // ── e a tela deixou de se contradizer ────────────────────────────────────
+  ok(/A janela de renovação prioritária abre 7 dias antes da data/.test(fonte),
+    "a frase que já estava CERTA continua lá");
+  ok(/a sua prioridade vale até/.test(fonte),
+    "e a mensagem de renovação deixou de mandar confirmar até o dia em que a prioridade começa");
+}
+
+secao("A PORTA DA FRENTE: o INSCREVER passa a exigir responsável de menor (0.6.24)");
+{
+  // Achado por dois guardiões em 27/09/2026, e os dois o classificaram ACIMA do que
+  // eles mesmos tinham vindo cobrar: o `PARTICIPAR` (a porta de serviço, para quem já
+  // tem cadastro) tinha acabado de ganhar a guarda de menor, e o `INSCREVER` — a porta
+  // da frente, por onde entra TODO atleta novo e o único caminho para o BH — não tinha
+  // nenhuma. A única linha era `if (p.responsavelCpf)`, que validava o dígito SE o
+  // campo viesse. A trava era só a tela. **A porta de serviço ficou mais rígida que a
+  // porta da frente.**
+  const CIRC_INSC = "44444444-4444-4444-4444-444444444444";
+  const CPF_BOM = "52998224725";      // dígitos verificadores válidos — o servidor revalida
+  const CPF_RESP = "11144477735";
+  const FUNCOES = {
+    get_cpf_pepper: () => "pimenta-de-teste",
+    dedup_por_cpf_hash: () => [{ existe: false, atleta_id: null }],
+  };
+  const inscrever = async (extra) => {
+    const { banco } = await montarMotor({
+      circuitos: [circuito(BH), circuito(CIRC_INSC, { slug: "novo", regulamento_versao: "vA-nc-01", inscricoes_abertas: true })],
+      funcoes: FUNCOES,
+      outras: { atleta_documento: [], tentativas_busca_cpf: [] },
+    });
+    const fn = await carregarFuncao("athlete-action", banco);
+    const r = await fn.chamar({
+      acao: "INSCREVER",
+      payload: {
+        circuitoId: CIRC_INSC, nome: "Fulano de Tal", telefone: "31999990000",
+        aceiteRegulamento: true, aceiteLGPD: true,
+        cpf: CPF_BOM, cpfConsent: true, cpfConsentVersao: "cpf-2026-08-v1",
+        ...extra,
+      },
+    });
+    return { banco, r };
+  };
+  const anosAtras = (anos, diasExtra = 0) => {
+    const d = new Date(); d.setFullYear(d.getFullYear() - anos); d.setDate(d.getDate() + diasExtra);
+    return d.toISOString().slice(0, 10);
+  };
+
+  // ── data de nascimento obrigatória (fail-closed, como no PARTICIPAR) ──────
+  {
+    const { banco, r } = await inscrever({});
+    igual(r.status, 400, "inscrição SEM data de nascimento é recusada pelo servidor");
+    ok(/Informe a data de nascimento/.test(String(r.corpo?.erro || "")),
+      "e a recusa diz ao atleta o que fazer");
+    igual(banco.tabelas.atletas.length, 0, "e NADA é gravado — nem o atleta");
+    igual(banco.linhas("atleta_documento").length, 0, "nem o documento");
+  }
+  {
+    const { r } = await inscrever({ dataNascimento: "" });
+    igual(r.status, 400, "data vazia também");
+  }
+  {
+    const { r } = await inscrever({ dataNascimento: "1850-01-01" });
+    ok(/o ano informado não parece válido/.test(String(r.corpo?.erro || "")),
+      "data absurda no passado é recusada");
+    const { r: r2 } = await inscrever({ dataNascimento: "2040-01-01" });
+    ok(/o ano informado não parece válido/.test(String(r2.corpo?.erro || "")),
+      "e no futuro também");
+  }
+
+  // ── menor sem responsável: recusa, e nada gravado ────────────────────────
+  {
+    const { banco, r } = await inscrever({ dataNascimento: anosAtras(15) });
+    igual(r.status, 400, "menor de 15 sem responsável é recusado pelo SERVIDOR");
+    ok(/responsável legal são obrigatórios/.test(String(r.corpo?.erro || "")),
+      "com a frase que a tela mostra inteira");
+    igual(banco.tabelas.atletas.length, 0, "e o atleta NÃO é criado");
+  }
+  {
+    const { r } = await inscrever({ dataNascimento: anosAtras(15), responsavelNome: "Mãe do atleta" });
+    igual(r.status, 400, "só o nome do responsável não basta");
+    const { r: r2 } = await inscrever({ dataNascimento: anosAtras(15), responsavelCpf: CPF_RESP });
+    igual(r2.status, 400, "e só o CPF também não");
+  }
+
+  // ── A FRONTEIRA DOS 18, que é o caso real mais provável ──────────────────
+  {
+    const { r } = await inscrever({ dataNascimento: anosAtras(18, 1) });
+    igual(r.status, 400, "faltando UM DIA para 18, ainda é menor: recusa sem responsável");
+    const { r: r2 } = await inscrever({ dataNascimento: anosAtras(18, -1) });
+    ok(r2.status !== 400 || !/responsável legal/.test(String(r2.corpo?.erro || "")),
+      "e um dia DEPOIS de completar 18, passa da guarda do responsável");
+  }
+
+  // ── menor COM responsável entra, e o CPF do responsável vai como hash ────
+  {
+    const { banco, r } = await inscrever({
+      dataNascimento: anosAtras(15), responsavelNome: "Mãe do atleta", responsavelCpf: CPF_RESP,
+    });
+    igual(r.status, 200, "com nome e CPF do responsável, o menor se inscreve");
+    const doc = banco.acha("atleta_documento", () => true);
+    ok(!!doc, "o documento foi gravado");
+    igual(doc.responsavel_nome, "Mãe do atleta", "com o nome do responsável");
+    ok(!!doc.responsavel_cpf_hash, "e o CPF do responsável como hash");
+    ok(!JSON.stringify(doc).includes(CPF_RESP), "o CPF do responsável NÃO aparece em claro");
+    ok(!JSON.stringify(doc).includes(CPF_BOM), "nem o do atleta");
+  }
+  {
+    const { r } = await inscrever({ dataNascimento: "1990-05-10" });
+    igual(r.status, 200, "e maior de idade se inscreve sem responsável");
+  }
+}
+
 secao("Os dois silêncios que sobraram no regulamento de pontos (0.6.27)");
 {
   // Achados pelo Guardião do Regulamento em 27/09/2026, revisando a própria correção.

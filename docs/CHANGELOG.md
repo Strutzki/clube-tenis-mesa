@@ -140,6 +140,54 @@ rating.
 
 ---
 
+### 2026-09-28 — A porta da frente protege o menor, e a janela de renovação para de mentir
+
+**A SUBIR — ainda não publicado.** `athlete-action` **v21 → v22** e front por
+`git push`. Decisão do Juliano: *"arrumar esses dois pontos"*.
+
+**Ordem: APP PRIMEIRO, motor depois** — mesma razão da subida anterior e pela regra
+que está no `CLAUDE.md`: o motor novo **recusa** o que o app velho manda (inscrição
+sem data de nascimento), enquanto o app novo é compatível para frente. Publicar o
+motor antes quebraria a inscrição de qualquer atleta novo.
+
+**1. O `INSCREVER` não tinha guarda de menor de idade nenhuma.** É a **porta da
+frente** — por onde entra todo atleta novo, e o único caminho para o BH. A única
+linha era `if (p.responsavelCpf)`, que validava o dígito **se** o campo viesse; a
+trava era só a tela. Achado por dois guardiões, que o classificaram **acima** do que
+eles mesmos tinham vindo cobrar, pela comparação que dói: o `PARTICIPAR` — a porta de
+serviço — tinha acabado de ganhar a guarda, e a porta da frente ficou mais frouxa.
+Agora exige, no servidor: data de nascimento (fail-closed), data absurda recusada, e
+nome **e** CPF do responsável para menor de 18. **21 asserções**, incluindo a
+fronteira (véspera e dia seguinte dos 18) e a prova de que a recusa **não grava
+nada**. **6 mutações, 6 vermelhas.**
+
+**2. A janela de renovação estava invertida — e a causa eram três contas separadas.**
+O Cap. 13 diz que a prioridade vai de `início−7` **até** o início, e que as vagas
+abrem **depois**. O app tratava `início−7` como o **fim**, no card do admin, na
+mensagem de renovação e no lembrete — três contas independentes, e eram três
+justamente porque nada as obrigava a concordar. O atleta recebia **zero** dos 7 dias,
+e o lembrete "dos últimos 3 dias" disparava **antes de a janela abrir**.
+Virou **uma** função, `janelaRenovacao()`, com a constante num lugar só.
+
+**Um tipo de teste que o projeto não tinha.** `src/App.jsx` não é executado por teste
+nenhum — mas `janelaRenovacao` é **pura**, só depende de `Date`. Então a bateria
+**extrai a função do fonte e a executa** com datas reais. Não é regex: são datas
+entrando e saindo. Conta de data só se protege assim, e era exatamente onde o erro
+morava. **26 asserções, 8 mutações, 8 vermelhas.**
+
+**E o meu aferidor de mutação estava errado, o que é a lição desta rodada.** Ele só
+chamava de "vermelho" quando havia falha **e** saída diferente de zero. Duas
+sabotagens **quebravam o arquivo de teste** antes de imprimir qualquer falha — e ele
+as classificava como **verdes**. Ou seja: eu estava medindo a proteção com um
+instrumento que dava falso conforto justamente no caso pior. Corrigido nos dois
+lados: o aferidor passou a tratar saída ≠ 0 como vermelho, e a asserção da data
+inválida passou a capturar a exceção, para a sabotagem virar **falha limpa** em vez
+de queda.
+
+**Bateria: 728 → 757 asserções, 0 falhas.**
+
+---
+
 ### 2026-09-27 — O regulamento deixa de prometer o que o motor não faz (0.6.23)
 
 **NO AR desde 27/09/2026 (de acordo do Juliano: "sobe")**: bundle

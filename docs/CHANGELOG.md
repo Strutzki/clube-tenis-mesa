@@ -7,8 +7,22 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ### 2026-09-27 — Ciência do regulamento ao entrar num 2º circuito (0.6.21)
 
-**A SUBIR — ainda não publicado** (falta o de acordo do Juliano): `login-atleta`
-**v9 → v10**, front por `git push`.
+**NO AR desde 27/09/2026, 22:4x (de acordo do Juliano: "Publique os dois")**:
+front no bundle `index-xuSt1ncM.js` (push `52bd47b..940adf0`), depois
+`login-atleta` **v9 → v10**.
+**A ordem recomendada foi cumprida: APP PRIMEIRO**, com a confirmação de que a
+Vercel já estava servindo o bundle novo antes de o motor subir. `motor:conferir`:
+9 funções, 0 divergências, `login-atleta` no ar com `verify_jwt: false` — que é o
+valor certo; `true` ali pararia o login de todo mundo.
+
+**Conferido ao vivo depois:** a função responde (`Ação desconhecida` para ação
+inexistente; `cadastro_nao_encontrado` no `PARTICIPAR` com telefone que não existe
+— ou seja, a autenticação vem antes de tudo, como projetado). Dados antes e depois
+**idênticos**: atletas 15, circuitos 1, circuito_atletas 15, partidas 34,
+solicitacoes_wo 5, pagamentos 12, `atleta_documento` 0. Roster do BH 12 ativos +
+2 backlog + 1 suspenso. Hashes `a4027146…` e `7346db66…` inalterados. E o número
+que mais importava nesta subida: **`atleta_sessao` continua em 10** — ninguém foi
+deslogado.
 
 **⚠️ A ORDEM INVERTE EM RELAÇÃO À ONDA ANTERIOR: APP PRIMEIRO, motor depois.** Não é
 esquecimento — a regra nunca foi "motor primeiro". A regra, formulada pelo Guardião

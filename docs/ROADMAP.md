@@ -208,7 +208,7 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   re-aceite** — que é a máquina que a Onda 0.10.15 construiu. Não dá para deixar
   como está: é o único prazo do app que custa a vaga do atleta.
 
-- **0.6.21 — ✅ RESOLVIDO em 27/09/2026 (no fonte).** *"Participar de outro
+- **0.6.21 — ✅ RESOLVIDO em 27/09/2026, NO AR** (`login-atleta` v10, bundle `index-xuSt1ncM.js`).** *"Participar de outro
   circuito" gravava aceite de um regulamento que o atleta nunca viu.*
   Achado pelo Juliano em 27/09/2026, testando a inscrição, ao perguntar: *"como vou
   saber se é o regulamento correto?"*. O fluxo tinha três telas — identificação,
@@ -798,7 +798,7 @@ atleta inscrito."*
 
 ### Gatilho: antes do 1º circuito de terceiro (e pede advogado)
 
-- **0.10.10 — ✅ RESOLVIDO em 27/09/2026, pelo item 0.6.21.** O mesmo defeito
+- **0.10.10 — ✅ RESOLVIDO em 27/09/2026, pelo item 0.6.21, e NO AR.** O mesmo defeito
   chegou por outra porta: o Juliano o achou **usando o app**, testando a inscrição,
   ao perguntar "como vou saber se é o regulamento correto?". O conserto fechou as
   duas pontas (a tela mostra o regulamento do circuito alvo e exige o aceite; o

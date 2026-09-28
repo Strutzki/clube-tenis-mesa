@@ -755,7 +755,8 @@ const INIT = {
   matches: [],           // {id, keyId, round, p1Id, p2Id, score1, score2, validated, deadline}
   results: [],           // validated match results
   temporadaNumero: 1,    // 1, 2 ou 3 dentro do ano (Cap. 13: 3 temporadas de 3 meses)
-  rodadasPorTemporada: 6, // Cap. 13: nº de rodadas por temporada (configurável, padrão 6)
+  rodadasPorTemporada: 6, // FIXO em 6: 3 meses x 2 jogos/mês. Não é configurável — o
+  // motor recusa mudar, e o texto do regulamento foi corrigido em 27/09/2026 para dizer isso.
   autoValidarPlacar: false, // interruptor: auto-valida placar quando os dois atletas concordam
   financeiroAtivo: false,   // interruptor do módulo financeiro (trava de pareamento por pagamento)
   valorTemporada: null,     // centavos; nulo até o admin definir
@@ -1269,7 +1270,7 @@ function reducer(state, action) {
     case "AVANCAR_RODADA": {
       const maxRod = state.rodadasPorTemporada || 6;
       const roundBase = Math.max(0, ...state.matches.map(m => m.round || 0));
-      // Trava de segurança (Cap. 13): respeita o nº de rodadas configurado.
+      // Trava de segurança (Cap. 13): respeita as 6 rodadas da temporada (fixas).
       if (roundBase >= maxRod) return state;
       // No modelo por rating, cada "avanço" gera o próximo PAR MENSAL (2 rodadas),
       // pareando pelo rating vigente e evitando repetir confrontos da temporada (Cap. 03).
@@ -3217,6 +3218,12 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
     );
     if (id===9) return (
       <div>
+        {/* O 6º critério dizia "Sorteio registrado pelo admin" — e não existe sorteio
+            nenhum: o motor usa uma ordenação interna estável só para a lista não ficar
+            indefinida. Prometer um ato humano que não acontece é pior que não prometer.
+            Corrigido em 27/09/2026 apontando para o Cap. 13 (casos omissos), que já é a
+            regra certa para o que os cinco critérios não resolvem — e que exige a
+            decisão registrada de verdade. Nenhum atleta havia aceitado o vB-01. */}
         <p style={s.p}>O ranking é a <span style={s.dest}>soma dos pontos</span>, do maior para o menor. Em caso de empate, o desempate segue esta ordem:</p>
         <Tbl headers={["Ordem","Critério de desempate"]} rows={[
           ["1º","Total de pontos"],
@@ -3224,14 +3231,21 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
           ["3º","Confronto direto"],
           ["4º","% de aproveitamento (vitórias ÷ jogos)"],
           ["5º","Saldo de sets"],
-          ["6º","Sorteio registrado pelo admin"],
+          ["6º","Decisão do administrador, registrada (Cap. 13)"],
         ]}/>
         <p style={{...s.p, fontSize:11, color:"#7d9188"}}>Como o W.O. injustificado vem antes do confronto direto, um atleta pode ter vencido o duelo direto e ainda ficar atrás por ter faltado mais — é a escolha consciente de valorizar a presença.</p>
       </div>
     );
     if (id===10) return (
       <div>
+        {/* Este capítulo CALAVA três regras que o motor aplica — e as três podem
+            impedir o atleta de jogar. Silêncio aqui é pior que letra miúda: ele podia
+            ser aprovado e não entrar, e descobrir só na hora. Acrescentadas em
+            27/09/2026, com a linha do motor que sustenta cada uma. */}
         <p style={s.p}>A inscrição é feita pelo próprio app. O atleta entra em <span style={s.dest}>0 pontos</span> e, após a aprovação do administrador, passa a ser pareado nas rodadas.</p>
+        <p style={s.p}><span style={s.dest}>Teto de 20 atletas por temporada.</span> Se o circuito estiver cheio, a inscrição aprovada fica em <span style={s.dest}>fila de espera</span> e entra quando abrir vaga — aprovação não é o mesmo que vaga garantida.</p>
+        <p style={s.p}><span style={s.dest}>Não há entrada nas duas últimas rodadas</span> da temporada. Quem for aprovado nesse período estreia na temporada seguinte, e aí desde a primeira rodada.</p>
+        <p style={s.p}>A temporada só começa com <span style={s.dest}>no mínimo 8 atletas</span> ativos. Com menos que isso, o início é adiado.</p>
       </div>
     );
     if (id===11) return (
@@ -3241,12 +3255,20 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
     );
     if (id===12) return (
       <div>
-        <p style={s.p}>Pares mensais de rodadas: no dia 1º saem os dois confrontos do mês. 1ª rodada até o <span style={s.dest}>dia 15</span>, 2ª rodada até o <span style={s.dest}>dia 27</span>. O número de etapas da temporada é configurável por circuito.</p>
+        {/* Dizia "o número de etapas da temporada é configurável por circuito" — FALSO:
+            o motor fixa 6 rodadas e a ação de mudar recusa ("As rodadas são fixas em 6
+            por temporada"). Decisão do Juliano, 10/09/2026, reafirmada em 27/09/2026:
+            3 meses por temporada, 2 jogos por mês. Corrigido em 27/09/2026, e dá para
+            corrigir no lugar porque NENHUM atleta aceitou o vB-01 (zero circuitos de
+            pontos, zero aceites) — não há texto assinado sendo reescrito. */}
+        <p style={s.p}>Cada temporada tem <span style={s.dest}>3 meses</span> e <span style={s.dest}>2 jogos por mês</span> — ou seja, <span style={s.dest}>6 rodadas</span>, organizadas em 3 etapas de duas rodadas. Esse número é fixo: não muda de circuito para circuito nem de temporada para temporada.</p>
+        <p style={s.p}>No dia 1º de cada mês saem os dois confrontos do mês. A 1ª rodada vai até o <span style={s.dest}>dia 15</span>; a 2ª, até o <span style={s.dest}>dia 27</span>. Os meses de recesso são definidos pelo organizador do circuito.</p>
       </div>
     );
     if (id===13) return (
       <div>
         <p style={s.p}>Situações não previstas são resolvidas pelo administrador do circuito, com bom senso e em favor da integridade da competição. A decisão do administrador em casos omissos é final e pode motivar uma nova regra em versão futura.</p>
+        <p style={s.p}>É também aqui que entra o <span style={s.dest}>empate absoluto</span> no ranking: se dois atletas ficarem iguais nos cinco critérios do Cap. 09 — pontos, W.O., confronto direto, aproveitamento e saldo de sets —, a posição é decidida pelo administrador e o critério usado é <span style={s.dest}>informado aos envolvidos</span>. Enquanto isso não acontecer, a lista é ordenada de forma estável, sempre do mesmo jeito.</p>
         <div style={{fontSize:11,color:"#4a5d56",textAlign:"center",marginTop:16}}>Clube do Tênis de Mesa{circuitoNome ? ` · ${circuitoNome}` : ""} · Regulamento {versaoLabelRodape}</div>
       </div>
     );
@@ -8156,7 +8178,7 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
   const todasResolvidas = state.matches.length > 0 && state.matches.every(m => (m.validated && m.calculado) || m.rejeitado);
   const maxRodadaTemporada = Math.max(0, ...state.matches.map(m => m.round || 0));
   const rodadasPorTemp = state.rodadasPorTemporada || 6;
-  const temporadaCompleta = maxRodadaTemporada >= rodadasPorTemp; // Cap. 13: nº de rodadas por temporada (configurável)
+  const temporadaCompleta = maxRodadaTemporada >= rodadasPorTemp; // Cap. 13: 6 rodadas, fixas
   const hasNextRound = todasResolvidas && !temporadaCompleta;
 
   // ── Saúde da etapa ──

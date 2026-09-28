@@ -231,8 +231,27 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   função é executada pela bateria — mais 6 checagens de fonte na tela. 8 testes de
   mutação, 8 vermelhos.
 
-- **0.6.23 — ⛔ PORTÃO DA ABERTURA DO CIRCUITO DE PONTOS: o `vB-01` mente em dois
-  pontos e cala em três.** Achado do Guardião do Regulamento em 27/09/2026, ao
+- **0.6.23 — ✅ RESOLVIDO em 27/09/2026 (no fonte).** *O `vB-01` mentia em dois pontos
+  e calava em três.* **Decisão do Juliano, 27/09/2026:** *"já está definido que são 3
+  meses por temporada e dois jogos por mês, ajustar tudo o que fala diferente"* — e
+  ajustar o regulamento.
+  **Deu para corrigir NO LUGAR, sem trocar de versão e sem re-aceite,** porque o banco
+  mostra **zero** atletas com `vB-01` e **zero** circuitos de sistema B: não havia texto
+  assinado sendo reescrito. Se houvesse, o caminho seria outro — carimbar uma versão
+  nova e colher re-aceite, que é a máquina da Onda 0.10.15.
+  **As duas falsas, corrigidas:** (a) "o número de etapas é configurável por circuito"
+  virou *"3 meses e 2 jogos por mês — 6 rodadas em 3 etapas; esse número é fixo"*, que
+  é o que o motor faz; (b) o 6º critério de desempate deixou de prometer um "sorteio
+  registrado pelo admin" que não existe e passa a apontar para o **Cap. 13 (casos
+  omissos)**, com o Cap. 13 explicando o empate absoluto e prometendo o critério
+  **informado aos envolvidos**.
+  **Os três silêncios, escritos:** teto de 20 com fila de espera (e o aviso de que
+  *aprovação não é vaga garantida*), sem entrada nas duas últimas rodadas, e mínimo de
+  8 para a temporada começar.
+  **12 asserções novas** em `testes/regulamento-por-circuito.mjs` travando as duas
+  frases que não podem voltar e as cinco que passaram a existir, mais a que confere que
+  o motor realmente fixa 6. 3 mutações, 3 vermelhas.
+  *Descrição original, mantida como registro:* Achado do Guardião do Regulamento em 27/09/2026, ao
   revisar o 0.6.21. Ele leu o texto inteiro, não só os títulos: **a matemática está
   certa** (pontuação, pareamento por sorteio ou grupos, bye rotativo, W.O., os cinco
   primeiros desempates — tudo confere com o motor). O que falta é a camada

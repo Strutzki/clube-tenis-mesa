@@ -44,7 +44,7 @@ Herda **todo o procedimento de classificação do A** (foto do local, print da c
 
 ## Cap. 09 — Ranking & Publicação *(reescrito)*
 Soma de pontos, do maior pro menor. Desempate (decisão do Juliano — presença primeiro):
-1. Total de pontos → 2. **Menos W.O. injustificados** (premia presença/confiabilidade; já rastreado em `wo_culposos_temporada`) → 3. **Confronto direto** → 4. **% de aproveitamento** (justo com quem jogou menos rodadas) → 5. Saldo de sets/games → 6. **Sorteio registrado pelo admin** (critério final determinístico).
+1. Total de pontos → 2. **Menos W.O. injustificados** (premia presença/confiabilidade; já rastreado em `wo_culposos_temporada`) → 3. **Confronto direto** → 4. **% de aproveitamento** (justo com quem jogou menos rodadas) → 5. Saldo de sets/games → 6. **Decisão registrada do administrador** — cai em casos omissos (Cap. 13), com o critério informado aos envolvidos. *(Corrigido em 27/09/2026: dizia "sorteio registrado pelo admin" e não existe sorteio; o motor apenas ordena de forma estável para a lista não ficar indefinida.)*
 > Nota: com W.O. antes do confronto direto, um atleta pode ter vencido o duelo direto e ainda ficar atrás por ter faltado mais — é a escolha consciente de valorizar presença.
 - Remover a "Escalada/Maior Salto" do A (era salto de rating) → redefinir como "melhor sequência de vitórias", ou omitir.
 - **Entrante tardio:** começa em 0 pontos; como o ranking-título é por pontos acumulados, ele fica em desvantagem matemática — divulgar isso com transparência (o % de aproveitamento no desempate ameniza).

@@ -1899,4 +1899,52 @@ secao("A tela não mente sobre a virada antes do servidor responder");
     `as ações que esperam resposta conferem o resultado antes de seguir (achadas: ${seguiuNoSucesso} + ${desfezNaFalha})`);
 }
 
+secao("O regulamento de PONTOS diz a verdade sobre o que o motor faz");
+{
+  // Decisão do Juliano, 27/09/2026: "já está definido que são 3 meses por temporada e
+  // dois jogos por mês, ajustar tudo o que fala diferente".
+  //
+  // O Guardião do Regulamento leu o vB-01 inteiro e achou DUAS promessas falsas e TRÊS
+  // silêncios. Promessa falsa é pior que silêncio: o atleta lê, confia, e um dia cobra.
+  // Deu para corrigir o texto NO LUGAR porque nenhum atleta havia aceitado o vB-01
+  // (zero circuitos de pontos, zero aceites conferidos no banco) — não se reescreveu
+  // documento assinado.
+  //
+  // ⚠️ São checagens por REGEX no texto fonte, e aqui é a ferramenta certa: a
+  // afirmação é literalmente "esta frase está (ou não está) no regulamento".
+
+  // ── as duas promessas falsas, que não podem voltar ────────────────────────
+  ok(!/O número de etapas da temporada é configurável por circuito/.test(fonte),
+    "o regulamento NÃO diz mais que o número de etapas é configurável — o motor fixa 6 e recusa mudar");
+  ok(!/Sorteio registrado pelo admin/.test(fonte),
+    "e NÃO promete mais um 'sorteio registrado pelo admin' que não existe no motor");
+
+  // ── o que ele passou a dizer, e tem de bater com o motor ──────────────────
+  const motorFixa6 = /const rodadas = 6;/.test(
+    fs.readFileSync(path.join(RAIZ, "supabase", "functions", "admin-action", "index.ts"), "utf8"));
+  ok(motorFixa6, "o motor fixa 6 rodadas por temporada");
+  ok(/3 meses[\s\S]{0,120}2 jogos por mês/.test(fonte),
+    "e o regulamento de pontos diz 3 meses e 2 jogos por mês");
+  ok(/6 rodadas[\s\S]{0,160}3 etapas/.test(fonte),
+    "traduzindo em 6 rodadas e 3 etapas");
+  ok(/Esse número é fixo/.test(fonte),
+    "e dizendo com letra que é FIXO, não configurável");
+
+  // ── os três silêncios: regras que o motor aplica e o texto calava ─────────
+  ok(/Teto de 20 atletas por temporada/.test(fonte),
+    "o teto de 20 atletas está escrito no regulamento de pontos");
+  ok(/fila de espera[\s\S]{0,200}aprovação não é o mesmo que vaga garantida/.test(fonte),
+    "e a fila de espera, com o aviso de que aprovação não é vaga");
+  ok(/Não há entrada nas duas últimas rodadas/.test(fonte),
+    "o corte de entrada nas duas últimas rodadas está escrito");
+  ok(/no mínimo 8 atletas/.test(fonte),
+    "e o mínimo de 8 para a temporada começar");
+
+  // ── e o empate absoluto passou a apontar para casos omissos ───────────────
+  ok(/Decisão do administrador, registrada \(Cap\. 13\)/.test(fonte),
+    "o 6º critério de desempate aponta para casos omissos, que é a regra que existe de verdade");
+  ok(/empate absoluto[\s\S]{0,400}informado aos envolvidos/.test(fonte),
+    "e o Cap. 13 explica o empate absoluto, prometendo o critério informado a quem empatou");
+}
+
 process.exit(placar("Regulamento por circuito"));

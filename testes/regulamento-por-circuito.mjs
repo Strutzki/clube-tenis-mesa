@@ -280,10 +280,24 @@ secao("Teto do circuito: a regra e o motor concordam");
   ok(/De 8 a 20 atletas\./.test(fonte),
     "a legenda diz a faixa inteira, não só o mínimo");
 
-  // E o texto do regulamento volta a dizer 20 nos dois ramos — não é mais
-  // configurável, então ramificá-lo seria mentir para o circuito novo.
-  ok(/"Cada circuito tem um teto de 20 atletas por temporada"/.test(fonte),
-    "o regulamento diz teto de 20 para todos os circuitos");
+  // ⚠️ ESTA ASSERÇÃO DEFENDIA O NÚMERO ERRADO, e o comentário dela explicava por quê
+  // de um jeito que era falso: dizia "não é mais configurável, então ramificá-lo seria
+  // mentir". Isso vale para as RODADAS, que passaram a ser fixas em 6 — **não** para o
+  // TETO, que continua configurável por circuito, entre 8 e 20, em dois lugares do
+  // motor (`Math.min(20, Math.max(8, ...))` na criação e na edição). Ou seja: 20 é o
+  // máximo da PLATAFORMA, não o teto de cada circuito, e um circuito de 12 vagas tinha
+  // um regulamento prometendo 20 ao atleta.
+  // Eu havia importado o argumento das rodadas para o teto. Pego pelo Guardião do
+  // Regulamento em 27/09/2026 — é o mesmo padrão do `"ativo_backlog"`: a asserção
+  // carimbava o defeito em vez de proteger a regra.
+  // Conferido no banco em 27/09/2026: existe 1 circuito (o BH) com `max_atletas` = 20,
+  // então nenhum atleta havia aceitado um número falso.
+  ok(/teto de até 20 atletas por temporada, definido pelo organizador/.test(fonte),
+    "o regulamento diz teto de ATÉ 20, definido pelo organizador — não um 20 fixo");
+  ok(!/teto de 20 atletas por temporada"/.test(fonte),
+    "e a redação antiga, que prometia 20 fixo, não pode voltar");
+  ok(/teto de atletas do circuito \(até 20\)/.test(fonte),
+    "a cláusula da fila de espera também diz 'até 20', não 20 cravado");
 }
 
 secao("A frase de preço não é garantia absoluta");
@@ -1938,8 +1952,8 @@ secao("O regulamento de PONTOS diz a verdade sobre o que o motor faz");
     "e dizendo com letra que é FIXO, não configurável");
 
   // ── os três silêncios: regras que o motor aplica e o texto calava ─────────
-  ok(/Teto de 20 atletas por temporada/.test(fonte),
-    "o teto de 20 atletas está escrito no regulamento de pontos");
+  ok(/O circuito tem um teto de atletas por temporada[\s\S]{0,80}até 20, definido pelo organizador/.test(fonte),
+    "o teto de atletas está escrito no regulamento de pontos — e como ATÉ 20, não 20 fixo");
   ok(/fila de espera[\s\S]{0,200}aprovação não é o mesmo que vaga garantida/.test(fonte),
     "e a fila de espera, com o aviso de que aprovação não é vaga");
   ok(/Não há entrada nas duas últimas rodadas/.test(fonte),
@@ -1990,6 +2004,30 @@ secao("A correção das rodadas fixas entra na v03-13 e NÃO reescreve a v03-12"
   ok(/2 jogos por mês/.test(v13), "e passou a dizer 2 jogos por mês");
   ok(/6 rodadas \(número definido pelo administrador\)/.test(v12),
     "o documento da v03-12 continua com a redação original — é registro do que foi assinado");
+}
+
+secao("A promessa 'esse número é fixo' é obrigada no motor, não só escrita");
+{
+  // O PREÇO DE TER CORRIGIDO O TEXTO, achado pelo Guardião Jurídico em 27/09/2026.
+  // Antes, o regulamento dizia "número definido pelo administrador" e o motor fazia 6:
+  // texto frouxo, motor firme. Agora o texto PROMETE ao atleta que o número é fixo — e
+  // a única coisa que sustentava essa promessa era um `return` solto.
+  //
+  // A asserção que existia guardava o EIXO ERRADO: `testes/permissoes.mjs` confere que
+  // o ORGANIZADOR leva 403 no DEFINIR_RODADAS. Isso guarda QUEM, não SE. Ele provou:
+  // reabrindo a ação para o super-admin, a bateria inteira ficava VERDE — porque
+  // permissão não mudou. Um "vamos reabrir o número de rodadas" deixaria o regulamento
+  // mentindo de novo, para atletas que acabaram de re-aceitar exatamente essa frase.
+  const { motor, banco } = await montarMotor();
+  const antes = banco.acha("configuracao", (l) => l.id === 1).rodadas_por_temporada;
+  const r = await comoAdmin(motor, "DEFINIR_RODADAS", { rodadas: 8 });
+  igual(r.status, 400, "nem o SUPER-ADMIN muda o número de rodadas");
+  ok(/fixas em 6 por temporada/.test(String(r.corpo?.erro || "")),
+    "e a recusa diz o mesmo que o regulamento promete: fixas em 6 por temporada");
+  igual(banco.acha("configuracao", (l) => l.id === 1).rodadas_por_temporada, antes,
+    "e nada foi gravado — a promessa do texto é obrigada no banco, não só na tela");
+  const r2 = await comoAdmin(motor, "DEFINIR_RODADAS", { rodadas: 6 });
+  igual(r2.status, 400, "a ação recusa até quando pedem o próprio 6 — ela não existe mais");
 }
 
 process.exit(placar("Regulamento por circuito"));

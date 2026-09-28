@@ -140,6 +140,90 @@ rating.
 
 ---
 
+### 2026-09-27 — O regulamento deixa de prometer o que o motor não faz (0.6.23)
+
+**A SUBIR — ainda não publicado.** Só texto de tela e documentos; nenhum motor,
+nenhum banco. Decisão do Juliano: *"já está definido que são 3 meses por temporada
+e dois jogos por mês, ajustar tudo o que fala diferente"*, *"mandar para casos
+omissos"*, *"ajustar o regulamento"*.
+
+**⚠️ O RECIBO DESTA CORREÇÃO, e ele precisa estar aqui porque o tempo o destrói.**
+A prova de que o `vB-01` pôde ser corrigido **no lugar** — sem versão nova e sem
+re-aceite — é que não havia texto assinado. Isso é verificável **hoje** e
+inverificável **para sempre depois**: no minuto em que existir o primeiro aceite,
+ninguém reconstrói que em 27/09/2026 não existia nenhum. Então fica registrado o
+que foi rodado e o que voltou:
+
+    select coalesce(versao_regulamento,'(nula)'), count(*) from circuito_atletas group by 1;
+    -- v03-3: 11 · v03-12: 1 · v03-11: 1 · v03-5: 1 · v03-8: 1 · vB-01: ZERO
+    select count(*) from circuitos where sistema = 'B';          -- ZERO
+    select id, slug, max_atletas from circuitos where ativo;      -- 1 linha: bh, max_atletas = 20
+
+Apontado pelo Guardião Jurídico, e é a peça desta rodada que não dá para produzir
+depois.
+
+**O que foi corrigido no `vB-01`** (regulamento de pontos) — **três** promessas
+falsas e **três** silêncios:
+1. *"o número de etapas é configurável por circuito"* → **3 meses, 2 jogos por mês,
+   6 rodadas em 3 etapas, fixo.** O motor tem `const rodadas = 6` e a ação de
+   alterar recusa.
+2. *"6º critério: sorteio registrado pelo admin"* → **decisão do administrador,
+   registrada (Cap. 13)**, com o Cap. 13 explicando o empate absoluto e prometendo
+   o critério **informado aos envolvidos**. Não existe sorteio no motor: ele ordena
+   de forma estável só para a lista não ficar indefinida, e o texto novo descreve
+   isso **pelo efeito**, sem elevá-lo a critério desportivo.
+3. *"teto de 20 atletas"* → **até 20, definido pelo organizador**. `max_atletas` é
+   configurável entre 8 e 20 (o motor faz `Math.min(20, Math.max(8, …))` na criação
+   **e** na edição): 20 é o máximo da plataforma, não o teto de cada circuito. Um
+   circuito de 12 vagas teria um regulamento prometendo 20.
+   **E havia uma asserção defendendo o número errado**, cujo comentário dizia "não
+   é mais configurável" — eu havia importado para o TETO o argumento das RODADAS.
+   É o mesmo padrão do `"ativo_backlog"`: asserção que carimba o defeito.
+
+**Os três silêncios, agora escritos no Cap. 10:** o teto com fila de espera e o
+aviso de que *aprovação não é o mesmo que vaga garantida*; *não há entrada nas duas
+últimas rodadas*, com estreia na temporada seguinte desde a primeira; e *mínimo de
+8 atletas* para começar.
+
+**O BH: a correção entra na v03-13, e a v03-12 NÃO foi reescrita.** Lá existem 15
+aceites (1 em v03-12 e **14 em versões ainda mais antigas**, que carregam a mesma
+frase). Implementado como `VERSOES_COM_RODADAS_FIXAS = new Set(["v03-13","vA-nc-01"])`,
+com asserção **exigindo** que a v03-12 fique fora. O fechamento cobre todos de uma
+vez, porque o gatilho do re-aceite é **divergência** de versão, não uma versão
+específica: no dia do carimbo, os 15 recebem o card.
+**Condição de ordem:** não carimbar a v03-13 sem o re-aceite de pé — é ele que
+fecha o transitório.
+
+**Sobre "não muda direito nenhum", com a linha que sustenta** (regra 6): o único
+escritor de `rodadas_por_temporada` é o `NOVA_TEMPORADA`, gravando o `const
+rodadas = 6`; o `DEFINIR_RODADAS` recusa; e o `DEFINIR_CONFIG_CIRCUITO` **não
+alcança a coluna** (é allowlist de quatro campos — conferido de propósito, porque é
+a ação que já foi pega reescrevendo a chave PIX). Todo atleta que jogou, jogou 6
+rodadas.
+
+**E o preço de ter corrigido: a promessa de fixidez precisou de asserção.** Antes o
+texto era frouxo e o motor firme; agora o texto **promete** ao atleta que o número
+é fixo, e a única coisa que sustentava isso era um `return`. A asserção que existia
+guardava o **eixo errado** — conferia que o *organizador* leva 403, ou seja **quem**,
+não **se**. O Guardião Jurídico provou: reabrindo a ação para o super-admin, a
+bateria inteira ficava **verde**. Agora há asserção de que **nem o super-admin**
+muda, que a recusa diz a mesma frase do regulamento, e que **nada é gravado**.
+
+**Bateria: 684 → 699 asserções, 0 falhas.** Mutações: 8, todas vermelhas — inclusive
+reabrir o `DEFINIR_RODADAS` (4 vermelhas) e pôr a v03-12 no conjunto (4 vermelhas).
+
+**A bateria pegou algo que eu não sabia que existia:** as asserções que comparam os
+documentos da v03-12 e da v03-13 e exigem que **toda linha nova seja declarada** —
+o propósito delas é *"nenhuma regra nova foi colada em silêncio"*. Quebrei as duas,
+corretamente, e declarei as duas linhas. Também movi a minha nota explicativa para
+o bloco *"O que muda"*: o corpo do documento afirma reproduzir fielmente o que o app
+mostra, e uma nota de autor ali quebraria essa afirmação. E o bloco deixou de dizer
+*"uma única cláusula"* e *"o resto é idêntico"*, que ficariam falsos — são as duas
+frases que o atleta usa para decidir se vale reler, e um "o resto é idêntico" falso
+transforma a tela de re-aceite em carimbo.
+
+---
+
 ### 2026-09-27 — Onda 0.6, fatia "o organizador consegue trabalhar" (5 itens)
 
 **NO AR desde 27/09/2026, 20:17–20:46 (de acordo do Juliano: "pode")**:

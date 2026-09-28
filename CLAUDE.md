@@ -31,6 +31,22 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 5. **Rodar a bateria antes de commitar**, e dizer o resultado em números.
 6. **Nenhuma afirmação do tipo "o app garante X"** entra em documento sem a
    linha de código que sustenta.
+7. **Texto de versão que já tem aceite NÃO se reescreve.** Correção entra em
+   **versão nova**, com aviso prévio e re-aceite. O motivo: o recibo de
+   consentimento deste app aponta para uma **versão** (uma string), e a tela
+   renderiza o texto de *hoje* para aquela string — então editar o corpo de uma
+   versão aceita **muda retroativamente o que o recibo prova**, sem que ninguém
+   tenha reaceitado nada. Vale para `REGULAMENTO_*.md`, para o texto do
+   `RegulamentoView` e para o texto de consentimento.
+   Isto foi decidido **duas vezes em 27/09/2026 pelo mesmo raciocínio** — o texto
+   de privacidade (ROADMAP 0.6.7) e a v03-12 — e está aqui para não ser
+   re-litigado numa terceira.
+   **Passo obrigatório antes de editar** qualquer `REGULAMENTO_*.md` ou qualquer
+   conjunto `VERSOES_*` que mude texto: rodar
+   `select versao_regulamento, count(*) from circuito_atletas group by 1` e
+   **recusar** mexer em versão que apareça na lista. É a mesma lógica do
+   `atualizar.sh` se recusando a subir com teste vermelho: o portão é o passo, não
+   a lembrança.
 
 ## A bateria de testes
 

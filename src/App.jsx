@@ -3005,7 +3005,14 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
         ]}/>
         <Box cor="#6a9d7a" titulo="🎟️ Teto do Circuito & Fila de Espera">
           <Ul items={[
-            "Cada circuito tem um teto de 20 atletas por temporada",
+            // 27/09/2026: dizia "teto de 20", número fixo. Mas `max_atletas` É
+            // configurável por circuito, entre 8 e 20 (o motor faz
+            // Math.min(20, Math.max(8, ...)) na criação E na edição). 20 é o máximo da
+            // plataforma, não o teto de cada circuito: um circuito de 12 vagas teria um
+            // regulamento prometendo 20. Achado pelo Guardião do Regulamento, que
+            // notou que eu havia importado para o TETO o argumento das RODADAS —
+            // rodadas deixaram de ser configuráveis, o teto não.
+            "Cada circuito tem um teto de até 20 atletas por temporada, definido pelo organizador",
             "Com o circuito cheio, novos interessados entram em fila de espera, por ordem de chegada",
             "Vagas que abrem (desistência, não-renovação ou suspensão) são preenchidas pela fila, na ordem — mediante aprovação do administrador",
           ]}/>
@@ -3113,7 +3120,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
           <Ul items={[
             "Pré-abertura: a próxima temporada pode ser aberta antes de a atual terminar — inscrição, renovação e pagamento ficam disponíveis sem interromper a temporada em curso",
             "Prioridade de renovação: nos 7 dias anteriores ao início, os atletas do circuito atual e os aprovados aguardando vaga têm prioridade para renovar e garantir a vaga",
-            "Após o prazo de prioridade, as vagas não confirmadas abrem para a fila de espera, respeitando o teto de 20 atletas",
+            "Após o prazo de prioridade, as vagas não confirmadas abrem para a fila de espera, respeitando o teto de atletas do circuito (até 20)",
             "A vaga só é garantida com o pagamento da temporada confirmado pelo administrador",
             "Rating nunca zera — acumulado entre temporadas e anos",
             "Ranking zera no início de cada nova temporada (saldo de pontos)",
@@ -3258,7 +3265,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
             ser aprovado e não entrar, e descobrir só na hora. Acrescentadas em
             27/09/2026, com a linha do motor que sustenta cada uma. */}
         <p style={s.p}>A inscrição é feita pelo próprio app. O atleta entra em <span style={s.dest}>0 pontos</span> e, após a aprovação do administrador, passa a ser pareado nas rodadas.</p>
-        <p style={s.p}><span style={s.dest}>Teto de 20 atletas por temporada.</span> Se o circuito estiver cheio, a inscrição aprovada fica em <span style={s.dest}>fila de espera</span> e entra quando abrir vaga — aprovação não é o mesmo que vaga garantida.</p>
+        <p style={s.p}><span style={s.dest}>O circuito tem um teto de atletas por temporada</span> — até 20, definido pelo organizador. Se estiver cheio, a inscrição aprovada fica em <span style={s.dest}>fila de espera</span> e entra quando abrir vaga: aprovação não é o mesmo que vaga garantida.</p>
         <p style={s.p}><span style={s.dest}>Não há entrada nas duas últimas rodadas</span> da temporada. Quem for aprovado nesse período estreia na temporada seguinte, e aí desde a primeira rodada.</p>
         <p style={s.p}>A temporada só começa com <span style={s.dest}>no mínimo 8 atletas</span> ativos. Com menos que isso, o início é adiado.</p>
       </div>

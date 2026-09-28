@@ -274,6 +274,45 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   Ou se corrige o texto, ou se corrige o motor — mas as duas falsas não podem
   sobreviver ao primeiro atleta que aceitar o `vB-01`.
 
+- **0.6.27 — ⛔ PORTÃO DA ABERTURA DO CIRCUITO DE PONTOS: dois silêncios que sobraram
+  no `vB-01`.** Achados pelo Guardião do Regulamento em 27/09/2026, na revisão da
+  própria correção — são o 4º e o 5º da mesma família, e o primeiro é o que mais
+  provavelmente morde num circuito **vendido**:
+  1. **Pagamento confirmado é pré-requisito para ser pareado**, e o `vB-01` não diz.
+     `getAtivosNoCircuito(circuitoId, exigePagamento)` filtra `pagamento_confirmado`, e
+     é chamado com `!!financeiro_ativo` no `INICIAR_ETAPA` e no `AVANCAR_RODADA`; o
+     `promoverBacklog` filtra igual. O texto do Sistema A diz isso com letra (*"enquanto
+     não confirmado, o atleta não é incluído nos confrontos"*); o de pontos, nada.
+     **E é pior que silêncio neutro:** a primeira frase do Cap. 10 diz *"após a
+     aprovação do administrador, passa a ser pareado nas rodadas"* — o que implica que
+     aprovação basta, quando com o financeiro ligado falta o pagamento. Corrigir a
+     frase junto.
+  2. **A temporada CONTINUA se os ativos caírem abaixo de 8.** O `vB-01` só diz que o
+     *início* é adiado; o `AVANCAR_RODADA` exige apenas 2 ativos. O texto do Sistema A
+     já explica isso. É a pergunta que um atleta pagante de um circuito que esvazia faz
+     na hora.
+
+- **0.6.28 — Registros que não podem ser redescobertos.** Todos de 27/09/2026:
+  1. **A promessa do "critério informado aos envolvidos"** (Cap. 13 do `vB-01`, empate
+     absoluto) é **compromisso humano, sem mecanismo**: não existe ação no motor para
+     registrar desempate manual, não há campo, e nenhuma tela avisa que houve empate
+     nos cinco critérios — o administrador só sabe se notar. É coerente com o que
+     "casos omissos" sempre foi aqui, mas **nada pode escrever que o app garante isso**.
+     Melhoria barata quando alguém passar por ali: o painel sinalizar o empate.
+  2. **O BH segue com a cláusula falsa das rodadas até carimbar a v03-13.** É assumido,
+     não esquecido: a v03-12 está em vigor e foi aceita, e reescrevê-la apagaria a prova
+     do que cada pessoa leu (regra 7 do `CLAUDE.md`). Fecha no carimbo, e o card de
+     re-aceite alcança **todos os 15** aceites, porque o gatilho é divergência de
+     versão, não uma versão específica.
+  3. **O Sistema A é MENOS determinístico que o B no empate absoluto.** `cmpRankingDB`
+     termina em `rating − rating`, que devolve 0 no empate total → a ordem fica a da
+     consulta ao banco. É silêncio, não promessa falsa — mas quando o BH trocar de
+     versão, o A merece herdar o mesmo apontamento para casos omissos que o B ganhou.
+  4. **Quando o `vB-01` ganhar a prioridade de renovação (ver 0.6.15), os dois textos
+     precisam aterrissar juntos.** Hoje o motor não aplica prazo nenhum
+     (`LIBERAR_NAO_RENOVANTES` não existe), mas a tela e as mensagens já falam de prazo
+     — inclusive para atleta de circuito B, cujo regulamento não menciona prioridade.
+
 - **0.6.24 — ⛔ O `INSCREVER` não tem guarda de menor de idade NENHUMA.** Achado
   independente do Guardião Jurídico e do de Segurança em 27/09/2026, e os dois o
   classificaram acima do que eles mesmos vieram cobrar. A comparação é o que dói:

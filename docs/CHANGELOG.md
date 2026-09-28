@@ -142,8 +142,16 @@ rating.
 
 ### 2026-09-27 — O regulamento deixa de prometer o que o motor não faz (0.6.23)
 
-**A SUBIR — ainda não publicado.** Só texto de tela e documentos; nenhum motor,
-nenhum banco. Decisão do Juliano: *"já está definido que são 3 meses por temporada
+**NO AR desde 27/09/2026 (de acordo do Juliano: "sobe")**: bundle
+`index-CBpXC3qt.js`, push `a47f0f6..7217331`. **Nenhuma Edge Function mudou** —
+conferido antes (`git diff` de `supabase/functions/` vazio) e depois
+(`admin-action` v62, `athlete-action` v21, `comprovante-url` v3, `login-atleta`
+v10, todas iguais). Site HTTP 200 com o bundle novo.
+**Dados antes e depois idênticos:** atletas 15, circuitos 1, circuito_atletas 15,
+partidas 34, pagamentos 12, solicitacoes_wo 5, `atleta_sessao` 10. Hashes
+`a4027146…` e `7346db66…` inalterados. E **os 15 aceites continuam nas versões em
+que estavam** — 11 em v03-3, 1 em v03-12, 1 em v03-11, 1 em v03-5, 1 em v03-8 —,
+que é a prova de que nada foi reescrito por baixo de ninguém. Decisão do Juliano: *"já está definido que são 3 meses por temporada
 e dois jogos por mês, ajustar tudo o que fala diferente"*, *"mandar para casos
 omissos"*, *"ajustar o regulamento"*.
 

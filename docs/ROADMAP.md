@@ -231,7 +231,7 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   função é executada pela bateria — mais 6 checagens de fonte na tela. 8 testes de
   mutação, 8 vermelhos.
 
-- **0.6.23 — ✅ RESOLVIDO em 27/09/2026 (no fonte).** *O `vB-01` mentia em dois pontos
+- **0.6.23 — ✅ RESOLVIDO em 27/09/2026, NO AR** (bundle `index-CBpXC3qt.js`).** *O `vB-01` mentia em dois pontos
   e calava em três.* **Decisão do Juliano, 27/09/2026:** *"já está definido que são 3
   meses por temporada e dois jogos por mês, ajustar tudo o que fala diferente"* — e
   ajustar o regulamento.
@@ -274,7 +274,7 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   Ou se corrige o texto, ou se corrige o motor — mas as duas falsas não podem
   sobreviver ao primeiro atleta que aceitar o `vB-01`.
 
-- **0.6.27 — ✅ RESOLVIDO em 27/09/2026 (no fonte).** *Dois silêncios que sobraram no
+- **0.6.27 — ✅ RESOLVIDO em 27/09/2026, NO AR.** *Dois silêncios que sobraram no
   `vB-01`, e o primeiro era o que mais provavelmente morderia num circuito pago.*
   **Decisão do Juliano: "resolver as duas coisas pendentes".**
   1. **Pagamento como pré-requisito de pareamento, escrito no Cap. 11:** *"O pagamento é

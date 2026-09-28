@@ -508,6 +508,11 @@ secao("O documento da v03-13 muda UMA cláusula, e só");
     // cláusula que é o motivo da versão, é convite a discussão. Na v03-12 ela
     // fica, porque lá contrasta de verdade com os 80% da 2ª etapa.
     "| Abertura da temporada (Rodada 1) | 100% do valor |",
+    // 27/09/2026: a frase das rodadas. A v03-12 dizia "por padrão, 6 rodadas (número
+    // definido pelo administrador)", que NUNCA foi verdade no app — o motor fixa 6 e a
+    // ação de alterar recusa. A v03-13 passa a dizer o que o sistema faz. A v03-12 fica
+    // como está, de propósito: está em vigor e foi aceita por atletas reais.
+    "O ano é dividido em **3 temporadas de 3 meses**, com janeiro, julho e dezembro reservados para férias. Cada temporada tem, por padrão, 6 rodadas (número definido pelo administrador), organizadas em pares mensais — 2 rodadas por mês.",
   ];
   // `includes` NÃO serve aqui, e o supervisor provou com três exemplos: numa
   // asserção cujo propósito é "nenhuma regra nova foi colada em silêncio",
@@ -546,6 +551,8 @@ secao("O documento da v03-13 muda UMA cláusula, e só");
     "> Fonte: texto oficial exibido no app (RegulamentoView). Este documento reproduz fielmente o regulamento. Substitui as versões anteriores em PDF (v03-4 e v03-11), que estão **desatualizadas** (traziam a 2ª rodada no dia 25).",
     "- Valor da temporada: o mesmo para todos, entrando em qualquer etapa",
     "| Entrada em qualquer etapa | Valor integral |",
+    // O par da linha acima: a correção da frase das rodadas (ver o comentário lá).
+    "O ano é dividido em **3 temporadas de 3 meses**, com janeiro, julho e dezembro reservados para férias. Cada temporada tem **6 rodadas**, organizadas em pares mensais — **2 jogos por mês**. Esse número é fixo.",
     "*Clube do Tênis de Mesa · Circuito BH · Regulamento v03-13*",
   ];
   // Igualdade exata AQUI TAMBÉM. Eu tinha trocado só no lado das removidas e
@@ -1945,6 +1952,44 @@ secao("O regulamento de PONTOS diz a verdade sobre o que o motor faz");
     "o 6º critério de desempate aponta para casos omissos, que é a regra que existe de verdade");
   ok(/empate absoluto[\s\S]{0,400}informado aos envolvidos/.test(fonte),
     "e o Cap. 13 explica o empate absoluto, prometendo o critério informado a quem empatou");
+}
+
+secao("A correção das rodadas fixas entra na v03-13 e NÃO reescreve a v03-12");
+{
+  // Decisão do Juliano, 27/09/2026. O regulamento do BH tinha a MESMA frase falsa do
+  // vB-01 — "6 rodadas (número definido pelo administrador)" —, mas aqui existem
+  // atletas reais que assinaram. Então a correção entra na **v03-13**, que ainda não
+  // foi carimbada, e vai junto do re-aceite que a Onda 0.10.15 construiu.
+  // A v03-12 fica como está: reescrever texto de versão aceita apagaria a prova do que
+  // cada pessoa leu — foi o argumento com que o Guardião Jurídico derrubou, na mesma
+  // semana, uma correção parecida no texto do consentimento.
+  ok(/const VERSOES_COM_RODADAS_FIXAS = new Set\(\["v03-13", "vA-nc-01"\]\)/.test(fonte),
+    "existe o conjunto de versões cujo texto diz que as 6 rodadas são fixas");
+  ok(!/VERSOES_COM_RODADAS_FIXAS = new Set\(\[[^\]]*"v03-12"/.test(fonte),
+    "e a v03-12 NÃO está nele — ela é a versão em vigor, aceita por atletas reais");
+  ok(/rodadasFixas\s*$|rodadasFixas = VERSOES_COM_RODADAS_FIXAS\.has\(versaoEfetiva\)/m.test(fonte),
+    "a tela resolve o conjunto pela versão efetiva, como faz com torneio e desconto");
+  ok(/rodadasFixas[\s\S]{0,400}2 jogos por mês[\s\S]{0,120}Esse número é fixo/.test(fonte),
+    "no ramo corrigido o texto diz 6 rodadas, 2 jogos por mês, e que o número é fixo");
+  ok(/número definido pelo administrador/.test(fonte),
+    "e o ramo da v03-12 preserva a redação histórica — de propósito, não por esquecimento");
+
+  // O documento arquivado da v03-13 acompanha; o da v03-12 não pode ser tocado.
+  const v13 = fs.readFileSync(path.join(RAIZ, "docs", "REGULAMENTO_TENIS_DE_MESA_v03-13.md"), "utf8");
+  const v12 = fs.readFileSync(path.join(RAIZ, "docs", "REGULAMENTO_TENIS_DE_MESA_v03-12.md"), "utf8");
+  // A frase antiga APARECE na v03-13 — dentro do bloco "O que muda", que a cita para
+  // explicar a correção. O que não pode é ela estar no CORPO do regulamento. Minha
+  // primeira versão desta asserção não fazia essa distinção e acusava o certo.
+  const iBloco = v13.indexOf("## O que muda");
+  const iDepois = v13.indexOf("\n## ", iBloco + 5);
+  const corpoV13 = v13.slice(0, iBloco) + v13.slice(iDepois > 0 ? iDepois : v13.length);
+  ok(!/6 rodadas \(número definido pelo administrador\)/.test(corpoV13),
+    "o CORPO da v03-13 não tem mais a frase falsa");
+  ok(/6 rodadas \(número definido pelo administrador\)/.test(v13.slice(iBloco, iDepois > 0 ? iDepois : v13.length)),
+    "e o bloco de transição a cita, para o atleta saber exatamente o que mudou");
+  ok(/2 jogos por mês/.test(v13), "e passou a dizer 2 jogos por mês");
+  ok(/6 rodadas \(número definido pelo administrador\)/.test(v12),
+    "o documento da v03-12 continua com a redação original — é registro do que foi assinado");
 }
 
 process.exit(placar("Regulamento por circuito"));

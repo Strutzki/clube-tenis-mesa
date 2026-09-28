@@ -2605,6 +2605,18 @@ const VERSOES_COM_TORNEIO = new Set(["v03-12", "v03-13"]);
 // as duas coisas andavam na mesma chave, e mexer numa mexia na outra.
 // Fail-closed: versão desconhecida não promete desconto nenhum.
 const VERSOES_COM_DESCONTO_ETAPA = new Set(["v03-12"]);
+// Versões cujo texto diz que as 6 rodadas são FIXAS. Até 27/09/2026 o regulamento
+// dizia "6 rodadas (número definido pelo administrador)" — e isso é falso: o motor
+// tem `const rodadas = 6` e a ação de mudar recusa ("As rodadas são fixas em 6 por
+// temporada"), decisão do Juliano de 10/09/2026 reafirmada em 27/09.
+// A **v03-12 fica de fora de propósito**: ela é a versão em vigor no BH e foi aceita
+// por atletas reais. Reescrever o texto de uma versão assinada apagaria a prova do
+// que cada pessoa leu — foi o argumento com que o Guardião Jurídico derrubou, nesta
+// mesma semana, uma correção parecida que eu ia fazer no texto do consentimento.
+// A correção entra na **v03-13**, que ainda não foi carimbada, e vai junto do
+// re-aceite que a Onda 0.10.15 construiu. A `vA-nc-01` também entra: nenhum
+// circuito a usa (existe 1 circuito no banco, carimbado v03-12).
+const VERSOES_COM_RODADAS_FIXAS = new Set(["v03-13", "vA-nc-01"]);
 
 // Quais versões podem ser CARIMBADAS em cada tipo de circuito. Espelho das três
 // listas do `admin-action` (VERSOES_DO_BH / VERSOES_DE_RATING_NOVO /
@@ -2672,6 +2684,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
   const ehTransicaoV0313 = versaoEfetiva === "v03-13";
   const comTorneio = VERSOES_COM_TORNEIO.has(versaoEfetiva);
   const comDescontoEtapa = VERSOES_COM_DESCONTO_ETAPA.has(versaoEfetiva);
+  const rodadasFixas = VERSOES_COM_RODADAS_FIXAS.has(versaoEfetiva);
   // Usado nos rodapés dos capítulos; mesma regra do rótulo do cabeçalho.
   const versaoLabelRodape = versaoEfetiva || "versão não confirmada";
   const capsBase = [
@@ -3067,7 +3080,9 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
     );
     if (id===13) return (
       <div>
-        <p style={s.p}>O ano é dividido em <span style={s.dest}>3 temporadas de 3 meses</span>, com {comTorneio ? "janeiro, julho e dezembro reservados para férias" : "meses de recesso definidos pelo organizador do circuito"}. Cada temporada tem, por padrão, 6 rodadas (número definido pelo administrador), organizadas em pares mensais — 2 rodadas por mês.</p>
+        <p style={s.p}>O ano é dividido em <span style={s.dest}>3 temporadas de 3 meses</span>, com {comTorneio ? "janeiro, julho e dezembro reservados para férias" : "meses de recesso definidos pelo organizador do circuito"}. {rodadasFixas
+          ? <>Cada temporada tem <span style={s.dest}>6 rodadas</span>, organizadas em pares mensais — <span style={s.dest}>2 jogos por mês</span>. Esse número é fixo.</>
+          : <>Cada temporada tem, por padrão, 6 rodadas (número definido pelo administrador), organizadas em pares mensais — 2 rodadas por mês.</>}</p>
         <Box cor="#D85A30" titulo="📅 Estrutura do Ano">
           <Ul items={[
             comTorneio ? "Janeiro, julho e dezembro: meses sem rodadas" : "Meses de recesso: definidos pelo organizador do circuito",

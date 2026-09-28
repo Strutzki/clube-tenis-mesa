@@ -6,10 +6,22 @@
 
 ## O que muda da v03-12 para a v03-13
 
-**Uma única cláusula: o valor da temporada.** Na v03-12, quem entrava na 2ª etapa
-(Rodada 3) pagava 80%. Na v03-13, **o valor é o mesmo entrando em qualquer etapa**,
-e eventual desconto passa a ser decisão do administrador, avaliada caso a caso —
-não é automático nem garantido.
+**Duas mudanças. A primeira é de regra; a segunda corrige uma frase que era falsa.**
+
+**1. O valor da temporada.** Na v03-12, quem entrava na 2ª etapa (Rodada 3) pagava
+80%. Na v03-13, **o valor é o mesmo entrando em qualquer etapa**, e eventual
+desconto passa a ser decisão do administrador, avaliada caso a caso — não é
+automático nem garantido.
+
+**2. O número de rodadas (Cap. 13) — correção, não mudança de regra.** A v03-12 diz
+"por padrão, 6 rodadas (número definido pelo administrador)". Isso **nunca foi
+verdade no app**: o motor tem as 6 rodadas fixas e a ação de alterá-las recusa, com
+a mensagem *"As rodadas são fixas em 6 por temporada"* — decisão de 10/09/2026,
+reafirmada em 27/09/2026 (3 meses por temporada, 2 jogos por mês). A v03-13 passa a
+dizer o que o sistema faz: **6 rodadas, 2 jogos por mês, número fixo**.
+Nenhum direito do atleta muda: o que ele contratava já eram 6 rodadas.
+**A v03-12 NÃO foi reescrita**, e é deliberado — ela está em vigor e foi aceita por
+atletas reais; reescrever texto assinado apagaria a prova do que cada pessoa leu.
 
 O resto do regulamento é **idêntico**, inclusive o Cap. 10 (Torneio Presencial de
 Encerramento), que continua sendo do Circuito BH.
@@ -319,7 +331,7 @@ A participação no circuito é paga **por temporada, no início**. O valor e ev
 
 ## Cap. 13 — Estrutura das Rodadas & Calendário Anual
 
-O ano é dividido em **3 temporadas de 3 meses**, com janeiro, julho e dezembro reservados para férias. Cada temporada tem, por padrão, 6 rodadas (número definido pelo administrador), organizadas em pares mensais — 2 rodadas por mês.
+O ano é dividido em **3 temporadas de 3 meses**, com janeiro, julho e dezembro reservados para férias. Cada temporada tem **6 rodadas**, organizadas em pares mensais — **2 jogos por mês**. Esse número é fixo.
 
 **📅 Estrutura do ano**
 - Janeiro, julho e dezembro: meses sem rodadas

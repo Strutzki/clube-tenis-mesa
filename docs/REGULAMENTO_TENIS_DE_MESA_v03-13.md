@@ -8,10 +8,10 @@
 
 **Duas mudanças. A primeira é de regra; a segunda corrige uma frase que era falsa.**
 
-**1. O valor da temporada.** Na v03-12, quem entrava na 2ª etapa (Rodada 3) pagava
-80%. Na v03-13, **o valor é o mesmo entrando em qualquer etapa**, e eventual
-desconto passa a ser decisão do administrador, avaliada caso a caso — não é
-automático nem garantido.
+**1. O valor da temporada.** **O valor é o mesmo entrando em qualquer etapa**, e
+eventual desconto passa a ser decisão do administrador, avaliada caso a caso — não é
+automático nem garantido. A versão anterior previa valor reduzido para quem entrava
+no meio da temporada; essa previsão deixou de existir.
 
 **2. O número de rodadas (Cap. 13) — correção, não mudança de regra.** A v03-12 diz
 "por padrão, 6 rodadas (número definido pelo administrador)". Isso **nunca foi

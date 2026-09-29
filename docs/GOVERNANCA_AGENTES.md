@@ -43,7 +43,8 @@ banco, dinheiro ou dado pessoal.
 
 **Os mandatos foram atualizados para o ambiente novo** (Claude Code, na pasta do
 código): agora dá para compilar (`npm run build`) e existe bateria
-(`npm run teste`, 82 asserções). A antiga instrução de "provas substitutas de
+(`npm run teste` — **não cite o número de memória; rode e leia**). A antiga
+instrução de "provas substitutas de
 compilação" — contar delimitadores contra o HEAD — saiu: era resposta a um
 sandbox que não compilava, e hoje seria trabalho perdido.
 

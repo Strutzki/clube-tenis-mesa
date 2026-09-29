@@ -11,8 +11,13 @@ não mais num sandbox sem ferramentas. Na prática, para você:
 
 - **Dá para compilar**: `npm run build`. Erro de sintaxe é pego de verdade,
   não por prova substituta.
-- **Existe bateria de testes**: `npm run teste` — 82 asserções que carregam o
-  `admin-action` real contra um banco em memória (`testes/README.md`).
+- **Existe bateria de testes**: `npm run teste`. Ela carrega **quatro Edge Functions
+  de verdade** (`admin-action`, `athlete-action`, `login-atleta`, `comprovante-url`)
+  contra um banco em memória, mais uma função pura extraída do `App.jsx`.
+  **NÃO cite o número de asserções de memória — rode e leia.** Ele mudou em dez
+  ondas seguidas, e esta linha já afirmou "82" quando o real passava de 900: um
+  guardião que a lesse subestimava a cobertura por um fator de onze, e podia
+  dispensar uma asserção que o projeto exigiria. Detalhe em `testes/README.md`.
 - **Dá para ler o repositório inteiro**, o histórico do git e o banco (leitura).
 - **Regra da casa:** nada é publicado sem o de acordo do Juliano. Ver `CLAUDE.md`.
 

@@ -908,10 +908,26 @@ atleta inscrito."*
   ("Cap. 11", vira 10). As de "(Cap. 03)" e "(Cap. 07)" **não** quebram — são
   anteriores ao capítulo removido. Conserto: nomear o capítulo, como foi feito
   dentro do regulamento. Não tocado porque alteraria a tela do BH.
-- **0.10.5 — O corte dos 8 no ranking vira promessa vazia.** `RankingView`
-  desenha "Zona de classificação" e "C = classificado para o torneio final"
-  incondicionalmente. Num circuito sem torneio, é rótulo sem referente. Saída sem
-  tocar o BH: prop opcional com default que preserva o comportamento atual.
+- **0.10.5 — ✅ RESOLVIDO em 29/09/2026 (no fonte), e eram TRÊS superfícies, não
+  uma.** *O corte dos 8 no ranking vira promessa vazia.* O item só citava o
+  `RankingView`; varrendo, o torneio vazava em três lugares, e o item subestimava
+  os dois piores:
+  - **(a) o ranking** — desenhava "Zona de classificação", cortava no 8º e marcava
+    os primeiros com "C", com a legenda "classificado para o torneio final";
+  - **(b) o cartão que o atleta COMPARTILHA** — estampava "✓ ZONA DE CLASSIFICAÇÃO",
+    e ele **sai do app**, vai para o WhatsApp, fora do contexto em que alguém
+    poderia corrigir;
+  - **(c) a convocação do torneio** — que não é rótulo: é **mensagem enviada**
+    dizendo *"você está no Torneio Presencial"*, de um evento que o regulamento
+    daquele circuito não menciona. É a pior das três.
+  As três passaram a perguntar a **uma** função, `circuitoTemTorneio(state)`, que lê
+  a versão do circuito — antes cada tela decidia sozinha, e nenhuma decidia: todas
+  prometiam sempre. **Fail-closed:** versão desconhecida **não** tem torneio.
+  Prometer um evento que talvez não exista é pior que omitir um que existe — o
+  segundo o organizador corrige com uma mensagem; o primeiro já criou expectativa.
+  E o ranking passou a mostrar **todo mundo** quando não há corte, em vez de cortar
+  no 8º em silêncio. **10 asserções, 6 mutações, 6 vermelhas.** O BH não é tocado:
+  `v03-12` e `v03-13` têm torneio, e para elas tudo continua como estava.
 
 ### Gatilho: antes de nomear o 1º organizador
 

@@ -377,6 +377,64 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
   }
 }
 
+secao("Num circuito SEM torneio, nada promete torneio (0.10.5)");
+{
+  // O Cap. 10 — Torneio Presencial de Encerramento — é do BH. Um circuito de
+  // PONTOS não tem torneio, e um de rating NOVO (`vA-nc-01`) também não: o aviso
+  // da criação diz isso com todas as letras desde 29/09.
+  //
+  // Mas TRÊS superfícies prometiam torneio incondicionalmente, e nenhuma delas
+  // perguntava a versão do circuito:
+  //  (a) o RANKING desenhava "Zona de classificação", cortava no 8º e marcava os
+  //      primeiros com "C", com a legenda "classificado para o torneio final";
+  //  (b) o CARTÃO do atleta — o que ele COMPARTILHA no WhatsApp — estampava
+  //      "✓ ZONA DE CLASSIFICAÇÃO";
+  //  (c) a CONVOCAÇÃO, que não é rótulo: é mensagem enviada dizendo "você está no
+  //      Torneio Presencial".
+  //
+  // A (c) é a pior: sai do app, chega no telefone da pessoa, e fala de um evento
+  // que o regulamento dela não menciona. A (b) é a segunda, porque o cartão viaja
+  // para fora do contexto em que alguém poderia corrigir.
+  const fonteApp = await import("node:fs/promises").then(f => f.readFile("src/App.jsx", "utf-8"));
+
+  ok(/function circuitoTemTorneio\(state\)/.test(fonteApp),
+    "existe UMA conta de 'este circuito tem torneio', em vez de cada tela decidir sozinha");
+  ok(/VERSOES_COM_TORNEIO\.has\(String\(state\?\.regulamentoVersao \|\| ""\)\.trim\(\)\)/.test(fonteApp),
+    "e ela lê a versão do CIRCUITO, não uma constante");
+
+  // (a) ranking
+  ok(/const temCorte = temTorneio && sorted\.length > CORTE;/.test(fonteApp),
+    "(a) sem torneio, o ranking não desenha corte");
+  ok(/const classificado = temTorneio && i < CORTE;/.test(fonteApp),
+    "e ninguém é marcado como classificado");
+  ok(/\{temTorneio && \(\n\s*<div style=\{\{marginTop:16/.test(fonteApp),
+    "e a legenda do 'C' some junto — senão explicaria uma marca que não existe");
+  ok(/\{\(temCorte \? sorted\.slice\(0, CORTE\) : sorted\)\.map/.test(fonteApp),
+    "e a lista mostra TODO MUNDO quando não há corte, em vez de cortar no 8º em silêncio");
+
+  // (b) o cartão que sai do app
+  ok(/const classificado = circuitoTemTorneio\(state\) && minhaPos >= 0 && minhaPos < 8;/.test(fonteApp),
+    "(b) o cartão que o atleta compartilha não estampa classificação onde não há torneio");
+
+  // (c) a mensagem
+  ok(/if \(!circuitoTemTorneio\(state\)\) return \[\];/.test(fonteApp),
+    "(c) a convocação do torneio não é oferecida num circuito que não tem torneio");
+
+  // ⚠️ FAIL-CLOSED: versão desconhecida NÃO tem torneio. Prometer um evento que
+  // talvez não exista é pior que omitir um que existe — o segundo o organizador
+  // corrige com uma mensagem; o primeiro já criou expectativa em quem leu.
+  // ⚠️ Ancorada no CORPO da função, não nos pontos de chamada. A primeira redação
+  // olhava `circuitoTemTorneio(state) ||` nos chamadores — e a sabotagem que
+  // importa mora DENTRO: um `|| !state?.regulamentoVersao` ali faz versão
+  // desconhecida ganhar torneio, e nenhum chamador muda. Sexta vez nesta sessão que
+  // uma asserção minha olhava para o lugar errado.
+  const corpoTorneio = fonteApp.slice(fonteApp.indexOf("function circuitoTemTorneio(state) {"),
+                                      fonteApp.indexOf("}", fonteApp.indexOf("function circuitoTemTorneio(state) {")) + 1);
+  ok(corpoTorneio.length > 0, "o corpo da função foi localizado");
+  ok(!/\|\|/.test(corpoTorneio.replace(/String\(state\?\.regulamentoVersao \|\| ""\)/, "")),
+    "e não há fallback dentro dela que faça versão desconhecida ganhar torneio");
+}
+
 secao("A tela mostra a versão DO CIRCUITO ABERTO, não uma global");
 {
   // Pergunta do Juliano, 29/09/2026. A resposta é sim, e o mecanismo já existia —

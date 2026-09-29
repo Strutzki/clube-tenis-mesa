@@ -2703,6 +2703,22 @@ const VERSOES_COM_BYE_ESCRITO = new Set(["v03-13", "vA-nc-01"]);
 // para um circuito de rating NOVO seria texto falso, e é o que o Cap. 2 ramifica.
 const VERSOES_DO_BH = new Set(["v03-12", "v03-13"]);
 
+// ESTE CIRCUITO TEM TORNEIO PRESENCIAL DE ENCERRAMENTO? (0.10.5, 29/09/2026)
+// Uma conta só, usada por todas as telas que prometem alguma coisa sobre o torneio
+// — o ranking, o cartão do atleta e a convocação. Antes cada uma decidia sozinha,
+// e nenhuma decidia: elas prometiam SEMPRE.
+// O Cap. 10 é do BH. Um circuito de PONTOS não tem torneio nenhum, e um circuito de
+// rating NOVO (`vA-nc-01`) também não — e mesmo assim o ranking desenhava "Zona de
+// classificação", marcava os 8 primeiros com "C" e a legenda dizia "classificado
+// para o torneio final". Rótulo sem referente: o atleta lê que está classificado
+// para um torneio que o regulamento dele não menciona.
+// ⚠️ FAIL-CLOSED: versão desconhecida NÃO tem torneio. Prometer um evento que talvez
+// não exista é pior que deixar de mencionar um que existe — o segundo o organizador
+// corrige com uma mensagem; o primeiro já criou expectativa em quem leu.
+function circuitoTemTorneio(state) {
+  return VERSOES_COM_TORNEIO.has(String(state?.regulamentoVersao || "").trim());
+}
+
 // O QUE MUDOU EM CADA VERSÃO — e por que isto vive AQUI e não no regulamento.
 //
 // Decisão do Juliano, 29/09/2026: "o regulamento deve desvincular totalmente de
@@ -3934,6 +3950,11 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
     case "torneio": {
       // Convocação só no fim da temporada (todas as rodadas jogadas e processadas).
       if (!temporadaCompletaCheck(state)) return [];
+      // 0.10.5: num circuito sem torneio, esta convocação não tem objeto — e ela é
+      // a pior das três superfícies, porque não é rótulo na tela: é mensagem
+      // ENVIADA, dizendo "você está no Torneio Presencial" de um evento que o
+      // regulamento daquele circuito não menciona.
+      if (!circuitoTemTorneio(state)) return [];
       const top8 = [...ativos]
         .sort(cmpRanking(state.matches))
         .slice(0, 8);
@@ -10146,14 +10167,16 @@ function RankingView({ state, currentAthleteId, isAdmin=false }) {
   if (sorted.length === 0) return <Card><div style={{fontSize:13,color:T.cinza,textAlign:"center",padding:20}}>Nenhum atleta ativo ainda.</div></Card>;
   const temPartidas = sorted.some(a => (a.wins||0) + (a.losses||0) > 0);
   const CORTE = 8; // Top 8 classifica para o torneio final (Cap. 09/10)
-  const temCorte = sorted.length > CORTE;
+  // Sem torneio no circuito, não há corte a desenhar nem "C" a marcar (0.10.5).
+  const temTorneio = circuitoTemTorneio(state);
+  const temCorte = temTorneio && sorted.length > CORTE;
 
   const linha = (a, i) => {
     const saldo = a.saldoTemp || 0;
     const saldoColor = saldo > 0 ? T.verde2 : saldo < 0 ? T.vermelho : T.cinza;
     const saldoStr = saldo > 0 ? `+${saldo}` : `${saldo}`;
     const isMe = currentAthleteId && a.id === currentAthleteId;
-    const classificado = i < CORTE;
+    const classificado = temTorneio && i < CORTE;
     const foraDoCorte = temCorte && !classificado;
     return (
       <div key={a.id} onClick={isAdmin ? ()=>setCartaAberta({athlete:a, posicao:i+1}) : undefined} style={{
@@ -10203,7 +10226,7 @@ function RankingView({ state, currentAthleteId, isAdmin=false }) {
         </div>
       )}
 
-      {sorted.slice(0, CORTE).map((a,i) => linha(a,i))}
+      {(temCorte ? sorted.slice(0, CORTE) : sorted).map((a,i) => linha(a,i))}
 
       {temCorte && (
         <div style={{display:"flex",alignItems:"center",gap:10,margin:"10px 4px 12px"}}>
@@ -10213,11 +10236,13 @@ function RankingView({ state, currentAthleteId, isAdmin=false }) {
         </div>
       )}
 
-      {sorted.slice(CORTE).map((a,i) => linha(a,i+CORTE))}
+      {temCorte && sorted.slice(CORTE).map((a,i) => linha(a,i+CORTE))}
 
-      <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${T.bordaSuave}`,fontFamily:T.mono,fontSize:9,color:T.cinza,lineHeight:1.5}}>
-        <span style={{color:T.terracota,fontWeight:700}}>C</span> = classificado para o torneio final até o momento
-      </div>
+      {temTorneio && (
+        <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${T.bordaSuave}`,fontFamily:T.mono,fontSize:9,color:T.cinza,lineHeight:1.5}}>
+          <span style={{color:T.terracota,fontWeight:700}}>C</span> = classificado para o torneio final até o momento
+        </div>
+      )}
     </div>
   );
 }
@@ -10875,7 +10900,10 @@ function AthleteGames({ state, dispatch, athlete }) {
   const minhaPos = ranking.findIndex(a => a.id === athlete.id);
   const saldo = eu.saldoTemp || 0;
   const saldoColor = saldo > 0 ? T.verde2 : saldo < 0 ? T.vermelho : T.cinza;
-  const classificado = minhaPos >= 0 && minhaPos < 8;
+  // 0.10.5: sem torneio no circuito, o atleta não é "classificado" para nada.
+  // Este é o pior lugar para a promessa vazar, porque o cartão SAI do app — vai
+  // para o WhatsApp, fora do contexto em que alguém poderia corrigir.
+  const classificado = circuitoTemTorneio(state) && minhaPos >= 0 && minhaPos < 8;
 
   // Contagem crescente (0 → valor) no cabeçalho, conforme o handoff de design
   const posAnimado = useCountUp(minhaPos >= 0 ? minhaPos + 1 : 0);

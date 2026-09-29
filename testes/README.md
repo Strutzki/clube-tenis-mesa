@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 920 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 930 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -208,6 +208,13 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | o atleta logado passa a vir da tabela GLOBAL por id | 2 vermelhas — seria a versão do BH em qualquer circuito |
 | o card compara a versão do atleta com uma constante, não com a do circuito | 1 vermelha |
 | o `PARTICIPAR` passa a carimbar a versão na tabela global | 1 vermelha — o recibo de um circuito falaria pelo outro |
+| **O torneio não vaza para circuito que não tem — 29/09/2026 (6 sabotagens, 6 vermelhas)** | |
+| o ranking volta a cortar no 8º em qualquer circuito | 1 vermelha |
+| o "C" volta a marcar os 8 primeiros sempre | 1 vermelha |
+| o cartão COMPARTILHADO volta a estampar classificação | 1 vermelha — sai do app, vai para o WhatsApp |
+| a convocação do torneio volta a aparecer em circuito sem torneio | 1 vermelha — é mensagem ENVIADA, não rótulo |
+| a legenda do "C" fica, sem ninguém marcado | 1 vermelha |
+| versão desconhecida passa a ganhar torneio (fail-open) | 1 vermelha — **ficava VERDE**: a asserção olhava os pontos de CHAMADA e a sabotagem mora DENTRO da função. **Sexta vez na sessão** que uma asserção minha olhava para o lugar errado |
 | **O 2º circuito — 28/09/2026 (14 sabotagens, 14 vermelhas)** | |
 | motor: o teto volta a ser ignorado no `DEFINIR_CONFIG_CIRCUITO` | 1 vermelha |
 | motor: o mínimo de 8 cai (um teto de 3 passaria) | 1 vermelha |

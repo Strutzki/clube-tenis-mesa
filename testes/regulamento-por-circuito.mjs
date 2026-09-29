@@ -409,6 +409,48 @@ secao("O mínimo de 8 para começar: os DOIS regulamentos prometem, o motor cump
     "o piso de avançar é 2, que é o mínimo para existir uma partida");
 }
 
+secao("O regulamento só fala do circuito em que o atleta está entrando (29/09/2026)");
+{
+  // Decisão do Juliano: "o regulamento deve desvincular totalmente de circuitos
+  // anteriores e só tratar o circuito que o atleta está se inscrevendo".
+  //
+  // O Cap. 2 era o capítulo mais "do BH" do texto COMPARTILHADO: "A Temporada 1
+  // inicia com o ranking masculino adulto (18+)", uma tabela com coluna chamada
+  // "Temporada 1", e categorias que são fato do clube dele. Havia um TODO marcando
+  // isso desde antes — e um 2º circuito de rating leria tudo como se fosse seu.
+  //
+  // O app NÃO TEM o dado: `circuitos` não tem coluna de categoria. Então o texto
+  // neutro não inventa uma — diz que quem define é o organizador. Afirmar um perfil
+  // que ninguém cadastrou seria a mesma falha que o "teto de 20" quando o teto era
+  // configurável: prometer o que o dado não sustenta.
+  ok(/const VERSOES_DO_BH = new Set\(\["v03-12", "v03-13"\]\);/.test(fonte),
+    "as versões do BH são nomeadas — para os atletas dele, o texto do BH é verdadeiro");
+  ok(/const ehVersaoDoBH = VERSOES_DO_BH\.has\(versaoEfetiva\);/.test(fonte),
+    "e o Cap. 2 ramifica por isso");
+  ok(/\{ehVersaoDoBH \? <>/.test(fonte),
+    "o texto do BH fica sob a condição, em vez de valer para todo circuito de rating");
+  ok(/definido pelo organizador do circuito<\/span> e informado antes da abertura/.test(fonte),
+    "e o circuito NOVO recebe um texto que não inventa categoria — quem define é o organizador");
+  ok(/ehVersaoDoBH \? "Temporada 1" : "Neste circuito"/.test(fonte),
+    "até o cabeçalho da tabela deixa de dizer 'Temporada 1' num circuito que não é o BH");
+  ok(/\.\.\.\(ehVersaoDoBH \? \[\["Masculino adulto/.test(fonte),
+    "e a linha da categoria piloto do BH não aparece em circuito novo");
+
+  // Fail-closed: versão desconhecida NÃO recebe o texto do BH. Afirmar a categoria
+  // de um circuito que não se conhece é pior que não afirmar nada.
+  ok(!/VERSOES_DO_BH\.has\(versaoEfetiva\) \|\|/.test(fonte),
+    "e não há fallback que faça versão desconhecida herdar o texto do BH");
+
+  // O de PONTOS já nascera assim — é o controle desta seção.
+  {
+    const iB = fonte.indexOf("function ConteudoCapB");
+    const fimB = fonte.indexOf("\nfunction ", iB + 1);
+    const B = fonte.slice(iB, fimB);
+    ok(!/v03-1\d/.test(B) && !/Temporada 1 /.test(B) && !/Circuito BH/.test(B),
+      "o regulamento de PONTOS não menciona outra versão, outra temporada nem o BH — ele já nascera desvinculado");
+  }
+}
+
 secao("O bye entra no texto de rating — na v03-13, não na v03-12 que já tem aceite");
 {
   // O Juliano perguntou, em 29/09/2026: "na quantidade de atletas ímpar, me lembrar
@@ -1927,10 +1969,42 @@ secao("O texto que protege o atleta está NA TELA, não só no documento");
   // .md, e o que o atleta lê e aceita sai do App.jsx. A proteção não chegava a
   // quem ela protege. E ela é da v03-13 e só dela — num circuito novo não houve
   // 80% para deixar de cobrar.
-  ok(/const ehTransicaoV0313 = versaoEfetiva === "v03-13"/.test(fonte),
-    "a cláusula de transição tem condição própria, não pega carona no desconto");
-  ok(/ehTransicaoV0313 && \(/.test(fonte),
-    "e ela só é renderizada sob essa condição");
+  // ⚠️ A CAIXA DE TRANSIÇÃO SAIU DO REGULAMENTO EM 29/09/2026, e estas asserções
+  // existiam para protegê-la — então elas trocam de lado, com o motivo escrito.
+  //
+  // Decisão do Juliano: "o regulamento deve desvincular totalmente de circuitos
+  // anteriores e só tratar o circuito que o atleta está se inscrevendo". A caixa
+  // era o ÚNICO lugar do regulamento de rating que falava de outra versão e de
+  // outra temporada; o de pontos já nascera sem nada disso.
+  //
+  // O princípio, que vale além dela: texto que fala do PASSADO apodrece; texto que
+  // descreve o PRESENTE, não. Quase todo defeito de regulamento desta semana foi
+  // dessa família.
+  //
+  // E o "o que mudou" NÃO foi jogado fora — mudou de lugar. Sem isso, o re-aceite
+  // ficaria menos informado, que é pior que o problema que a mudança resolve.
+  ok(!/ehTransicaoV0313/.test(fonte),
+    "o regulamento não tem mais caixa de transição — ele só fala do circuito em que o atleta está entrando");
+  ok(!/Transição da v03-12 para a v03-13/.test(fonte),
+    "e o título dela não sobrou");
+  ok(/const MUDANCAS_POR_VERSAO = \{/.test(fonte),
+    "o 'o que mudou' passou a viver no card de RE-ACEITE, que é sobre a pessoa e some quando ela aceita");
+  // ⚠️ Ancorada na CONDIÇÃO que renderiza, não numa referência qualquer ao nome.
+  // A primeira redação casava `/MUDANCAS_POR_VERSAO\[versaoCircuito\]/`, que
+  // aparece também dentro do `.map()` — então trocar a guarda por `false &&`
+  // deixava a bateria verde com o bloco morto na tela. Quinta vez neste dia que
+  // uma asserção minha passa pelo motivo errado.
+  ok(/\{\(MUDANCAS_POR_VERSAO\[versaoCircuito\] \|\| \[\]\)\.length > 0 && \(/.test(fonte),
+    "e é o card que o consome, sob a condição de haver o que mostrar — não é constante morta");
+  ok(/O que mudou nesta versão/.test(fonte),
+    "com título que diz o recorte: o que mudou NESTA versão");
+  ok(/Ele não substitui a leitura/.test(fonte),
+    "e dizendo que o resumo não substitui o regulamento inteiro");
+  // O limite tem de estar na tela, não só no comentário: 11 dos 15 atletas do BH
+  // estão em v03-3, e aquele texto nunca existiu. Prometer diff completo seria
+  // mentir.
+  ok(/Este resumo é do que mudou <strong[^>]*>nesta versão<\/strong>/.test(fonte),
+    "o limite do resumo é dito ao atleta, não escondido no código");
   // ⚠️ A CLÁUSULA DE DIREITO ADQUIRIDO SAIU EM 29/09/2026, e o motivo tem de ficar
   // aqui, porque estas asserções existiam justamente para impedir que ela saísse.
   //
@@ -1953,8 +2027,13 @@ secao("O texto que protege o atleta está NA TELA, não só no documento");
     "a promessa de cobrar 80% de quem não quitou saiu da tela — ela não tinha mais sujeito");
   ok(!/80%/.test(fonte.slice(fonte.indexOf("ehTransicaoV0313 && ("), fonte.indexOf("💵 Valor conforme o momento de entrada"))),
     "e a caixa de transição não menciona 80% em lugar nenhum");
-  ok(/a partir da temporada 2\/2026<\/span>/.test(fonte),
-    "a tela nomeia a temporada em que a v03-13 passa a valer");
+  // A vigência ("a partir da temporada 2/2026") saiu da TELA junto com a caixa —
+  // ela é, por definição, uma afirmação sobre o passado e sobre outra temporada.
+  // Continua no DOCUMENTO, que é o registro e onde ela tem efeito.
+  ok(!/a partir da temporada 2\/2026<\/span>/.test(fonte),
+    "a tela não fala mais de qual temporada a versão passa a valer — isso é do documento");
+  ok(/temporada 2\/2026/.test(fs.readFileSync(path.join(RAIZ, "docs", "REGULAMENTO_TENIS_DE_MESA_v03-13.md"), "utf8")),
+    "e o documento continua dizendo, porque lá é registro e não contrato de leitura");
 
   // E o documento tem de dizer o mesmo, com a mesma força.
   const t13 = fs.readFileSync(path.join(RAIZ, "docs", "REGULAMENTO_TENIS_DE_MESA_v03-13.md"), "utf8");

@@ -2698,6 +2698,36 @@ const VERSOES_COM_RODADAS_FIXAS = new Set(["v03-13", "vA-nc-01"]);
 // mudaria retroativamente o que aqueles recibos provam — regra 7. O capítulo nasce
 // na v03-13, que ainda não foi carimbada, e chega a eles pelo re-aceite.
 const VERSOES_COM_BYE_ESCRITO = new Set(["v03-13", "vA-nc-01"]);
+// Versões que são do CIRCUITO BH e descrevem fatos dele (categoria piloto
+// "masculino adulto 18+", "Temporada 1"). Para os atletas do BH isso é verdadeiro;
+// para um circuito de rating NOVO seria texto falso, e é o que o Cap. 2 ramifica.
+const VERSOES_DO_BH = new Set(["v03-12", "v03-13"]);
+
+// O QUE MUDOU EM CADA VERSÃO — e por que isto vive AQUI e não no regulamento.
+//
+// Decisão do Juliano, 29/09/2026: "o regulamento deve desvincular totalmente de
+// circuitos anteriores e só tratar o circuito que o atleta está se inscrevendo".
+// A caixa de transição saiu do texto por causa disso. Mas o "o que mudou" é
+// informação de que o atleta PRECISA para decidir se aceita — tirá-la sem mais
+// deixaria o re-aceite menos informado, que é pior.
+//
+// A separação certa: o REGULAMENTO é o contrato daquele circuito, no presente, e
+// nunca envelhece. O "o que mudou" é sobre a PESSOA — depende de qual versão ela
+// aceitou —, é temporário, e some quando ela aceita. Por isso vive no card de
+// re-aceite.
+//
+// ⚠️ LIMITE, dito na tela e não escondido: isto lista o que mudou NA VERSÃO EM
+// VIGOR, não o caminho inteiro desde a versão que cada atleta aceitou. Dos 15
+// atletas do BH, 11 estão em `v03-3`, e os textos de v03-3, v03-5, v03-8 e v03-11
+// NÃO EXISTEM — nunca existiram no repositório. Prometer um "diff completo" seria
+// mentir. O que dá para afirmar com honestidade é o que esta versão trouxe.
+const MUDANCAS_POR_VERSAO = {
+  "v03-13": [
+    "O valor da temporada passou a ser o MESMO entrando em qualquer etapa. Antes, quem entrava na 2ª etapa pagava menos — e isso deixou de valer. Desconto, quando houver, passa a ser decisão do administrador, caso a caso.",
+    "O número de rodadas por temporada é FIXO em 6. O texto anterior dizia que o administrador definia, e isso nunca foi verdade no sistema.",
+    "Ganhou capítulo próprio o BYE — o que acontece quando o número de atletas é ímpar. A regra já valia; agora está escrita.",
+  ],
+};
 
 // Quais versões podem ser CARIMBADAS em cada tipo de circuito. Espelho das três
 // listas do `admin-action` (VERSOES_DO_BH / VERSOES_DE_RATING_NOVO /
@@ -2762,11 +2792,14 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
   // BH entre a temporada 1/2026 e a 2/2026. Num circuito novo (vA-nc-01, vB-01)
   // ela não faz sentido nenhum — nunca houve 80% para não cobrar de volta.
   // Ela não pode viver só no .md: o texto que vale é o que o atleta lê na tela.
-  const ehTransicaoV0313 = versaoEfetiva === "v03-13";
   const comTorneio = VERSOES_COM_TORNEIO.has(versaoEfetiva);
   const comDescontoEtapa = VERSOES_COM_DESCONTO_ETAPA.has(versaoEfetiva);
   const rodadasFixas = VERSOES_COM_RODADAS_FIXAS.has(versaoEfetiva);
   const byeEscrito = VERSOES_COM_BYE_ESCRITO.has(versaoEfetiva);
+  // As versões do BH descrevem o BH — e para os atletas dele isso é verdadeiro.
+  // Fail-closed: versão desconhecida NÃO recebe o texto do BH, porque afirmar a
+  // categoria de um circuito que não se conhece é pior que não afirmar nada.
+  const ehVersaoDoBH = VERSOES_DO_BH.has(versaoEfetiva);
   // Usado nos rodapés dos capítulos; mesma regra do rótulo do cabeçalho.
   const versaoLabelRodape = versaoEfetiva || "versão não confirmada";
   const capsBase = [
@@ -2837,18 +2870,30 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
     );
     if (id===2) return (
       <div>
-        {/* TODO categoria cravada: "masculino adulto (18+)" é fato do BH, não
-    regra da plataforma, e NÃO vem do dado — `circuitos` não tem coluna de
-    categoria. No dia em que abrir um 2º circuito de rating com outra
-    categoria, este texto mente. É o MESMO esquecimento que fez o nome do
-    circuito ficar errado até 08/09/2026; fica anotado para não repetir. */}
+        {/* ⚠️ CAP. 2 É O CAPÍTULO MAIS "DO BH" DO REGULAMENTO COMPARTILHADO, e isso
+    ficou marcado como TODO desde antes: "masculino adulto (18+)" é fato do BH,
+    não regra da plataforma, e não vem do dado — `circuitos` não tem coluna de
+    categoria. Um 2º circuito de rating com outra categoria leria um texto falso.
+    Resolvido em 29/09/2026 pela mesma decisão que tirou a caixa de transição: o
+    regulamento só fala do circuito em que o atleta está entrando. As versões do
+    BH (v03-12, v03-13) mantêm o texto do BH, que para os atletas DELE é
+    verdadeiro — e a v03-12 não podia ser tocada de qualquer forma, porque tem
+    aceite. Circuito NOVO (`vA-nc-01`) ganha o texto neutro.
+    O que o texto neutro NÃO faz: inventar uma categoria. O app não tem esse dado,
+    então ele diz que a elegibilidade é definida pelo organizador, em vez de
+    afirmar um perfil que ninguém cadastrou. */}
+        {ehVersaoDoBH ? <>
         <p style={s.p}>O Clube do Tênis de Mesa nasce como um projeto independente e em construção. A Temporada 1 inicia com o ranking masculino adulto (18+) como <span style={s.dest}>modalidade piloto</span>, permitindo validar o modelo operacional antes de expandir.</p>
         <p style={s.p}>Novas categorias serão incluídas gradualmente nas temporadas seguintes, com o objetivo de tornar o Clube um espaço plural para todos os perfis e níveis de jogadores.</p>
-        <Tbl headers={["Perfil","Temporada 1","Observação"]} rows={[
-          ["Masculino adulto, 18+, qualquer nível","✅ ELEGÍVEL","Federado ou não-federado — todos bem-vindos"],
+        </> : <>
+        <p style={s.p}>Este circuito é aberto a atletas <span style={s.dest}>federados e não-federados</span>. O perfil de quem pode participar — faixa etária, categoria e nível — é <span style={s.dest}>definido pelo organizador do circuito</span> e informado antes da abertura das inscrições.</p>
+        <p style={s.p}>A inscrição é sempre sujeita a <span style={s.dest}>aprovação do organizador</span>, e o regulamento vale igualmente para todos os aprovados.</p>
+        </>}
+        <Tbl headers={["Perfil", ehVersaoDoBH ? "Temporada 1" : "Neste circuito","Observação"]} rows={[
+          ...(ehVersaoDoBH ? [["Masculino adulto, 18+, qualquer nível","✅ ELEGÍVEL","Federado ou não-federado — todos bem-vindos"]] : []),
           ["Atleta federado CBTM","✅ ELEGÍVEL","Entra com rating CBTM-Web verificado por comprovante"],
           ["Atleta não-federado","✅ ELEGÍVEL","Entra com 250 pts e compete desde a 1ª rodada"],
-          ["Outras categorias","📅 Em breve","Inclusão gradual nas temporadas seguintes"],
+          ...(ehVersaoDoBH ? [["Outras categorias","📅 Em breve","Inclusão gradual nas temporadas seguintes"]] : []),
         ]}/>
         <Box cor="#c25a45" titulo="⚠️ Atletas com TRA ativa na CBTM">
           <p style={s.p}>Verifique junto à sua federação e ao clube ao qual é filiado se a participação em eventos não-oficiais é permitida. O administrador e @clubedotenisdemesa não se responsabilizam por eventuais sanções desportivas aplicadas por entidades federativas.</p>
@@ -3142,30 +3187,23 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
             "✅ Certificado digital para os 3 melhores da temporada",
           ]}/>
         </Box>
-        {ehTransicaoV0313 && (
-          <Box cor="#6a9d7a" titulo="🔁 Transição da v03-12 para a v03-13">
-            <p style={{...s.p, marginTop:0}}>
-              Esta versão vigora <span style={s.dest}>a partir da temporada 2/2026</span>. A
-              temporada 1/2026 seguiu integralmente pela v03-12, inclusive no valor.
-            </p>
-            {/* A 2ª cláusula desta caixa SAIU em 29/09/2026, a pedido do Juliano
-        ("quero retirar qualquer menção a 80% e resolver isso de uma vez"), e
-        só saiu porque ela ficou SEM SUJEITO — o que foi medido, não suposto.
-        Ela dizia: "quem ingressou sob o regulamento anterior e ainda não
-        quitou paga os 80% prometidos". Era uma cláusula de direito adquirido,
-        e apagá-la com alguém devendo significaria cobrar mais do que a pessoa
-        foi prometida.
-        Conferido no banco em 29/09/2026: os 12 pagamentos da temporada 1/2026
-        estão TODOS `confirmado`, e a soma dos valores é ZERO — a temporada é
-        gratuita por decisão do Juliano (desconto global em 100%). Dois deles
-        carregam `percentual = 80`, e os dois já estão quitados. Ou seja:
-        ninguém "ainda não quitou", e a cláusula protegia pessoa nenhuma.
-        Os registros de `pagamentos` com `percentual = 80` FICAM — são recibo
-        do que foi aplicado, não promessa para a frente.
-        A 1ª cláusula fica: dizer a partir de quando a versão vale é o que
-        impede alguém de achar que as regras novas valeram retroativamente. */}
-          </Box>
-        )}
+        {/* A CAIXA "🔁 Transição da v03-12 para a v03-13" SAIU em 29/09/2026.
+    Decisão do Juliano: "o regulamento deve desvincular totalmente de circuitos
+    anteriores e só tratar o circuito que o atleta está se inscrevendo".
+    Ela era o ÚNICO lugar do regulamento de rating que falava de outra versão e de
+    outra temporada — o de pontos já nascera sem nada disso. Um atleta abrindo um
+    circuito de rating NOVO lia sobre uma transição que não era dele.
+    E o princípio vale além desta caixa: texto que fala do PASSADO apodrece; texto
+    que descreve o PRESENTE, não. Quase todo defeito de regulamento desta semana
+    foi dessa família — cláusula de transição vencida, comparação com o BH,
+    etiqueta de versão que não batia com ninguém.
+    O "o que mudou", que é informação real e que o atleta precisa para decidir,
+    NÃO foi jogado fora: mudou de lugar. Ele vive agora no card de RE-ACEITE
+    (`MUDANCAS_POR_VERSAO`), que é onde pertence — é sobre a pessoa, é temporário,
+    e some quando ela aceita. O contrato deixa de envelhecer, e a informação chega
+    no momento da decisão.
+    Só a v03-13 renderizava esta caixa, e ela tem ZERO aceites: nenhum recibo foi
+    tocado. A v03-12 não foi alterada. */}
         <Box cor="#9C6F3E" titulo="💵 Valor conforme o momento de entrada">
           <Tbl headers={["Momento","Valor"]} rows={[
             // Sem o desconto por etapa, "abertura = 100%" e "qualquer etapa =
@@ -10469,6 +10507,22 @@ function ReAceiteRegulamentoCard({ state, dispatch, athlete }) {
           : <> Não temos registro de qual versão você aceitou.</>}
         {" "}Leia a versão em vigor e confirme.
       </div>
+      {/* O "o que mudou" saiu do regulamento e veio para cá (29/09/2026) — ver o
+    comentário de `MUDANCAS_POR_VERSAO`. Se a versão em vigor não tiver lista,
+    o bloco simplesmente não aparece: melhor calar do que inventar um resumo. */}
+      {(MUDANCAS_POR_VERSAO[versaoCircuito] || []).length > 0 && (
+        <div style={{background:"rgba(216,90,48,0.08)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:10,padding:"10px 12px",marginBottom:10}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>O que mudou nesta versão</div>
+          <ul style={{margin:0,paddingLeft:16,display:"flex",flexDirection:"column",gap:6}}>
+            {MUDANCAS_POR_VERSAO[versaoCircuito].map((m, i) => (
+              <li key={i} style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>{m}</li>
+            ))}
+          </ul>
+          <div style={{fontSize:11,color:"#7d9188",marginTop:8,lineHeight:1.55}}>
+            Este resumo é do que mudou <strong style={{color:"#F0EAE0"}}>nesta versão</strong>. Ele não substitui a leitura — o que vale é o regulamento inteiro, abaixo.
+          </div>
+        </div>
+      )}
       {/* A garantia que tranquiliza estava SÓ na mensagem de WhatsApp. O canal
           mais provável de ser lido primeiro é o app — e era o que tinha a
           informação mais incompleta. (Guardião do Atleta, 18/09/2026.) */}

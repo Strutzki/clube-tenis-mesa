@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 898 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 912 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -196,6 +196,13 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | a promessa de cobrar 80% de quem não quitou volta à tela | 3 vermelhas |
 | a cláusula de não-retroatividade volta a recortar por etiqueta de versão | 2 vermelhas |
 | **[instrumento]** o removedor de comentários volta a ser só por linha | 1 vermelha — **ficava VERDE**: o filtro por linha só via a linha que ABRE um `{/* */}`, então o corpo do comentário sobrevivia e uma asserção que PROÍBE um texto se afogava no comentário que EXPLICAVA a saída dele. Quarta vez no mesmo dia |
+| **O regulamento desvinculado — 29/09/2026 (6 sabotagens, 6 vermelhas)** | |
+| o texto do BH volta a valer para todo circuito de rating | 1 vermelha |
+| versão desconhecida passa a herdar o texto do BH | 2 vermelhas — fail-closed: afirmar a categoria de um circuito que não se conhece é pior que não afirmar nada |
+| o cabeçalho da tabela volta a dizer "Temporada 1" sempre | 1 vermelha |
+| a caixa de transição volta ao regulamento | 1 vermelha |
+| o "o que mudou" some do card de re-aceite | 1 vermelha — **ficava VERDE**: a asserção casava uma referência ao nome que aparece também dentro do `.map()`, em vez da condição que renderiza. **Quinta vez no dia** que uma asserção minha passa pelo motivo errado |
+| o resumo promete cobrir tudo desde a versão aceita | 2 vermelhas — seria mentira: 11 dos 15 atletas estão em `v03-3`, cujo texto nunca existiu |
 | **O 2º circuito — 28/09/2026 (14 sabotagens, 14 vermelhas)** | |
 | motor: o teto volta a ser ignorado no `DEFINIR_CONFIG_CIRCUITO` | 1 vermelha |
 | motor: o mínimo de 8 cai (um teto de 3 passaria) | 1 vermelha |

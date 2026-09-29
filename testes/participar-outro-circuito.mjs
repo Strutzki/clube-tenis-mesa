@@ -387,18 +387,62 @@ secao("Num circuito SEM torneio, nada promete torneio (0.10.5)");
   // perguntava a versão do circuito:
   //  (a) o RANKING desenhava "Zona de classificação", cortava no 8º e marcava os
   //      primeiros com "C", com a legenda "classificado para o torneio final";
-  //  (b) o CARTÃO do atleta — o que ele COMPARTILHA no WhatsApp — estampava
-  //      "✓ ZONA DE CLASSIFICAÇÃO";
+  //  (b) o CABEÇALHO de "Meus jogos" estampava "✓ ZONA DE CLASSIFICAÇÃO";
   //  (c) a CONVOCAÇÃO, que não é rótulo: é mensagem enviada dizendo "você está no
   //      Torneio Presencial".
   //
   // A (c) é a pior: sai do app, chega no telefone da pessoa, e fala de um evento
-  // que o regulamento dela não menciona. A (b) é a segunda, porque o cartão viaja
-  // para fora do contexto em que alguém poderia corrigir.
+  // que o regulamento dela não menciona.
+  //
+  // ⚠️ CORREÇÃO DE UM ERRO MEU, e ele é do tipo mais perigoso que existe aqui.
+  // Eu rotulei a (b) como "o cartão que o atleta COMPARTILHA" e escrevi que ela
+  // era a segunda pior "porque o cartão viaja para fora do contexto". Era FALSO: o
+  // `classificado` que eu guardei é usado num lugar só — o selo do CABEÇALHO de
+  // "Meus jogos", que é uma tela e não viaja. O cartão compartilhável é outro
+  // objeto (`AtletaCard`), ele é montado pelo `CartaModal` SEM prop de
+  // classificação, e **nunca teve** marca de torneio nenhuma.
+  // Pego pelo Guardião da Experiência do Atleta. É a SÉTIMA vez nesta sessão que
+  // uma asserção minha aponta para o lugar errado — e a primeira em que o rótulo
+  // errado CREDITA COBERTURA A UM ARTEFATO DESCOBERTO: quem lesse isto em três
+  // meses acreditaria que o cartão está protegido, e um selo acrescentado a ele
+  // não seria acusado por ninguém. Por isso a asserção do cartão nasce agora,
+  // logo abaixo, na forma NEGATIVA: ele está limpo, e o que se quer é que continue.
   const fonteApp = await import("node:fs/promises").then(f => f.readFile("src/App.jsx", "utf-8"));
 
   ok(/function circuitoTemTorneio\(state\)/.test(fonteApp),
     "existe UMA conta de 'este circuito tem torneio', em vez de cada tela decidir sozinha");
+
+  // ── E AQUI A BATERIA EXECUTA A FUNÇÃO, em vez de ler o texto dela ─────────
+  // Pedido pelo Guardião do Regulamento e pelo de Confiabilidade, pelo mesmo
+  // motivo: sabotar `circuitoTemTorneio` para `return true` deixava 12 das 13
+  // seções verdes, e só uma regex pegava. Pela regra da casa, regex não protege
+  // regra.
+  // `circuitoTemTorneio` é PURA e atende as quatro cláusulas do contrato de
+  // extração escrito para a `janelaRenovacao`: mesma entrada → mesma saída, sem
+  // estado, sem React, e só fecha sobre `VERSOES_COM_TORNEIO`, que é uma const
+  // incluída no mesmo recorte. Então ela é extraída e EXECUTADA — e isso cobre de
+  // graça o `.trim()` e o `|| ""`, que nenhuma regex exercitava.
+  {
+    const iSet = fonteApp.indexOf("const VERSOES_COM_TORNEIO");
+    const iFn = fonteApp.indexOf("function circuitoTemTorneio(state) {");
+    const fimFn = fonteApp.indexOf("\n}", iFn) + 2;
+    ok(iSet > 0 && iFn > iSet && fimFn > iFn, "a constante e a função foram localizadas no fonte");
+    const recorte = fonteApp.slice(iSet, fonteApp.indexOf("\n", iSet)) + "\n" + fonteApp.slice(iFn, fimFn);
+    const temTorneio = new Function(`${recorte}; return circuitoTemTorneio;`)();
+
+    ok(temTorneio({ regulamentoVersao: "v03-12" }) === true, "v03-12 (o BH) TEM torneio");
+    ok(temTorneio({ regulamentoVersao: "v03-13" }) === true, "v03-13 (o BH, versão nova) também");
+    ok(temTorneio({ regulamentoVersao: "vB-01" }) === false, "vB-01 (pontos) NÃO tem");
+    ok(temTorneio({ regulamentoVersao: "vA-nc-01" }) === false, "vA-nc-01 (rating novo) NÃO tem");
+    // As três entradas que nenhuma regex exercitava:
+    ok(temTorneio({ regulamentoVersao: null }) === false, "versão NULA não tem — é o estado antes da carga terminar");
+    ok(temTorneio({ regulamentoVersao: "" }) === false, "versão vazia também não");
+    ok(temTorneio({}) === false, "e estado sem o campo nenhum");
+    ok(temTorneio(null) === false, "nem estado nulo — a função não estoura");
+    ok(temTorneio({ regulamentoVersao: "  v03-12  " }) === true,
+      "e o `.trim()` funciona: o motor apara o carimbo, e sem simetria aqui o BH perderia o corte por dois espaços");
+  }
+
   ok(/VERSOES_COM_TORNEIO\.has\(String\(state\?\.regulamentoVersao \|\| ""\)\.trim\(\)\)/.test(fonteApp),
     "e ela lê a versão do CIRCUITO, não uma constante");
 
@@ -407,14 +451,41 @@ secao("Num circuito SEM torneio, nada promete torneio (0.10.5)");
     "(a) sem torneio, o ranking não desenha corte");
   ok(/const classificado = temTorneio && i < CORTE;/.test(fonteApp),
     "e ninguém é marcado como classificado");
-  ok(/\{temTorneio && \(\n\s*<div style=\{\{marginTop:16/.test(fonteApp),
-    "e a legenda do 'C' some junto — senão explicaria uma marca que não existe");
+  // O rodapé FICA sempre; o conteúdo é que muda. Sem torneio, a legenda do "C"
+  // daria explicação a uma marca que não existe — e um rodapé vazio deixaria a
+  // lista terminar de repente contra a barra de abas (~23px de folga, medido pelo
+  // Designer, e menos ainda num aparelho com notch). O lugar recebeu o CRITÉRIO DE
+  // DESEMPATE, que é o que o atleta empatado quer saber e não estava em tela
+  // nenhuma. Os dois textos foram conferidos contra o `cmpRanking`, linha a linha.
+  ok(/\? <><span style=\{\{color:T\.terracota,fontWeight:700\}\}>C<\/span> = classificado/.test(fonteApp),
+    "a legenda do 'C' só aparece onde há torneio");
+  ok(/Desempate: menos W\.O\. culposos · confronto direto · aproveitamento · saldo de sets/.test(fonteApp),
+    "e sem torneio o rodapé mostra o desempate do Sistema B, na ordem que o cmpRanking aplica");
+  ok(/Desempate: vitórias · confronto direto · rating/.test(fonteApp),
+    "e o do Sistema A, idem");
   ok(/\{\(temCorte \? sorted\.slice\(0, CORTE\) : sorted\)\.map/.test(fonteApp),
     "e a lista mostra TODO MUNDO quando não há corte, em vez de cortar no 8º em silêncio");
 
-  // (b) o cartão que sai do app
+  // (b) o selo do cabeçalho de "Meus jogos" — uma TELA, que não viaja
   ok(/const classificado = circuitoTemTorneio\(state\) && minhaPos >= 0 && minhaPos < 8;/.test(fonteApp),
-    "(b) o cartão que o atleta compartilha não estampa classificação onde não há torneio");
+    "(b) o cabeçalho de 'Meus jogos' não estampa classificação onde não há torneio");
+
+  // (b2) E O ARTEFATO QUE DE FATO SAI DO APP: o cartão que o atleta compartilha no
+  // WhatsApp. Ele nunca teve marca de torneio, e esta asserção existe para que
+  // continue assim — porque ele é o pior lugar possível para a promessa aparecer:
+  // é imagem, sai do contexto, e ninguém do outro lado tem como conferir.
+  {
+    const iCard = fonteApp.indexOf("function AtletaCard(");
+    const fimCard = fonteApp.indexOf("\nfunction ", iCard + 1);
+    ok(iCard > 0 && fimCard > iCard, "o cartão compartilhável foi localizado no fonte");
+    const corpoCard = fonteApp.slice(iCard, fimCard);
+    ok(!/CLASSIFICA|classificad/.test(corpoCard),
+      "(b2) o cartão que o atleta COMPARTILHA não tem marca de classificação — e não pode ganhar uma sem gate");
+    ok(!/[Tt]orneio/.test(corpoCard),
+      "nem menção a torneio");
+    ok(!/\bC =/.test(corpoCard),
+      "nem a legenda do 'C'");
+  }
 
   // (c) a mensagem
   ok(/if \(!circuitoTemTorneio\(state\)\) return \[\];/.test(fonteApp),
@@ -433,6 +504,39 @@ secao("Num circuito SEM torneio, nada promete torneio (0.10.5)");
   ok(corpoTorneio.length > 0, "o corpo da função foi localizado");
   ok(!/\|\|/.test(corpoTorneio.replace(/String\(state\?\.regulamentoVersao \|\| ""\)/, "")),
     "e não há fallback dentro dela que faça versão desconhecida ganhar torneio");
+}
+
+secao("O invariante que segura o corte do BH: a versão chega SEMPRE com o roster");
+{
+  // Achado do Guardião de Confiabilidade, e é do tipo que só aparece quando alguém
+  // pergunta "o que sustenta isso?".
+  //
+  // Antes de 0.10.5, `temCorte = sorted.length > CORTE` NÃO dependia da versão do
+  // regulamento. A fatia cria essa dependência — corretamente — e com ela uma
+  // exigência nova: **a versão tem de chegar sempre junto com o roster**. Se o
+  // roster entrar e a versão vier nula, `circuitoTemTorneio` é fail-closed e o
+  // ranking do BH perde o corte, os "C" e a legenda — **sem erro nenhum na tela**.
+  //
+  // Hoje isso é verdade por três detalhes de implementação, e NADA no repositório
+  // dizia que eles não podem mudar. Ele mediu com a sabotagem realista, não com uma
+  // artificial: trocar `db.getConfig()` por `db.getConfig().catch(() => [])` —
+  // **o padrão que este MESMO arquivo já usa em dois outros pontos** — deixava a
+  // bateria VERDE e apagava o corte do ranking do BH. "Tornar a carga mais
+  // resiliente" é o movimento mais natural do mundo, e era o que quebrava.
+  const fonteApp = await import("node:fs/promises").then(f => f.readFile("src/App.jsx", "utf-8"));
+
+  ok(/const \{ athletes, matches, keys, phase[^}]*regulamentoVersao[^}]*\} = action\.payload;/.test(fonteApp),
+    "(1) o roster e a versão do regulamento chegam no MESMO payload — não há como um entrar sem o outro");
+
+  const iCarga = fonteApp.indexOf("async function loadFromSupabase");
+  const fimCarga = fonteApp.indexOf("\n  async function", iCarga + 1);
+  const carga = fonteApp.slice(iCarga, fimCarga > iCarga ? fimCarga : iCarga + 9000);
+  ok(/await Promise\.all\(/.test(carga),
+    "(2) a carga é tudo-ou-nada: se a leitura do circuito falhar, nenhum estado meio-carregado é despachado");
+  ok(!/Promise\.allSettled/.test(carga),
+    "e NÃO é `allSettled`, que deixaria o roster entrar sem a versão");
+  ok(!/getConfig\(\)[\s\S]{0,40}\.catch\(/.test(carga),
+    "(3) e a leitura da configuração não é tolerante a falha — um `.catch(() => [])` aqui apagaria o corte do ranking do BH em silêncio");
 }
 
 secao("A tela mostra a versão DO CIRCUITO ABERTO, não uma global");

@@ -194,8 +194,22 @@ secao("A tela deixou de mentir sobre o teto, e passou a mostrar o regulamento");
     "ele nomeia as TRÊS: torneio, desconto de entrada e rodadas fixas");
   ok(/o do BH dá 80% a quem entra na 2ª/.test(criar),
     "e a de DINHEIRO aparece explícita — é a que muda quanto o atleta paga");
-  ok(/nem o certificado do Top 3/.test(criar) && /nem certificado/.test(criar),
-    "e o certificado, que o texto de rating lista como incluído, é nomeado como ausente nos dois");
+  // ⚠️ ESTA ASSERÇÃO CARIMBAVA UM ERRO MEU, e ela sai por isso (29/09/2026).
+  // Eu escrevi no aviso que o `vA-nc-01` não tem "o Torneio nem o certificado do
+  // Top 3", estendendo ao rating novo uma ausência que eu tinha confirmado só para
+  // o `vB-01`. O texto de RATING promete "Top 3 recebe certificado digital" **sem
+  // portão de versão** — então o `vA-nc-01` promete sim, e o meu aviso mentia.
+  // A assimetria era na pior direção: o ADMIN lia que não há certificado (logo não
+  // emitiria) enquanto o ATLETA lia que ele está incluído no que pagou.
+  // Entre mudar o que o atleta foi prometido e corrigir o meu aviso, corrigi o
+  // aviso. Se o circuito novo NÃO deve ter certificado, é decisão de produto do
+  // Juliano — está no ROADMAP, e aí o portão nasce nos DOIS lugares de uma vez.
+  ok(/o certificado digital do Top 3, esse continua/.test(criar),
+    "o aviso diz a verdade sobre o certificado: o circuito de rating novo TEM");
+  ok(/Top 3 recebe certificado digital/.test(fonte),
+    "e o regulamento de rating realmente promete — é o que sustenta o aviso");
+  ok(/nem certificado/.test(criar),
+    "já o de PONTOS não tem, e o aviso continua dizendo isso");
   ok(/não muda depois/.test(criar),
     "e que o regulamento não muda depois");
   ok(/\{criado\.regulamento_versao \|\| "não confirmado/.test(criar),

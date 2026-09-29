@@ -38,8 +38,20 @@ BH**. A temporada **1/2026**, em curso, segue integralmente pela v03-12, inclusi
 no valor.
 
 **Não retroatividade.** O Clube **não cobrará** diferença de valor de ninguém pelo
-que foi pago, ou deixado de pagar, na **temporada 1/2026**. Aquela temporada está
-encerrada do ponto de vista financeiro: todos os pagamentos dela estão confirmados.
+que foi pago, ou deixado de pagar, na **temporada 1/2026**.
+
+**3. O bye (número ímpar de atletas) — regra que existia e não estava escrita.**
+Quando o número de atletas ativos é **ímpar**, um atleta fica de fora da rodada
+(bye). A folga é do atleta de **menor rating entre os que ainda não folgaram** na
+temporada, e o bye tem **rotação**: ninguém folga uma segunda vez antes de todos
+terem folgado uma. Quando todos já folgaram, o ciclo recomeça pela mesma ordem.
+A folga **não altera o rating** de quem ficou de fora — não há vitória, derrota nem
+ponto de participação. As duas rodadas de um mesmo mês **nunca** dão bye à mesma
+pessoa.
+
+*Esta regra já era aplicada pelo sistema e não constava de nenhuma versão anterior
+do texto. A rotação foi acrescentada ao sistema em 29/09/2026, por decisão do
+administrador; antes, a folga recaía sempre sobre o atleta de menor rating.*
 
 ---
 

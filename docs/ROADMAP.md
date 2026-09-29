@@ -1034,6 +1034,38 @@ atleta inscrito."*
 
 ### Sem gatilho — higiene
 
+- **0.10.28 — O circuito de rating NOVO promete certificado do Top 3, e ninguém
+  decidiu se ele existe.** *(Regulamento, 29/09/2026 — decisão de produto do Juliano,
+  não defeito.)* O texto de rating diz *"Top 3 recebe certificado digital"* **sem
+  portão de versão**, então o `vA-nc-01` promete. O `vB-01` (pontos) não promete
+  nada disso. Em 29/09 eu escrevi no aviso da criação que o rating novo também não
+  tinha — **estendendo ao `vA-nc-01` uma ausência que só confirmei para o `vB-01`** —
+  e a assimetria era na pior direção: o **admin** lia que não há certificado (logo
+  não emitiria) enquanto o **atleta** lia que está incluído no que pagou. Corrigi o
+  **aviso**, não o regulamento, porque entre mudar o que o atleta foi prometido e
+  corrigir o meu texto, corrige-se o meu.
+  **A decisão que falta:** um circuito de terceiro deve entregar certificado? Quem
+  emite — a plataforma ou o organizador? Se a resposta for "não", o portão nasce nos
+  **dois** lugares (`Cap. 09` e a lista do `Cap. 12`) e o aviso volta a dizer o que
+  dizia. Hoje é inócuo: não existe circuito de rating novo.
+- **0.10.29 — O corte do torneio (8) mora em três lugares.** *(Regulamento,
+  29/09/2026 — profilaxia, não defeito.)* `const CORTE = 8` no ranking, `minhaPos < 8`
+  no cabeçalho do atleta, e "Top 8" no texto do regulamento. **Não é o mesmo caso do
+  "teto de 20"**: ali existia coluna configurável por circuito e o texto já podia
+  estar falso; aqui não há nada equivalente no motor — procurei `corte|classificados|
+  top8|vagas_torneio` e não há nada —, e as **únicas** versões com torneio são as
+  duas do BH, que dizem 8. Então o 8 é verdadeiro em todo circuito que tem torneio.
+  Vira problema no dia em que existir uma terceira versão com torneio e corte
+  diferente. A forma que não apodrece: trocar o `Set VERSOES_COM_TORNEIO` por um
+  **mapa versão → corte**, e o fato passa a morar num lugar só, entrando junto com a
+  versão.
+- **0.10.30 — Os backups do motor apontam para duas versões atrás.**
+  *(Confiabilidade, 29/09/2026.)* `docs/backups/motor-no-ar-2026-09-27/` guarda
+  **v62, v21, v9 e v2**; no ar hoje estão **v63, v22, v11 e v3**. Os quatro andaram.
+  Na próxima publicação de qualquer função, os quatro precisam ser atualizados —
+  senão o "voltar" leva para duas versões atrás. Não é urgente; é para não ser
+  descoberto no dia do susto.
+
 - **0.10.26 — ✅ RESOLVIDO em 29/09/2026 pela decisão do teto fixo.** *O teto editável
   alcançava o BH, cujo regulamento crava "20" sem ressalva.* Com o teto voltando a ser
   regra da plataforma, o texto do BH está **correto** e o campo que o contradizia

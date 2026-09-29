@@ -7695,9 +7695,15 @@ function CriarCircuitoCard({ chamarAdminAction }) {
         (a) "a diferenca que importa" elegia UMA de TRES, e deixava de fora a que
             mais pesa para quem esta definindo preco: o DESCONTO de quem entra na
             2a etapa (o v03-12 da 80%, o vA-nc-01 nao da);
-        (b) o vB-01 tambem nao tem CERTIFICADO -- e o texto de rating lista o
-            certificado entre o que a temporada INCLUI, entao o admin suporia que
-            atravessa;
+        (b) o vB-01 tambem nao tem CERTIFICADO. ⚠️ MAS EU ERREI AO ESTENDER ISSO AO
+            vA-nc-01 (corrigido em 29/09/2026, achado pelo Guardiao do Regulamento):
+            o texto de RATING promete "Top 3 recebe certificado digital" SEM portao
+            de versao, entao o vA-nc-01 promete sim. O aviso dizia o contrario, e a
+            assimetria era na pior direcao -- o ADMIN lia que nao ha certificado
+            (logo nao emitiria) enquanto o ATLETA lia que ele esta incluido no que
+            pagou. Entre mudar o que o atleta foi prometido e corrigir o meu aviso,
+            corrigi o aviso. Se o circuito novo NAO deve ter certificado, isso e
+            decisao de produto do Juliano e esta no ROADMAP;
         (c) "invalidaria os aceites" errava o mecanismo: o aceite nao fica
             invalido, ele passa a APONTAR PARA OUTRO TEXTO -- que e' pior, porque
             recibo invalido se anuncia e esse continua com cara de estar em ordem.
@@ -7708,7 +7714,7 @@ function CriarCircuitoCard({ chamarAdminAction }) {
                     <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{sistema === "A" ? "vA-nc-01" : "vB-01"}</div>
                     <div style={{fontSize:11.5,color:"#9db3a8",marginTop:4,lineHeight:1.55}}>
                       {sistema === "A"
-                        ? <>É o regulamento de rating para circuitos novos — não é o do BH, e são <strong style={{color:T.offwhite}}>três diferenças</strong>: não tem o Torneio Presencial de Encerramento nem o certificado do Top 3 (aquele capítulo é do BH); o valor é o mesmo para quem entra em qualquer etapa (o do BH dá 80% a quem entra na 2ª); e o número de rodadas é fixo, não definido pelo organizador. Em troca, os meses de recesso são você que define.</>
+                        ? <>É o regulamento de rating para circuitos novos — não é o do BH, e são <strong style={{color:T.offwhite}}>três diferenças</strong>: não tem o Torneio Presencial de Encerramento (aquele capítulo é do BH — o certificado digital do Top 3, esse continua); o valor é o mesmo para quem entra em qualquer etapa (o do BH dá 80% a quem entra na 2ª); e o número de rodadas é fixo, não definido pelo organizador. Em troca, os meses de recesso são você que define.</>
                         : <>É o regulamento de pontos fixos, e o fim de temporada é <strong style={{color:T.offwhite}}>só a tabela de pontos</strong>: não tem torneio de encerramento nem certificado.</>}
                       {" "}Este é o texto que todo atleta vai aceitar ao se inscrever, e ele não muda depois: o aceite fica gravado apontando para o <em>nome</em> da versão, então reescrever o texto faria os aceites antigos apontarem para algo que ninguém leu. Para mudar regra, publica-se uma versão nova e pede-se o aceite de novo.
                     </div>
@@ -10182,8 +10188,14 @@ function RankingView({ state, currentAthleteId, isAdmin=false }) {
       <div key={a.id} onClick={isAdmin ? ()=>setCartaAberta({athlete:a, posicao:i+1}) : undefined} style={{
         display:"flex", alignItems:"center", gap:12, padding:"11px 12px",
         borderRadius:12, marginBottom:6, cursor: isAdmin ? "pointer" : "default",
-        background: isMe ? "rgba(216,90,48,0.12)" : "transparent",
-        border: `1px solid ${isMe ? "rgba(216,90,48,0.35)" : T.bordaSuave}`,
+        // ⚠️ O "sou eu" era o marcador mais fraco da tela, e esta fatia o deixou
+        // SOZINHO em cena — sem o corte, ele é o único diferenciador da lista.
+        // Medido pelo Designer: o fundo dava 1,13:1 contra a linha vizinha, e a
+        // borda tinha luminância IDÊNTICA à das outras (1,50 vs 1,49) — ou seja,
+        // o destaque era quase só de MATIZ, no eixo vermelho/verde, que é a
+        // deficiência de visão de cor mais comum. E some com o celular no sol.
+        background: isMe ? "rgba(216,90,48,0.26)" : "transparent",
+        border: `1px solid ${isMe ? "rgba(216,90,48,0.6)" : T.bordaSuave}`,
         opacity: foraDoCorte ? 0.7 : 1,
       }}>
         <div style={{width:24,display:"flex",alignItems:"baseline",gap:4,flexShrink:0,justifyContent:"flex-end"}}>
@@ -10191,7 +10203,12 @@ function RankingView({ state, currentAthleteId, isAdmin=false }) {
         </div>
         <Avatar athlete={a} size={38} ring={isMe ? "rgba(216,90,48,0.4)" : null}/>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:14,color: isMe ? T.terracota : (foraDoCorte ? "#c3ccc6" : T.offwhite),whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+          {/* ⚠️ O nome na MINHA linha era T.terracota: 3,37:1, abaixo do mínimo de 4,5 —
+              a linha menos legível do ranking era justamente a que o atleta abre a
+              tela para achar (3,7× menos que a de todos os outros). O terracota
+              continua sendo o acento; ele só sai do TEXTO. A POSIÇÃO fica
+              terracota: a 22px em serif ela é "texto grande", e aí o piso é 3,0. */}
+          <div style={{fontSize:14,color: foraDoCorte ? "#c3ccc6" : T.offwhite,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
             {nomeExibicao(a)}
           </div>
           <div style={{fontFamily:T.mono,fontSize:8.5,letterSpacing:1,textTransform:"uppercase",color:"rgba(240,234,224,0.42)",marginTop:2}}>
@@ -10238,11 +10255,20 @@ function RankingView({ state, currentAthleteId, isAdmin=false }) {
 
       {temCorte && sorted.slice(CORTE).map((a,i) => linha(a,i+CORTE))}
 
-      {temTorneio && (
-        <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${T.bordaSuave}`,fontFamily:T.mono,fontSize:9,color:T.cinza,lineHeight:1.5}}>
-          <span style={{color:T.terracota,fontWeight:700}}>C</span> = classificado para o torneio final até o momento
-        </div>
-      )}
+      {/* O RODAPÉ FICA SEMPRE, e o conteúdo é que muda. Sem ele a lista terminava
+          de repente contra a barra de abas — o Designer mediu ~23px de folga, que
+          some num aparelho com notch. E a linha que ele propôs para o lugar do
+          "C" é melhor do que um terminador vazio: o CRITÉRIO DE DESEMPATE, que é
+          o que o atleta empatado em pontos realmente quer saber e que não estava
+          em tela nenhuma. Conferi os dois textos contra o `cmpRanking`, linha a
+          linha — não são prosa, são a ordem que o código aplica. */}
+      <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${T.bordaSuave}`,fontFamily:T.mono,fontSize:9,color:T.cinzaSuave,lineHeight:1.5}}>
+        {temTorneio
+          ? <><span style={{color:T.terracota,fontWeight:700}}>C</span> = classificado para o torneio final até o momento</>
+          : SISTEMA_ATIVO === "B"
+          ? "Desempate: menos W.O. culposos · confronto direto · aproveitamento · saldo de sets"
+          : "Desempate: vitórias · confronto direto · rating"}
+      </div>
     </div>
   );
 }
@@ -10901,8 +10927,19 @@ function AthleteGames({ state, dispatch, athlete }) {
   const saldo = eu.saldoTemp || 0;
   const saldoColor = saldo > 0 ? T.verde2 : saldo < 0 ? T.vermelho : T.cinza;
   // 0.10.5: sem torneio no circuito, o atleta não é "classificado" para nada.
-  // Este é o pior lugar para a promessa vazar, porque o cartão SAI do app — vai
-  // para o WhatsApp, fora do contexto em que alguém poderia corrigir.
+  // ⚠️ A RAZÃO QUE EU TINHA ESCRITO AQUI ERA FALSA, e dois guardiões pegaram
+  // (Experiência do Atleta e Designer). Ela dizia: "este é o pior lugar para a
+  // promessa vazar, porque o cartão SAI do app — vai para o WhatsApp". Não é o
+  // cartão. Este `classificado` alimenta UM lugar só: o selo "✓ ZONA DE
+  // CLASSIFICAÇÃO" no cabeçalho de "Meus jogos", que é TELA INTERNA e não viaja.
+  // O cartão compartilhável é outro objeto (`AtletaCard`, montado pelo
+  // `CartaModal`), ele não recebe prop de classificação e NUNCA teve marca de
+  // torneio nenhuma — os dois guardiões varreram o corpo dele por script.
+  // O conserto estava certo; a justificativa é que não. E isso importa porque o
+  // comentário é a memória do porquê: quem lesse isto em seis meses caçaria em
+  // `CartaModal` um vazamento que nunca existiu, e concluiria que o cartão está
+  // coberto. Ele agora ESTÁ — mas por uma asserção própria, negativa, em
+  // `testes/participar-outro-circuito.mjs`, não por esta linha.
   const classificado = circuitoTemTorneio(state) && minhaPos >= 0 && minhaPos < 8;
 
   // Contagem crescente (0 → valor) no cabeçalho, conforme o handoff de design

@@ -892,8 +892,29 @@ secao("O documento da v03-13 muda UMA cláusula, e só");
   // protege TODOS de uma vez, sem recorte. Menos recorte, menos superfície de erro.
   ok(/de ninguém pelo que foi pago, ou deixado de pagar, na \*\*temporada 1\/2026\*\*/.test(clausula),
     "ela protege todos, recortando por TEMPORADA — um fato — e não por etiqueta de versão");
-  ok(/todos os pagamentos dela estão confirmados/.test(clausula),
-    "e diz o FATO que a torna suficiente, em vez de descrever um caso que não existe");
+  // ⚠️ A FRASE DO FATO SAIU EM 29/09/2026, e esta asserção trocou de lado.
+  // Ela dizia "todos os pagamentos dela estão confirmados" — uma afirmação
+  // FACTUAL SOBRE DADO, congelada dentro de um documento de regulamento. É a mesma
+  // família que pegou o card de configuração ontem ("é o texto que os atletas
+  // aceitaram", falso para 14 de 15). E não é hipotética: `ESTORNAR_PAGAMENTO`
+  // existe no motor — um estorno tornaria um documento assinado falso.
+  // A promessa não precisa dela: "não cobraremos diferença" vale por si. O motivo
+  // não acrescenta nada ao atleta e só acrescenta um jeito de a frase ficar errada.
+  // Pego pelo Guardião do Regulamento.
+  ok(!/todos os pagamentos dela estão confirmados/.test(clausula),
+    "e a cláusula não afirma um FATO sobre dado — um estorno tornaria o documento falso");
+  ok(!/confirmad/.test(clausula),
+    "nem por outra forma de dizer o mesmo");
+
+  // O capítulo do bye entrou na TELA em 28/09 e NÃO no documento — lacuna minha,
+  // achada pelo Guardião do Regulamento ao procurar "bye" nos dois textos de
+  // rating e achar zero. O documento é o registro; a tela é a leitura.
+  ok(/O bye \(número ímpar de atletas\)/.test(t13),
+    "o documento da v03-13 descreve o bye — não só a tela");
+  ok(/menor rating entre os que ainda não folgaram/.test(t13),
+    "com a regra que o Juliano decidiu: menor rating, sem repetir");
+  ok(/não altera o rating/.test(t13),
+    "e dizendo que a folga não mexe no rating, que é a diferença para o Sistema B");
   // Na TELA a caixa de transição ficou só com a vigência — a cláusula de
   // não-retroatividade vive no documento, que é onde ela tem efeito jurídico.
   ok(!/80%/.test(fonte.slice(fonte.indexOf("ehTransicaoV0313 && ("), fonte.indexOf("💵 Valor conforme o momento de entrada"))),

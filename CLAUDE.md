@@ -170,6 +170,20 @@ O `atualizar.sh` **não fala com a Vercel**: ele testa, comita e dá `git push`.
 Quem republica o site é a Vercel, ao ver o push na `main`. Logo, **empurrar para
 o GitHub é publicar** — não existe "só guardar no GitHub" nesta configuração.
 
+⚠️ **Para conferir se o pacote novo subiu, `curl -L` — sempre.** O domínio
+`clubedotenisdemesabh.com.br` responde **308** redirecionando para o `www`. Um
+`curl` sem `-L` recebe a página de redirecionamento, não acha nome de pacote nenhum
+e devolve **string vazia**. Isto já me pegou **duas vezes**: em ambas o script ficou
+minutos reportando "ainda o antigo" enquanto o pacote novo **já estava no ar**. A
+forma certa:
+
+    curl -sL https://clubedotenisdemesabh.com.br/ | grep -oE 'index-[A-Za-z0-9_-]+\.js'
+
+E o verificador tem de **falhar ruidosamente** quando não consegue ler nome de pacote
+nenhum, em vez de tratar leitura vazia como "é a versão antiga" — leitura vazia é
+**falha de medição**, e chamar isso de resultado é a mesma família de erro do aferidor
+de mutação que dava verde para o arquivo quebrado.
+
 Não trocam nada: editar arquivos, `npm run teste`, `npm run build`,
 `git commit`, e ler o banco. **Commit é marcador de página, não publicação.**
 

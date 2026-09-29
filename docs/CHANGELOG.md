@@ -142,8 +142,40 @@ rating.
 
 ### 2026-09-28 — A porta da frente protege o menor, e a janela de renovação para de mentir
 
-**A SUBIR — ainda não publicado.** `athlete-action` **v21 → v22**, `login-atleta`
-**v10 → v11** e front por `git push`. Decisão do Juliano: *"arrumar esses dois
+**NO AR desde 28/09/2026** (de acordo do Juliano: *"pode"*). Front: push
+`f1650d0..d4901d1`, bundle `index-ChzCGRGK.js`, site HTTP 200. Motor:
+`athlete-action` **v21 → v22** e `login-atleta` **v10 → v11**, nesta ordem, cada um
+seguido de `npm run motor:conferir` com **0 divergências** e `verify_jwt` intacto nas
+nove funções. `admin-action` v62 e `comprovante-url` v3 **não** foram tocados.
+
+**Dados antes e depois, idênticos:** atletas 15, circuitos 1, circuito_atletas 15,
+`atleta_documento` **0**, partidas 34, pagamentos 12, solicitações de W.O. 5,
+`atleta_sessao` 10, mensagens 288. Hashes `b79ece7e…` (competição) e `43abc1de…`
+(rating) **inalterados**.
+
+**Teste de fumaça ao vivo, pelos caminhos de RECUSA** — escolhidos porque o Guardião
+de Segurança já tinha provado que a guarda roda **antes** de qualquer escrita, então
+eles não sujam produção. As três responderam com a frase exata:
+- sem data → *"Informe a data de nascimento para concluir a inscrição."*
+- ano 1850 → *"Confira a data de nascimento: o ano informado não parece válido."*
+- menor sem responsável → *"Para menor de 18 anos, a lei exige o consentimento de um
+  responsável legal. Volte ao passo 1 e preencha o nome e o CPF do responsável."*
+
+E a prova de que não sujaram: depois das três chamadas, `atletas` 15,
+`atleta_documento` 0 e **`tentativas_busca_cpf` nos últimos 15 minutos: 0** — nem a
+linha de tentativa por IP foi criada. `login-atleta` v11 responde normalmente.
+
+**Uma lição de medição, e é a segunda vez que ela me pega.** O meu script de
+verificação do site lia o `index.html` de `clubedotenisdemesabh.com.br` **sem seguir
+redirecionamento** — e esse domínio responde **308** para o `www`. Resultado: vinte
+tentativas lendo string vazia e reportando "ainda o antigo", enquanto o pacote novo
+**já estava no ar**. O sintoma é idêntico ao de uma subida anterior, que também ficou
+registrada como "não subiu" por este mesmo motivo. **`curl -L` sempre**, e o
+verificador tem de falhar ruidosamente quando não consegue ler nome de pacote nenhum,
+em vez de chamar isso de "antigo".
+
+*(entrada original, de quando a fatia ainda não tinha subido:)* `athlete-action`
+**v21 → v22**, `login-atleta` **v10 → v11** e front por `git push`. Decisão do Juliano: *"arrumar esses dois
 pontos"*. Revisão das **8 duplas** sobre o commit `9c7fbf6`: 8 GO, 7 com condições —
 todas aplicadas antes desta linha ser escrita.
 

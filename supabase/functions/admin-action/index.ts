@@ -536,6 +536,37 @@ function byesDaTemporada(athletes: any[], matchesTemporada: any[]): Set<string> 
   return jaTeveBye;
 }
 
+// Quem ENTRA no ranking de uma temporada. UMA conta, usada pelos TRES lugares que
+// faziam a mesma pergunta com respostas diferentes -- pelo mesmo motivo de
+// `byesDaTemporada` logo acima.
+//
+// ⚠️ A regra e `calculado`, NAO `validado`. Ate 29/09/2026 os dois ramos da virada
+// (`NOVA_TEMPORADA`, BH e nao-BH) filtravam por `validado && !rejeitado`, enquanto
+// a TELA filtra por `calculado && !rejeitado` (`App.jsx`, `estaNoRanking`). Eram
+// duas respostas diferentes para a mesma pergunta, e elas discordam exatamente nos
+// W.O.: o `PROCESSAR_RODADA` trata W.O. num ramo separado e marca `calculado: true`
+// sem nunca marcar `validado` -- porque ninguem enviou placar. E o W.O. PONTUA
+// (Sistema B: +2 para o presente, +1/0 para o ausente) e MEXE NO RATING (Sistema A:
+// -15 para o culposo).
+//
+// Consequencia medida: um atleta cuja temporada foi decidida em W.O. aparecia no
+// ranking a temporada toda na tela e, na virada, nao recebia linha nenhuma de
+// historico -- e todos abaixo dele SUBIAM uma posicao no registro permanente. A
+// virada nao se desfaz: era historico falso, calado, para sempre.
+//
+// O `PROCESSAR_RODADA` ainda soma a isto dois casos que so ele conhece (o W.O. do
+// Sistema B antes de ser calculado, e o bye da rodada corrente) -- por isso ele
+// ADICIONA ao conjunto em vez de reimplementa-lo.
+function idsNoRankingFinal(partidas: any[]): Set<string> {
+  const ids = new Set<string>();
+  (partidas ?? []).forEach((m: any) => {
+    if (!m.calculado || m.rejeitado) return;
+    if (m.atleta1_id) ids.add(m.atleta1_id);
+    if (m.atleta2_id) ids.add(m.atleta2_id);
+  });
+  return ids;
+}
+
 // ── Pareamento do Sistema B (sem rating) ──────────────────────────────────────
 function embaralhar<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -936,10 +967,22 @@ Deno.serve(async (req) => {
         const todosAtivos = await getAtivosNoCircuito(circuitoId, false);
         todosAtivos.forEach(a => { if (!athletesMap[a.id]) athletesMap[a.id] = { ...a }; });
 
-        const { data: partidasTemporada, error: errPartidasTmp } = await supabase.from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado").eq("circuito_id", circuitoId);
+        const { data: partidasTemporada, error: errPartidasTmp } = await supabase.from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado,calculado").eq("circuito_id", circuitoId);
         if (errPartidasTmp) throw errPartidasTmp;
-        const idsComPartida = new Set<string>();
-        (partidasTemporada ?? []).forEach((m: any) => { if (m.validado && !m.rejeitado) { idsComPartida.add(m.atleta1_id); idsComPartida.add(m.atleta2_id); } });
+        // ⚠️ Aqui a conta compartilhada NAO basta sozinha, e o motivo e de ORDEM: as
+        // partidas desta rodada so recebem `calculado: true` no FIM desta mesma acao,
+        // depois de o ranking ser montado. Usar so `calculado` deixaria de fora quem
+        // esta entrando no ranking AGORA -- justamente o atleta cuja 1a partida e a
+        // desta rodada. Por isso o `validado` da rodada corrente entra por cima.
+        // (Eu troquei por `idsNoRankingFinal` sozinho em 29/09/2026 e a bateria ficou
+        // VERDE com essa regressao: ninguem tinha asserção para a estreia no ranking.
+        // Tem agora.)
+        const idsComPartida = idsNoRankingFinal(partidasTemporada ?? []);
+        (partidasTemporada ?? []).forEach((m: any) => {
+          if (!m.validado || m.rejeitado) return;
+          if (m.atleta1_id) idsComPartida.add(m.atleta1_id);
+          if (m.atleta2_id) idsComPartida.add(m.atleta2_id);
+        });
         // Fatia 5: quem pontuou via W.O. no B entra no ranking desta rodada (a partida de W.O. não é "validada").
         if (sistema === "B") idsWoB.forEach(id => idsComPartida.add(id));
 
@@ -1146,7 +1189,11 @@ Deno.serve(async (req) => {
         const bhKeyIni = await bhId();
         const keyId = (circuitoId === bhKeyIni) ? "key_1" : `key_${circuitoId.slice(0, 8)}`;
         await setCfg(circuitoId, { fase: "etapa" });
-        await supabase.from("chaves").insert({ id: keyId, nome: "Chave Única", rodada_atual: 1, circuito_id: circuitoId });
+        // ⚠️ ERA O UNICO `insert` DESTE ARQUIVO SEM `if (error) throw`. Um insert
+        // falho respondia `sucesso: true`, o circuito ficava sem chave, e o proximo
+        // "avancar rodada" caia na chave do BH (ver o comentario do AVANCAR_RODADA).
+        const { error: eChave } = await supabase.from("chaves").insert({ id: keyId, nome: "Chave Única", rodada_atual: 1, circuito_id: circuitoId });
+        if (eChave) throw eChave;
         for (const a of ativos) {
           await writeAtleta(circuitoId, a.id, { chave: keyId });
         }
@@ -1190,8 +1237,24 @@ Deno.serve(async (req) => {
         if (!ativos || ativos.length < 2) {
           return jsonResponse({ sucesso: false, erro: `São necessários ao menos 2 atletas ativos para gerar uma rodada (atual: ${ativos?.length ?? 0}).` }, 400);
         }
-        const { data: chaveAtual } = await supabase.from("chaves").select("id").eq("circuito_id", circuitoId).limit(1).single();
-        const keyId = chaveAtual?.id || "key_1";
+        // ⚠️ O `|| "key_1"` QUE ESTAVA AQUI ERA A CHAVE DO BH, e ele reescrevia o BH.
+        // Se o circuito nao tivesse linha em `chaves`, tudo o que vem depois --
+        // inclusive `chaves.update(...).eq("id", keyId)`, SEM `circuito_id` -- caia no
+        // BH. O Guardiao de Seguranca provou rodando o motor: avancar rodada num
+        // circuito novo VOLTOU O BH DA RODADA 6 PARA A 2 e carimbou as partidas do
+        // circuito novo com a chave do BH.
+        // E havia dois caminhos reais para chegar la: (1) clicar "avancar rodada"
+        // antes de "iniciar etapa" -- esta acao nao checava a fase; (2) o insert da
+        // chave no INICIAR_ETAPA nao checava erro (era o unico insert do arquivo sem
+        // `if (error) throw`), entao um insert falho respondia sucesso e deixava o
+        // circuito sem chave. (Auditoria de isolamento, 29/09/2026.)
+        // Agora: sem chave, RECUSA. Nao ha valor padrao que possa pertencer a outro
+        // circuito.
+        const { data: chaveAtual } = await supabase.from("chaves").select("id").eq("circuito_id", circuitoId).maybeSingle();
+        if (!chaveAtual?.id) {
+          return jsonResponse({ sucesso: false, erro: "Este circuito ainda não tem chave — inicie a etapa antes de avançar a rodada." }, 409);
+        }
+        const keyId = chaveAtual.id;
         const parIndex = Math.floor(rB / 2) - 1;
         const prazoR1Existente = (todasPartidas ?? []).filter((m: any) => m.rodada === 1 && m.prazo).map((m: any) => m.prazo).sort()[0];
         let mesRef: Date | undefined;
@@ -1344,11 +1407,10 @@ Deno.serve(async (req) => {
           if (errMembros) throw errMembros;
           const membrosNova = (membrosCa || []).map(mergeAtletaCircuito);
           const { data: partidasCirc, error: errPc } = await supabase
-            .from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado")
+            .from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado,calculado")
             .eq("circuito_id", circuitoId);
           if (errPc) throw errPc;
-          const idsComPartidaN = new Set<string>();
-          (partidasCirc ?? []).forEach((m: any) => { if (m.validado && !m.rejeitado) { idsComPartidaN.add(m.atleta1_id); idsComPartidaN.add(m.atleta2_id); } });
+          const idsComPartidaN = idsNoRankingFinal(partidasCirc ?? []);
           const cmpNova = sistemaNova === "B" ? cmpRankingB(partidasCirc ?? []) : cmpRankingDB(partidasCirc ?? []);
           const rankingNova = membrosNova.filter((a: any) => !a.pendente_circuito && idsComPartidaN.has(a.id)).sort(cmpNova);
           const posFinalN: Record<string, number> = {};
@@ -1451,10 +1513,9 @@ Deno.serve(async (req) => {
         const rotuloTemporada = `${temporadaNumero}/${temporadaAno}`;
         // Escopado por circuito_id: o ranking final do BH usa só as partidas do BH
         // (evita contar um jogo de um atleta do BH em outro circuito).
-        const { data: partidasTemporada, error: errPartidasTmp } = await supabase.from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado").eq("circuito_id", circuitoId);
+        const { data: partidasTemporada, error: errPartidasTmp } = await supabase.from("partidas").select("atleta1_id,atleta2_id,placar1,placar2,validado,rejeitado,calculado").eq("circuito_id", circuitoId);
         if (errPartidasTmp) throw errPartidasTmp;
-        const idsComPartida = new Set<string>();
-        (partidasTemporada ?? []).forEach((m: any) => { if (m.validado && !m.rejeitado) { idsComPartida.add(m.atleta1_id); idsComPartida.add(m.atleta2_id); } });
+        const idsComPartida = idsNoRankingFinal(partidasTemporada ?? []);
         const rankingFinal = (ativos ?? []).filter((a: any) => !a.pendente_circuito && idsComPartida.has(a.id)).sort(cmpRankingDB(partidasTemporada ?? []));
         const posicaoFinal: Record<string, number> = {};
         rankingFinal.forEach((a: any, i: number) => { posicaoFinal[a.id] = i + 1; });

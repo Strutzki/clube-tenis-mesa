@@ -35,7 +35,15 @@ function seasonalOnly(obj: Record<string, unknown>): Record<string, unknown> {
   for (const k in obj) if (SEASONAL_COLS.has(k)) out[k] = obj[k];
   return out;
 }
-async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+// O parametro `ehEspelho` (29/09/2026, gemeo do que o admin-action ganhou no
+// item 0.6.18): "best-effort" so e aceitavel quando isto e MESMO um espelho --
+// isto e, quando `atletas` ja recebeu a mesma escrita e o BH segue por la. Num
+// circuito NAO-BH o campo sazonal nao tem outro lugar: esta e a UNICA escrita.
+// Engolir o erro ali faz a funcao responder `sucesso: true` sem ter gravado nada
+// -- e o campo em questao e `versao_regulamento`/`data_aceite_regulamento`, ou
+// seja, o RECIBO DE CONSENTIMENTO. O atleta ve "aceito", o clube nao tem prova, e
+// ninguem fica sabendo: so um `console.warn` num log que ninguem le.
+async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Record<string, unknown>, extra: Record<string, unknown> = {}, ehEspelho = true) {
   try {
     const dados = seasonalOnly(campos);
     if (Object.keys(dados).length === 0 && Object.keys(extra).length === 0) return;
@@ -43,6 +51,7 @@ async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Recor
       .upsert({ circuito_id: circuitoId, atleta_id: atletaId, ...dados, ...extra }, { onConflict: "circuito_id,atleta_id" });
     if (error) throw error;
   } catch (e) {
+    if (!ehEspelho) throw e; // unica escrita: o erro TEM de subir, senao mente "sucesso"
     console.warn("dual-write circuito_atletas falhou (BH segue via atletas):", (e as any)?.message);
   }
 }
@@ -79,11 +88,16 @@ async function writeAtleta(circuitoId: string, atletaId: string, campos: Record<
   }
   const identidade: Record<string, unknown> = {};
   for (const k in campos) if (!SEASONAL_COLS.has(k)) identidade[k] = campos[k];
-  if (Object.keys(identidade).length > 0) {
+  const escreveuIdentidade = Object.keys(identidade).length > 0;
+  if (escreveuIdentidade) {
     const { error } = await supabase.from("atletas").update(identidade).eq("id", atletaId);
     if (error) throw error;
   }
-  await mirrorSazonal(circuitoId, atletaId, campos);
+  // `ehEspelho = escreveuIdentidade`: aqui `circuito_atletas` so e espelho de
+  // alguma coisa se `atletas` tambem recebeu escrita. Quando os campos sao todos
+  // sazonais (o caso do re-aceite e da renovacao) esta e a unica gravacao que
+  // acontece -- e entao o erro sobe.
+  await mirrorSazonal(circuitoId, atletaId, campos, {}, escreveuIdentidade);
 }
 
 const ALLOWED_ORIGINS = [
@@ -346,8 +360,26 @@ Deno.serve(async (req) => {
           }
         }
         // Dual-write: cria a participacao do atleta no circuito (membership + estado sazonal inicial).
+        //
+        // `ehEspelho` so vale para o BH. Em `atletas` NAO EXISTE coluna de circuito:
+        // a linha de `circuito_atletas` e o UNICO registro de que este atleta e
+        // deste circuito. No BH o roster ainda e lido pelo jeito antigo
+        // (`atletas` com status='ativo'), entao uma falha ali degrada mas nao
+        // apaga ninguem. Num circuito novo ela apaga: o atleta fica existindo
+        // globalmente e membro de circuito nenhum -- invisivel no roster, fora do
+        // pareamento, com o recibo de regulamento sem circuito a que se referir --
+        // e o app responderia "inscricao feita".
         if (novoAtleta?.id) {
-          await mirrorSazonal(circuitoId, novoAtleta.id as string, linha, { inscrito_em: dataAceite });
+          const ehBhInsc = circuitoId === (await bhId());
+          try {
+            await mirrorSazonal(circuitoId, novoAtleta.id as string, linha, { inscrito_em: dataAceite }, ehBhInsc);
+          } catch (eMemb) {
+            // Sem membership nao ha inscricao: desfaz o atleta recem-criado, como
+            // o rollback do documento acima faz, para nao deixar orfao.
+            await supabase.from("atletas").delete().eq("id", novoAtleta.id);
+            console.error("membership circuito_atletas falhou; inscricao desfeita:", (eMemb as any)?.message);
+            return jsonResponse({ sucesso: false, erro: "Não foi possível concluir sua inscrição neste circuito. Nada foi salvo — tente de novo em instantes." }, 500);
+          }
         }
         return jsonResponse({ sucesso: true });
       }
@@ -388,7 +420,19 @@ Deno.serve(async (req) => {
 
         try {
           // Fora do prazo NAO auto-valida: cai em "Aguardando Validacao" para o admin decidir.
-          const { data: cfg } = await supabase.from("configuracao").select("auto_validar_placar").eq("id", 1).single();
+          // ⚠️ ISTO LIA A CONFIGURACAO DO BH EM QUALQUER CIRCUITO (ate 29/09/2026):
+          // `from("configuracao").eq("id", 1)` e a tabela LEGADA, que so vale para o
+          // BH. O `DEFINIR_AUTO_VALIDAR` grava, para circuito nao-BH, em
+          // `circuitos.auto_validar_placar` -- coluna que existe e que NINGUEM LIA.
+          // Efeito medido pelo Guardiao de Seguranca rodando este motor: com o
+          // circuito novo marcado DESLIGADO e o BH LIGADO (que e o estado de
+          // producao hoje), a partida do circuito novo era auto-validada assim
+          // mesmo. O organizador dele nao tinha como desligar: o botao gravava numa
+          // coluna que ninguem consultava.
+          const ehBhAuto = circuitoId === (await bhId());
+          const { data: cfg } = ehBhAuto
+            ? await supabase.from("configuracao").select("auto_validar_placar").eq("id", 1).maybeSingle()
+            : await supabase.from("circuitos").select("auto_validar_placar").eq("id", circuitoId).maybeSingle();
           if (cfg?.auto_validar_placar === true && !partida.wo_tipo && !isForaPrazo) {
             const ehA = athleteId === partida.atleta1_id;
             const p1p1 = ehA ? score1 : partida.p1_placar1;

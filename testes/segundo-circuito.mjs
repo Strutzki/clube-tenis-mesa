@@ -25,10 +25,12 @@
 // operação de tela.
 
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import {
-  montarMotor, comoAdmin, circuito, atleta,
+  montarMotor, comoAdmin, circuito, atleta, partida,
   ok, igual, secao, placar, BH,
 } from "./ferramentas.mjs";
+import { carregarFuncao } from "./carrega-motor.mjs";
 
 const comAdminSlugBH = (motor) => comoAdmin(motor, "CRIAR_CIRCUITO", {
   slug: "bh", nome: "Outro BH", sistema: "B", pareamento: "sorteio",
@@ -478,6 +480,283 @@ secao("O que NÃO mudou: o carimbo de quem já aceitou e o sistema do circuito")
   const trechoCfg = motorFonte.slice(iCfg, fimCfg);
   ok(!/regulamento_versao/.test(trechoCfg),
     "o DEFINIR_CONFIG_CIRCUITO não toca regulamento_versao — o recibo do atleta não se reescreve por um salvamento de configuração");
+}
+
+secao("A auto-validação de placar é DO CIRCUITO — RODANDO o motor, não lendo o texto");
+{
+  // Achado do Guardião de Segurança em 29/09/2026, rodando este motor: o
+  // `ENVIAR_PLACAR` lia `from("configuracao").eq("id", 1)` — a tabela LEGADA, que
+  // é do BH — **em qualquer circuito**. O `DEFINIR_AUTO_VALIDAR` grava, para
+  // circuito não-BH, em `circuitos.auto_validar_placar`: uma coluna que existe,
+  // que a tela mostra, e que NINGUÉM LIA.
+  //
+  // O efeito prático era este, e é o motivo de a asserção RODAR em vez de casar
+  // regex: com o BH ligado (o estado de produção de hoje) e o circuito novo
+  // DESLIGADO, a partida do circuito novo era auto-validada assim mesmo — e o
+  // organizador dele não tinha botão nenhum que resolvesse, porque o botão
+  // gravava na coluna que o motor não consultava.
+  //
+  // As quatro combinações, porque duas delas passariam verde por acidente: se o
+  // teste só medisse "BH ligado / novo desligado", trocar a leitura por
+  // `false` fixo também passaria.
+  const NOVO = "44444444-4444-4444-4444-444444444444";
+
+  const cenario = async ({ bhLiga, novoLiga }) => {
+    const { banco } = await montarMotor({
+      circuitos: [
+        circuito(BH, { auto_validar_placar: bhLiga }),
+        circuito(NOVO, { slug: "novo", sistema: "B", auto_validar_placar: novoLiga }),
+      ],
+      configuracao: [{ id: 1, fase: "temporada", temporada_numero: 1, temporada_ano: 2026, rodadas_por_temporada: 6, auto_validar_placar: bhLiga }],
+      atletas: [atleta("a1"), atleta("a2")],
+      chaves: [
+        { id: "chave1", nome: "Chave A", rodada_atual: 1, circuito_id: BH },
+        { id: "chaveN", nome: "Chave N", rodada_atual: 1, circuito_id: NOVO },
+      ],
+      partidas: [
+        // Um envio já registrado pelo atleta 2, batendo com o que o atleta 1 vai
+        // mandar: é a condição em que a auto-validação dispara.
+        partida("jBH", { circuito_id: BH, chave_id: "chave1", atleta1_id: "a1", atleta2_id: "a2", p2_placar1: 3, p2_placar2: 1 }),
+        partida("jNO", { circuito_id: NOVO, chave_id: "chaveN", atleta1_id: "a1", atleta2_id: "a2", p2_placar1: 3, p2_placar2: 1 }),
+      ],
+    });
+    const fn = await carregarFuncao("athlete-action", banco);
+    const enviar = (circuitoId, matchId) => fn.chamar({
+      acao: "ENVIAR_PLACAR",
+      payload: { circuitoId, matchId, athleteId: "a1", score1: 3, score2: 1 },
+    });
+    return { banco, enviar };
+  };
+
+  const validou = (banco, id) => banco.acha("partidas", j => j.id === id)?.validado === true;
+
+  {
+    const { banco, enviar } = await cenario({ bhLiga: true, novoLiga: false });
+    await enviar(BH, "jBH");
+    await enviar(NOVO, "jNO");
+    ok(validou(banco, "jBH"), "BH ligado: a partida do BH é auto-validada");
+    ok(!validou(banco, "jNO"),
+      "BH ligado e circuito novo DESLIGADO: a partida do circuito novo NÃO é auto-validada — era exatamente isto que quebrava");
+  }
+  {
+    const { banco, enviar } = await cenario({ bhLiga: false, novoLiga: true });
+    await enviar(BH, "jBH");
+    await enviar(NOVO, "jNO");
+    ok(!validou(banco, "jBH"), "BH desligado: a partida do BH não é auto-validada");
+    ok(validou(banco, "jNO"),
+      "circuito novo LIGADO com o BH desligado: a partida dele É auto-validada — o botão do organizador passou a valer");
+  }
+  {
+    const { banco, enviar } = await cenario({ bhLiga: false, novoLiga: false });
+    await enviar(BH, "jBH"); await enviar(NOVO, "jNO");
+    ok(!validou(banco, "jBH") && !validou(banco, "jNO"), "os dois desligados: nenhuma partida se auto-valida");
+  }
+  {
+    const { banco, enviar } = await cenario({ bhLiga: true, novoLiga: true });
+    await enviar(BH, "jBH"); await enviar(NOVO, "jNO");
+    ok(validou(banco, "jBH") && validou(banco, "jNO"), "os dois ligados: as duas partidas se auto-validam");
+  }
+
+  // E a origem da leitura, para ninguém "consertar" voltando a tabela legada.
+  const atletaFonte = readFileSync("supabase/functions/athlete-action/index.ts", "utf-8");
+  const iEnv = atletaFonte.indexOf('case "ENVIAR_PLACAR"');
+  const fimEnv = atletaFonte.indexOf('case "', iEnv + 10);
+  ok(iEnv > 0 && fimEnv > iEnv, "o case do envio de placar foi localizado, e a fatia vai até o case seguinte");
+  const trechoEnv = atletaFonte.slice(iEnv, fimEnv).replace(/\/\/[^\n]*/g, "");
+  ok(/from\("circuitos"\)[\s\S]{0,80}auto_validar_placar/.test(trechoEnv),
+    "o envio de placar lê `auto_validar_placar` da tabela `circuitos`, que é por circuito");
+}
+
+secao("Recibo de consentimento não se perde em silêncio — RODANDO o motor");
+{
+  // Achado do Guardião Jurídico em 29/09/2026. O `mirrorSazonal` do
+  // `athlete-action` era best-effort SEM EXCEÇÃO: `catch` com `console.warn` e
+  // segue. Isso é defensável quando `circuito_atletas` é mesmo um ESPELHO — no
+  // BH, `atletas` recebeu a mesma escrita e o roster legado continua lendo de lá.
+  //
+  // Num circuito NÃO-BH o campo sazonal não tem outro lugar. `versao_regulamento`
+  // e `data_aceite_regulamento` SÃO sazonais. Então o re-aceite num circuito novo
+  // respondia `sucesso: true`, o atleta via "aceito", e o clube ficava sem
+  // recibo nenhum — com um aviso num log que ninguém lê.
+  //
+  // E na inscrição era pior que perder o recibo: em `atletas` NÃO EXISTE coluna
+  // de circuito. A linha de `circuito_atletas` é o ÚNICO registro de que aquele
+  // atleta é daquele circuito. Sem ela o atleta existe globalmente e é membro de
+  // circuito nenhum — invisível no roster, fora do pareamento — e o app dizia
+  // "inscrição feita".
+  const ATL = "aaaaaaaa-0000-0000-0000-000000000009";
+  const NOVO = "55555555-5555-5555-5555-555555555555";
+  const TOKEN = "token-do-recibo";
+  const sha = (t) => createHash("sha256").update(t).digest("hex");
+  const daquiAUmaHora = () => new Date(Date.now() + 3600e3).toISOString();
+
+  const cenario = async (circuitoAlvo) => {
+    const { banco } = await montarMotor({
+      circuitos: [
+        circuito(BH, { regulamento_versao: "v03-13" }),
+        circuito(NOVO, { slug: "novo", sistema: "B", regulamento_versao: "vB-01", inscricoes_abertas: true }),
+      ],
+      atletas: [atleta(ATL, { versao_regulamento: "antiga", aceite_regulamento: true })],
+      circuito_atletas: [
+        { circuito_id: BH, atleta_id: ATL, status: "ativo", versao_regulamento: "antiga" },
+        { circuito_id: NOVO, atleta_id: ATL, status: "ativo", versao_regulamento: "antiga" },
+      ],
+      funcoes: {
+        get_cpf_pepper: () => "pimenta-de-teste",
+        dedup_por_cpf_hash: () => [{ existe: false, atleta_id: null }],
+      },
+      outras: {
+        atleta_sessao: [{ id: "s1", atleta_id: ATL, token_hash: sha(TOKEN), expira_em: daquiAUmaHora() }],
+        atleta_documento: [], tentativas_busca_cpf: [],
+      },
+    });
+    const fn = await carregarFuncao("athlete-action", banco);
+    return { banco, fn, circuitoAlvo };
+  };
+
+  // ── O re-aceite, com o espelho recusando ────────────────────────────────
+  {
+    const { banco, fn } = await cenario();
+    banco.recusar("circuito_atletas", "upsert", { message: "simulando falha", code: "XX000" });
+    const r = await fn.chamar({ acao: "ACEITAR_REGULAMENTO", payload: { circuitoId: NOVO, token: TOKEN, versaoVista: "vB-01" } });
+    ok(r.corpo?.sucesso !== true,
+      `o re-aceite num circuito novo NÃO responde sucesso quando a gravação falha (veio: ${JSON.stringify(r.corpo?.sucesso)})`);
+    const vinc = banco.acha("circuito_atletas", x => x.circuito_id === NOVO && x.atleta_id === ATL);
+    igual(vinc?.versao_regulamento, "antiga",
+      "e a versão do vínculo continua a antiga — recusa não deixa meio-recibo");
+  }
+
+  // E no BH a escrita segue por `atletas`: ali o espelho é mesmo espelho, e
+  // derrubar a operação do circuito legado por causa dele seria o erro oposto.
+  {
+    const { banco, fn } = await cenario();
+    banco.recusar("circuito_atletas", "upsert", { message: "simulando falha", code: "XX000" });
+    const r = await fn.chamar({ acao: "ACEITAR_REGULAMENTO", payload: { circuitoId: BH, token: TOKEN, versaoVista: "v03-13" } });
+    ok(r.corpo?.sucesso === true,
+      "no BH o aceite NÃO quebra quando o espelho falha — lá `atletas` recebeu a escrita e é o que o roster lê");
+    igual(banco.acha("atletas", a => a.id === ATL)?.versao_regulamento, "v03-13",
+      "e o lugar autoritativo do BH ficou com a versão nova");
+  }
+
+  // ⚠️ Pedido COMPLETO, e é o ponto. A 1ª versão desta asserção mandava só nome
+  // e telefone: a inscrição morria em `cpf_obrigatorio` MUITO antes de chegar ao
+  // vínculo, e o `sucesso === false` ficava verde sem ter exercitado nada do que
+  // a asserção diz proteger. CPF com dígito verificador válido, porque o
+  // servidor revalida.
+  const inscricaoCompleta = {
+    circuitoId: NOVO, nome: "Novato da Silva", telefone: "31988887777",
+    aceiteRegulamento: true, aceiteLGPD: true,
+    cpf: "52998224725", cpfConsent: true, cpfConsentVersao: "cpf-2026-08-v1",
+    dataNascimento: "1990-05-10",
+  };
+
+  // ── A inscrição, com o vínculo recusando ────────────────────────────────
+  {
+    const { banco, fn } = await cenario();
+    banco.recusar("circuito_atletas", "upsert", { message: "simulando falha", code: "XX000" });
+    const antes = banco.tabelas.atletas.length;
+    const r = await fn.chamar({
+      acao: "INSCREVER",
+      payload: inscricaoCompleta,
+    });
+    ok(r.corpo?.sucesso === false,
+      `a inscrição sem vínculo ao circuito é recusada (veio: ${JSON.stringify(r.corpo?.sucesso)})`);
+    igual(banco.tabelas.atletas.length, antes,
+      "e o atleta recém-criado é DESFEITO — não fica órfão, existindo globalmente e membro de circuito nenhum");
+    ok(/Nada foi salvo/.test(String(r.corpo?.erro || "")),
+      "e a mensagem diz que nada foi salvo, em vez de mandar o atleta conferir a conexão no clique final de uma inscrição paga");
+  }
+
+  // Sem o vínculo recusando, o mesmo caminho conclui — senão as três asserções
+  // acima passariam com uma inscrição que nunca funciona.
+  {
+    const { banco, fn } = await cenario();
+    const r = await fn.chamar({
+      acao: "INSCREVER",
+      payload: inscricaoCompleta,
+    });
+    ok(r.corpo?.sucesso === true, `a mesma inscrição conclui quando o banco aceita (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    const novoId = banco.tabelas.atletas.find(a => a.telefone === "31988887777")?.id;
+    ok(!!novoId, "o atleta foi criado em `atletas`");
+    ok(!!banco.acha("circuito_atletas", x => x.circuito_id === NOVO && x.atleta_id === novoId),
+      "e o vínculo dele com o circuito novo foi criado — é ele o único registro de que o atleta é deste circuito");
+  }
+}
+
+secao("A virada não apaga do histórico quem jogou W.O. — RODANDO a ação mais destrutiva");
+{
+  // Achado do Guardião de Regulamento em 29/09/2026. `NOVA_TEMPORADA` montava o
+  // ranking final com `validado && !rejeitado`; a TELA monta com
+  // `calculado && !rejeitado` (`App.jsx`, `estaNoRanking`). Duas respostas para a
+  // mesma pergunta, e elas discordam exatamente nos W.O.: a partida de W.O. nunca
+  // é "validada" (ninguém enviou placar), mas é CALCULADA e PONTUA.
+  //
+  // O efeito não é cosmético e não se desfaz: quem fez a temporada em W.O. some do
+  // histórico, e TODOS ABAIXO DELE SOBEM UMA POSIÇÃO no registro permanente.
+  const A = "cccccccc-0000-0000-0000-00000000000a";
+  const B = "cccccccc-0000-0000-0000-00000000000b";
+  const C = "cccccccc-0000-0000-0000-00000000000c";
+
+  const cenarioVirada = async () => montarMotor({
+    circuitos: [circuito(BH, { regulamento_versao: "v03-13" })],
+    atletas: [
+      // A e C jogaram partida normal. B fez a temporada inteira em W.O. a favor:
+      // ganhou rating, aparece no ranking da tela, e some na virada.
+      atleta(A, { rating: 700 }),
+      atleta(B, { rating: 600 }),
+      atleta(C, { rating: 500 }),
+    ],
+    partidas: [
+      partida("n1", { atleta1_id: A, atleta2_id: C, placar1: 3, placar2: 0, validado: true, calculado: true }),
+      partida("w1", { rodada: 2, atleta1_id: B, atleta2_id: C, wo_tipo: "a_favor", wo_beneficiario_id: B, validado: false, calculado: true }),
+    ],
+    funcoes: { arquivar_partidas_temporada_circuito: () => null },
+  });
+
+  {
+    const { banco, motor } = await cenarioVirada();
+    const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: BH });
+    ok(r.corpo?.sucesso === true, `a virada conclui (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    const hist = (id) => banco.acha("atletas", a => a.id === id)?.historico || [];
+    ok(hist(B).length === 1,
+      `quem fez a temporada em W.O. RECEBE linha de histórico (veio: ${JSON.stringify(hist(B))})`);
+    // E a consequência que ninguém veria: as posições dos outros.
+    const pos = (id) => hist(id)[0]?.pos;
+    const todas = [pos(A), pos(B), pos(C)].sort((x, y) => x - y);
+    igual(todas.join(","), "1,2,3",
+      "e as três posições são 1, 2 e 3 — sem ninguém subindo de degrau por causa de um atleta apagado");
+  }
+}
+
+secao("A estreia no ranking acontece na rodada em que a 1ª partida é processada");
+{
+  // Esta seção nasceu de um erro meu, e é o motivo de ela existir. Ao unificar a
+  // conta de "quem entra no ranking" eu troquei o `PROCESSAR_RODADA` para usar
+  // `calculado` — e a bateria ficou VERDE. Só que ali a ordem importa: as partidas
+  // da rodada só recebem `calculado: true` no FIM da própria ação, depois de o
+  // ranking ser montado. Ou seja: o atleta cuja 1ª partida é a desta rodada ficava
+  // de fora do ranking que a rodada acabou de gerar, e só apareceria na seguinte.
+  //
+  // Nada na bateria falava dessa estreia. Regra da casa: o que não tem asserção
+  // não está protegido — e eu acabei de provar isso contra mim mesmo.
+  const A = "dddddddd-0000-0000-0000-00000000000a";
+  const B = "dddddddd-0000-0000-0000-00000000000b";
+
+  const { banco, motor } = await montarMotor({
+    circuitos: [circuito(BH, { regulamento_versao: "v03-13" })],
+    atletas: [atleta(A, { rating: 700 }), atleta(B, { rating: 500 })],
+    chaves: [{ id: "chave1", nome: "Chave A", rodada_atual: 1, circuito_id: BH }],
+    // Primeira e única partida dos dois: validada, ainda NÃO calculada — é
+    // exatamente o estado em que o organizador aperta "atualizar ranking".
+    partidas: [partida("p1", { atleta1_id: A, atleta2_id: B, placar1: 3, placar2: 1, validado: true, calculado: false })],
+  });
+  const r = await comoAdmin(motor, "PROCESSAR_RODADA", { circuitoId: BH, round: 1 });
+  ok(r.corpo?.sucesso === true, `a rodada é processada (erro: ${JSON.stringify(r.corpo?.erro)})`);
+  for (const [id, quem] of [[A, "o vencedor"], [B, "o perdedor"]]) {
+    const ph = banco.acha("atletas", a => a.id === id)?.posicao_historico || [];
+    ok(ph.length > 0,
+      `${quem} entra no ranking na MESMA rodada em que a 1ª partida dele foi processada (posicao_historico: ${JSON.stringify(ph)})`);
+  }
 }
 
 process.exit(placar("O segundo circuito"));

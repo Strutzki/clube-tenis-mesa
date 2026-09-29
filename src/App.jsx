@@ -5263,6 +5263,11 @@ const MSGS_ATLETA = new Set([
   // ATENÇÃO a aspas em comentário dentro deste bloco: a asserção extrai TUDO
   // entre aspas daqui e trata como mensagem da lista. Já me pegou duas vezes.
   "Sua sessão expirou. Entre de novo para confirmar o aceite.",
+  // Inscricao sem vinculo ao circuito (29/09/2026). A linha de `circuito_atletas`
+  // e o UNICO registro de que o atleta e deste circuito; sem ela a inscricao e
+  // desfeita no servidor. O atleta precisa ler que nada foi salvo — o generico
+  // mandava ele conferir o Wi-Fi no clique final de uma inscricao paga.
+  "Não foi possível concluir sua inscrição neste circuito. Nada foi salvo — tente de novo em instantes.",
   "Placar inválido.",
   // Guarda de menor de idade no INSCREVER (27/09/2026). A porta da frente nao tinha
   // nenhuma, e a tela era a unica trava — o servidor aceitava menor sem responsavel se

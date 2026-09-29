@@ -5,6 +5,33 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-09-29 (4ª subida) — NO AR: os quatro que travavam abrir e rodar circuitos
+
+**NO AR desde 29/09/2026** (de acordo do Juliano: *"pode subir"*).
+**App-only:** push `b4d512e..2ee6258`, bundle `index-DMcxWVqb.js`, site HTTP 200.
+`git diff` de `supabase/functions/` desde o deploy anterior: **vazio** — o desempate
+do Sistema B era lacuna de **asserção**, não de motor; ele já estava certo.
+Versões no ar seguem `admin-action` v64, `athlete-action` v22, `login-atleta` v11,
+`comprovante-url` v3.
+
+**Dados antes e depois, idênticos** nas nove tabelas.
+
+**Smoke no pacote publicado:** as duas redações novas de capítulo estão no bundle
+(*capítulo "Estrutura das Rodadas"* e *capítulo "Como Participar"*), junto com a
+"Zona de classificação" do BH e a caixa da fila de espera. A única citação numérica
+que restou (*"Cap. 11"*) é a do **ramo do BH**, onde ela é verdadeira — o ramo
+não-BH nomeia o capítulo.
+
+**O que este pacote leva:**
+- **0.10.23** — trocar de circuito e salvar o financeiro parou de gravar no circuito
+  errado. Era a tela onde o erro custa **dinheiro**, e só existe com dois circuitos;
+- **0.6.19** — os números de capítulo pararam de estar errados em circuito não-BH;
+- **0.10.24** — o desempate do Sistema B passou a ter os **cinco** níveis protegidos.
+
+**Bateria: 989 asserções, 0 falhas.** 8 mutações nesta rodada, 8 vermelhas.
+
+---
+
 ### 2026-09-29 — MIGRAÇÃO NO AR: o `DEFAULT 80` do banco virou 100
 
 **Aplicada em produção em 29/09/2026** (pedido do Juliano: *"pelo amor de deus,

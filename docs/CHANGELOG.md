@@ -5,6 +5,26 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-09-29 — MIGRAÇÃO NO AR: o `DEFAULT 80` do banco virou 100
+
+**Aplicada em produção em 29/09/2026** (pedido do Juliano: *"pelo amor de deus,
+resolver em definitivo esse tema dos 80%"*). Migração
+`percentual_entrada_meio_default_100`.
+
+As colunas `percentual_entrada_meio` de `circuitos` e `configuracao` tinham
+**`DEFAULT 80`** — a regra que a decisão de 12/09/2026 aboliu. O motor foi alinhado
+naquele dia (grava 100 explícito), mas o banco continuou com a regra velha esperando
+a primeira linha criada por um caminho que esquecesse o campo. Agora **`DEFAULT 100`**,
+conferido depois de aplicar.
+
+**Só o default:** nenhuma linha existente foi tocada pela migração.
+
+**O que sobra, e não consegui fazer:** o BH ainda tem `80` **gravado**. Tentei
+corrigir por SQL e **a trava de escrita recusou** — e ela está certa em recusar: é
+escrita em dado de produção por fora do app. É um campo na aba Financeiro.
+
+---
+
 ### 2026-09-29 (3ª subida) — NO AR: o caminho do circuito novo
 
 **NO AR desde 29/09/2026** (de acordo do Juliano: *"pode subir"*).

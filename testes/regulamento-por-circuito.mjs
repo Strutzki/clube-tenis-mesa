@@ -1964,8 +1964,28 @@ secao("A virada do Sistema B também ordena pelo critério dele");
   const { banco, motor } = await montarMotor({
     circuitos: [circuito(BH), circuito(CIRC_B, { slug: "pontos", sistema: "B", pareamento: "sorteio",
       regulamento_versao: "vB-01", fase: "temporada", temporada_numero: 1, temporada_ano: 2026 })],
-    atletas: ["p1", "p2", "p3", "p4"].map(id => atleta(id, { rating: 500, rating_pico: 500 })),
-    circuito_atletas: [doB("p4", 10, 1, 1, 2), doB("p3", 10, 1, 3, 0), doB("p2", 10, 0, 1, 1), doB("p1", 20, 1, 1, 1)],
+    // ── OS DOIS NÍVEIS QUE FALTAVAM (0.10.24, 29/09/2026) ──────────────────
+    // O cenário acima cobria 3 dos 5 níveis. Os outros dois exigem pares em que o
+    // nível testado CONTRARIA o nível seguinte — senão o seguinte decide sozinho e
+    // a mutação fica verde. Foi o que já aconteceu aqui com o aproveitamento.
+    //
+    // CONFRONTO DIRETO (nível 3), com `cdA` e `cdB`, 8 pontos cada:
+    //   `cdA` tem aproveitamento PIOR (1v/2d = 0,33) e `cdB` melhor (3v/1d = 0,75),
+    //   mas `cdA` VENCEU o confronto direto. Ordem certa: cdA, cdB. Tirar o nível
+    //   do confronto direto faz o aproveitamento decidir e INVERTE o par.
+    //   E os números batem entre si: a vitória de cdA e a derrota de cdB são a
+    //   mesma partida — fixture que não fecha mede outra coisa.
+    //
+    // SALDO DE SETS (nível 5), com `zs` e `as`, 6 pontos cada:
+    //   mesmos pontos, mesmo W.O., MESMO aproveitamento (2v/2d) e SEM confronto
+    //   direto entre eles — então só o saldo de sets pode decidir. `zs` tem +3 e
+    //   `as` tem −1. Os ids são de propósito ao contrário da ordem esperada: sem o
+    //   saldo de sets a cadeia cai no desempate por id, "as" vem antes de "zs", e
+    //   o par inverte. Com ids na ordem natural a mutação ficaria verde.
+    atletas: ["p1", "p2", "p3", "p4", "cdA", "cdB", "zs", "as"].map(id => atleta(id, { rating: 500, rating_pico: 500 })),
+    circuito_atletas: [doB("p4", 10, 1, 1, 2), doB("p3", 10, 1, 3, 0), doB("p2", 10, 0, 1, 1), doB("p1", 20, 1, 1, 1),
+                       doB("cdB", 8, 1, 3, 1), doB("cdA", 8, 1, 1, 2),
+                       doB("as", 6, 1, 2, 2), doB("zs", 6, 1, 2, 2)],
     chaves: [{ id: "chaveB", nome: "B", rodada_atual: 1, circuito_id: CIRC_B }],
     // p3 e p4 NÃO jogam entre si, de propósito: com confronto direto entre eles,
     // o 3º nível decidiria e o aproveitamento nunca seria consultado — foi o que
@@ -1976,6 +1996,13 @@ secao("A virada do Sistema B também ordena pelo critério dele");
                partida("b2", { circuito_id: CIRC_B, atleta1_id: "p4", atleta2_id: "p2", placar1: 3, placar2: 1, validado: true, calculado: true })],
     funcoes: { arquivar_partidas_temporada_circuito: () => null },
   });
+  // As partidas dos dois pares novos. `cdA` x `cdB` existe (é o confronto direto);
+  // `zs` x `as` NÃO existe, e os sets de cada um vêm de jogos contra terceiros.
+  banco.tabelas.partidas.push(
+    partida("bcd", { circuito_id: CIRC_B, atleta1_id: "cdA", atleta2_id: "cdB", placar1: 3, placar2: 2, validado: true, calculado: true }),
+    partida("bz1", { circuito_id: CIRC_B, atleta1_id: "zs", atleta2_id: "p1", placar1: 3, placar2: 0, validado: true, calculado: true }),
+    partida("ba1", { circuito_id: CIRC_B, atleta1_id: "as", atleta2_id: "p2", placar1: 1, placar2: 2, validado: true, calculado: true }),
+  );
   const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: CIRC_B });
   ok(r.corpo?.sucesso === true, `a virada do circuito B aconteceu (veio: ${JSON.stringify(r.corpo?.erro ?? true)})`);
 
@@ -1983,6 +2010,10 @@ secao("A virada do Sistema B também ordena pelo critério dele");
     .find(h => h.temporada === "1/2026")?.pos ?? null;
   igual([posB("p1"), posB("p2"), posB("p3"), posB("p4")], [1, 2, 3, 4],
     "o Sistema B ordena por pontos → menos W.O. culposo → confronto direto → aproveitamento");
+  igual([posB("cdA"), posB("cdB")], [5, 6],
+    "o CONFRONTO DIRETO decide, mesmo contra um aproveitamento melhor — nível 3 da cadeia");
+  igual([posB("zs"), posB("as")], [7, 8],
+    "e o SALDO DE SETS decide o último par, contra a ordem alfabética dos ids — nível 5");
 
   // E a fronteira A×B: circuito de pontos NÃO pode escrever rating na tabela
   // global — é a regra que o CLAUDE.md chama de contaminação do rating do BH.

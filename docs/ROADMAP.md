@@ -504,7 +504,13 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   **8 duplas completas**. Nenhuma asserção pega hoje: o upsert do banco falso nunca
   falha, então o conserto precisa nascer com `banco.recusar(...)`.
 
-- **0.6.19 — Número de capítulo errado em toda tela de circuito não-BH.**
+- **0.6.19 — ✅ RESOLVIDO em 29/09/2026 (no fonte).** *Número de capítulo errado em
+  toda tela de circuito não-BH.* O descompasso, medido: **"Como Participar"** é o
+  Cap. 11 no BH e o **Cap. 10** no regulamento de pontos; **"Estrutura das Rodadas"**
+  é 13 e **12**. As telas citavam a numeração do BH, fixa.
+  **Conserto: nomear o capítulo, não numerá-lo** — o número muda por versão, o nome
+  não. É o mesmo caminho que já tinha sido usado dentro do regulamento.
+  *Descrição original, mantida como registro:*
   Achado do Guardião do Regulamento em 27/09/2026. O `RegulamentoView` **renumera**
   os capítulos por versão (o `vA-nc-01` tira o capítulo do torneio e reindexa; o
   `vB-01` tem lista própria de 13), mas as telas de admin citam a numeração do BH,
@@ -1687,8 +1693,17 @@ atleta inscrito."*
   *(Guardião do Atleta, 15/09/2026, respondendo a uma pergunta do supervisor
   dele. Ele varreu os pontos de entrada em vez de supor.)*
 
-- **0.10.23 — Trocar de circuito e salvar o financeiro na mesma janela grava o
-  preço do circuito errado.** Gatilho: **antes de existir o 2º circuito.**
+- **0.10.23 — ✅ RESOLVIDO em 29/09/2026 (no fonte).** *Trocar de circuito e salvar o
+  financeiro na mesma janela grava o preço do circuito errado.*
+  `trocarCircuito` mudava `circuitoSelId` **antes** da carga. Como o `AdminFinanceiro`
+  tem `key={circuitoSelId}`, ele **remontava na hora** com o id novo e os preços
+  velhos — e salvar nessa janela gravava o preço de um circuito no outro. É a tela em
+  que o erro custa dinheiro, e só existe com dois circuitos.
+  **Conserto:** `circuitoAtivo` continua mudando antes (é ele que a camada de dados
+  consulta), e `circuitoSelId` passou a mudar **depois** da carga — a tela remonta uma
+  vez só, já com os dados certos. Durante a carga o seletor mostra o circuito
+  anterior, que é honesto: é o que ainda está na tela.
+  *Descrição original, mantida como registro:* Gatilho: **antes de existir o 2º circuito.**
   `trocarCircuito` (`App.jsx:4953-4963`) faz `setCircuitoSelId(circ.id)` **antes**
   do `await loadFromSupabase()`. Como `AdminFinanceiro` tem `key={circuitoSelId}`
   (`:6604`), ele remonta na hora e o `useEffect` de pré-preenchimento (`:6646`)
@@ -1707,7 +1722,18 @@ atleta inscrito."*
   `setDescGlobal`/`setPctMeio`, e ele leu a ausência de resultado como prova de
   ausência de código.)*
 
-- **0.10.24 — O desempate do Sistema B está protegido em 3 dos 5 níveis.**
+- **0.10.24 — ✅ RESOLVIDO em 29/09/2026 (no fonte). Os cinco níveis.** *O desempate
+  do Sistema B está protegido em 3 dos 5.*
+  Faltavam o **confronto direto** (nível 3) e o **saldo de sets** (nível 5) — este
+  último "de fato descoberto": removê-lo deixava a bateria verde.
+  **O que fez os dois novos pares funcionarem, e é a lição:** cada nível só é testável
+  se ele **contrariar** o nível seguinte. No par do confronto direto, quem vence o
+  duelo tem o aproveitamento **pior** — sem isso o aproveitamento decidiria sozinho e
+  a mutação ficaria verde (já aconteceu aqui antes). No par do saldo de sets, os ids
+  são de propósito ao **contrário** da ordem esperada, porque o último desempate é por
+  id: com ids na ordem natural, remover o saldo de sets não mudaria nada.
+  **4 mutações, 4 vermelhas** — remover e inverter cada um dos dois níveis.
+  *Descrição original, mantida como registro:*
   Gatilho: **o dia em que o primeiro circuito de pontos abrir temporada** — o
   mesmo do 0.10.18.
   O cenário novo da virada do Sistema B discrimina **pontos → menos W.O. culposo
@@ -1734,7 +1760,16 @@ atleta inscrito."*
   *(Supervisor do guardião de Regulamento, 3ª rodada, condicionando o APROVADO a
   este registro.)*
 
-- **0.10.17 — O banco ainda aplica a regra que o regulamento removeu.**
+- **0.10.17 — ✅ RESOLVIDO em 29/09/2026 (migração aplicada em produção).** *O banco
+  ainda aplica a regra que o regulamento removeu.* As colunas
+  `percentual_entrada_meio` de `circuitos` e `configuracao` tinham **`DEFAULT 80`** —
+  a regra abolida em 12/09, esperando a primeira linha criada por um caminho que
+  esquecesse o campo. Agora **`DEFAULT 100`**, conferido depois de aplicar.
+  A migração só mexe no default: **nenhuma linha existente foi tocada**.
+  **Sobra um valor de dado:** o BH ainda tem `80` gravado. Tentei corrigir por SQL e
+  a trava de escrita recusou — corretamente. É um campo na aba Financeiro, e fica
+  para o Juliano.
+  *Descrição original, mantida como registro:*
   Gatilho: **antes do próximo `CRIAR_CIRCUITO`**. `circuitos.percentual_entrada_meio`
   e `configuracao.percentual_entrada_meio` têm `DEFAULT 80` em produção
   (conferido em 13/09/2026). O motor grava 100 explícito, e isso está asseverado

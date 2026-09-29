@@ -5602,10 +5602,22 @@ export default function App() {
     if (!circ || !circ.id || circ.id === CIRCUITO_ATIVO) return;
     if (dbStatus === "loading") return;
     const prevAtivo = CIRCUITO_ATIVO, prevSel = circuitoSelId;
+    // ⚠️ A ORDEM DESTAS TRÊS LINHAS É A CORREÇÃO, e ela vale DINHEIRO (0.10.23).
+    //
+    // `CIRCUITO_ATIVO` é o que a camada de dados consulta — tem de mudar ANTES da
+    // carga, senão ela buscaria o circuito velho. Mas `circuitoSelId` é o que as
+    // telas usam como `key`: mudá-lo antes fazia o `AdminFinanceiro` REMONTAR na
+    // hora, com o id NOVO e os preços VELHOS ainda no estado. Salvar nessa janela
+    // gravava o preço de um circuito no outro — e o Financeiro é a tela onde o
+    // erro custa dinheiro de verdade.
+    // Agora ele muda DEPOIS da carga: a tela remonta uma vez só, já com os dados
+    // do circuito certo. Durante a carga o seletor continua mostrando o circuito
+    // anterior, que é honesto — é o que ainda está na tela —, e o botão fica
+    // desabilitado por `carregando`.
     setCircuitoAtivo(circ.id);
-    setCircuitoSelId(circ.id);
     const ok = await loadFromSupabase();
     if (ok === false) { setCircuitoAtivo(prevAtivo); setCircuitoSelId(prevSel); return; } // R1: reverte se o load falhar
+    setCircuitoSelId(circ.id);
     dispatch({ type: "SET_MENSAGENS_ENVIADAS", payload: [] }); // A2: limpa o histórico; recarrega no circuito novo (msgsCircRef != CIRCUITO_ATIVO)
     setMsgsStatus("nao-carregado");
   }
@@ -8710,7 +8722,7 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
       {state.phase === "etapa" && temporadaCompleta && (
         <Card style={{border:"1px solid rgba(156,111,62,0.4)"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#9C6F3E",marginBottom:6}}>🏁 Temporada completa ({rodadasPorTemp} rodadas)</div>
-          <div style={{fontSize:12,color:"#9db3a8"}}>A temporada atingiu as {rodadasPorTemp} rodadas configuradas (Cap. 13). Para continuar, inicie uma nova temporada.</div>
+          <div style={{fontSize:12,color:"#9db3a8"}}>A temporada atingiu as {rodadasPorTemp} rodadas configuradas (capítulo "Estrutura das Rodadas"13). Para continuar, inicie uma nova temporada.</div>
         </Card>
       )}
 
@@ -9096,7 +9108,11 @@ function IniciarEtapaPanel({ state, dispatch }) {
   // Com a cobrança ligada, contar os ativos dizia "12 atletas, número par" enquanto
   // o motor parearia 9 — e aí o aviso do bye e o do mínimo estavam os dois errados.
   const impar = vaoJogar % 2 !== 0;
-  const MINIMO = 8; // Cap. 13 do regulamento: temporada só inicia com no mínimo 8 atletas ativos
+  // ⚠️ NOMEIE O CAPÍTULO, NÃO O NÚMERO. A numeração muda por versão: "Estrutura
+  // das Rodadas" é o Cap. 13 no BH e o Cap. 12 no regulamento de pontos, e "Como
+  // Participar" é 11 e 10. Citar o número fixo faz a tela mandar o admin (e o
+  // atleta, quando o texto vaza para ele) procurar o capítulo errado. (0.6.19)
+  const MINIMO = 8; // regulamento, capítulo "Estrutura das Rodadas": mínimo de 8 ativos para iniciar
   const faltam = Math.max(0, MINIMO - vaoJogar);
   return (
     <div style={{marginTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
@@ -9120,7 +9136,7 @@ function IniciarEtapaPanel({ state, dispatch }) {
           ? <><b>{vaoJogar}</b> atleta(s) vão jogar (de {ativos.length} ativos)</>
           : <>{ativos.length} atleta(s) ativo(s)</>}
         {impar && faltam===0 ? " · número ímpar: um atleta terá folga (bye) por rodada" : ""}
-        {faltam > 0 && ` · faltam ${faltam} pra atingir o mínimo de ${MINIMO} (Cap. 13 do regulamento)`}
+        {faltam > 0 && ` · faltam ${faltam} pra atingir o mínimo de ${MINIMO} (regulamento, capítulo "Estrutura das Rodadas")`}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,fontSize:12,color:"#9db3a8",flexWrap:"wrap"}}>
         <span>Temporada:</span>
@@ -9211,7 +9227,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
   const _entradaPermitida = state.phase !== "etapa" || (_maxRound + 1) < _inicioUltimoTerco;
   const podeIncluirBacklog = (a) => _entradaPermitida && (!state.financeiroAtivo || a.pagamentoConfirmado);
   const motivoBloqueioInclusao = (a) => !_entradaPermitida
-    ? "Entrada suspensa no último terço (Cap. 11)"
+    ? 'Entrada suspensa no último terço (regulamento, capítulo "Como Participar")'
     : (state.financeiroAtivo && !a.pagamentoConfirmado ? "Registre o pagamento da temporada antes de incluir" : "");
   function abrirEditar(a) {
     setSelected(a);

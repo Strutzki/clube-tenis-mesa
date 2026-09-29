@@ -156,4 +156,119 @@ secao("A partida guarda como o cálculo foi feito");
   ok(r.partida.calculado === true, "a partida fica marcada como calculada");
 }
 
+secao("Bye com ROTAÇÃO no Sistema A: o menor rating que ainda não folgou");
+{
+  // Decisão do Juliano, 29/09/2026, depois de ele perguntar qual era a regra do
+  // número ímpar: "continua com o de menor rating, mas não pode repetir a mesma
+  // pessoa no bye, então sempre pela ordem do menor rating sem repetir".
+  //
+  // O QUE HAVIA ANTES, e por que a pergunta dele importou: o Sistema A escolhia o de
+  // menor rating em TODA rodada ímpar, sem rotação nenhuma. Com 13 atletas, o mesmo
+  // atleta — normalmente o iniciante, que é quem tem o menor rating — ficava de fora
+  // de metade dos jogos, indefinidamente. O Sistema B já tinha rotação desde a
+  // Fatia 4; o A não, e o regulamento de rating não mencionava bye em lugar nenhum.
+  //
+  // ⚠️ Testado pelo MOTOR DE VERDADE, rodando a temporada inteira — não por extração.
+  // A primeira versão destas asserções extraía as funções do fonte e as executava,
+  // como a `janelaRenovacao`; mas ali a função era pura e JavaScript, e aqui é
+  // TypeScript com tipos no meio. O extrator quebrou, e construir um removedor de
+  // tipos seria fabricar mais um instrumento frágil — que foi o defeito deste mesmo
+  // dia, três vezes. Rodar o motor é mais barato e prova mais.
+  const CIRC = "77770000-0000-4000-8000-000000000777";
+  const N = 9; // ímpar de propósito: sempre sobra um
+
+  const atletas = [], membros = [];
+  for (let n = 0; n < N; n++) {
+    const id = `bye0000${n}-0000-4000-8000-0000000007${n}${n}`;
+    atletas.push(atleta(id, { nome: `Atleta ${n}`, rating: 1000 - n * 50 })); // o último é o de MENOR rating
+    membros.push({ id: `mb-${n}`, circuito_id: CIRC, atleta_id: id, status: "ativo", pendente_circuito: false, saldo_temp: 0, vitorias: 0, derrotas: 0 });
+  }
+  const idDe = (n) => `bye0000${n}-0000-4000-8000-0000000007${n}${n}`;
+
+  const { motor, banco } = await montarMotor({
+    circuitos: [circuito(BH), circuito(CIRC, { slug: "rot", sistema: "A", fase: "inscricoes", rodadas_por_temporada: 6 })],
+    atletas, circuito_atletas: membros, chaves: [],
+    funcoes: { arquivar_partidas_temporada_circuito: () => null },
+  });
+
+  const r1 = await comoAdmin(motor, "INICIAR_ETAPA", { circuitoId: CIRC });
+  igual(r1.status, 200, "a etapa começa com 9 atletas");
+  await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC });
+  await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC });
+
+  // Quem folgou em cada rodada: o ativo que não aparece em partida nenhuma dela.
+  const folgouNa = (rodada) => {
+    const naRodada = new Set();
+    banco.linhas("partidas").filter(p => p.rodada === rodada && p.circuito_id === CIRC)
+      .forEach(p => { naRodada.add(p.atleta1_id); naRodada.add(p.atleta2_id); });
+    return membros.map(m => m.atleta_id).filter(id => !naRodada.has(id));
+  };
+
+  const folgas = [];
+  for (let r = 1; r <= 6; r++) {
+    const f = folgouNa(r);
+    igual(f.length, 1, `rodada ${r}: exatamente UM atleta folga (ímpar de 9)`);
+    folgas.push(f[0]);
+  }
+
+  igual(folgas[0], idDe(8), "a 1ª folga é do atleta de MENOR rating — a ordem continua sendo essa");
+  igual(folgas[1], idDe(7), "a 2ª é do segundo menor: o mesmo não folga duas vezes seguidas");
+  igual(new Set(folgas).size, 6,
+    `em 6 rodadas, ninguém folgou duas vezes (${folgas.map(f => `#${f.slice(7,8)}`).join(" → ")})`);
+  igual(folgas.map(f => f.slice(7,8)).join(","), "8,7,6,5,4,3",
+    "e a ordem é exatamente a do menor rating para cima, sem repetir");
+
+  // Número PAR: ninguém folga. (O 9º sai, sobram 8.)
+  {
+    const atletasPar = atletas.slice(0, 8), membrosPar = membros.slice(0, 8);
+    const { motor: mp, banco: bp } = await montarMotor({
+      circuitos: [circuito(BH), circuito(CIRC, { slug: "par", sistema: "A", fase: "inscricoes", rodadas_por_temporada: 6 })],
+      atletas: atletasPar, circuito_atletas: membrosPar, chaves: [],
+      funcoes: { arquivar_partidas_temporada_circuito: () => null },
+    });
+    await comoAdmin(mp, "INICIAR_ETAPA", { circuitoId: CIRC });
+    const naR1 = new Set();
+    bp.linhas("partidas").filter(p => p.rodada === 1).forEach(p => { naR1.add(p.atleta1_id); naR1.add(p.atleta2_id); });
+    igual(naR1.size, 8, "com número PAR de atletas, ninguém folga — todos os 8 jogam");
+  }
+
+  // ── O RAMO DO CICLO COMPLETO: asserção de FONTE, e o motivo declarado ─────
+  // Quando todos já folgaram, o ciclo recomeça pelo de menor rating. Sabotar esse
+  // ramo para `null` deixa a bateria VERDE, e fui ver por quê antes de chamar de
+  // buraco: com o mínimo de 8 atletas (Cap. 13) e 6 rodadas por temporada, são no
+  // máximo 6 folgas entre 9 ou mais pessoas — **o ciclo não se completa dentro de
+  // uma temporada**. O ramo é inalcançável pelo caminho normal.
+  //
+  // Não é decorativo, porém, e é por isso que ele tem guarda de texto em vez de
+  // nenhuma: `byesDaTemporada` marca como "já folgou" quem não aparece nas partidas
+  // de uma rodada — o que inclui quem ENTROU DEPOIS daquela rodada. Num circuito com
+  // várias entradas tardias, a lista de candidatos pode esvaziar antes das 6 rodadas.
+  // Sem o ramo, `escolhido` seria `null` e o pareamento estouraria no `.id`.
+  const motorTxt0 = await import("node:fs/promises").then(f => f.readFile("supabase/functions/admin-action/index.ts", "utf-8"));
+  const parear = motorTxt0.slice(motorTxt0.indexOf("function parearRodada("), motorTxt0.indexOf("function gerarPareamentoPorRating"));
+  ok(/: sorted\[sorted\.length - 1\];/.test(parear),
+    "com todos já tendo folgado, o ciclo RECOMEÇA pelo de menor rating — não devolve nada");
+  ok(!/: null;/.test(parear) && !/: undefined;/.test(parear),
+    "e o ramo do ciclo completo nunca devolve vazio, que estouraria no `.id`");
+
+  // UMA conta de "quem já folgou", compartilhada pelos dois sistemas — senão nasceria
+  // a segunda cópia da mesma regra, que é o defeito da `janelaRenovacao`.
+  const motorTxt = await import("node:fs/promises").then(f => f.readFile("supabase/functions/admin-action/index.ts", "utf-8"));
+  igual((motorTxt.match(/function byesDaTemporada/g) || []).length, 1,
+    "a conta de quem já folgou existe UMA vez no motor");
+  igual((motorTxt.match(/byesDaTemporada\(athletes, matchesTemporada\)/g) || []).length, 2,
+    "e os DOIS sistemas a usam — não uma cópia cada");
+
+  // E a cópia do app tem de concordar: `INICIAR_ETAPA` é otimista, então o pareamento
+  // do app pinta na tela antes de o servidor responder. Se divergirem, o admin vê um
+  // bye e o banco grava outro.
+  const appTxt = await import("node:fs/promises").then(f => f.readFile("src/App.jsx", "utf-8"));
+  ok(/function parearRodada\(athletes, historico, jaTeveBye = new Set\(\)\)/.test(appTxt),
+    "a cópia do app recebe quem já folgou");
+  ok(/candidatos\[candidatos\.length - 1\]/.test(appTxt),
+    "e escolhe o de menor rating entre os que faltam, como o motor");
+  ok(!/byeId = sorted\[sorted\.length - 1\]\.id;/.test(appTxt),
+    "e a forma sem rotação não sobrou na tela");
+}
+
 process.exit(placar("Sistema A (rating CBTM)"));

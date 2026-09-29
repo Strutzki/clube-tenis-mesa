@@ -415,14 +415,31 @@ function cmpRankingB(partidas: any[]) {
   };
 }
 
-function parearRodada(athletes: any[], historico: Set<string>): { pares: { p1: string; p2: string }[]; bye: string | null } {
+function parearRodada(athletes: any[], historico: Set<string>, jaTeveBye: Set<string> = new Set()): { pares: { p1: string; p2: string }[]; bye: string | null } {
   const sorted = [...athletes].sort((a, b) => (b.rating || 250) - (a.rating || 250));
 
   let byeId: string | null = null;
   let jogadores = sorted;
   if (sorted.length % 2 !== 0) {
-    byeId = sorted[sorted.length - 1].id;
-    jogadores = sorted.slice(0, -1);
+    // BYE COM ROTACAO -- decisao do Juliano, 29/09/2026: "continua com o de menor
+    // rating, mas nao pode repetir a mesma pessoa no bye, entao sempre pela ordem do
+    // menor rating sem repetir".
+    //
+    // Ate aqui era so `sorted[sorted.length - 1]`: o de menor rating, TODA rodada
+    // impar, sem rotacao nenhuma. Com 13 atletas isso significava o mesmo atleta --
+    // normalmente o iniciante -- de fora de metade dos jogos, indefinidamente. O
+    // Sistema B ja tinha rotacao desde a Fatia 4; o A nao.
+    //
+    // A regra: entre quem AINDA NAO teve bye nesta temporada, folga o de menor
+    // rating. Quando todos ja tiveram, o ciclo recomeca (a lista de candidatos volta
+    // a ser todo mundo) -- senao, num circuito impar, a partir de certo ponto nao
+    // haveria quem escolher e o pareamento travaria.
+    const candidatos = sorted.filter(a => !jaTeveBye.has(a.id));
+    const escolhido = candidatos.length > 0
+      ? candidatos[candidatos.length - 1]   // o de MENOR rating entre os que faltam
+      : sorted[sorted.length - 1];          // ciclo completo: recomeca pelo menor
+    byeId = escolhido.id;
+    jogadores = sorted.filter(a => a.id !== byeId);
   }
 
   const n = jogadores.length;
@@ -462,16 +479,44 @@ function parearRodada(athletes: any[], historico: Set<string>): { pares: { p1: s
 
 function gerarPareamentoPorRating(athletes: any[], matchesTemporada: any[] = []) {
   const historico = confrontosDaTemporada(matchesTemporada);
-  const r1 = parearRodada(athletes, historico);
+  // Quem ja teve bye nesta temporada, derivado do mesmo jeito que o Sistema B faz:
+  // por rodada, ativo que nao aparece em nenhuma partida ficou de fora. E "melhor
+  // esforco" de proposito -- nao ha coluna de bye no banco, e inventar uma exigiria
+  // migracao. Um atleta que entrou no meio da temporada aparece como "ja teve bye"
+  // nas rodadas anteriores a entrada dele, o que o poe no FIM da fila de candidatos.
+  // Isso erra para o lado certo: quem entrou tarde e' o ultimo a folgar.
+  const jaTeveBye = byesDaTemporada(athletes, matchesTemporada);
+
+  const r1 = parearRodada(athletes, historico, jaTeveBye);
 
   const historico2 = new Set(historico);
   r1.pares.forEach((par) => {
     const [a, b] = [par.p1, par.p2].sort();
     historico2.add(`${a}|${b}`);
   });
-  const r2 = parearRodada(athletes, historico2);
+  // A 2a rodada do par mensal ja conta o bye da 1a -- senao as duas rodadas do mesmo
+  // mes cairiam na mesma pessoa, que e' justamente o que a rotacao veio impedir.
+  const jaTeveBye2 = new Set(jaTeveBye);
+  if (r1.bye) jaTeveBye2.add(r1.bye);
+  const r2 = parearRodada(athletes, historico2, jaTeveBye2);
 
   return { rodada1: r1.pares, bye1: r1.bye, rodada2: r2.pares, bye2: r2.bye };
+}
+
+// UMA conta de "quem ja teve bye", usada pelos DOIS sistemas. Ela existia so dentro
+// do `gerarPareamentoB`; ao dar rotacao ao Sistema A em 29/09/2026 ela viraria a
+// segunda copia da mesma regra -- o defeito que a `janelaRenovacao` custou um dia
+// para desfazer. Nasce compartilhada.
+function byesDaTemporada(athletes: any[], matchesTemporada: any[]): Set<string> {
+  const jaTeveBye = new Set<string>();
+  const rounds = [...new Set((matchesTemporada || []).map((m: any) => m.rodada))];
+  const idsAtivos = athletes.map(a => a.id);
+  for (const r of rounds) {
+    const naRodada = new Set<string>();
+    (matchesTemporada || []).filter((m: any) => m.rodada === r).forEach((m: any) => { naRodada.add(m.atleta1_id); naRodada.add(m.atleta2_id); });
+    for (const id of idsAtivos) if (!naRodada.has(id)) jaTeveBye.add(id);
+  }
+  return jaTeveBye;
 }
 
 // ── Pareamento do Sistema B (sem rating) ──────────────────────────────────────
@@ -538,15 +583,7 @@ function parearRodadaB(athletes: any[], historico: Set<string>, pareamento: stri
 // Gera o par mensal (2 rodadas) no Sistema B, com rotacao de bye entre as duas.
 function gerarPareamentoB(athletes: any[], matchesTemporada: any[], pareamento: string) {
   const historico = confrontosDaTemporada(matchesTemporada);
-  // Deriva "quem ja teve bye" (melhor esforco): por rodada, ativos que nao aparecem em partida.
-  const jaTeveBye = new Set<string>();
-  const rounds = [...new Set((matchesTemporada || []).map((m: any) => m.rodada))];
-  const idsAtivos = athletes.map(a => a.id);
-  for (const r of rounds) {
-    const naRodada = new Set<string>();
-    (matchesTemporada || []).filter((m: any) => m.rodada === r).forEach((m: any) => { naRodada.add(m.atleta1_id); naRodada.add(m.atleta2_id); });
-    for (const id of idsAtivos) if (!naRodada.has(id)) jaTeveBye.add(id);
-  }
+  const jaTeveBye = byesDaTemporada(athletes, matchesTemporada); // conta compartilhada com o Sistema A
   const r1 = parearRodadaB(athletes, historico, pareamento, jaTeveBye);
   const historico2 = new Set(historico);
   r1.pares.forEach((par) => { const [a, b] = [par.p1, par.p2].sort(); historico2.add(`${a}|${b}`); });

@@ -1736,6 +1736,18 @@ geral antes de abrir cadastro para terceiros.
 
 ## Decisões ainda em aberto
 
+- **⚠️ A v03-13 ganhou um capítulo novo e AINDA NÃO FOI CARIMBADA.** *(29/09/2026.)*
+  O capítulo do **bye** (número ímpar de atletas) entrou na `v03-13` e na
+  `vA-nc-01` — e **não** na `v03-12`, que tem aceite gravado. Isso quer dizer que,
+  até o carimbo, **os 15 atletas do BH jogam sob uma regra que o texto deles não
+  descreve**: a rotação do bye já está no motor, e o regulamento que eles aceitaram
+  continua calado sobre ímpar.
+  Não é regressão — era assim antes, e agora é assim com o texto pronto do outro
+  lado. Mas o carimbo da v03-13 passou a resolver **três** coisas de uma vez: o
+  desconto de 80% que o texto promete e o motor não dá, os recibos apontando para
+  textos que nunca existiram (0.10.11), e agora o bye.
+  **Isto reforça a recomendação de carimbar a v03-13 antes de criar o 2º circuito.**
+
 - **Rating nacional × rating por circuito.** Hoje o rating é global: o atleta
   leva o dele para qualquer circuito. Faz sentido quando os circuitos jogam
   entre si; é discutível quando são independentes. Não decidido.

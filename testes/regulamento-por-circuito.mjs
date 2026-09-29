@@ -399,6 +399,47 @@ secao("O mínimo de 8 para começar: os DOIS regulamentos prometem, o motor cump
     "o piso de avançar é 2, que é o mínimo para existir uma partida");
 }
 
+secao("O bye entra no texto de rating — na v03-13, não na v03-12 que já tem aceite");
+{
+  // O Juliano perguntou, em 29/09/2026: "na quantidade de atletas ímpar, me lembrar
+  // qual a regra utilizada". A regra existia **no motor e em lugar nenhum do texto**:
+  // o regulamento de rating não tinha uma palavra sobre bye, ímpar ou folga. O de
+  // pontos sempre teve capítulo próprio.
+  //
+  // ⚠️ E O CAPÍTULO NÃO PODE ENTRAR NA v03-12. Ela é a versão em vigor no BH e foi
+  // aceita por atletas reais; acrescentar um capítulo mudaria retroativamente o que
+  // aqueles recibos provam (regra 7). Ele nasce na **v03-13**, que ainda não foi
+  // carimbada, e chega aos atletas pelo re-aceite. É o mesmo desenho do
+  // `VERSOES_COM_RODADAS_FIXAS`, e pela mesma razão.
+  ok(/const VERSOES_COM_BYE_ESCRITO = new Set\(\["v03-13", "vA-nc-01"\]\);/.test(fonte),
+    "o capítulo do bye é gatado por versão, e a v03-12 fica de fora");
+  ok(/\{byeEscrito && \(/.test(fonte),
+    "e o gate é consumido de verdade — não é constante morta");
+  ok(/menor rating entre os que ainda não folgaram/.test(fonte),
+    "o texto descreve a regra que o Juliano decidiu: menor rating, sem repetir");
+  ok(/o bye tem <span style=\{s\.dest\}>rotação<\/span>/.test(fonte),
+    "e diz que há rotação, com essa palavra");
+  ok(/não altera o rating/.test(fonte),
+    "e que a folga não mexe no rating — diferente do Sistema B, onde ela vale 1 ponto");
+  ok(/nunca<\/span> dão bye à mesma pessoa/.test(fonte),
+    "e que as duas rodadas do mesmo mês não caem na mesma pessoa");
+
+  // O texto tem de bater com o MOTOR, não só existir. As três afirmações acima são
+  // verificáveis: a ordem e a rotação têm asserção comportamental em `rating.mjs`;
+  // aqui fica a que prova que o rating NÃO é tocado no bye — o Sistema A não tem
+  // nenhum `saldo_temp + 1` para quem folga, ao contrário do B.
+  const motorTxt = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "admin-action", "index.ts"), "utf8");
+  const trechoByePonto = motorTxt.slice(motorTxt.indexOf("// Fatia 4: bye +1"), motorTxt.indexOf("// Fatia 4: bye +1") + 1400);
+  ok(/if \(sistema === "B"\) \{/.test(trechoByePonto),
+    "o ponto de participação do bye é exclusivo do Sistema B — no A a folga não pontua, como o texto novo promete");
+
+  // E o texto de PONTOS continua com o dele, intacto.
+  ok(/🎟️ Bye \(número ímpar de atletas\)/.test(fonte),
+    "o regulamento de pontos continua com o capítulo do bye");
+  ok(/1 ponto de participação/.test(fonte),
+    "e com o ponto de participação, que é a diferença entre os dois sistemas");
+}
+
 secao("A janela de entrada (Cap. 11) passa a existir no SERVIDOR, não só na tela");
 {
   // Pedido do Juliano, 29/09/2026, ao enunciar a regra de entrada: "permitir a

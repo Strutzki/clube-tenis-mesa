@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 868 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 896 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -181,6 +181,17 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | o último terço vira última metade | 2 vermelhas |
 | a janela passa a valer fora da etapa também (travaria as inscrições) | 4 vermelhas |
 | a conta do último terço volta a ser duplicada no `AVANCAR_RODADA` | 2 vermelhas — mesma família da `janelaRenovacao`: duas contas independentes da mesma regra, que nada obriga a concordar |
+| **Bye com rotação no Sistema A — 29/09/2026 (10 sabotagens, 10 vermelhas)** | |
+| a rotação some (volta o menor rating em toda rodada) | 3 vermelhas |
+| a rotação inverte (folga o de MAIOR rating) | 3 vermelhas |
+| a 2ª rodada do mês esquece o bye da 1ª | 3 vermelhas |
+| o ciclo não recomeça quando todos já folgaram | 2 vermelhas — **ficava VERDE**: com mínimo de 8 e 6 rodadas, o ciclo não se completa dentro de uma temporada, então o ramo é inalcançável pelo caminho normal. Guardado por asserção de FONTE, com o motivo declarado |
+| o Sistema B volta a ter a própria conta de quem folgou | 1 vermelha — seria a 2ª cópia da mesma regra |
+| a cópia do app perde a rotação | 2 vermelhas — `INICIAR_ETAPA` é otimista, então o pareamento do app pinta na tela antes do servidor: se divergirem, o admin vê um bye e o banco grava outro |
+| o capítulo do bye entra na **v03-12** (que já tem aceite) | 1 vermelha — regra 7 |
+| o gate de versão vira constante morta | 1 vermelha |
+| o texto perde a rotação | 1 vermelha |
+| o texto promete ponto de participação no rating, que o motor não dá | 1 vermelha |
 | **O 2º circuito — 28/09/2026 (14 sabotagens, 14 vermelhas)** | |
 | motor: o teto volta a ser ignorado no `DEFINIR_CONFIG_CIRCUITO` | 1 vermelha |
 | motor: o mínimo de 8 cai (um teto de 3 passaria) | 1 vermelha |

@@ -676,15 +676,26 @@ function jaSeEnfrentaram(idA, idB, historico) {
 // mais que qualquer diferença de rating. Assim minimiza-se PRIMEIRO o número de
 // repetições e, só como desempate, a diferença de rating.
 // Retorna { pares: [{p1,p2}], bye: idOuNull }
-function parearRodada(athletes, historico) {
+function parearRodada(athletes, historico, jaTeveBye = new Set()) {
   const sorted = [...athletes].sort((a, b) => (b.rating || 250) - (a.rating || 250));
 
-  // Ímpar: o atleta de menor rating folga (bye), sem pontos.
+  // Ímpar: folga (bye) o de MENOR RATING ENTRE OS QUE AINDA NÃO FOLGARAM nesta
+  // temporada — decisão do Juliano, 29/09/2026. Quando todos já tiveram, o ciclo
+  // recomeça. Até aqui era sempre `sorted[sorted.length - 1]`, sem rotação: com 13
+  // atletas, o mesmo iniciante ficava de fora de metade dos jogos, indefinidamente.
+  // ⚠️ Esta função é a CÓPIA do app, e o `INICIAR_ETAPA` é otimista — ela pinta na
+  // tela antes de o servidor responder. Tem de concordar com a do motor
+  // (`admin-action`), senão o admin vê um bye e o banco grava outro. Há asserção
+  // exigindo que as duas usem a mesma regra.
   let byeId = null;
   let jogadores = sorted;
   if (sorted.length % 2 !== 0) {
-    byeId = sorted[sorted.length - 1].id;
-    jogadores = sorted.slice(0, -1);
+    const candidatos = sorted.filter(a => !jaTeveBye.has(a.id));
+    const escolhido = candidatos.length > 0
+      ? candidatos[candidatos.length - 1]
+      : sorted[sorted.length - 1];
+    byeId = escolhido.id;
+    jogadores = sorted.filter(a => a.id !== byeId);
   }
 
   const n = jogadores.length;
@@ -726,9 +737,21 @@ function parearRodada(athletes, historico) {
 // considerando os confrontos da rodada 1 recém-gerada como já ocorridos.
 function gerarPareamentoPorRating(athletes, matchesTemporada = []) {
   const historico = confrontosDaTemporada(matchesTemporada);
+  // Quem já folgou nesta temporada, pelo mesmo critério do motor: por rodada, ativo
+  // que não aparece em partida nenhuma ficou de fora.
+  const jaTeveBye = new Set();
+  const rodadas = [...new Set((matchesTemporada || []).map(m => m.round ?? m.rodada))];
+  const idsAtivos = athletes.map(a => a.id);
+  for (const r of rodadas) {
+    const naRodada = new Set();
+    (matchesTemporada || []).filter(m => (m.round ?? m.rodada) === r).forEach(m => {
+      naRodada.add(m.athlete1Id ?? m.atleta1_id); naRodada.add(m.athlete2Id ?? m.atleta2_id);
+    });
+    for (const id of idsAtivos) if (!naRodada.has(id)) jaTeveBye.add(id);
+  }
 
   // Rodada 1
-  const r1 = parearRodada(athletes, historico);
+  const r1 = parearRodada(athletes, historico, jaTeveBye);
 
   // Para a rodada 2, os confrontos da rodada 1 também contam como "já ocorridos"
   const historico2 = new Set(historico);
@@ -737,7 +760,11 @@ function gerarPareamentoPorRating(athletes, matchesTemporada = []) {
     historico2.add(`${a}|${b}`);
   });
 
-  const r2 = parearRodada(athletes, historico2);
+  // E o bye da rodada 1 também conta — senão as duas rodadas do mesmo mês cairiam
+  // na mesma pessoa, que é o que a rotação veio impedir.
+  const jaTeveBye2 = new Set(jaTeveBye);
+  if (r1.bye) jaTeveBye2.add(r1.bye);
+  const r2 = parearRodada(athletes, historico2, jaTeveBye2);
 
   return {
     rodada1: r1.pares, bye1: r1.bye,
@@ -2661,6 +2688,16 @@ const VERSOES_COM_DESCONTO_ETAPA = new Set(["v03-12"]);
 // re-aceite que a Onda 0.10.15 construiu. A `vA-nc-01` também entra: nenhum
 // circuito a usa (existe 1 circuito no banco, carimbado v03-12).
 const VERSOES_COM_RODADAS_FIXAS = new Set(["v03-13", "vA-nc-01"]);
+// Versões de RATING cujo texto explica o bye (número ímpar de atletas).
+// O regulamento de rating nunca mencionou bye — nem para dizer que existe. Achado
+// em 29/09/2026 quando o Juliano perguntou "na quantidade de atletas ímpar, me
+// lembrar qual a regra utilizada": a regra existia no motor e em lugar nenhum do
+// texto. O de PONTOS sempre teve capítulo próprio.
+// A **v03-12 fica de fora de propósito**, e não é esquecimento: ela é a versão em
+// vigor no BH e foi aceita por atletas reais. Acrescentar um capítulo ao texto dela
+// mudaria retroativamente o que aqueles recibos provam — regra 7. O capítulo nasce
+// na v03-13, que ainda não foi carimbada, e chega a eles pelo re-aceite.
+const VERSOES_COM_BYE_ESCRITO = new Set(["v03-13", "vA-nc-01"]);
 
 // Quais versões podem ser CARIMBADAS em cada tipo de circuito. Espelho das três
 // listas do `admin-action` (VERSOES_DO_BH / VERSOES_DE_RATING_NOVO /
@@ -2729,6 +2766,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
   const comTorneio = VERSOES_COM_TORNEIO.has(versaoEfetiva);
   const comDescontoEtapa = VERSOES_COM_DESCONTO_ETAPA.has(versaoEfetiva);
   const rodadasFixas = VERSOES_COM_RODADAS_FIXAS.has(versaoEfetiva);
+  const byeEscrito = VERSOES_COM_BYE_ESCRITO.has(versaoEfetiva);
   // Usado nos rodapés dos capítulos; mesma regra do rótulo do cabeçalho.
   const versaoLabelRodape = versaoEfetiva || "versão não confirmada";
   const capsBase = [
@@ -3070,6 +3108,12 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
             "Vagas que abrem (desistência, não-renovação ou suspensão) são preenchidas pela fila, na ordem — mediante aprovação do administrador",
           ]}/>
         </Box>
+        {byeEscrito && (
+          <Box cor="#6a9d7a" titulo="🎟️ Bye (número ímpar de atletas)">
+            <p style={s.p}>Quando o número de atletas ativos é <span style={s.dest}>ímpar</span>, um atleta fica de fora da rodada (bye). A folga é do atleta de <span style={s.dest}>menor rating entre os que ainda não folgaram</span> na temporada — e o bye tem <span style={s.dest}>rotação</span>: ninguém folga uma segunda vez antes de todos terem folgado uma. Quando todos já folgaram, o ciclo recomeça pela mesma ordem.</p>
+            <p style={s.p}>A folga <span style={s.dest}>não altera o rating</span> de quem ficou de fora: não há vitória, derrota nem ponto de participação. As duas rodadas de um mesmo mês <span style={s.dest}>nunca</span> dão bye à mesma pessoa.</p>
+          </Box>
+        )}
         <Box cor="#D85A30" titulo="📋 Como Funciona o Convite">
           <Ul items={[
             "Gatilho: suspensão por falta de pagamento, abandono ou queda do mínimo operacional por +2 rodadas",

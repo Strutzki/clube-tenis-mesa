@@ -845,7 +845,17 @@ function gerarPareamentoB(
   // A rede de seguranca: se a escala do circulo produzir um confronto que JA
   // aconteceu -- o que so ocorre quando o grupo mudou no meio da temporada, porque
   // o rodizio e calculado sobre quem esta ativo AGORA --, cai no pareamento antigo,
-  // que minimiza repeticao. Assim o resultado nunca e pior que o de antes.
+  // que minimiza repeticao.
+  //
+  // ⚠️ ESTE COMENTARIO DIZIA "assim o resultado nunca e pior que o de antes" e isso
+  // NAO TINHA SIDO MEDIDO -- o Guardiao de Regulamento cobrou, com razao, e ainda
+  // sabotou a rede sem a bateria acusar. Medido depois (40 temporadas por caso):
+  //     12 atletas, 4 saem na virada do 1o par:  COM a rede 0 repeticoes
+  //                                              SEM a rede 3, em TODAS as 40
+  //     10 atletas (2 ou 4 saem), 9 (2 saem), 8 (1 sai): identico com e sem
+  // Ou seja: ela faz diferenca, e so em elenco que encolhe MUITO depois de ja ter
+  // gasto rodadas. E o cenario que o guardiao procurou e nao achou. Tem asserção
+  // agora ("A rede de seguranca do rodizio faz diferenca"), e a mutacao acusa.
   if (pareamento !== "grupos") {
     const ordenados = ordemDaTemporada(athletes, semente);
     const e1 = escalaCirculo(ordenados, rodadaBase + 1);
@@ -1042,12 +1052,38 @@ Deno.serve(async (req) => {
     // BH passou a receber 403). Nos circuitos NOVOS, que sao o alvo desta trava,
     // `circuito_atletas` E a unica membership, entao a checagem vale para todos.
     const bhIdEscopo = await bhId();
-    const checarMembro = !!bf && (!ehSuper || circuitoId !== bhIdEscopo);
-    if (checarMembro) {
+    if (bf) {
       const aid = pl[bf];
       if (!aid) return jsonResponse({ sucesso: false, erro: "id do atleta é obrigatório" }, 400);
       const { data: mm } = await supabase.from("circuito_atletas").select("atleta_id").eq("circuito_id", circuitoId).eq("atleta_id", aid).maybeSingle();
-      if (!mm) {
+      let recusar = !mm;
+      // ⚠️ NO BH, O PULO ERA CEGO — e o Guardiao de Seguranca mostrou o preco.
+      // A excecao existe porque no BH a participacao e a propria linha de
+      // `atletas` (roster legado) e ha atleta do BH sem linha em
+      // `circuito_atletas`; exigi-la ali recusaria operacao legitima (a bateria
+      // pegou na hora quando eu apertei demais em 29/09).
+      // Mas eu a escrevi como PULO: super-admin + BH => nao checa nada. Medido por
+      // ele em `5bc6703`, com `circuitoId` do BH e `id` de atleta que so participa
+      // de OUTRO circuito:
+      //   EXCLUIR_ATLETA      -> 200, e o atleta SOME de `atletas`. Com a FK
+      //                          `circuito_atletas_atleta_id_fkey` em ON DELETE
+      //                          CASCADE, somem os vinculos dele em TODOS os
+      //                          circuitos. IRREVERSIVEL.
+      //   ARQUIVAR_ATLETA     -> perde o login em todos os circuitos
+      //   INSCRICAO_VALIDAR   -> reescreve o rating global
+      // O `semIntrusosDeOutroCircuito` fechou o caminho de LEITURA (o pareamento);
+      // este e o de ESCRITA, e e o que nao se desfaz.
+      //
+      // FALLBACK em vez de pulo, que e o que ele propos: no BH, quem tem vinculo
+      // com ALGUM circuito e nao tem com o BH NAO e do BH. Quem nao tem vinculo
+      // nenhum e roster legado puro e passa.
+      // Recusa ZERO operacoes hoje: 15 atletas, 15 vinculos, todos do BH.
+      if (!mm && ehSuper && circuitoId === bhIdEscopo) {
+        const { data: outros } = await supabase.from("circuito_atletas")
+          .select("circuito_id").eq("atleta_id", aid).limit(1);
+        recusar = (outros ?? []).length > 0; // tem vinculo com outro circuito => nao e do BH
+      }
+      if (recusar) {
         return jsonResponse({ sucesso: false, erro: ehSuper
           ? "Este atleta não participa do circuito selecionado. Troque de circuito antes de agir sobre ele."
           : "Atleta não é do seu circuito." }, 403);

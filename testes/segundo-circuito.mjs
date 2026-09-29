@@ -1416,10 +1416,15 @@ secao("Um circuito não age sobre o outro — nem pelo super-admin");
       "e o vínculo dele com o BH fica como estava");
   }
 
-  // ⚠️ No BH o super-admin NÃO passa pela checagem de membro, e é de propósito: lá
-  // a participação é a própria linha de `atletas` (roster legado), e existe atleta
-  // do BH sem linha em `circuito_atletas`. Exigi-la ali recusaria operação legítima
-  // — a bateria pegou isso na hora quando eu apertei demais.
+  // ⚠️ No BH o super-admin tem um FALLBACK, não um pulo. A exceção existe porque
+  // lá a participação é a própria linha de `atletas` (roster legado) e há atleta do
+  // BH sem linha de vínculo — exigi-la recusaria operação legítima, e a bateria
+  // pegou isso na hora quando eu apertei demais.
+  // Mas eu a escrevi como PULO CEGO, e o Guardião de Segurança mediu o preço:
+  // com o BH selecionado e o id de um atleta de OUTRO circuito, o `EXCLUIR_ATLETA`
+  // respondia 200 e o atleta SUMIA do banco, levando por efeito cascata os
+  // vínculos dele em todos os circuitos. Irreversível.
+  // Regra agora: tem vínculo com outro circuito e não com o BH ⇒ não é do BH.
   {
     const ARQ = "bb000000-0000-4000-8000-000000000001";
     const { banco, motor } = await montarMotor({
@@ -1733,6 +1738,14 @@ secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado 
 
   const cenarioLgpd = async () => montarMotor({
     funcao: "anonimizar-atleta",
+    // O bucket das fotos é PÚBLICO. O alvo tem DUAS fotos (quem troca a de perfil
+    // deixa a antiga para trás, e ela continua servindo) e há uma foto de outro
+    // atleta, que não pode ser tocada.
+    arquivos: { "fotos-atletas": [
+      `${"dddd0000-0000-0000-0000-0000000000a1"}-111.jpg`,
+      `${"dddd0000-0000-0000-0000-0000000000a1"}-222.jpg`,
+      `${"dddd0000-0000-0000-0000-0000000000a2"}-333.jpg`,
+    ] },
     circuitos: [circuito(BH), circuito(CIRC, { slug: "lgpd", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01" })],
     atletas: [
       atleta(ALVO, { nome: "Fulano de Tal", telefone: "31988887777", apelido: "Fu", foto_url: "http://x/f.jpg", exclusao_solicitada_em: "2026-09-20T10:00:00Z" }),
@@ -1744,6 +1757,16 @@ secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado 
       { circuito_id: CIRC, atleta_id: OUTRO, status: "ativo", aceite_regulamento: true, versao_regulamento: "vB-01" },
     ],
     outras: {
+      mensagens_enviadas: [
+        { id: "m1", atleta_id: ALVO, atleta_nome: "Fulano de Tal", texto: "Olá Fulano de Tal, seu jogo é dia 15." },
+        { id: "m2", atleta_id: OUTRO, atleta_nome: "Sicrano", texto: "Olá Sicrano, seu jogo é dia 15." },
+      ],
+      solicitacoes_wo: [
+        { id: "w1", atleta_id: ALVO, adversario_id: OUTRO, atleta_nome: "Fulano de Tal", adversario_nome: "Sicrano",
+          justificativa: "Estava internado com pneumonia", comprovante_url: "comprovantes-wo/w1.jpg", status: "pendente" },
+        { id: "w2", atleta_id: OUTRO, adversario_id: ALVO, atleta_nome: "Sicrano", adversario_nome: "Fulano de Tal",
+          justificativa: "Viagem de trabalho", status: "pendente" },
+      ],
       atleta_documento: [
         { atleta_id: ALVO, cpf_hash: "hash-do-alvo", data_nascimento: "2012-01-01", responsavel_nome: "Mãe do Fulano", responsavel_cpf_hash: "hash-da-mae" },
         { atleta_id: OUTRO, cpf_hash: "hash-do-outro" },
@@ -1784,6 +1807,43 @@ secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado 
   igual(banco.tabelas.atleta_sessao.filter(x => x.atleta_id === ALVO).length, 0,
     "a sessão dele é encerrada — sem isto o aparelho continuava entrando no app depois da exclusão");
 
+  // ── A FOTO, num bucket PÚBLICO ────────────────────────────────────────────
+  // Achado do Guardião Jurídico: `foto_url` era anulada no banco e o ARQUIVO
+  // ficava servindo para sempre. É o dado mais identificador que existe — um
+  // rosto — e as duas telas prometem apagá-lo.
+  igual(banco.arquivosDe("fotos-atletas"), [`${OUTRO}-333.jpg`],
+    "as DUAS fotos do titular somem do bucket (inclusive a antiga, que ninguém mais referenciava) e a do outro atleta fica");
+
+  // ── O NOME EM CLARO NOS REGISTROS AO LADO DA PARTIDA ──────────────────────
+  // A tela promete "as partidas continuam registradas sem o seu nome". Era
+  // verdade no ranking e falso aqui: 288 mensagens e 5 pedidos de W.O. em
+  // produção guardavam o nome.
+  {
+    const m1 = banco.acha("mensagens_enviadas", m => m.id === "m1");
+    igual(m1?.atleta_nome, "Atleta removido", "o nome sai do registro da mensagem");
+    ok(!String(m1?.texto || "").includes("Fulano"),
+      `e sai também de DENTRO do texto da mensagem (veio: ${JSON.stringify(m1?.texto)})`);
+    const m2 = banco.acha("mensagens_enviadas", m => m.id === "m2");
+    igual(m2?.atleta_nome, "Sicrano", "a mensagem do outro atleta não é tocada");
+  }
+  {
+    const w1 = banco.acha("solicitacoes_wo", w => w.id === "w1");
+    igual(w1?.atleta_nome, "Atleta removido", "o nome sai do pedido de W.O. dele");
+    igual(w1?.justificativa, null,
+      "e a JUSTIFICATIVA é APAGADA — é texto livre onde cabe motivo de saúde, e dado sensível não sobrevive a um pedido de exclusão");
+    igual(w1?.comprovante_url, null, "o comprovante também");
+    const w2 = banco.acha("solicitacoes_wo", w => w.id === "w2");
+    igual(w2?.adversario_nome, "Atleta removido",
+      "e ele também some como ADVERSÁRIO no pedido de outra pessoa");
+    igual(w2?.justificativa, "Viagem de trabalho",
+      "mas a justificativa do OUTRO atleta fica — ela é dado dele, não do titular");
+  }
+
+  // ── O SEGREDO DE ACESSO ───────────────────────────────────────────────────
+  igual(g?.pin_hash, null, "o PIN de acesso é apagado — não faz sentido encerrar a sessão e manter a chave");
+  igual(JSON.stringify(g?.bio_cred_ids), "[]", "e os identificadores dos aparelhos também");
+  igual(g?.cpf_verificado, false, "e `cpf_verificado` deixa de dizer `true` sem documento guardado");
+
   // ── E NADA do outro atleta é tocado ───────────────────────────────────────
   igual(banco.acha("atletas", a => a.id === OUTRO)?.nome, "Sicrano", "o outro atleta não é tocado");
   igual(banco.acha("circuito_atletas", c => c.atleta_id === OUTRO)?.aceite_regulamento, true,
@@ -1793,6 +1853,45 @@ secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado 
   igual(banco.tabelas.atleta_sessao.filter(x => x.atleta_id === OUTRO).length, 1,
     "e a sessão do outro também");
 
+  // ── QUANDO ALGO FALHA NO MEIO: nada é destruído, e o pedido FICA NA FILA ──
+  // Era a armadilha fechada que os guardiões Jurídico e de Segurança acharam,
+  // separados. Antes: os `delete` não checavam erro e rodavam DEPOIS do update
+  // que anonimiza. Se o apagamento do CPF falhasse, o resultado era
+  //   · o CPF ficava
+  //   · a identidade JÁ tinha sido destruída, sem volta
+  //   · a função respondia `sucesso: true`
+  //   · e `exclusao_solicitada_em` já tinha sido zerado, então O PEDIDO SUMIA DA
+  //     FILA DO ADMIN — ninguém voltava lá, e não restava sinal nenhum.
+  // Agora tudo o que pode falhar roda ANTES, e cada falha aborta inteira.
+  for (const [tabela, operacao, oQue] of [
+    ["fotos-atletas", "remove", "o apagamento da foto"],
+    ["atleta_documento", "delete", "o apagamento do CPF"],
+    ["atleta_sessao", "delete", "o encerramento das sessões"],
+    ["mensagens_enviadas", "update", "a anonimização das mensagens"],
+    ["solicitacoes_wo", "update", "a anonimização dos pedidos de W.O."],
+    ["circuito_atletas", "update", "o arquivamento do vínculo"],
+  ]) {
+    const { banco: b, motor: m } = await cenarioLgpd();
+    b.recusar(tabela, operacao, { message: "simulando falha", code: "XX000" });
+    const r = await m.chamar({ pin: PIN, id: ALVO });
+    ok(r.corpo?.sucesso === false,
+      `quando ${oQue} falha, a função NÃO responde sucesso (veio: ${JSON.stringify(r.corpo?.sucesso)})`);
+    const gg = b.acha("atletas", a => a.id === ALVO);
+    igual(gg?.nome, "Fulano de Tal",
+      `e a identidade NÃO é destruída — ela é irreversível, e ${oQue} ainda pode ser tentado de novo`);
+    ok(!!gg?.exclusao_solicitada_em,
+      `e o pedido CONTINUA NA FILA do admin — sem isso ele sumiria e ninguém voltaria lá`);
+  }
+
+  // Sem isto as asserções acima passariam com uma função que nunca conclui.
+  {
+    const { banco: b, motor: m } = await cenarioLgpd();
+    const r = await m.chamar({ pin: PIN, id: ALVO });
+    ok(r.corpo?.sucesso === true, "e sem falha nenhuma a exclusão conclui normalmente");
+    igual(b.acha("atletas", a => a.id === ALVO)?.exclusao_solicitada_em, null,
+      "aí sim o pedido sai da fila");
+  }
+
   // ── Sem PIN não apaga nada ────────────────────────────────────────────────
   {
     const { banco: b2, motor: m2 } = await cenarioLgpd();
@@ -1801,6 +1900,331 @@ secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado 
     igual(b2.acha("atletas", a => a.id === ALVO)?.nome, "Fulano de Tal", "e nada é apagado");
     igual(b2.tabelas.atleta_documento.filter(d => d.atleta_id === ALVO).length, 1, "o documento continua lá");
   }
+}
+
+secao("O porteiro: o portão de autenticação, RODANDO a função");
+{
+  // ⚠️ O `circuito-dados` era a ÚNICA das 5 peças desta onda sem asserção
+  // comportamental — a bateria só o lia como TEXTO. E foi justamente ele que
+  // ganhou, em 29/09/2026, um CAMINHO DE AUTENTICAÇÃO (o PIN do super-admin),
+  // numa função que está no ar com `verify_jwt = false`, ou seja, alcançável da
+  // internet aberta.
+  //
+  // Dois guardiões, independentes, sabotaram os portões dele e a bateria ficou
+  // VERDE nas três tentativas:
+  //   · `okSuper = true` — o PIN passa a aceitar QUALQUER valor;
+  //   · some o freio de 5 tentativas — vira oráculo para adivinhar o PIN global;
+  //   · `ATLETA_COLS` ganha `telefone,pin_hash` — vaza credencial de todo mundo.
+  // Regra da casa (28/09): um portão que nunca foi sabotado é uma promessa, não
+  // uma proteção.
+  const PRIV = "eeee0000-1111-2222-3333-444444444444";
+  const PUB = "eeee0000-5555-6666-7777-888888888888";
+  const MEMBRO = "eeee0000-0000-0000-0000-00000000000m";
+
+  const cenarioPorteiro = async () => montarMotor({
+    funcao: "circuito-dados",
+    circuitos: [
+      circuito(BH),
+      circuito(PRIV, { slug: "privado", sistema: "B", publico: false, regulamento_versao: "vB-01" }),
+      circuito(PUB, { slug: "publico", sistema: "B", publico: true, regulamento_versao: "vB-01" }),
+    ],
+    atletas: [atleta(MEMBRO, { nome: "Membro", telefone: "31977776666", pin_hash: "pbkdf2$1$c2Fs$aGFzaA==", rating: 700 })],
+    circuito_atletas: [
+      { circuito_id: PRIV, atleta_id: MEMBRO, status: "ativo", wo_culposos_temporada: 2 },
+      { circuito_id: PUB, atleta_id: MEMBRO, status: "ativo", wo_culposos_temporada: 1 },
+    ],
+    partidas: [],
+    outras: { tentativas_login_admin: [], atleta_sessao: [], circuito_organizadores: [] },
+  });
+
+  // ── 1. Circuito PÚBLICO serve sem credencial nenhuma ─────────────────────
+  {
+    const { motor } = await cenarioPorteiro();
+    const r = await motor.chamar({ circuitoId: PUB });
+    ok(r.corpo?.sucesso === true, `circuito público é servido sem credencial (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    igual(r.corpo?.dados?.ranking?.length, 1, "e devolve o ranking");
+  }
+
+  // ── 2. Circuito PRIVADO recusa o anônimo ─────────────────────────────────
+  {
+    const { motor } = await cenarioPorteiro();
+    const r = await motor.chamar({ circuitoId: PRIV });
+    igual(r.status, 403, "circuito privado recusa quem não tem credencial");
+    ok(r.corpo?.dados === undefined, "e a recusa NÃO vaza dados no corpo");
+  }
+
+  // ── 3. O PIN do super-admin abre o privado ───────────────────────────────
+  {
+    const { motor } = await cenarioPorteiro();
+    const r = await motor.chamar({ circuitoId: PRIV, pin: PIN });
+    ok(r.corpo?.sucesso === true, `o PIN do super-admin abre o circuito privado (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    igual(r.corpo?.dados?.ranking?.[0]?.wo_culposos_temporada, 2,
+      "e devolve o número de W.O. — era por isto que o caminho existe");
+  }
+
+  // ── 4. PIN ERRADO é recusado, e não vaza ─────────────────────────────────
+  {
+    const { motor } = await cenarioPorteiro();
+    const r = await motor.chamar({ circuitoId: PRIV, pin: "9999" });
+    igual(r.status, 403, "PIN errado é recusado");
+    ok(r.corpo?.dados === undefined, "e a recusa NÃO vaza dados no corpo");
+  }
+
+  // ── 5. O FREIO: 5 falhas em 15 min trancam, INCLUSIVE o PIN certo ────────
+  {
+    const { motor } = await cenarioPorteiro();
+    for (let i = 0; i < 5; i++) await motor.chamar({ circuitoId: PRIV, pin: "9999" });
+    const r = await motor.chamar({ circuitoId: PRIV, pin: PIN });
+    igual(r.status, 429,
+      "depois de 5 tentativas erradas o freio tranca — e tranca ATÉ o PIN certo, que é o que impede adivinhar por força bruta");
+  }
+
+  // ── 6. `pin` COM `telefone` não entra pelo caminho do super-admin ────────
+  // O `!telefone` é a chave da distinção entre organizador e super-admin. Sem
+  // ele, um telefone qualquer com o PIN global entraria por um caminho que não
+  // confere vínculo nenhum.
+  {
+    const { motor } = await cenarioPorteiro();
+    const r = await motor.chamar({ circuitoId: PRIV, telefone: "31900000000", pin: PIN });
+    igual(r.status, 403,
+      "mandar o PIN global junto com um telefone NÃO abre o circuito — esse é o caminho do organizador, e ele exige vínculo");
+  }
+
+  // ── 7. O QUE O PORTEIRO DEVOLVE — a Regra 2 do projeto ───────────────────
+  // Esta asserção só passou a ter valor em 29/09/2026, quando o banco falso
+  // aprendeu a projetar DENTRO do join. Antes, sabotar o `ATLETA_COLS` para
+  // incluir `telefone,pin_hash` deixava a bateria verde.
+  {
+    const { motor } = await cenarioPorteiro();
+    const r = await motor.chamar({ circuitoId: PUB });
+    const item = r.corpo?.dados?.ranking?.[0] || {};
+    for (const proibido of ["telefone", "pin_hash", "pin_tentativas", "desconto_pct", "isento", "cpf_hash", "aceite_lgpd", "bio_cred_ids"]) {
+      ok(!(proibido in item),
+        `o porteiro NÃO devolve \`${proibido}\` no item de ranking`);
+    }
+    ok("nome" in item && "rating" in item, "e devolve o que a tela precisa (nome, rating)");
+  }
+}
+
+secao("O modo GRUPOS pareia por faixa de pontos — e isso não tinha portão nenhum");
+{
+  // Achado do Guardião de Regulamento (G2/N10): ele trocou o algoritmo inteiro do
+  // modo grupos pelo rodízio do círculo — que IGNORA a tabela de pontos por
+  // completo — e a bateria ficou VERDE com as 1240 asserções. O 2º método do
+  // Cap. 03 podia virar sorteio sem ninguém perceber.
+  //
+  // Foi assim que ele descobriu que a correção "óbvia" do NO-GO não servia:
+  // aplicar o círculo ao grupos zeraria a repetição (ele mediu 0/400), mas
+  // destruiria a regra que o Cap. 03 promete na mesma frase.
+  const CIRC_G = "ffff0000-1111-2222-3333-444444444444";
+  const lista = ["g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7"];
+
+  // Saldos MUITO espaçados: com a tabela assim, parear por faixa significa
+  // 1º×2º, 3º×4º, 5º×6º, 7º×8º. Qualquer outro pareamento é visível.
+  const { banco, motor } = await montarMotor({
+    circuitos: [circuito(BH), circuito(CIRC_G, {
+      slug: "faixas", sistema: "B", pareamento: "grupos",
+      regulamento_versao: "vB-01", rodadas_por_temporada: 6, fase: "temporada",
+    })],
+    atletas: lista.map(id => atleta(id)),
+    circuito_atletas: lista.map((id, i) => ({
+      circuito_id: CIRC_G, atleta_id: id, status: "ativo", pendente_circuito: false,
+      saldo_temp: (lista.length - i) * 100, // g0=800, g1=700, … g7=100
+    })),
+    chaves: [], partidas: [],
+  });
+
+  const r = await comoAdmin(motor, "INICIAR_ETAPA", { circuitoId: CIRC_G });
+  ok(r.corpo?.sucesso === true, `a etapa do circuito de grupos inicia (erro: ${JSON.stringify(r.corpo?.erro)})`);
+
+  const pos = Object.fromEntries(lista.map((id, i) => [id, i])); // 0 = topo da tabela
+  const daRodada1 = banco.tabelas.partidas.filter(m => m.circuito_id === CIRC_G && m.rodada === 1);
+  igual(daRodada1.length, 4, "a rodada 1 tem 4 partidas");
+
+  // A prova: a distância média na tabela. Parear por faixa dá distância 1 em todos
+  // os pares (1º×2º, 3º×4º, …). O rodízio do círculo, ignorando a tabela, dá
+  // distâncias muito maiores.
+  const distancias = daRodada1.map(m => Math.abs(pos[m.atleta1_id] - pos[m.atleta2_id]));
+  const soma = distancias.reduce((a, b) => a + b, 0);
+  igual(soma, 4,
+    `no modo grupos cada confronto é entre vizinhos na tabela de pontos — soma das distâncias = 4 (veio: ${soma}, pares: ${distancias.join(",")})`);
+  ok(distancias.every(d => d === 1),
+    "e nenhum par salta faixa: é 1º×2º, 3º×4º, 5º×6º, 7º×8º");
+
+  // E o mesmo cenário no modo SORTEIO NÃO pode dar isso — senão a asserção acima
+  // estaria medindo coincidência em vez de regra.
+  {
+    const { banco: b2, motor: m2 } = await montarMotor({
+      circuitos: [circuito(BH), circuito(CIRC_G, {
+        slug: "faixas", sistema: "B", pareamento: "sorteio",
+        regulamento_versao: "vB-01", rodadas_por_temporada: 6, fase: "temporada",
+      })],
+      atletas: lista.map(id => atleta(id)),
+      circuito_atletas: lista.map((id, i) => ({
+        circuito_id: CIRC_G, atleta_id: id, status: "ativo", pendente_circuito: false,
+        saldo_temp: (lista.length - i) * 100,
+      })),
+      chaves: [], partidas: [],
+    });
+    await comoAdmin(m2, "INICIAR_ETAPA", { circuitoId: CIRC_G });
+    const r1 = b2.tabelas.partidas.filter(m => m.circuito_id === CIRC_G && m.rodada === 1);
+    const somaSort = r1.map(m => Math.abs(pos[m.atleta1_id] - pos[m.atleta2_id])).reduce((a, b) => a + b, 0);
+    ok(somaSort > 4,
+      `e o modo SORTEIO ignora a tabela — soma das distâncias maior que 4 (veio: ${somaSort})`);
+  }
+}
+
+secao("A rede de segurança do rodízio faz diferença — medida, não afirmada");
+{
+  // O Guardião de Regulamento sabotou a rede (`if (true)` no lugar da checagem) e
+  // a bateria ficou VERDE. Pior: ele mediu cinco cenários e o resultado foi
+  // IDÊNTICO com e sem ela. O comentário do motor afirma "assim o resultado nunca
+  // é pior que o de antes", e ele apontou, com razão, que ninguém tinha medido.
+  //
+  // Fui atrás e ACHEI o cenário: 12 atletas com 4 saindo na virada do 1º par
+  // mensal. Medido em 40 temporadas cada:
+  //     COM a rede ..... 0 repetições
+  //     SEM a rede ..... 3 repetições em TODAS as 40
+  // Os cenários que ele testou (10 atletas com 2 ou 4 saindo, 9 com 2, 8 com 1)
+  // dão igual nos dois — por isso ele não viu. O que separa é o rodízio precisar
+  // ser refeito com um elenco bem menor DEPOIS de já ter gasto rodadas.
+  const CIRC_R = "aaaa1111-2222-3333-4444-555555555555";
+  const lista = Array.from({ length: 12 }, (_, i) => `r${String(i).padStart(2, "0")}`);
+
+  const { banco, motor } = await montarMotor({
+    circuitos: [circuito(BH), circuito(CIRC_R, {
+      slug: "rede", sistema: "B", pareamento: "sorteio",
+      regulamento_versao: "vB-01", rodadas_por_temporada: 6, fase: "temporada",
+    })],
+    atletas: lista.map(id => atleta(id)),
+    circuito_atletas: lista.map(id => ({ circuito_id: CIRC_R, atleta_id: id, status: "ativo", pendente_circuito: false, saldo_temp: 0 })),
+    chaves: [], partidas: [],
+  });
+
+  await comoAdmin(motor, "INICIAR_ETAPA", { circuitoId: CIRC_R });
+  // Quatro saem depois do 1º par mensal — é o que força o rodízio a ser refeito.
+  for (const id of lista.slice(0, 4)) {
+    const v = banco.tabelas.circuito_atletas.find(x => x.atleta_id === id);
+    if (v) v.status = "arquivado";
+  }
+  await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC_R });
+  await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC_R });
+
+  const partidas = banco.tabelas.partidas.filter(m => m.circuito_id === CIRC_R);
+  const confrontos = partidas.map(m => [m.atleta1_id, m.atleta2_id].sort().join("|"));
+  const repeticoes = confrontos.length - new Set(confrontos).size;
+  igual(repeticoes, 0,
+    `com 12 atletas e 4 saindo no meio, a rede de segurança evita TODA repetição (veio: ${repeticoes}) — sem ela são 3, medido`);
+
+  // E o elenco que ficou joga mesmo as rodadas seguintes, senão o zero acima
+  // poderia vir de não ter gerado partida nenhuma.
+  const rodadas = [...new Set(partidas.map(m => m.rodada))].sort((a, b) => a - b);
+  igual(rodadas.join(","), "1,2,3,4,5,6", "e as 6 rodadas foram geradas");
+  const quemSaiu = new Set(lista.slice(0, 4));
+  const depois = partidas.filter(m => m.rodada >= 3);
+  ok(depois.length > 0 && depois.every(m => !quemSaiu.has(m.atleta1_id) && !quemSaiu.has(m.atleta2_id)),
+    "e quem saiu não é pareado depois da saída");
+}
+
+secao("No BH, o super-admin não age sobre atleta de OUTRO circuito — o caminho de ESCRITA");
+{
+  // O `semIntrusosDeOutroCircuito` fechou a LEITURA (o intruso não é pareado no
+  // BH). Este é o caminho de ESCRITA, que é o que não se desfaz — medido pelo
+  // Guardião de Segurança rodando o motor em `5bc6703`.
+  const SO_DO_OUTRO = "cafe0000-0000-0000-0000-000000000001";
+  const LEGADO_BH = "cafe0000-0000-0000-0000-000000000002";
+  const OUTRO_C = "cafe1111-2222-3333-4444-555555555555";
+
+  const cenarioBH = async () => montarMotor({
+    circuitos: [circuito(BH, { regulamento_versao: "v03-13" }), circuito(OUTRO_C, { slug: "outro", sistema: "B", regulamento_versao: "vB-01" })],
+    atletas: [
+      atleta(SO_DO_OUTRO, { nome: "Só do outro circuito", rating: 777 }),
+      // Atleta do BH SEM linha de vínculo — o roster legado, que a exceção protege.
+      atleta(LEGADO_BH, { nome: "Legado do BH", status: "arquivado" }),
+    ],
+    circuito_atletas: [{ circuito_id: OUTRO_C, atleta_id: SO_DO_OUTRO, status: "ativo" }],
+  });
+
+  // ── O caso irreversível: apagar da tabela global ─────────────────────────
+  {
+    const { banco, motor } = await cenarioBH();
+    const r = await comoAdmin(motor, "EXCLUIR_ATLETA", { circuitoId: BH, id: SO_DO_OUTRO });
+    igual(r.status, 403,
+      "com o BH selecionado, o super-admin NÃO exclui um atleta que só participa de outro circuito");
+    ok(!!banco.acha("atletas", a => a.id === SO_DO_OUTRO),
+      "e o atleta continua existindo — este `delete` é global e leva os vínculos por efeito cascata, não se desfaz");
+    igual(banco.acha("circuito_atletas", c => c.atleta_id === SO_DO_OUTRO)?.status, "ativo",
+      "o vínculo dele com o circuito próprio fica intacto");
+  }
+
+  // ── Arquivar: ele perderia o login em TODOS os circuitos ─────────────────
+  {
+    const { banco, motor } = await cenarioBH();
+    const r = await comoAdmin(motor, "ARQUIVAR_ATLETA", { circuitoId: BH, id: SO_DO_OUTRO });
+    igual(r.status, 403, "nem arquiva");
+    igual(banco.acha("atletas", a => a.id === SO_DO_OUTRO)?.status, "ativo",
+      "e o cadastro global dele continua ativo — arquivar ali tirava o login dele em todo lugar");
+  }
+
+  // ── Aprovar: reescreveria o rating global ────────────────────────────────
+  {
+    const { banco, motor } = await cenarioBH();
+    const r = await comoAdmin(motor, "INSCRICAO_VALIDAR", { circuitoId: BH, id: SO_DO_OUTRO, rating: 9999, approved: true });
+    igual(r.status, 403, "nem aprova");
+    igual(banco.acha("atletas", a => a.id === SO_DO_OUTRO)?.rating, 777,
+      "e o rating global dele não é reescrito");
+  }
+
+  // ── E o roster LEGADO do BH continua funcionando ─────────────────────────
+  // Sem isto o conserto teria virado uma parede: o atleta do BH sem linha de
+  // vínculo é exatamente quem a exceção existe para proteger.
+  {
+    const { banco, motor } = await cenarioBH();
+    const r = await comoAdmin(motor, "DESARQUIVAR_ATLETA", { circuitoId: BH, id: LEGADO_BH });
+    igual(r.status, 200,
+      "o super-admin continua desarquivando atleta do BH que não tem linha de vínculo — é o roster legado");
+    igual(banco.acha("atletas", a => a.id === LEGADO_BH)?.status, "ativo", "e ele volta a ativo");
+  }
+}
+
+secao("Três guardas que a bateria NÃO alcança — declaradas, para ninguém as citar como protegidas");
+{
+  // Regra da casa: guarda inalcançável pelo instrumento ou ganha asserção de
+  // FONTE com o motivo declarado, ou alguém a cita um dia como se estivesse
+  // protegida. Estas três foram levantadas pelos guardiões de Confiabilidade e
+  // de Regulamento em 29/09/2026.
+
+  // 1. `if (eChave) throw eChave` no INICIAR_ETAPA. O banco em memória nunca faz
+  //    o `insert` de `chaves` falhar, então o ramo é inalcançável por construção.
+  //    A guarda existe porque um insert falho respondia `sucesso: true` e deixava
+  //    o circuito sem chave — que é o que levava o AVANCAR_RODADA à chave do BH.
+  const iIni = motorFonte.indexOf('case "INICIAR_ETAPA"');
+  const fimIni = motorFonte.indexOf('case "', iIni + 10);
+  ok(iIni > 0 && fimIni > iIni, "o case de iniciar a etapa foi localizado");
+  ok(/if \(eChave\) throw eChave;/.test(motorFonte.slice(iIni, fimIni)),
+    "o insert da chave continua com `if (eChave) throw` — INALCANÇÁVEL pela bateria (o banco falso não recusa esse insert), guardado só por esta asserção de fonte");
+
+  // 2. `embaralhar` — o Guardião de Confiabilidade INSTRUMENTOU a função e mediu:
+  //    ZERO chamadas em toda a bateria. Não é código morto: ele é o sorteio do
+  //    `parearRodadaB`, que agora só roda como REDE DE SEGURANÇA do rodízio. Ou
+  //    seja, o único ramo não-determinístico que sobrou no pareamento.
+  //    (A seção "A rede de segurança do rodízio faz diferença" alcança a REDE, mas
+  //    o embaralhamento em si continua sem asserção sobre o resultado dele.)
+  ok(/function embaralhar/.test(motorFonte),
+    "o `embaralhar` continua existindo — ele é a rede de segurança, não código morto");
+  ok(/const ordenados = \(pareamento === "grupos"\)[\s\S]{0,120}embaralhar\(athletes\)/.test(motorFonte),
+    "e continua sendo o caminho do sorteio dentro do `parearRodadaB` — se ele sumir daqui, a rede de segurança deixa de sortear");
+
+  // 3. `await bhId()` no bloco de escopo roda FORA do try/catch (Guardião de
+  //    Segurança, C6). É memoizado, mas na primeira chamada de uma instância fria
+  //    uma falha transitória vira 500 sem cabeçalho de CORS — que na tela do
+  //    organizador aparece como "erro de conexão" em vez de mensagem.
+  //    Registrado, não consertado: mover o bloco para dentro do `try` muda a ordem
+  //    de guardas de autorização, e isso é mudança que pede rodada própria.
+  const iEsc = motorFonte.indexOf("ESCOPO POR RECURSO — VALE PARA TODO MUNDO");
+  ok(iEsc > 0, "o bloco de escopo por recurso foi localizado");
+  ok(motorFonte.indexOf("  try {", iEsc) > motorFonte.indexOf("await bhId()", iEsc),
+    "o `await bhId()` do escopo roda ANTES do try — dívida conhecida e declarada (Guardião de Segurança, C6), não protegida por comportamento");
 }
 
 process.exit(placar("O segundo circuito"));

@@ -2558,11 +2558,11 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
             {(ehB ? [
               ["🏓 O Circuito","Circuito recreativo independente, não filiado à CBTM ou FMTMOP. Modelo por pontos, sem rating."],
               ["👤 Elegibilidade","Todos começam a temporada em 0 pontos. Federados e não-federados entram igual — a federação é só informativa."],
-              ["⚙️ Formato","Pares mensais de rodadas, pareamento por sorteio ou por grupos (sem repetir adversário). Partidas em MD5 (melhor de 5 sets), 11 pontos por set."],
+              ["⚙️ Formato","Pares mensais de rodadas. No sorteio, o rodízio da temporada é sorteado no início e não repete adversário; nos grupos por faixa, o pareamento acompanha a tabela de pontos e evita repetir. Partidas em MD5 (melhor de 5 sets), 11 pontos por set."],
               ["🎯 Pontuação","Vitória = 2 pontos · Derrota = 1 ponto · Folga (bye) = 1 ponto. O ranking é a soma dos pontos e zera a cada temporada."],
               ["⏱ Prazos","1ª rodada até o dia 15, 2ª rodada até o dia 27. Registre o placar no app dentro da janela da rodada."],
               ["🔴 W.O., Faltas & Penalidades","Ausência injustificada: 0 pts (adversário 2). Justificada e aprovada: 1 pt (adversário 2). 2 W.O. injustificados = suspensão."],
-              ["🚫 Fraude","Registro de resultado falso = banimento permanente do Circuito."],
+              ["🚫 Fraude","Registro de resultado falso = banimento do Circuito. A decisão é definitiva."],
               // ⚠️ "→ sorteio" SAIU (29/09/2026). Ele foi removido do Cap. 09 em 27/09, trocado
               // por "Decisão do administrador, registrada (Cap. 13)" — e a correção pegou o
               // RegulamentoView e o .md gerado, e esqueceu ESTE resumo, que é o texto que o
@@ -2581,7 +2581,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
               ["📊 Rating vs. Ranking","Rating = nível técnico acumulado (nunca zera). Ranking = saldo de pontos da temporada (zera a cada temporada)."],
               ["⏱ Prazos","10 dias para realizar a partida. Até 24h após o jogo para registrar o placar em sets no app."],
               ["🔴 W.O. Culposo","Confirmou e não foi: −15 pts + aviso. Adversário recebe +8 pts. 2 W.O.s culposos = suspensão da temporada."],
-              ["🚫 Fraude","Registro de resultado falso = banimento permanente do Circuito."],
+              ["🚫 Fraude","Registro de resultado falso = banimento do Circuito. A decisão é definitiva."],
               ...(comTorneio ? [["🏆 Torneio Final","Top 8 do ranking ao final da temporada disputam torneio presencial. Prêmios: troféu, medalhas e certificados."]] : []),
               comDescontoEtapa
                 ? ["💰 Valor","Valor por temporada, pago no início. Quem entra na 2ª etapa (Rodada 3) paga 80%. Valores e descontos divulgados a cada temporada."]
@@ -3032,6 +3032,15 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
         ]}/>
         <Box cor="#c25a45" titulo="🚫 Autodeclaração Proibida para Federados">
           <p style={s.p}>O admin pode solicitar comprovante do cadastro CBTM-Web antes de confirmar a inscrição. A tentativa de fraude no rating de entrada resulta em suspensão imediata.</p>
+        {/* ⚠️ "PERMANENTE" SAIU (29/09/2026), e a causa é uma decisão do Juliano no
+            mesmo dia: quem pede exclusão dos dados tem o CPF apagado, e o CPF era
+            o ÚNICO mecanismo que reconheceria a mesma pessoa num cadastro novo.
+            O app deixou de ter como cumprir "banimento permanente" — e a regra 6
+            do CLAUDE.md proíbe afirmar "o app garante X" sem a linha de código que
+            sustenta. (Guardião Jurídico.)
+            O que sobra é verdadeiro e continua sendo a regra: a decisão do clube é
+            definitiva. O que não existe é o automatismo. */}
+        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>O banimento é decisão do clube e é definitiva. Se a pessoa banida tiver exercido o direito de exclusão dos dados, o sistema não a reconhece automaticamente num cadastro novo — a aplicação da regra depende do organizador.</p>
         </Box>
         <div style={{fontSize:10,color:"#5E7569",marginTop:10,lineHeight:1.6}}>Fonte: Manual Tênis de Mesa Brasil (CBTM), item 1.7.2.4.5 — "Tabela Básica de Cálculo do Rating".</div>
       </div>
@@ -3059,7 +3068,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
           ["Impossibilidade justificada","W.O. JUSTIFICADO","Rodada anulada. Nenhum perde pontos."],
           ["Adversário sumiu desde o início","W.O. A FAVOR","Comunicar em até 48h com print das tentativas. +8 pts."],
           ["2 W.O.s culposos na temporada","SUSPENSÃO","Excluído da temporada em curso. Volta na seguinte."],
-          ["Registro de resultado falso","EXCLUSÃO","Banimento permanente do Circuito."],
+          ["Registro de resultado falso","EXCLUSÃO","Banimento do Circuito. A decisão é definitiva e o clube não readmite."],
           ["Registro fora do prazo (após 24h)","RESULTADO INVÁLIDO","Partida não computada. Sem pontos para ambos."],
         ]}/>
         <Box cor="#D85A30" titulo="💬 Como Comunicar um W.O.">
@@ -3395,7 +3404,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
         <p style={s.p}>O método de pareamento é escolhido na criação do circuito e vale para a temporada toda:</p>
         <Ul items={[
           "Sorteio aleatório: a ordem do rodízio é sorteada no início de cada temporada, e a partir dela todos os confrontos são montados de uma vez — sem repetir adversário na temporada.",
-          "Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos), também sem repetir adversário.",
+          "Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos) e é refeito a cada rodada, evitando repetir adversário.",
         ]}/>
         {/* ⚠️ ESTE TEXTO MUDOU DUAS VEZES EM 29/09/2026, e o registro importa mais
             que o texto final.
@@ -3409,13 +3418,29 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
                 rodada sem olhar as seguintes — com 7 adversários possíveis e 6
                 rodadas, uma escolha boa na rodada 3 fechava a saída da rodada 6.
             (3) O Juliano decidiu: "Não pode ter repetição de atleta." O motor
-                ganhou o rodízio pelo método do círculo (`escalaCirculo`), que monta
-                a temporada inteira de uma vez. Medição refeita: 0/120 em TODAS as
-                configurações. Só AGORA o "sem repetir" é verdade — e por isso ele
-                voltou ao texto.
+                ganhou o rodízio pelo método do círculo (`escalaCirculo`) e eu
+                devolvi o "sem repetir" ao texto — PARA OS DOIS MODOS. Errado.
+            (4) NO-GO do Guardião de Regulamento. O rodízio vale SÓ para o sorteio
+                (`if (pareamento !== "grupos")`); o modo grupos continua no
+                otimizador guloso, com a mesma miopia. Ele mediu 37 repetições em
+                400 temporadas de 8 atletas no modo grupos, COM O ROSTER ESTÁVEL —
+                e o meu texto dizia que só a mudança de elenco fazia repetir.
+                ⚠️ E a minha medição anterior (0/120 no grupos) estava com o MÉTODO
+                errado: o harness fazia o atleta 1 vencer sempre por 3×0 e nunca
+                processava a rodada, então a tabela de pontos não divergia e o modo
+                grupos — que pareia POR POSIÇÃO NA TABELA — nunca era exercitado.
+                Com vencedor sorteado e `PROCESSAR_RODADA` rodando, o defeito
+                aparece. Família nova: não foi a asserção que passou pelo motivo
+                errado, foi a MEDIÇÃO.
+                A correção é de TEXTO, não de algoritmo: aplicar o círculo ao grupos
+                zeraria a repetição (ele mediu 0/400) mas destruiria a regra que o
+                próprio Cap. 03 promete na mesma frase — parear por nível próximo.
+                As duas garantias são de naturezas diferentes e não cabem na mesma
+                frase: a do sorteio é ESTRUTURAL (o rodízio garante), a do grupos é
+                ESTATÍSTICA (o guloso só tenta).
             O vB-01 seguia com ZERO aceites nas duas tabelas em cada uma das três
             edições (conferido no banco antes de cada uma, regra 7). */}
-        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A única situação em que um confronto pode se repetir é se o número de atletas mudar no meio da temporada, porque aí o rodízio precisa ser refeito com quem está ativo. Mesmo nesse caso o sistema repete o mínimo possível.</p>
+        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>No <span style={s.dest}>sorteio</span>, a única situação em que um confronto pode se repetir é se o número de atletas mudar no meio da temporada, porque aí o rodízio precisa ser refeito com quem está ativo. Nos <span style={s.dest}>grupos por faixa</span> é diferente: como o pareamento acompanha a tabela de pontos, ele é montado rodada a rodada e não consegue olhar as seguintes — a repetição é rara, mas possível mesmo com o grupo completo (medido em 8 atletas: cerca de 1 temporada em 11, com um confronto repetido).</p>
         <Box cor="#6a9d7a" titulo="🎟️ Bye (número ímpar de atletas)">
           <p style={s.p}>Quando o número de atletas é ímpar, um atleta fica de fora na rodada (bye) e ganha <span style={s.dest}>1 ponto de participação</span>. O bye tem <span style={s.dest}>rotação</span>: ninguém recebe um segundo bye antes de todos terem recebido um. Quem entra com a temporada já em andamento é o último da fila do bye.</p>
         </Box>
@@ -5359,6 +5384,8 @@ const MSGS_ATLETA = new Set([
   // (Sem aspas no comentario: a assercao extrai TUDO entre aspas deste bloco e
   // trata como mensagem da lista. Ja me pegou DUAS vezes hoje.)
   "Não conseguimos concluir nem desfazer sua inscrição. Fale com o organizador antes de tentar de novo.",
+  // O titular cancelando um pedido que já foi finalizado (ou que nunca existiu).
+  "Não há pedido de exclusão pendente para cancelar.",
   "Placar inválido.",
   // Guarda de menor de idade no INSCREVER (27/09/2026). A porta da frente nao tinha
   // nenhuma, e a tela era a unica trava — o servidor aceitava menor sem responsavel se
@@ -5602,11 +5629,21 @@ export default function App() {
       // do Sistema B (menos W.O. injustificados) nunca decide nada — além de o
       // painel de suspensão do Cap. 07 sumir a cada recarga.
       //
-      // O porteiro resolve sem reverter aquela decisão: ele roda com service role,
-      // já pede a coluna (`ATLETA_COLS`) e já a devolve, e para circuito PÚBLICO
-      // serve qualquer um sem credencial (`let acesso = !!circ.publico`). Ou seja:
-      // a coluna continua fora do alcance da chave anônima, e chega à tela pela
-      // porta certa.
+      // O porteiro entrega a coluna sem mexer em grant nenhum: ele roda com service
+      // role, já a pede (`ATLETA_COLS`) e já a devolve, e para circuito PÚBLICO
+      // serve qualquer um sem credencial (`let acesso = !!circ.publico`).
+      //
+      // ⚠️ MAS A MINHA REDAÇÃO ANTERIOR ERA FALSA, e o Guardião de Segurança a
+      // corrigiu com precisão: eu escrevi que isto "não reverte a decisão da fase
+      // 4C". Preservei o MECANISMO, não o RESULTADO. A chave anônima continua sem
+      // permissão na coluna — isso é verdade —, mas o porteiro a entrega a
+      // QUALQUER VISITANTE de circuito público, que é exatamente o que a 4C
+      // recusou. O efeito visível é o mesmo; só o caminho mudou.
+      //
+      // Isso não é vazamento: é um número de disciplina que o próprio Cap. 09 usa
+      // como 2º critério de desempate, e sem ele o ranking fica inexplicável para
+      // quem o lê. Mas é DECISÃO, e decisão do Juliano — está registrada como
+      // pendente no ROADMAP, não como efeito colateral desta mudança.
       //
       // Degradação segura: se o porteiro falhar, `dadosPort` vem `null` e a leitura
       // anon que já foi feita continua valendo — exatamente o comportamento de hoje.
@@ -6164,6 +6201,10 @@ export default function App() {
     else if (action.type === "CANCELAR_SOLICITACAO_WO") {
       const { id } = action.payload;
       await chamarAtletaAction("CANCELAR_WO", { id });
+    }
+    else if (action.type === "CANCELAR_EXCLUSAO") {
+      await chamarAtletaAction("CANCELAR_EXCLUSAO", { athleteId: action.payload.athleteId });
+      await loadFromSupabase();
     }
     else if (action.type === "SOLICITAR_EXCLUSAO") {
       await chamarAtletaAction("SOLICITAR_EXCLUSAO", { athleteId: action.payload.athleteId });
@@ -7939,7 +7980,11 @@ function CriarCircuitoCard({ chamarAdminAction, recarregarCircuitos }) {
                   <div style={{marginTop:16}}>
                     <div style={lbl}>Pareamento (Sistema B)</div>
                     {[
-                      {id:"sorteio", t:"Sorteio aleatório", d:"Sorteia confrontos a cada rodada, sem repetir adversário na temporada."},
+                      // ⚠️ "a cada rodada" ficou FALSO em 29/09/2026: o sorteio passou a ser da ORDEM
+                      // DO RODÍZIO, uma vez por temporada. O Cap. 03 foi corrigido e esta linha
+                      // ficou para trás — e é justamente o que o organizador lê NA HORA DE
+                      // ESCOLHER. (Guardião de Regulamento.)
+                      {id:"sorteio", t:"Sorteio aleatório", d:"Sorteia a ordem do rodízio no início da temporada e monta as rodadas a partir dela — sem repetir adversário."},
                       {id:"grupos", t:"Grupos por faixa", d:"Pareia por faixa de posição na tabela de pontos atual."},
                     ].map(o => (
                       <div key={o.id} onClick={()=>setPareamento(o.id)} style={optCard(pareamento===o.id)}>
@@ -9344,7 +9389,7 @@ function IniciarEtapaPanel({ state, dispatch }) {
         {/* O circuito já grava QUAL método usa (`pareamento`), e a tela não
             ramificava: dizia "proximidade de rating" também no circuito de pontos,
             que não tem rating. (Guardião do Admin, 29/09/2026.) */}
-        Os confrontos serão gerados por <b>{SISTEMA_ATIVO === "B" ? (PAREAMENTO_ATIVO === "grupos" ? "grupos por faixa de pontos" : "sorteio aleatório") : "proximidade de rating"}</b>, sem repetir duelos da temporada (capítulo "Estrutura das Rodadas"). As duas rodadas do mês são publicadas de uma vez.
+        Os confrontos serão gerados por <b>{SISTEMA_ATIVO === "B" ? (PAREAMENTO_ATIVO === "grupos" ? "grupos por faixa de pontos" : "sorteio aleatório") : "proximidade de rating"}</b>, {SISTEMA_ATIVO === "B" && PAREAMENTO_ATIVO !== "grupos" ? "sem repetir" : "evitando repetir"} duelos da temporada (capítulo "Estrutura das Rodadas"). As duas rodadas do mês são publicadas de uma vez.
       </div>
       {naoPagaram.length > 0 && (
         <div style={{background:"rgba(216,90,48,0.12)",borderLeft:"3px solid #c25a45",borderRadius:8,padding:"9px 11px",marginBottom:10,fontSize:11.5,color:"#f8c4b4",lineHeight:1.6}}>
@@ -11224,6 +11269,18 @@ function EditarPerfilView({ athlete, dispatch, onClose, state, telefone }) {
               // que é justamente a que precisa estar certa.
               <div style={{fontSize:11,color:T.madeira,lineHeight:1.5}}>
                 📩 Pedido de exclusão registrado{athlete.exclusaoSolicitadaEm ? ` em ${fmtDate(String(athlete.exclusaoSolicitadaEm).slice(0,10))}` : ""}. O administrador vai tirar você do circuito e apagar seus dados pessoais (nome, telefone, apelido, foto e CPF). As partidas que você jogou continuam registradas sem o seu nome, porque fazem parte do histórico dos seus adversários. Se um dia quiser voltar, será um cadastro novo — o clube não terá como reconhecer que você já participou, e seu histórico não volta.
+                {/* ⚠️ O BOTÃO DE VOLTAR ATRÁS. Ele não existia: o titular lia
+                    "irreversível", clicava, e ficava esperando sem poder mudar de
+                    ideia — e o clique irreversível nem é o dele, é o do admin.
+                    Art. 18, IX. (Guardião Jurídico, 29/09/2026.) */}
+                <div style={{marginTop:10}}>
+                  <Btn small color={T.borda} disabled={pedindoExcl} onClick={async ()=>{
+                    setPedindoExcl(true);
+                    const r = await dispatch({type:"CANCELAR_EXCLUSAO",payload:{athleteId:athlete.id}});
+                    setPedindoExcl(false);
+                    if (!r || r.ok !== false) setPedidoAceito(false);
+                  }}>{pedindoExcl ? "Cancelando…" : "↩️ Mudei de ideia — cancelar o pedido"}</Btn>
+                </div>
               </div>
             ) : !confirmandoExcl ? (
               <button onClick={()=>setConfirmandoExcl(true)} style={{fontFamily:T.mono,fontSize:11,letterSpacing:0.5,color:T.vermelho,background:"transparent",border:`1px solid ${T.vermelho}55`,padding:"8px 12px",borderRadius:10,cursor:"pointer"}}>
@@ -11247,7 +11304,7 @@ function EditarPerfilView({ athlete, dispatch, onClose, state, telefone }) {
                   <div style={{marginTop:6,color:"#9db3a8"}}>As partidas que você já jogou continuam registradas sem o seu nome, porque fazem parte do histórico dos seus adversários.</div>
                 </div>
                 <div style={{fontSize:12,color:T.offwhite,lineHeight:1.5,marginBottom:10}}>
-                  O administrador processa o pedido. Deseja continuar?
+                  O administrador processa o pedido. <b>Enquanto ele não finalizar, você pode cancelar.</b> Deseja continuar?
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <Btn small color={T.vermelho} disabled={pedindoExcl} onClick={async ()=>{

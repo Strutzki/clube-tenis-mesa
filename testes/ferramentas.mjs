@@ -126,13 +126,16 @@ export async function montarMotor({
   // quase tudo; `comprovante-url` entrou em 27/09/2026 (item 0.6.4), quando o
   // organizador passou a poder abrir a prova de um W.O. do circuito dele.
   funcao = "admin-action",
+  // Arquivos do storage de mentira: { bucket: ["nome.jpg", ...] }. Serve a
+  // exclusao de dados, que precisa provar que a FOTO some do bucket publico.
+  arquivos = {},
 } = {}) {
   const banco = criarBancoFalso({
     circuitos, atletas, circuito_atletas, partidas, chaves, solicitacoes_wo, configuracao,
     tentativas_login_admin: [], circuito_organizadores: [], mensagens_enviadas: [],
     pagamentos: [], partidas_historico: [], atleta_sessao: [], circuito_cobranca: [],
     ...outras,
-  }, funcoes, {}, PADROES_DO_BANCO);
+  }, funcoes, {}, PADROES_DO_BANCO, arquivos);
   const motor = await carregarFuncao(funcao, banco);
   return { banco, motor };
 }

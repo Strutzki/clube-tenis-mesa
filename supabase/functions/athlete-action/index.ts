@@ -648,6 +648,38 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true });
       }
 
+      // O titular pode VOLTAR ATRAS enquanto o organizador nao finalizou.
+      //
+      // ⚠️ Por que isto existe (Guardiao Juridico, 29/09/2026): a tela avisa "isso
+      // nao tem como ser desfeito depois" -- e o aviso esta grudado no botao
+      // ERRADO. O clique do titular so grava `exclusao_solicitada_em`; o passo
+      // irreversivel e o do ADMIN. Mas nao havia acao nenhuma que limpasse esse
+      // campo, entao o unico clique que o titular controlava era tambem o unico
+      // sem saida: ele lia "irreversivel", clicava, e passava a esperar sem poder
+      // mudar de ideia.
+      // Art. 18, IX c/c art. 8o, Par. 5o: revogar manifestacao e direito dele. E um
+      // aviso pesado sobre o custo fica muito mais legitimo acompanhado de "e voce
+      // pode cancelar enquanto estiver pendente".
+      // Resolve junto o ROADMAP 0.7.3 (segundo clique reiniciando o prazo do
+      // art. 18 Par. 3o): a mesma peca serve para os dois.
+      case "CANCELAR_EXCLUSAO": {
+        const { athleteId } = payload || {};
+        if (!athleteId) return jsonResponse({ sucesso: false, erro: "athleteId é obrigatório" }, 400);
+        // `neq("status","arquivado")` pelo mesmo motivo do SOLICITAR: quem ja foi
+        // anonimizado nao volta a vida por aqui. E o `not is null` garante que so
+        // cancela pedido que existe -- cancelar o que nao foi pedido nao e erro do
+        // titular, mas tambem nao pode limpar campo de ninguem.
+        const { data, error } = await supabase.from("atletas")
+          .update({ exclusao_solicitada_em: null })
+          .eq("id", athleteId).neq("status", "arquivado").not("exclusao_solicitada_em", "is", null)
+          .select("id");
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          return jsonResponse({ sucesso: false, erro: "Não há pedido de exclusão pendente para cancelar." }, 409);
+        }
+        return jsonResponse({ sucesso: true });
+      }
+
       default:
         return jsonResponse({ sucesso: false, erro: `Ação desconhecida: ${acao}` }, 400);
     }

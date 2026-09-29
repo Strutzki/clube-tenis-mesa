@@ -774,4 +774,37 @@ secao("Em circuito de PONTOS, nenhuma tela do atleta mostra RATING");
   // obrigatório para federado e da ordenação por rating em circuito de pontos.
 }
 
+secao("O app manda o PIN do super-admin ao porteiro — a linha de que tudo depende");
+{
+  // Achado MJ do Guardião de Confiabilidade: apagar esta única linha do
+  // `fetchCircuitoPorteiro` deixa a bateria INTEIRA verde, e a correção do
+  // desempate do Cap. 09 para o super-admin vira inerte — ele volta em silêncio à
+  // leitura anônima e lê ZERO em `wo_culposos_temporada`.
+  // É a família do 0.6.21: a prop que falta num ponto de chamada, com tudo verde.
+  // `fonteApp` é local de cada bloco neste arquivo — o `no-undef` da bateria me
+  // pegou escrevendo sem carregar. É a mesma classe de erro que a seção
+  // "Nomes que não existem" protege, e ela funcionou.
+  const fonteApp = await import("node:fs/promises").then(f => f.readFile("src/App.jsx", "utf-8"));
+  const iP = fonteApp.indexOf("async function fetchCircuitoPorteiro(");
+  ok(iP > 0, "o `fetchCircuitoPorteiro` foi localizado");
+  const fimP = fonteApp.indexOf("\n}", iP);
+  const corpoP = fonteApp.slice(iP, fimP).replace(/\/\/[^\n]*/g, "");
+  ok(/cred\.pinSuper[\s\S]{0,40}body\.pin\s*=\s*cred\.pinSuper/.test(corpoP),
+    "e ele manda o PIN do super-admin no corpo quando a credencial o traz");
+  ok(!/body\.pin[^=]*=[^;]*telefone/.test(corpoP),
+    "e o PIN do super-admin vai SEM telefone — é o que o porteiro usa para distinguir do organizador");
+
+  // E o ponto de CHAMADA tem de montar essa credencial. A asserção acima é cega
+  // para isso — lição de 27/09: a janela ancorada na função não vê quem a invoca.
+  ok(/const pinSuper = getPinCache\(\);[\s\S]{0,300}pinSuper \? \{ pinSuper \}/.test(fonteApp),
+    "e a carga do circuito monta a credencial do super-admin a partir do PIN em cache");
+  ok(/getAtletaCred\(\) \|\| getOrgCred\(\) \|\| \(pinSuper/.test(fonteApp),
+    "na ordem certa: atleta (token) → organizador (telefone+PIN) → super-admin (PIN global)");
+
+  // ⚠️ E o `setSistemaAtivo` com DOIS argumentos (achado MI do mesmo guardião):
+  // ignorar o 2º deixa a tela mentindo o método de pareamento, com tudo verde.
+  ok(/setSistemaAtivo\(config\?\.\[0\]\?\.sistema \|\| "A", config\?\.\[0\]\?\.pareamento\)/.test(fonteApp),
+    "o `setSistemaAtivo` recebe o pareamento junto com o sistema — sem isso a tela do organizador anuncia o método errado");
+}
+
 process.exit(placar("Participar de outro circuito"));

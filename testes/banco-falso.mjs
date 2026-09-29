@@ -104,16 +104,63 @@ class Consulta {
     }
     if (atual.trim()) topo.push(atual);
     const nomes = topo.map((t) => t.trim()).filter(Boolean);
-    if (nomes.some((n) => n === "*")) return linhas; // select("*") devolve tudo
+
+    // ⚠️ DOIS FUROS NO MESMO LUGAR, achados pelo Guardião de Seguranca em
+    // 29/09/2026 — e sao a QUARTA ocorrencia da mesma familia (27/09 no select,
+    // 28/09 na escrita, 28/09 na guarda irma, agora no EMBED).
+    //
+    // (1) `if (nomes.some(n => n === "*")) return linhas` desligava a projecao
+    //     INTEIRA quando havia um `*` no topo. E o `circuito-dados` pede
+    //     `select("*, atletas!inner(<colunas>)")` -- ou seja, o `*` do topo
+    //     apagava tambem a restricao das colunas do atleta.
+    // (2) mesmo projetando, guardava so a CHAVE do embed (`manter.add(emb[1])`)
+    //     e nunca projetava as colunas DE DENTRO dele.
+    //
+    // Consequencia medida: ele sabotou o porteiro para devolver `telefone` e
+    // `pin_hash` de todos os atletas e a bateria ficou VERDE. Ou seja, TODA
+    // assercao da forma "esta acao devolve so X" que passe por um JOIN estava
+    // improvada -- inclusive as que protegem `desconto_pct`, `isento` e o
+    // `pin_hash`, que sao a Regra 2 do projeto.
+    //
+    // O PostgREST projeta o recurso embutido de forma independente do topo:
+    // `*` no topo devolve todas as colunas DA TABELA, e o embed continua
+    // limitado ao que foi pedido dentro dos parenteses. E o que se imita aqui.
+    const embeds = new Map(); // chave do embed -> Set de colunas, ou null p/ "*"
+    let topoTudo = false;
     const manter = new Set();
     for (const n of nomes) {
-      // "atletas!inner(*)" / "atletas(id,nome)" -> a chave embutida e "atletas"
-      const emb = n.match(/^([A-Za-z0-9_]+)(?:![a-z]+)?\s*\(/);
-      manter.add(emb ? emb[1] : n);
+      const emb = n.match(/^([A-Za-z0-9_]+)(?:![a-z]+)?\s*\(([\s\S]*)\)$/);
+      if (emb) {
+        const chave = emb[1];
+        const dentro = emb[2].split(",").map((x) => x.trim()).filter(Boolean);
+        embeds.set(chave, dentro.includes("*") ? null : new Set(dentro));
+        manter.add(chave);
+      } else if (n === "*") {
+        topoTudo = true;
+      } else {
+        manter.add(n);
+      }
     }
+    // Sem nada pedido e sem embed: contrato antigo, devolve tudo.
+    if (topoTudo && embeds.size === 0) return linhas;
+
+    const projetarEmbed = (valor, colunas) => {
+      if (colunas === null || valor == null) return valor;
+      const um = (o) => {
+        if (o == null || typeof o !== "object") return o;
+        const fora = {};
+        for (const k of Object.keys(o)) if (colunas.has(k)) fora[k] = o[k];
+        return fora;
+      };
+      return Array.isArray(valor) ? valor.map(um) : um(valor);
+    };
+
     return linhas.map((l) => {
       const fora = {};
-      for (const k of Object.keys(l)) if (manter.has(k)) fora[k] = l[k];
+      for (const k of Object.keys(l)) {
+        if (embeds.has(k)) { fora[k] = projetarEmbed(l[k], embeds.get(k)); continue; }
+        if (topoTudo || manter.has(k)) fora[k] = l[k];
+      }
       return fora;
     });
   }
@@ -286,7 +333,7 @@ class Consulta {
   }
 }
 
-export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {}, padroes = {}) {
+export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {}, padroes = {}, arquivosIniciais = {}) {
   const banco = {
     relacoes,               // { "circuito_atletas.atletas": { coluna, chave } } — o padrao ja cobre o caso comum
     padroes,                // { tabela: { coluna: () => valor } } — o DEFAULT de coluna do Postgres
@@ -295,6 +342,13 @@ export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {
     registro: [],           // toda operação feita, para os testes conferirem o que foi tocado
     funcoesChamadas: [],
     assinaturas: [],         // links assinados que a funcao pediu ao storage
+    // ARQUIVOS do storage de mentira: { bucket: [nome, ...] }. Existe desde
+    // 29/09/2026, quando o Guardiao Juridico mostrou que a exclusao de dados
+    // NAO apagava a foto do atleta -- e o bucket dela e PUBLICO, entao a URL
+    // continuava servindo o rosto para sempre. Sem guardar arquivo, o teste nao
+    // tinha como provar que a foto some.
+    arquivos: clonar(arquivosIniciais),
+    remocoes: [],            // { bucket, caminhos } — o que a funcao mandou apagar
   };
 
   banco.cliente = {
@@ -319,6 +373,26 @@ export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {
             banco.assinaturas.push({ bucket, caminho, segundos });
             return { data: { signedUrl: `https://falso/${bucket}/${caminho}?exp=${segundos}` }, error: null };
           },
+          // `list` e `remove` existem desde 29/09/2026 para a exclusao de dados
+          // poder ser PROVADA: a foto do atleta vive num bucket publico, e ate
+          // entao a funcao anulava a URL no banco e deixava o ARQUIVO servindo.
+          // O `prefixo` imita o `search` do Supabase, que e o que a funcao usa.
+          async list(_pasta, opcoes) {
+            const recusa = banco.recusas.find((r) => r.tabela === bucket && r.operacao === "list");
+            if (recusa) return { data: null, error: recusa.erro };
+            const todos = banco.arquivos[bucket] || [];
+            const busca = opcoes?.search;
+            const achados = busca ? todos.filter((n) => n.startsWith(busca)) : todos;
+            return { data: achados.map((name) => ({ name })), error: null };
+          },
+          async remove(caminhos) {
+            const recusa = banco.recusas.find((r) => r.tabela === bucket && r.operacao === "remove");
+            if (recusa) return { data: null, error: recusa.erro };
+            banco.remocoes.push({ bucket, caminhos: clonar(caminhos) });
+            const antes = banco.arquivos[bucket] || [];
+            banco.arquivos[bucket] = antes.filter((n) => !caminhos.includes(n));
+            return { data: caminhos.map((name) => ({ name })), error: null };
+          },
         };
       },
     },
@@ -331,6 +405,7 @@ export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {
     banco.recusas.push({ tabela, operacao, erro, vezes });
   };
 
+  banco.arquivosDe = (bucket) => clonar(banco.arquivos[bucket] || []);
   banco.linhas = (tabela) => clonar(banco.tabelas[tabela] || []);
   banco.acha = (tabela, teste) => (banco.tabelas[tabela] || []).map(clonar).find(teste);
   banco.impressao = () => JSON.stringify(banco.tabelas);

@@ -541,7 +541,28 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   permite travar o PIN de qualquer atleta por 15 minutos. Pré-existente; agora em
   dois endpoints.
 
-- **0.6.16 — O atleta em backlog não sabe que está em backlog.**
+- **0.6.16 — ✅ RESOLVIDO em 29/09/2026 (no fonte).** *O atleta em backlog não sabe
+  que está em backlog.* Quem está aprovado aguardando vaga sai do ranking, então a
+  POSIÇÃO virava "—" enquanto pontos e rating continuavam na tela — com cara de
+  **defeito**, não de decisão, e sem uma linha explicando em lugar nenhum.
+  Agora a tela dele abre com uma caixa: *"Sua inscrição foi aprovada — você está na
+  fila de espera"*, dizendo que entra assim que abrir vaga, que até lá não aparece
+  no ranking, e — o que faltava — que **não é erro do app**.
+  **O que ela deliberadamente NÃO faz:** prometer posição na fila ou data. A ordem é
+  por inscrição, mas `INCLUIR_NO_CIRCUITO` recebe um id e o regulamento diz que a
+  entrada é "mediante aprovação do administrador". Número na tela criaria expectativa
+  que o app pode quebrar **legitimamente** — seria trocar um silêncio por uma promessa
+  falsa. *(A frase é o item; o número, se um dia, vem depois dela — Guardião da
+  Experiência do Atleta.)*
+  **E a mensagem de WhatsApp prometia mais que o regulamento:** dizia *"Você entra na
+  próxima etapa/temporada"*, no afirmativo e sem condição, enquanto o texto que ele
+  aceitou diz *"entra quando abrir vaga: aprovação não é o mesmo que vaga garantida"*.
+  As duas frases ganharam o *"assim que houver vaga"*.
+  **11 asserções, 3 mutações, 3 vermelhas.**
+  **Continua aberto:** não há aviso quando ele **entra**. Precisaria de um marcador
+  de "entrou em" no banco, que não existe — e derivar isso de heurística seria
+  frágil. Fica para quando houver a coluna.
+  *Descrição original, mantida como registro:*
   Achado de 27/09/2026. Quem está `ativo` + `pendente_circuito` (aprovado
   aguardando vaga — o estado em que o desarquivado cai, e em que a inscrição
   aprovada já caía antes desta fatia) vê a POSIÇÃO virar "—" no card, sem o selo
@@ -553,12 +574,24 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
 
 ### Trava o atleta
 
-- **0.6.6 — Com a cobrança ligada, o atleta pago fica fora do pareamento.** Só o
-  super-admin confirma pagamento quando o portão está fechado, e o pareamento é
-  fotografado no início da rodada: quem não estava confirmado naquele instante
-  **perde a rodada inteira**. E os textos apontam para o lado errado — o card do
-  atleta manda "combinar com o admin" e o botão do organizador diz "registre o
-  pagamento antes de incluir", que é justamente o que ele não pode. *(Atleta)*
+- **0.6.6 — ⚠️ RESOLVIDO NA METADE que não depende de organizador (29/09/2026).**
+  *Com a cobrança ligada, o atleta pago fica fora do pareamento.*
+  **A metade universal, feita:** o pareamento é **fotografado** no início da rodada, e
+  quem não estava com pagamento confirmado naquele instante **perde a rodada inteira**
+  — pagar depois não traz de volta. Ninguém era avisado disso, nem o admin nem o
+  atleta. Agora o painel avisa **antes do clique**, com os **nomes**: *"N atleta(s) sem
+  pagamento confirmado ficam de fora desta rodada… Quem pagar depois entra só na
+  rodada seguinte."*
+  **E dois avisos vizinhos estavam mentindo junto:** a paridade (*"número ímpar: um
+  atleta terá folga"*) e o mínimo de 8 contavam os **ativos**, não quem **vai jogar**.
+  Com a cobrança ligada e 3 inadimplentes, a tela dizia "12, número par" enquanto o
+  motor parearia 9. Os dois passaram a contar quem vai jogar.
+  **7 asserções, 3 mutações, 3 vermelhas.**
+  **A metade que continua aberta, e é só com organizador:** quando o portão financeiro
+  está fechado, **só o super-admin confirma pagamento** — então o organizador vê o
+  botão dizer *"registre o pagamento antes de incluir"*, que é justamente o que ele não
+  pode fazer. Isso é do bloco "trava o organizador", e não morde enquanto o circuito
+  for operado pelo dono da plataforma. *(Atleta)*
 
 ### Trava juridicamente
 

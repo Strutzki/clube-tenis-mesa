@@ -3933,11 +3933,18 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
       const maxRod = state.rodadasPorTemporada || 6;
       const roundBase = Math.max(0, ...state.matches.map(m => m.round || 0));
       const inicioUltimoTerco = maxRod - Math.ceil(maxRod / 3) + 1;
+      // ⚠️ "VOCÊ ENTRA" PROMETIA MAIS QUE O REGULAMENTO (0.6.16, 29/09/2026).
+      // As três frases abaixo diziam "Você entra na próxima etapa/temporada", no
+      // afirmativo e sem condição — enquanto o regulamento que ele aceitou diz
+      // "entra QUANDO ABRIR VAGA: aprovação não é o mesmo que vaga garantida".
+      // Esta é a única das duas que ele recebe no WhatsApp, e era a mais definida
+      // das duas. Com o teto podendo encher, é a frase que a realidade desmente.
+      // Apontado pelo Guardião da Experiência do Atleta.
       let fraseEntrada;
       if (state.phase !== "etapa" || roundBase === 0) {
-        fraseEntrada = "Você entra *na próxima temporada*, desde a primeira rodada — assim que o circuito abrir, seus jogos já aparecem pra você no app.";
+        fraseEntrada = "Você entra *na próxima temporada*, desde a primeira rodada, *assim que houver vaga* — e aí seus jogos já aparecem pra você no app.";
       } else if ((roundBase + 1) < inicioUltimoTerco) {
-        fraseEntrada = "Você entra *na próxima etapa* — assim que o circuito avançar para o próximo par de rodadas, seus jogos já aparecem pra você no app.";
+        fraseEntrada = "Você entra *na próxima etapa*, *assim que houver vaga* — quando o circuito avançar para o próximo par de rodadas, seus jogos já aparecem pra você no app.";
       } else {
         fraseEntrada = "O circuito já está na reta final desta temporada, e pelo regulamento não há novas entradas nas últimas rodadas. Então sua estreia fica *para a próxima temporada* — e você já entra desde a primeira rodada dela.";
       }
@@ -9074,9 +9081,23 @@ function IniciarEtapaPanel({ state, dispatch }) {
   const [confirmando, setConfirmando] = useState(false);
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
-  const impar = ativos.length % 2 !== 0;
+  // ROADMAP 0.6.6 — QUEM NÃO PAGOU FICA FORA DA RODADA INTEIRA, e ninguém avisava.
+  // Com a cobrança ligada, `getAtivosNoCircuito` filtra por `pagamento_confirmado`,
+  // e o pareamento é FOTOGRAFADO no início da rodada: quem não estava confirmado
+  // naquele instante perde a rodada — pagar depois não o traz de volta, só vale
+  // para a próxima. O admin não tinha como saber disso antes de clicar, e o atleta
+  // descobria sem jogo.
+  // Este é o único momento em que dá para evitar: antes do clique, e com nome.
+  const naoPagaram = state.financeiroAtivo
+    ? ativos.filter(a => !a.pagamentoConfirmado)
+    : [];
+  const vaoJogar = state.financeiroAtivo ? ativos.length - naoPagaram.length : ativos.length;
+  // ⚠️ A paridade e o mínimo passam a contar QUEM VAI JOGAR, não quem está ativo.
+  // Com a cobrança ligada, contar os ativos dizia "12 atletas, número par" enquanto
+  // o motor parearia 9 — e aí o aviso do bye e o do mínimo estavam os dois errados.
+  const impar = vaoJogar % 2 !== 0;
   const MINIMO = 8; // Cap. 13 do regulamento: temporada só inicia com no mínimo 8 atletas ativos
-  const faltam = Math.max(0, MINIMO - ativos.length);
+  const faltam = Math.max(0, MINIMO - vaoJogar);
   return (
     <div style={{marginTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
       {backlogCount > 0 && (
@@ -9087,8 +9108,18 @@ function IniciarEtapaPanel({ state, dispatch }) {
       <div style={{fontSize:12,color:"#9db3a8",marginBottom:6}}>
         Os confrontos serão gerados por <b>proximidade de rating</b>, evitando repetir duelos da temporada (Cap. 03). As duas rodadas do mês são publicadas de uma vez.
       </div>
+      {naoPagaram.length > 0 && (
+        <div style={{background:"rgba(216,90,48,0.12)",borderLeft:"3px solid #c25a45",borderRadius:8,padding:"9px 11px",marginBottom:10,fontSize:11.5,color:"#f8c4b4",lineHeight:1.6}}>
+          💵 <strong style={{color:"#F0EAE0"}}>{naoPagaram.length} atleta(s) sem pagamento confirmado ficam de fora desta rodada</strong> — a cobrança está ligada, e o pareamento é tirado agora. Quem pagar depois entra só na rodada seguinte.
+          <div style={{color:"#e8c9a0",marginTop:6}}>{naoPagaram.map(a=>nomeExibicao(a)).join(", ")}</div>
+          <div style={{color:"#9db3a8",marginTop:6}}>Registre os pagamentos antes de iniciar, ou siga — eles entram no próximo par de rodadas.</div>
+        </div>
+      )}
       <div style={{fontSize:11,color: faltam > 0 ? "#D85A30" : "#7d9188",marginBottom:10}}>
-        {ativos.length} atleta(s) ativo(s){impar && faltam===0 ? " · número ímpar: um atleta terá folga (bye) por rodada" : ""}
+        {state.financeiroAtivo && naoPagaram.length > 0
+          ? <><b>{vaoJogar}</b> atleta(s) vão jogar (de {ativos.length} ativos)</>
+          : <>{ativos.length} atleta(s) ativo(s)</>}
+        {impar && faltam===0 ? " · número ímpar: um atleta terá folga (bye) por rodada" : ""}
         {faltam > 0 && ` · faltam ${faltam} pra atingir o mínimo de ${MINIMO} (Cap. 13 do regulamento)`}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,fontSize:12,color:"#9db3a8",flexWrap:"wrap"}}>
@@ -10947,6 +10978,20 @@ function AthleteGames({ state, dispatch, athlete }) {
   const saldoAnimado = useCountUp(Math.abs(saldo));
   const ratingAnimado = useCountUp(eu.rating || 250);
   const posStr = minhaPos >= 0 ? `${posAnimado}º` : "—";
+  // ROADMAP 0.6.16 — O ATLETA NA FILA DE ESPERA NÃO SABIA QUE ESTAVA NA FILA.
+  // Quem está `ativo` + `pendenteCircuito` (inscrição aprovada, aguardando vaga)
+  // sai do ranking, então a POSIÇÃO vira "—" — mas os pontos e o rating continuam
+  // na tela. Fica com cara de DEFEITO, não de decisão, e não havia uma linha
+  // explicando em lugar nenhum. O projeto já decidiu duas vezes contra si mesmo
+  // aqui: "a garantia que tranquiliza estava SÓ no WhatsApp".
+  // ⚠️ O que esta caixa NÃO faz, de propósito: não promete posição na fila nem
+  // data de entrada. A ordem é por data de inscrição, mas o admin pode incluir
+  // qualquer um (`INCLUIR_NO_CIRCUITO` recebe id), e o regulamento diz que a
+  // entrada é "mediante avaliação e aprovação do administrador". Um número na tela
+  // criaria expectativa que o app pode quebrar legitimamente — trocaríamos um
+  // silêncio por uma promessa falsa, que é pior. A frase vem primeiro; número, se
+  // um dia, vem depois dela. (Guardião da Experiência do Atleta, 28/09/2026.)
+  const naFilaDeEspera = eu.status === "ativo" && eu.pendenteCircuito;
   const saldoStr = saldo > 0 ? `+${saldoAnimado}` : saldo < 0 ? `-${saldoAnimado}` : `${saldoAnimado}`;
 
   return (
@@ -10962,6 +11007,18 @@ function AthleteGames({ state, dispatch, athlete }) {
       {estatisticasAbertas && <EstatisticasView state={state} athlete={eu} onClose={()=>setEstatisticasAbertas(false)}/>}
       {cartaAberta && <CartaModal athlete={eu} posicao={minhaPos>=0?minhaPos+1:null} onClose={()=>setCartaAberta(false)} podeBaixar/>}
       {editarAberto && <EditarPerfilView athlete={eu} dispatch={dispatch} onClose={()=>setEditarAberto(false)} state={state} telefone={athlete.phone}/>}
+      {naFilaDeEspera && (
+        <Card style={{marginBottom:12, border:"1px solid rgba(156,111,62,0.45)", background:"rgba(156,111,62,0.12)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>⏳ Sua inscrição foi aprovada — você está na fila de espera</div>
+          <div style={{fontSize:12,color:"#e8c9a0",lineHeight:1.7}}>
+            O circuito está com todas as vagas ocupadas. Você <strong style={{color:"#F0EAE0"}}>entra assim que abrir uma vaga</strong>, e a partir daí já é pareado nas rodadas.
+            {" "}Enquanto isso você não aparece no ranking e não tem jogos — <strong style={{color:"#F0EAE0"}}>não é erro do app</strong>.
+          </div>
+          <div style={{fontSize:11,color:"#9db3a8",lineHeight:1.6,marginTop:8}}>
+            A ordem é por data de inscrição, mas a entrada depende da aprovação do organizador. Em caso de dúvida, fale com ele.
+          </div>
+        </Card>
+      )}
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,marginBottom:20}}>
         <div style={{position:"relative"}}>
           <div onClick={()=>setPerfilAberto(true)} style={{cursor:"pointer"}}>

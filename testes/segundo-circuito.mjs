@@ -320,6 +320,71 @@ secao("Em circuito NOVO, gravação que falha não responde 'sucesso' (0.6.18)")
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+secao("O atleta na fila sabe que está na fila, e o admin sabe quem fica de fora (0.6.16, 0.6.6)");
+{
+  const fonteApp = await import("node:fs/promises").then(f => f.readFile("src/App.jsx", "utf-8"));
+
+  // ── 0.6.16: quem está aprovado aguardando vaga sai do ranking, então a POSIÇÃO
+  // vira "—" enquanto pontos e rating continuam na tela. Ficava com cara de
+  // DEFEITO, e não havia uma linha explicando em lugar nenhum do app.
+  ok(/const naFilaDeEspera = eu\.status === "ativo" && eu\.pendenteCircuito;/.test(fonteApp),
+    "a tela do atleta reconhece o estado 'aprovado, aguardando vaga'");
+  // ⚠️ ANCORADA NA CONDIÇÃO QUE RENDERIZA, não no texto. A primeira redação
+  // casava só a frase — e desligar a guarda (`{naFilaDeEspera && (` → `{false && (`)
+  // deixava a bateria VERDE com a caixa morta na tela. Oitava vez nesta sessão que
+  // uma asserção minha olha para o procurador da regra em vez da regra.
+  ok(/\{naFilaDeEspera && \(/.test(fonteApp),
+    "a caixa é renderizada sob essa condição — não é texto morto no arquivo");
+  ok(/Sua inscrição foi aprovada — você está na fila de espera/.test(fonteApp),
+    "e diz isso a ele, com essas palavras");
+  ok(/não é erro do app/.test(fonteApp),
+    "e nomeia o que ele estava pensando: que era defeito");
+  // ⚠️ O que a caixa NÃO pode fazer: prometer posição na fila ou data. A ordem é
+  // por data de inscrição, mas `INCLUIR_NO_CIRCUITO` recebe um id — o admin pode
+  // incluir qualquer um, e o regulamento diz que a entrada é "mediante avaliação e
+  // aprovação do administrador". Número na tela criaria expectativa que o app pode
+  // quebrar legitimamente: trocaríamos um silêncio por uma promessa falsa.
+  const iCaixa = fonteApp.indexOf("Sua inscrição foi aprovada — você está na fila de espera");
+  const caixa = fonteApp.slice(iCaixa, iCaixa + 1400);
+  ok(!/\d+º (lugar|da fila)|posição na fila|você é o/i.test(caixa),
+    "e NÃO promete posição na fila — a ordem é sugerida, não garantida");
+  ok(/depende da aprovação do organizador/.test(caixa),
+    "dizendo justamente isso");
+
+  // A mensagem de WhatsApp prometia mais que o regulamento que ele aceitou.
+  ok(/assim que houver vaga/.test(fonteApp),
+    "e a mensagem de inscrição aprovada deixou de dizer 'você entra' sem condição");
+  igual((fonteApp.match(/assim que houver vaga/g) || []).length, 2,
+    "nas duas frases que prometiam entrada (próxima temporada e próxima etapa)");
+
+  // ── 0.6.6: com a cobrança ligada, quem não pagou fica FORA do pareamento, e o
+  // pareamento é tirado no início da rodada. Pagar depois não traz de volta.
+  ok(/const naoPagaram = state\.financeiroAtivo/.test(fonteApp),
+    "o painel calcula quem fica de fora por falta de pagamento");
+  ok(/\{naoPagaram\.length > 0 && \(/.test(fonteApp),
+    "o aviso é renderizado quando há quem fique de fora — não é texto morto");
+  ok(/ficam de fora desta rodada/.test(fonteApp),
+    "e avisa o admin ANTES de ele clicar em iniciar");
+  ok(/Quem pagar depois entra só na rodada seguinte/.test(fonteApp),
+    "dizendo a consequência exata: pagar depois não traz de volta para esta rodada");
+  ok(/naoPagaram\.map\(a=>nomeExibicao\(a\)\)\.join\(", "\)/.test(fonteApp),
+    "e com NOMES — para o admin poder resolver, não só saber");
+
+  // ⚠️ E a paridade e o mínimo passaram a contar QUEM VAI JOGAR, não quem está
+  // ativo. Com a cobrança ligada, contar os ativos dizia "12, número par" enquanto
+  // o motor parearia 9 — os dois avisos (bye e mínimo) ficavam errados juntos.
+  ok(/const impar = vaoJogar % 2 !== 0;/.test(fonteApp),
+    "o aviso do bye conta quem VAI JOGAR, não quem está ativo");
+  ok(/const faltam = Math\.max\(0, MINIMO - vaoJogar\);/.test(fonteApp),
+    "e o do mínimo de 8 também — senão os dois mentiriam juntos com a cobrança ligada");
+
+  // O motor confirma que o filtro existe: é ele que torna o aviso verdadeiro.
+  const motorTxt = await import("node:fs/promises").then(f => f.readFile("supabase/functions/admin-action/index.ts", "utf-8"));
+  igual((motorTxt.match(/if \(exigePagamento\) q = q\.eq\("pagamento_confirmado", true\);/g) || []).length, 2,
+    "o motor realmente exclui quem não pagou do roster — nos dois caminhos, BH e não-BH");
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 secao("O que NÃO mudou: o carimbo de quem já aceitou e o sistema do circuito");
 {
   // O motor continua sem ação para trocar o sistema de um circuito (0.6.22), e

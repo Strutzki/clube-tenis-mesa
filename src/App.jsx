@@ -3703,7 +3703,10 @@ function AdminHistorico({ state }) {
 // "presa" resolvido em 11/07 — não repetir o erro.
 const CATEGORIAS_MENSAGEM = [
   {id:"confrontos", icon:"⚔️", label:"Confrontos da Rodada",  desc:"Avisa cada atleta sobre seu adversário"},
-  {id:"resultados", icon:"📊", label:"Resultados Confirmados", desc:"Envia resultado e novo rating para cada atleta"},
+  // A descrição desta categoria também prometia rating ("envia resultado e novo
+  // rating"), e o admin de um circuito de PONTOS a lia no painel. O conteúdo da
+  // mensagem já ramifica; o rótulo passou a falar do que os dois sistemas têm.
+  {id:"resultados", icon:"📊", label:"Resultados Confirmados", desc:"Envia o resultado e a pontuação atualizada para cada atleta"},
   {id:"lembretes",  icon:"⏰", label:"Lembretes de Prazo",    desc:"Alerta atletas com prazo próximo (≤3 dias)"},
   {id:"backlog",    icon:"🆕", label:"Inscrição Aprovada",    desc:"Avisa quem foi aceito e entra na próxima rodada"},
   {id:"ranking",    icon:"🏆", label:"Ranking para Todos",    desc:"Envia ranking atualizado para cada atleta"},
@@ -3807,9 +3810,22 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
         const p2 = state.athletes.find(a => a.id === m.p2Id);
         if (!p1 || !p2) return null;
         const p1venceu = m.score1 > m.score2;
-        const statusPontuacao = (p1b) => m.calculado
-          ? `📊 Seu novo Rating: *${p1b.rating}*\nSaldo na temporada: *${(p1b.saldoTemp||0) > 0 ? "+" : ""}${p1b.saldoTemp||0} pts*`
-          : `📊 Rating e saldo: *ainda em processamento* — aguardando o fechamento da rodada`;
+        // ⚠️ ESTA MENSAGEM VAZAVA O RATING DE OUTRO CIRCUITO (29/09/2026).
+        // Ela dizia "Seu novo Rating: X" sem ramificar por sistema. Num circuito de
+        // PONTOS não existe rating — e `a.rating` vem da tabela GLOBAL `atletas`,
+        // que é a identidade compartilhada: o número que o atleta receberia seria o
+        // rating dele em OUTRO circuito. É a contaminação que o projeto mais teme,
+        // e aqui ela sai do app, por WhatsApp, onde ninguém pode corrigir.
+        // Achado na varredura de 29/09, a pedido do Juliano ("veja se está tudo bem
+        // mesmo"), junto com a irmã em `case "ranking"`.
+        const statusPontuacao = (p1b) => {
+          if (!m.calculado) return SISTEMA_ATIVO === "B"
+            ? `📊 Pontos: *ainda em processamento* — aguardando o fechamento da rodada`
+            : `📊 Rating e saldo: *ainda em processamento* — aguardando o fechamento da rodada`;
+          return SISTEMA_ATIVO === "B"
+            ? `📊 Seus pontos na temporada: *${p1b.saldoTemp||0}*`
+            : `📊 Seu novo Rating: *${p1b.rating}*\nSaldo na temporada: *${(p1b.saldoTemp||0) > 0 ? "+" : ""}${p1b.saldoTemp||0} pts*`;
+        };
         // O ranking só muda depois que TODA a rodada é processada — então o fecho
         // só afirma "ranking atualizado" quando o resultado já foi calculado.
         const fechamento = m.calculado
@@ -3984,7 +4000,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
       return ativos.map(a => ({
         atleta: a,
         matchId: `ranking-r${rodadaRef}`,
-        msg: `🏆 *${nomeCircuito} — Ranking Atualizado*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Confira o ranking após a Rodada ${rodadaRef}:\n\n${top.join("\n")}\n\n📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | Rating: *${a.rating}*\n\nConfira todos os detalhes no app! 🏓`,
+        msg: `🏆 *${nomeCircuito} — Ranking Atualizado*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Confira o ranking após a Rodada ${rodadaRef}:\n\n${top.join("\n")}\n\n${SISTEMA_ATIVO === "B" ? `📊 Seus pontos: *${a.saldoTemp||0}*` : `📊 Seu saldo: *${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts* | Rating: *${a.rating}*`}\n\nConfira todos os detalhes no app! 🏓`,
       }));
     }
 

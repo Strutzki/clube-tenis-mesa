@@ -377,6 +377,59 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
   }
 }
 
+secao("Nenhuma MENSAGEM vaza rating para um circuito de pontos");
+{
+  // Achado na varredura de 29/09/2026, a pedido do Juliano ("faça uma análise mais
+  // profunda do app para ver se está tudo bem mesmo").
+  //
+  // Duas mensagens — as duas ENVIADAS por WhatsApp, as duas de alta frequência —
+  // citavam RATING sem ramificar por sistema:
+  //   "resultados" (a cada partida): "📊 Seu novo Rating: X"
+  //   "ranking"    (a cada rodada):  "📊 Seu saldo: +N pts | Rating: X"
+  //
+  // E o número não seria zero nem vazio: `a.rating` vem da tabela GLOBAL `atletas`,
+  // que é a identidade compartilhada entre circuitos. O atleta de um circuito de
+  // PONTOS receberia, no telefone dele, **o rating que ele tem em OUTRO circuito** —
+  // a contaminação que o `CLAUDE.md` chama de "rating vazando para circuito de
+  // pontos", e a pior forma dela, porque sai do app.
+  //
+  // É a mesma família do torneio (seção acima) e do RATING nas telas (seção do
+  // Sistema B): o app tinha quatro superfícies e três já estavam protegidas.
+  const fonteMsg = await import("node:fs/promises").then(f => f.readFile("src/App.jsx", "utf-8"));
+  const semComentario = fonteMsg.replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "").replace(/^\s*\/\/[^\n]*/gm, "");
+  // ⚠️ A ÂNCORA DE FIM É `case "renovacao":`, e não `case "torneio":`. A primeira
+  // redação usava o torneio — mas ele vem ANTES do ranking no arquivo, então o
+  // recorte terminava cedo e a asserção do ranking media um trecho que não continha
+  // o ranking. Verde ou vermelha, seria pelo motivo errado. Ancorar por posição
+  // presumida em vez de verificada é o mesmo erro da janela fixa.
+  const iIni = semComentario.indexOf('case "resultados":');
+  const iFim = semComentario.indexOf('case "renovacao":');
+  const geradores = semComentario.slice(iIni, iFim);
+  ok(iIni > 0 && iFim > iIni, "o recorte vai do primeiro gerador até o da renovação");
+  ok(geradores.includes('case "ranking":'), "e ele CONTÉM o gerador do ranking — senão a asserção abaixo mede outra coisa");
+
+
+  // Toda citação de rating dentro dos geradores tem de estar sob ramo de sistema.
+  const citaRating = [...geradores.matchAll(/[Rr]ating/g)].length;
+  const ramos = [...geradores.matchAll(/SISTEMA_ATIVO === "B"/g)].length;
+  ok(ramos >= 2, `os geradores ramificam por sistema onde citam rating (${ramos} ramos)`);
+  ok(/Seus pontos na temporada: \*\$\{p1b\.saldoTemp\|\|0\}\*/.test(geradores),
+    "a mensagem de RESULTADO manda pontos num circuito de pontos");
+  ok(/Seu novo Rating: \*\$\{p1b\.rating\}\*/.test(geradores),
+    "e continua mandando rating num circuito de rating — o conserto não apagou o certo");
+  ok(/📊 Seus pontos: \*\$\{a\.saldoTemp\|\|0\}\*/.test(geradores),
+    "a mensagem de RANKING manda pontos num circuito de pontos");
+  ok(!/Rating: \*\$\{a\.rating\}\*`\}?\\n\\nConfira todos os detalhes/.test(geradores) ||
+     /SISTEMA_ATIVO === "B" \? `📊 Seus pontos/.test(geradores),
+    "e a do ranking só cita rating dentro do ramo");
+
+  // ⚠️ E o RÓTULO da categoria, que o admin lê no painel antes de disparar.
+  ok(!/desc:"Envia resultado e novo rating para cada atleta"/.test(semComentario),
+    "a categoria não promete mais 'novo rating' ao admin de um circuito de pontos");
+  ok(/Envia o resultado e a pontuação atualizada para cada atleta/.test(semComentario),
+    "ela fala do que os DOIS sistemas têm");
+}
+
 secao("Num circuito SEM torneio, nada promete torneio (0.10.5)");
 {
   // O Cap. 10 — Torneio Presencial de Encerramento — é do BH. Um circuito de

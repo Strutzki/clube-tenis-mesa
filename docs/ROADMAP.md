@@ -1115,6 +1115,25 @@ atleta inscrito."*
   retenção, sem direitos. Dois textos materialmente diferentes com uma etiqueta
   só. *(Jurídico)*
 
+- **0.10.31 — ✅ RESOLVIDO em 29/09/2026 (no fonte). Duas MENSAGENS vazavam o rating
+  de outro circuito.** Achado na varredura que o Juliano pediu (*"faça uma análise
+  mais profunda do app para ver se está tudo bem mesmo"*), antes de criar o 2º
+  circuito.
+  As duas mensagens de **maior frequência** — *Resultados Confirmados* (a cada
+  partida) e *Ranking para Todos* (a cada rodada) — citavam **Rating** sem ramificar
+  por sistema. E o número não seria zero nem vazio: `a.rating` vem da tabela **global**
+  `atletas`, que é a identidade compartilhada entre circuitos. **O atleta de um
+  circuito de pontos receberia, no telefone dele, o rating que tem em OUTRO circuito.**
+  É a contaminação que o `CLAUDE.md` nomeia — e a pior forma dela, porque a mensagem
+  **sai do app**, onde ninguém pode corrigir.
+  Mesma família do torneio (0.10.5) e do RATING nas telas: o app tinha **quatro**
+  superfícies e três já estavam protegidas. Esta era a que faltava, e era a única que
+  viaja por WhatsApp.
+  **E o rótulo da categoria** também prometia *"envia resultado e novo rating"* ao
+  admin, no painel, antes do disparo.
+  **8 asserções, 4 mutações, 4 vermelhas** — inclusive a que apagaria o rating do
+  circuito **de rating**, que seria o conserto errado.
+
 ### Sem gatilho — higiene
 
 - **0.10.28 — O circuito de rating NOVO promete certificado do Top 3, e ninguém

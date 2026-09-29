@@ -17,9 +17,26 @@
 Base: regulamento oficial do BH (**v03-12**), com **uma** mudança aplicada aos
 novos circuitos:
 
-1. **Sem torneio de encerramento no texto** — passa a ser opcional, a critério do
-   admin do circuito. (O corte visual dos 8 primeiros no ranking do app
-   **permanece** em A e B.)
+1. **Sem torneio de encerramento.** ⚠️ **Este item afirmava duas coisas falsas, e as
+   duas foram corrigidas em 29/09/2026** (ROADMAP 0.10.8 e 0.10.5):
+
+   - Dizia que o torneio *"passa a ser opcional, a critério do admin do circuito"*.
+     **Não é, e nunca foi:** não existe caminho nenhum no app para um circuito novo
+     ter torneio. Quem define é a **versão do regulamento** (`VERSOES_COM_TORNEIO`,
+     hoje só `v03-12` e `v03-13`, as duas do BH), e a criação carimba `vA-nc-01` ou
+     `vB-01` — nenhuma delas com torneio. Um organizador que quisesse fazer torneio
+     lia no documento que era escolha dele e não encontrava onde escolher.
+   - E dizia que *"o corte visual dos 8 primeiros no ranking permanece em A e B"*.
+     **Não permanece mais:** desde 29/09/2026 o corte, o "C" e a legenda só aparecem
+     em circuito que **tem** torneio. Num circuito sem torneio eles eram rótulo sem
+     referente — o atleta lia que estava classificado para um evento que o
+     regulamento dele não menciona.
+
+   **Como fica, e é de propósito:** ter torneio exige uma **versão de regulamento que
+   o descreva**. Não é burocracia — é o que impede a tela de prometer um evento sem
+   documento atrás, e protege o elo preço↔promessa, porque a elegibilidade ao torneio
+   está listada entre o que a temporada **inclui**. Acrescentar torneio sem trocar a
+   versão seria mudar o que o dinheiro compra sem tocar no contrato.
 
 > **Corrigido em 10/09/2026.** Este trecho listava também "prazo da 2ª rodada =
 > dia 27" como mudança dos circuitos novos. Não é: o **v03-12 do BH já usa o dia

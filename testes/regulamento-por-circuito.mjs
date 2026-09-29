@@ -575,6 +575,41 @@ secao("A janela de entrada (Cap. 11) passa a existir no SERVIDOR, não só na te
     "e a tela continua com a fórmula que o servidor espelha");
 }
 
+secao("O regulamento de pontos tem DOCUMENTO, e ele é gerado do app (0.10.3)");
+{
+  // Achado do Guardião Jurídico: o `vA-nc-01` não tinha documento canônico — "um
+  // documento que o atleta aceita juridicamente mora só dentro de um JSX de 9.700
+  // linhas". Ao ir consertar, descobri que o **vB-01 também não tinha**, e é o do
+  // circuito que o Juliano vai criar. O único arquivo do Sistema B era um RASCUNHO
+  // de projeto, e ele contradizia o código em dois pontos.
+  //
+  // POR QUE GERADO, E NÃO ESCRITO À MÃO: transcrever cria a segunda cópia da mesma
+  // regra — o defeito que esta semana inteira desfez (três contas da janela de
+  // renovação, duas do último terço, dois pareamentos). Um documento escrito à mão
+  // diverge da tela no primeiro ajuste e ninguém percebe. E aqui a divergência é
+  // entre o que o atleta LEU e o que o clube pode PROVAR que ele leu.
+  const { execFileSync } = await import("node:child_process");
+  const gerado = execFileSync("node", ["scripts/gerar-regulamento.mjs", "B"], { cwd: RAIZ, encoding: "utf8" });
+  const noRepo = fs.readFileSync(path.join(RAIZ, "docs", "REGULAMENTO_vB-01.md"), "utf8");
+  igual(noRepo, gerado,
+    "o documento no repositório é IGUAL ao que o app mostra — se alguém mudar o texto na tela e não regenerar, isto fica vermelho");
+
+  // E o documento tem de ser o regulamento INTEIRO, não um pedaço.
+  const caps = (gerado.match(/^## Cap\. \d+ — /gm) || []).length;
+  igual(caps, 13, "o documento traz os 13 capítulos do Sistema B");
+  ok(/Não há torneio de encerramento nem certificado/.test(gerado),
+    "e diz, no alto, o que o circuito de pontos NÃO tem — que é o que um admin vindo do BH suporia que tem");
+  ok(/\*\*Este arquivo é GERADO\*\*/.test(gerado),
+    "e avisa que é gerado, para ninguém editar à mão e perder a edição na próxima geração");
+
+  // ⚠️ E o que NÃO pode vazar para o documento: comentário de código. Os `{/* */}`
+  // do JSX explicam decisões de projeto ao próximo programador, e chegaram a sair
+  // inteiros no documento que o atleta lê — inclusive um que dizia "dá para
+  // corrigir no lugar porque NENHUM atleta aceitou o vB-01".
+  ok(!/\/\*|\*\/|style=|s\.p\b|return null/.test(gerado),
+    "nenhum comentário de código, atributo de estilo ou sobra de JSX vazou para o documento");
+}
+
 secao("A frase de preço não é garantia absoluta");
 {
   // O Guardião Jurídico: quem escreve o regulamento é a plataforma, mas quem

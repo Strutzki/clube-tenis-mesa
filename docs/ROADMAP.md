@@ -942,7 +942,26 @@ atleta inscrito."*
   prometido no v03-12 já aceito, criou-se a **v03-13** e uma **trava**: a virada
   do BH é recusada (409) enquanto ele declarar uma versão que promete o desconto.
   Ver 0.10.15 para o que falta (carimbo + aviso).
-- **0.10.3 — O regulamento `vA-nc-01` não tem texto canônico.** Ele existe como
+- **0.10.3 — ⚠️ RESOLVIDO PARA O `vB-01`; o `vA-nc-01` fica para quando houver
+  circuito de rating novo (29/09/2026).** *Um documento que o atleta aceita
+  juridicamente morando só dentro de um JSX.*
+  **Ao ir consertar, descobri que era pior do que o item dizia:** o item falava do
+  `vA-nc-01`, mas o **`vB-01` também não tinha documento** — e é o do circuito que o
+  Juliano vai criar. O único arquivo do Sistema B era uma **nota de projeto**
+  ("RASCUNHO v2"), e ela **contradizia o código em dois pontos**.
+  **Feito:** `docs/REGULAMENTO_vB-01.md`, **gerado** por
+  `scripts/gerar-regulamento.mjs` a partir do texto que o app exibe. 13 capítulos.
+  **Por que gerado e não escrito:** transcrever criaria a segunda cópia da mesma
+  regra — o defeito que esta semana inteira desfez. Um documento à mão diverge da
+  tela no primeiro ajuste e ninguém percebe; e aqui a divergência é entre o que o
+  atleta **leu** e o que o clube pode **provar** que ele leu.
+  **A trava:** a bateria regenera e compara. Mudar o texto na tela sem regerar deixa
+  o teste **vermelho** — medido por mutação. **6 asserções, 3 mutações, 3 vermelhas.**
+  **Falta o `vA-nc-01`:** o gerador já tem o formato para recebê-lo (basta uma
+  entrada em `ALVOS`), mas o conteúdo dele é o do Sistema A com ramificações por
+  versão, e gerar isso pede o mesmo cuidado que o B teve. Fica para quando existir um
+  circuito de rating novo — hoje não existe nenhum.
+  *Descrição original, mantida como registro:* Ele existe como
   prosa no `REGULAMENTOS_NOVOS_CIRCUITOS.md` e como ramificação no `App.jsx`.
   Não há `docs/REGULAMENTO_vA-nc-01.md`. Um documento que o atleta aceita
   juridicamente mora só dentro de um JSX de 9.700 linhas. *(Jurídico)*
@@ -1011,7 +1030,22 @@ atleta inscrito."*
     `DEFINIR_CONFIG_CIRCUITO` **não toca** `regulamento_versao`.
   **11 asserções** — 1 rodando o motor (o recibo que ele devolve) e 10 de fonte —
   dentro das 37 de `testes/segundo-circuito.mjs`. *(Admin)*
-- **0.10.8 — O torneio virou decisão de ninguém.** O
+- **0.10.8 — ✅ RESOLVIDO em 29/09/2026, corrigindo o DOCUMENTO — não o código.**
+  *O torneio virou decisão de ninguém.* O `REGULAMENTOS_NOVOS_CIRCUITOS.md` prometia
+  que o torneio era *"opcional, a critério do admin do circuito"*; o código entrega
+  "sempre não", e **não há caminho nenhum** para um circuito novo ter torneio.
+  **Corrigi o documento, e essa é a escolha, não a preguiça:** quem define torneio é a
+  **versão do regulamento**, e isso é a arquitetura certa — a tela não pode prometer
+  um evento sem documento atrás, e a elegibilidade ao torneio está listada entre o que
+  a temporada **inclui**, então acrescentá-lo sem trocar a versão mudaria o que o
+  dinheiro compra sem tocar no contrato. Dar ao admin um interruptor de torneio seria
+  desfazer isso.
+  **E o mesmo parágrafo tinha uma segunda afirmação falsa**, que só ficou falsa hoje:
+  dizia que *"o corte visual dos 8 primeiros permanece em A e B"*. Não permanece — o
+  0.10.5 o tirou de circuito sem torneio nesta mesma data.
+  **Se um dia um circuito novo dever ter torneio**, o caminho é publicar uma versão que
+  o descreva e pô-la em `VERSOES_COM_TORNEIO` — e aí o `CORTE = 8` vira o item 0.10.29.
+  *Descrição original, mantida como registro:* O
   `REGULAMENTOS_NOVOS_CIRCUITOS.md` promete que ele é "a critério do admin do
   circuito"; o código entrega "sempre não", travado na criação. Um organizador
   que queira fazer torneio não tem caminho. *(Admin)*

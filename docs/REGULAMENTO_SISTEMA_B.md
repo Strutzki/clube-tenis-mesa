@@ -1,4 +1,15 @@
-# Regulamento — Sistema B (Pontos Fixos) · RASCUNHO v2 (pós-revisão do Advogado do Atleta)
+# Sistema B (Pontos Fixos) — NOTA DE PROJETO, **não é o regulamento**
+
+> ⚠️ **ESTE ARQUIVO NÃO É O REGULAMENTO DO SISTEMA B.** Ele é a nota de projeto que
+> registra *como* o `vB-01` foi desenhado a partir do Sistema A, e ficou marcado
+> como "RASCUNHO v2" desde então.
+> **O regulamento é `docs/REGULAMENTO_vB-01.md`**, criado em 29/09/2026 e **gerado**
+> a partir do texto que o app exibe — ver `scripts/gerar-regulamento.mjs`.
+> Até essa data o Sistema B **não tinha documento nenhum**: o texto que o atleta
+> aceita morava só dentro do `App.jsx`, e este arquivo, que é o único que existia,
+> **contradizia o código em dois pontos** (ver a correção logo abaixo).
+
+## ~~Regulamento — Sistema B (Pontos Fixos) · RASCUNHO v2 (pós-revisão do Advogado do Atleta)~~
 
 Base: Sistema A **v03-12** (o do BH, já com R2 = dia 27). O sistema (A/B) trava na criação do circuito.
 > Filosofia do B: simples e direto. Vitória vale mais que derrota, **toda partida conta**, não existe rating — só a tabela de pontos da temporada, que zera na virada.
@@ -8,7 +19,16 @@ Auditando o texto real do A, **só 3 capítulos são realmente idênticos**: Cap
 **Precisam de adaptação (citam rating):** Cap. 02, 08, 11, 12, 13 — além dos já reescritos (01, 03, 05, 07, 09).
 
 ## 🏆 Torneio de encerramento — REMOVIDO do regulamento do B *(decisão do Juliano)*
-Nos novos circuitos, o **torneio dos 8 melhores é opcional, a critério do administrador do circuito** — e **não consta no regulamento** (nem para mencionar que existe). O antigo **Cap. 10 (Torneio de Encerramento) sai** do Sistema B; os capítulos renumeram sem ele ao cabear no app. O **ranking final da temporada é a classificação oficial** do circuito.
+⚠️ **CORRIGIDO EM 29/09/2026 — as duas afirmações abaixo eram falsas** (ROADMAP
+0.10.8 e 0.10.5). ~~O torneio dos 8 melhores é opcional, a critério do administrador
+do circuito.~~ **Não é, e nunca foi:** não existe caminho no app para um circuito
+novo ter torneio. Quem define é a **versão do regulamento**, e nem o `vB-01` nem o
+`vA-nc-01` o incluem. ~~Manter o corte dos 8 primeiros em A e B.~~ **Deixou de valer:**
+desde 29/09 o corte, o "C" e a legenda só aparecem em circuito que **tem** torneio —
+num circuito sem torneio eram rótulo sem referente.
+*Texto original, mantido como registro do que se decidiu na época:* o **torneio dos 8
+melhores é opcional, a critério do administrador do circuito** — e **não consta no
+regulamento** (nem para mencionar que existe). O antigo **Cap. 10 (Torneio de Encerramento) sai** do Sistema B; os capítulos renumeram sem ele ao cabear no app. O **ranking final da temporada é a classificação oficial** do circuito.
 > **Decidido:** os novos circuitos **Sistema A também** retiram a menção ao torneio (variante nova do regulamento A; o **BH permanece** com o dele na v03-12, intacto). **Visual do ranking:** manter o **corte dos 8 primeiros** (marcador/linha após a 8ª posição) em **A e B** — é referência visual, independente de o circuito rodar torneio ou não.
 
 ---

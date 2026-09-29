@@ -121,7 +121,20 @@ function setCircuitoAtivo(uuid) {
 // Sistema do circuito ativo ('A' rating / 'B' pontos). Setado no load do circuito.
 // Só afeta desempates de ranking do Sistema B; com 'A' (BH), tudo idêntico a hoje.
 let SISTEMA_ATIVO = "A";
-function setSistemaAtivo(s) { SISTEMA_ATIVO = (s === "B") ? "B" : "A"; }
+// Método de pareamento do circuito ativo ("sorteio" | "grupos"), só do Sistema B.
+// ⚠️ Nasceu em 29/09/2026 porque eu escrevi `state.pareamento` em duas telas e o
+// campo NÃO EXISTE no estado. Não quebraria nada — `undefined` cai no ramo do
+// sorteio —, mas a tela diria "sorteio aleatório" num circuito de grupos, calada.
+// É a mesma família do `sistemaAtivo={sistemaAtivo}` de 13/09 que deixou o app em
+// tela branca: JSX não confere escopo, e a bateria não executa o App.jsx.
+// Mora ao lado do SISTEMA_ATIVO e é setado no MESMO lugar, de propósito: dois
+// caminhos separados para carregar a configuração do circuito é como nasce
+// divergência.
+let PAREAMENTO_ATIVO = "sorteio";
+function setSistemaAtivo(s, pareamento) {
+  SISTEMA_ATIVO = (s === "B") ? "B" : "A";
+  PAREAMENTO_ATIVO = (pareamento === "grupos") ? "grupos" : "sorteio";
+}
 
 // rpId da biometria (WebAuthn) FIXADO no domínio-mãe: assim o passkey vale tanto no
 // apex (clubedotenisdemesabh.com.br) quanto no www, e sobrevive a trocas de subdomínio
@@ -1197,7 +1210,15 @@ function reducer(state, action) {
       });
       let athletes = state.athletes;
       if (tipo === "culposo" && faltosoId) {
-        athletes = state.athletes.map(a => a.id === faltosoId ? { ...a, woCulpososTemporada: (a.woCulpososTemporada || 0) + 1 } : a);
+        // ⚠️ OTIMISMO, e ele agora DISCORDA do servidor em dois pontos (Guardião de
+        // Regulamento + Guardião do Admin, 29/09/2026): o servidor passou a DERIVAR
+        // o contador das partidas (idempotente), enquanto isto ACUMULA — dois
+        // cliques no mesmo W.O. mostravam 2 na tela e 1 no banco, e o painel de
+        // suspensão do Cap. 07 abria por um número que o servidor não confirma. E
+        // no Sistema B o `a_favor` TAMBÉM conta, e aqui só o culposo somava.
+        // Não somar nada é melhor que somar errado: o `loadFromSupabase` que vem
+        // logo em seguida traz o número do servidor, que é a autoridade.
+        athletes = state.athletes;
       }
       return { ...state, matches, athletes };
     }
@@ -4202,12 +4223,11 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsSta
     if (!telefone) return `https://wa.me/?text=${encodeURIComponent(m.texto)}`;
     return wppLink(telefone, m.texto);
   }
-  function rankingAtual() {
-    return [...ativos]
-      .sort(cmpRanking(state.matches))
-      .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts (Rating: ${a.rating})`)
-      .join("\n");
-  }
+  // `rankingAtual()` FOI APAGADA em 29/09/2026. Ela montava uma lista de ranking
+  // com "(Rating: X)" cravado, sem ramificar por sistema — seria a 6ª superfície da
+  // família que o commit `e71f424` fechou em quatro, no dia em que alguém a
+  // reaproveitasse. E não tinha chamador nenhum: código morto que só esperava.
+  // (Guardião da Experiência do Admin.) Está no histórico do git se fizer falta.
   // Geração de mensagens por categoria agora vem da função compartilhada
   // gerarMensagensCategoria (nível superior) — evita duplicar a lógica que já
   // causou bug uma vez (mensagem "presa" por categoria/matchId dessincronizados).
@@ -5088,7 +5108,11 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
     try {
       const d = await chamarLoginAtleta("LOGIN", clean);
       if (!d.encontrado) {
-        setErr("Telefone não encontrado ou cadastro não aprovado.");
+        // Uma coisa só: o servidor devolve `encontrado: false` quando NÃO ACHA o
+        // telefone. Misturar "não aprovado" aqui fazia o atleta em análise duvidar
+        // do próprio número e tentar variações — e o atleta em análise nem chega
+        // aqui, porque o LOGIN o encontra. (Guardião do Atleta, 29/09/2026.)
+        setErr("Telefone não encontrado. Confira o número, ou inscreva-se no circuito.");
         setTimeout(()=>setErr(""),3000);
         return;
       }
@@ -5116,7 +5140,17 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
       const d = await chamarLoginAtleta(acao, clean, pinLimpo);
       if (!d.atleta) { setErr("Não consegui entrar. Tente de novo."); return; }
       const found = mapAtletaFromDb(d.atleta);
-      if (found.status !== "ativo") { setErr("Seu cadastro ainda não foi aprovado pelo admin."); return; }
+      // ⚠️ O pendente CRIA O PIN e só então descobre que não foi aprovado: o
+      // `login-atleta` não confere status no LOGIN nem no DEFINIR_PIN — só em
+      // SESSAO, PARTICIPAR e LOGIN_ORGANIZADOR. Então ele digita o PIN duas vezes
+      // e leva esta frase, parado na tela do PIN, sem botão para lugar nenhum.
+      // A frase antiga ("não foi aprovado pelo admin") não dizia o que fazer, nem
+      // quanto esperar, nem que o PIN que ele acabou de criar ficou valendo — e
+      // ficou. (Guardião do Atleta, 29/09/2026.)
+      if (found.status !== "ativo") {
+        setErr("Seu cadastro ainda está em análise pelo organizador. Ele avisa assim que aprovar — o PIN que você criou já fica salvo.");
+        return;
+      }
       // "Continuar conectado": guarda telefone + TOKEN de sessão + lista de circuitos (localStorage).
       // O token (não o PIN) abre circuito privado ao reabrir o app; é revogável no logout.
       setAtletaCred({ telefone: clean, token: d.token || null, circuitos: Array.isArray(d.circuitos) ? d.circuitos : [] });
@@ -5606,7 +5640,7 @@ export default function App() {
         notificadoAdversario: s.notificado_adversario || false,
       }));
       if (myGen !== loadGenRef.current) return true; // load mais novo em andamento — descarta este (troca de circuito)
-      setSistemaAtivo(config?.[0]?.sistema || "A"); // Fatia 6: alinha o desempate de ranking ao sistema do circuito
+      setSistemaAtivo(config?.[0]?.sistema || "A", config?.[0]?.pareamento); // Fatia 6: alinha o desempate de ranking ao sistema do circuito
       dispatch({ type:"LOAD_FROM_DB", payload:{
         athletes: athletesMapped, matches: matchesMapped,
         keys: keysMapped, phase: config?.[0]?.fase||"inscricoes",
@@ -6339,7 +6373,23 @@ export default function App() {
         setCurrentAthlete(a); setTab("meus_jogos");
         const cred = getAtletaCred();
         const circs = (cred && Array.isArray(cred.circuitos)) ? cred.circuitos : [];
-        setEscolherCircuito(circs.length > 1); // >1 circuito: mostra a escolha; senão entra direto
+        // ⚠️ "SENÃO ENTRA DIRETO" ERA MENTIRA — e era o outro lado do bloqueio que o
+        // servidor consertou em 29/09/2026. Com UM circuito o app não apontava para
+        // ele: ficava no que já estava ativo, que por padrão é o BH (linha ~114).
+        // O atleta de um circuito novo tem exatamente 1 circuito, então caía no BH:
+        // ranking do BH, "Meus Jogos" vazio, e o card de re-aceite comparando a
+        // versão DELE (vB-01) com a do BH (v03-13) — ou seja, PEDINDO QUE ELE
+        // ACEITASSE O REGULAMENTO DE OUTRO CIRCUITO. E no primeiro refresh o
+        // `loadFromSupabase` não o achava no roster do BH e fazia logout SILENCIOSO.
+        // Sem botão de trocar, porque o `HubCircuitosAtleta` só aparece com 2+.
+        // (Guardião da Experiência do Atleta, 29/09/2026.)
+        //
+        // `trocarCircuito` já faz tudo certo — carrega antes de trocar a `key`,
+        // reverte se a carga falhar, limpa mensagens e agenda de telefones. Ele só
+        // nunca era chamado aqui. Devolve `false` de graça quando o circuito único
+        // já é o ativo, então o caminho do BH não muda em nada.
+        if (circs.length === 1) { trocarCircuito(circs[0]); }
+        setEscolherCircuito(circs.length > 1); // >1 circuito: mostra a escolha
       }}
       onVisitante={() => {
         // Visitante: vitrine de TODOS os circuitos ativos. Abertos ele explora; fechados
@@ -7709,7 +7759,12 @@ function SeletorCircuito({ circuitos, circuitoSelId, trocar, carregando }) {
   );
 }
 
-function CriarCircuitoCard({ chamarAdminAction }) {
+// ⚠️ `recarregarCircuitos` ENTROU AQUI em 29/09/2026. Este era o único card de
+// plataforma que não o recebia — e a lista do seletor só é lida no mount. O
+// organizador criava o circuito, fechava o modal, e o alternador continuava
+// mostrando só o BH até ele apertar F5, sem nada na tela explicando.
+// (Guardião da Experiência do Admin.)
+function CriarCircuitoCard({ chamarAdminAction, recarregarCircuitos }) {
   const [aberto, setAberto] = useState(false);
   const [nome, setNome] = useState("");
   const [cidade, setCidade] = useState("");
@@ -7740,6 +7795,9 @@ function CriarCircuitoCard({ chamarAdminAction }) {
         pareamento: sistema === "B" ? pareamento : null,
       });
       setCriado(dados);
+      // Best-effort: se a lista não recarregar, o circuito existe do mesmo jeito e
+      // o F5 resolve. Falhar aqui não pode desfazer uma criação bem-sucedida.
+      try { await recarregarCircuitos?.(); } catch (_) { /* o circuito já foi criado */ }
     } catch (e) {
       setErro(e.message || "Erro ao criar circuito.");
     } finally {
@@ -7783,7 +7841,7 @@ function CriarCircuitoCard({ chamarAdminAction }) {
     vitrine (a leitura filtra por inscrições abertas), então não havia o que
     diagnosticar, havia ausência. E a frase do alternador venceu: o seletor de
     circuito existe. Pego pela Experiência do Admin em 27/09/2026. */}
-                <div style={{fontSize:12,color:T.cinza,marginBottom:16,lineHeight:1.6}}>Slug: <code>{criado.slug}</code>. Nasce vazio e com as <strong style={{color:T.offwhite}}>inscrições fechadas</strong> — ninguém consegue se inscrever ainda, e o circuito não aparece na lista de escolha do atleta. Ligue em <strong style={{color:T.offwhite}}>Config → 📝 Inscrições abertas</strong> quando quiser começar a receber.</div>
+                <div style={{fontSize:12,color:T.cinza,marginBottom:16,lineHeight:1.6}}>Slug: <code>{criado.slug}</code>. Nasce vazio e com as <strong style={{color:T.offwhite}}>inscrições fechadas</strong> — ninguém consegue se inscrever ainda, e o circuito não aparece na lista de escolha do atleta. Já dá para escolher ele aqui em cima, no alternador de circuitos. Para começar a receber inscrições, vá em <strong style={{color:T.offwhite}}>Pend. → ⚙️ Ajustes do circuito → 📝 Inscrições abertas</strong>.</div>
                 <Btn full onClick={()=>setAberto(false)} color={T.terracotaBtn}>Fechar</Btn>
               </div>
             ) : (
@@ -8662,7 +8720,7 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
       ) : (
         <>
           <SeletorCircuito circuitos={circuitos} circuitoSelId={circuitoSelId} trocar={trocarCircuito} carregando={dbStatus==="loading"} />
-          <CriarCircuitoCard chamarAdminAction={chamarAdminAction} />
+          <CriarCircuitoCard chamarAdminAction={chamarAdminAction} recarregarCircuitos={recarregarCircuitos} />
           {circuitoSelId !== CIRCUITO_BH_ID && (
             <GerenciarOrganizadoresCard chamarAdminAction={chamarAdminAction} circuitoSelId={circuitoSelId} />
           )}
@@ -8817,8 +8875,21 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
 
       {state.phase === "inscricoes" && (
         <Card>
-          <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>🚦 Fase: Inscrições abertas</div>
-          <div style={{fontSize:12,color:"#9db3a8",marginBottom:12}}>Valide os atletas pendentes e depois inicie a etapa.</div>
+          {/* ⚠️ "Fase: inscrições" é o ESTADO DO CIRCUITO (ainda não começou a
+              jogar); "inscrições abertas" é o INTERRUPTOR de receber gente nova.
+              São coisas diferentes, e o card dizia a segunda mostrando a primeira.
+              Um circuito recém-criado nasce em `fase: inscricoes` com
+              `inscricoes_abertas: false` — então o painel anunciava "Inscrições
+              abertas" enquanto ninguém conseguia se inscrever. (Guardião do Admin,
+              29/09/2026.) */}
+          <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>
+            🚦 Fase: Pré-temporada {state.inscricoesAbertas ? "· inscrições abertas" : "· inscrições fechadas"}
+          </div>
+          <div style={{fontSize:12,color:"#9db3a8",marginBottom:12}}>
+            {state.inscricoesAbertas
+              ? "Valide os atletas pendentes e depois inicie a etapa."
+              : "Ninguém consegue se inscrever ainda. Ligue em Pend. → ⚙️ Ajustes do circuito → 📝 Inscrições abertas."}
+          </div>
           {pendentes.length > 0 && <Btn onClick={()=>setTab("inscricoes")} color="#9C6F3E">⚠️ Ver {pendentes.length} pendente(s)</Btn>}
           <IniciarEtapaPanel state={state} dispatch={dispatch} />
         </Card>
@@ -8848,7 +8919,7 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
       {state.phase === "etapa" && temporadaCompleta && (
         <Card style={{border:"1px solid rgba(156,111,62,0.4)"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#9C6F3E",marginBottom:6}}>🏁 Temporada completa ({rodadasPorTemp} rodadas)</div>
-          <div style={{fontSize:12,color:"#9db3a8"}}>A temporada atingiu as {rodadasPorTemp} rodadas configuradas (capítulo "Estrutura das Rodadas"13). Para continuar, inicie uma nova temporada.</div>
+          <div style={{fontSize:12,color:"#9db3a8"}}>A temporada atingiu as {rodadasPorTemp} rodadas configuradas (capítulo "Estrutura das Rodadas"). Para continuar, inicie uma nova temporada.</div>
         </Card>
       )}
 
@@ -9248,7 +9319,10 @@ function IniciarEtapaPanel({ state, dispatch }) {
         </div>
       )}
       <div style={{fontSize:12,color:"#9db3a8",marginBottom:6}}>
-        Os confrontos serão gerados por <b>proximidade de rating</b>, evitando repetir duelos da temporada (Cap. 03). As duas rodadas do mês são publicadas de uma vez.
+        {/* O circuito já grava QUAL método usa (`pareamento`), e a tela não
+            ramificava: dizia "proximidade de rating" também no circuito de pontos,
+            que não tem rating. (Guardião do Admin, 29/09/2026.) */}
+        Os confrontos serão gerados por <b>{SISTEMA_ATIVO === "B" ? (PAREAMENTO_ATIVO === "grupos" ? "grupos por faixa de pontos" : "sorteio aleatório") : "proximidade de rating"}</b>, evitando repetir duelos da temporada (capítulo "Estrutura das Rodadas"). As duas rodadas do mês são publicadas de uma vez.
       </div>
       {naoPagaram.length > 0 && (
         <div style={{background:"rgba(216,90,48,0.12)",borderLeft:"3px solid #c25a45",borderRadius:8,padding:"9px 11px",marginBottom:10,fontSize:11.5,color:"#f8c4b4",lineHeight:1.6}}>
@@ -9267,11 +9341,13 @@ function IniciarEtapaPanel({ state, dispatch }) {
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,fontSize:12,color:"#9db3a8",flexWrap:"wrap"}}>
         <span>Temporada:</span>
         <b style={{color:"#F0EAE0"}}>6 rodadas</b>
-        <span style={{fontSize:10,color:"#7d9188"}}>(3 meses · 2 rodadas por mês · Cap. 13)</span>
+        {/* NOMEAR o capítulo, nunca numerar: no v03-12 é o 13, no vB-01 é o 12.
+            O comentário 30 linhas acima já mandava isso e a linha escapou. */}
+        <span style={{fontSize:10,color:"#7d9188"}}>(3 meses · 2 rodadas por mês · capítulo "Estrutura das Rodadas")</span>
       </div>
       {!confirmando ? (
         <Btn onClick={()=>setConfirmando(true)} color="#6a9d7a" full disabled={faltam > 0}>
-          🚀 Iniciar Etapa · Pareamento por Rating
+          🚀 Iniciar Etapa · {SISTEMA_ATIVO === "B" ? (PAREAMENTO_ATIVO === "grupos" ? "Pareamento por Grupos" : "Pareamento por Sorteio") : "Pareamento por Rating"}
         </Btn>
       ) : (
         <div>
@@ -9396,6 +9472,13 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
   const MsgBtn = ({ath}) => {
     const msg = ath.status==="reprovado"
       ? `Olá ${ath.name.split(" ")[0]}, sua inscrição no ${state.nomeCircuito || "Clube do Tênis de Mesa"} — inscrição não aprovada. Motivo: ${ath.motivo||"informações inconsistentes"}. Entre em contato para mais detalhes.`
+      // ⚠️ 5ª SUPERFÍCIE da família que o commit `e71f424` fechou em quatro — e a
+      // pior delas, porque é a que o organizador dispara NA HORA DE APROVAR.
+      // Num circuito de PONTOS não existe rating: o texto anunciava ao atleta um
+      // número que o regulamento dele nega quatro vezes. (Guardião do Admin,
+      // 29/09/2026.)
+      : SISTEMA_ATIVO === "B"
+      ? `Olá ${ath.name.split(" ")[0]}, sua inscrição no ${state.nomeCircuito || "Clube do Tênis de Mesa"} — inscrição APROVADA! Você começa a temporada em 0 pontos, como todo mundo. Bem-vindo(a)! 🏓`
       : `Olá ${ath.name.split(" ")[0]}, sua inscrição no ${state.nomeCircuito || "Clube do Tênis de Mesa"} — inscrição APROVADA! Rating inicial: ${ath.rating}. Bem-vindo(a)! 🏓`;
     const telefone = telefones[ath.id];
     if (!telefone) return <Btn small color="#5E7569" onClick={()=>{}}>📲 carregando…</Btn>;
@@ -9479,9 +9562,13 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
       <Card>
         <div style={{fontSize:15,fontWeight:700,color:"#F0EAE0",marginBottom:4}}>{nomeComApelido(selected)}</div>
         <div style={{fontSize:12,color:"#9db3a8",marginBottom:8}}>📱 {telefones[selected.id] || "carregando…"} · {selected.federated?"Federado CBTM":"Não federado"}</div>
-        <div style={{fontSize:12,color:"#7d9188",marginBottom:6}}>
-          Rating informado: <b style={{color: selected.rating ? "#D85A30" : "#c25a45"}}>{selected.rating || "não informado"}</b>
-        </div>
+        {/* Num circuito de PONTOS não há rating para informar, e o vermelho de
+            "não informado" era lido como problema a resolver. (Guardião do Admin.) */}
+        {SISTEMA_ATIVO !== "B" && (
+          <div style={{fontSize:12,color:"#7d9188",marginBottom:6}}>
+            Rating informado: <b style={{color: selected.rating ? "#D85A30" : "#c25a45"}}>{selected.rating || "não informado"}</b>
+          </div>
+        )}
         <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
           <span style={{fontSize:10,background: selected.aceiteRegulamento?"rgba(74,222,128,0.12)":"rgba(248,113,113,0.12)",color:selected.aceiteRegulamento?"#6a9d7a":"#c25a45",padding:"3px 8px",borderRadius:8,fontWeight:700}}>
             {selected.aceiteRegulamento ? "📋 Regulamento aceito" : "⚠️ Sem aceite do regulamento"}
@@ -9493,6 +9580,15 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
             📅 {new Date(selected.dataAceiteRegulamento).toLocaleString("pt-BR")}
           </span>}
         </div>
+        {/* O campo inteiro sai no Sistema B: o servidor DESCARTA o rating num
+            circuito de pontos (guarda do `writeAtleta`), então deixá-lo na tela
+            faria o organizador digitar um número que não vai a lugar nenhum — que
+            é pior do que não perguntar. */}
+        {SISTEMA_ATIVO === "B" ? (
+          <div style={{fontSize:11,color:"#7d9188",marginBottom:10,lineHeight:1.5}}>
+            Circuito de <b style={{color:"#F0EAE0"}}>pontos</b>: não há rating. Todo mundo começa a temporada em 0 pontos.
+          </div>
+        ) : (<>
         <div style={{fontSize:11,fontWeight:700,color: needsRating?"#c25a45":"#9db3a8",textTransform:"uppercase",letterSpacing:0.8,marginBottom:5}}>
           {selected.federated ? (needsRating ? "⚠️ Rating obrigatório para federado" : "Ajustar rating") : "Rating (não federado = 250)"}
         </div>
@@ -9500,8 +9596,12 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
           placeholder={selected.federated ? (selected.rating ? `Atual: ${selected.rating}` : "Digite o rating CBTM...") : "250 (fixo para não federados)"}
           type="number" readOnly={!selected.federated}
           style={{background:"#1C2B27",border:`1px solid ${needsRating?"rgba(248,113,113,0.5)":"rgba(255,255,255,0.1)"}`,borderRadius:10,color: selected.federated?"#F0EAE0":"#7d9188",padding:"10px 12px",fontSize:14,width:"100%",marginBottom:10,outline:"none",boxSizing:"border-box"}}/>
-        <Btn onClick={approve} color="#6a9d7a" full disabled={needsRating}>
-          {needsRating ? "⚠️ Informe o rating para aprovar" : "✅ Aprovar inscrição"}
+        </>)}
+        {/* A trava de rating nunca arma no Sistema B — hoje ela é inalcançável lá
+            (o formulário esconde "federado"), mas deixá-la armada é uma bomba
+            esperando alguém reativar o campo. (Guardião do Admin.) */}
+        <Btn onClick={approve} color="#6a9d7a" full disabled={SISTEMA_ATIVO !== "B" && needsRating}>
+          {SISTEMA_ATIVO !== "B" && needsRating ? "⚠️ Informe o rating para aprovar" : "✅ Aprovar inscrição"}
         </Btn>
         <div style={{marginTop:8}}>
           <textarea value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder="Motivo da reprovação..." rows={2}
@@ -9810,7 +9910,7 @@ function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, n
           )}
           {!confirmando ? (
             <Btn small onClick={()=>setConfirmando(true)} color={liberado?T.terracota:T.borda}>
-              🧮 Processar rating da Rodada {round}
+              🧮 Processar {SISTEMA_ATIVO === "B" ? "pontos" : "rating"} da Rodada {round}
             </Btn>
           ) : (
             <>
@@ -9875,8 +9975,11 @@ function ImputarResultadoForm({ m, p1, p2, dispatch }) {
 
 // ── ADMIN PENDÊNCIAS ──────────────────────────────────────────────────────────
 // Controle do admin pra classificar um W.O. numa partida (Cap. 07).
-// Justificado anula; Culposo (−15 faltoso / +8 adversário) e A Favor (+8 ao
-// presente) entram no cálculo da rodada.
+// Sistema A: Justificado anula; Culposo (−15 faltoso / +8 adversário) e A Favor
+// (+8 ao presente) entram no cálculo da rodada.
+// Sistema B: NADA anula — os três viram pontos (vB-01 Cap. 07). Justificado dá 1
+// ao ausente e 2 ao adversário; culposo e a_favor dão 0 e 2, e os dois CONTAM
+// como injustificado para a suspensão.
 function RegistrarWoInline({ m, p1, p2, dispatch }) {
   const [aberto, setAberto] = useState(false);
   const [tipo, setTipo] = useState(null);
@@ -9904,6 +10007,23 @@ function RegistrarWoInline({ m, p1, p2, dispatch }) {
           <button onClick={() => setAberto(false)} style={{ marginTop: 8, fontSize: 11, color: "#7d9188", background: "none", border: "none", cursor: "pointer" }}>cancelar</button>
         </>
       ) : tipo === "justificado" ? (
+        // ⚠️ NO SISTEMA B O "JUSTIFICADO" NÃO ANULA — ele PONTUA (ausente 1,
+        // adversário 2, vB-01 Cap. 07), e o motor exige saber quem é quem. A tela
+        // mandava `aplicar(null, null)` sempre, e o circuito de pontos devolvia
+        // 400 "beneficiarioId é obrigatório": o organizador clicava o botão certo e
+        // recebia jargão de máquina. (Guardião do Admin e Guardião de Regulamento,
+        // 29/09/2026 — é defeito pré-existente, da Fatia 5, mas trava a operação do
+        // 2º circuito.)
+        SISTEMA_ATIVO === "B" ? (
+        <>
+          <div style={{ fontSize: 11, color: "#9db3a8", marginBottom: 8 }}>Ausência justificada — quem faltou? Ele fica com 1 ponto e o adversário com 2.</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Btn small color="#6a9d7a" onClick={() => aplicar(m.p1Id, m.p2Id)}>{primeiro(p1)} faltou</Btn>
+            <Btn small color="#6a9d7a" onClick={() => aplicar(m.p2Id, m.p1Id)}>{primeiro(p2)} faltou</Btn>
+            <Btn small color={T.borda} onClick={() => setTipo(null)}>Voltar</Btn>
+          </div>
+        </>
+        ) : (
         <>
           <div style={{ fontSize: 11, color: "#9db3a8", marginBottom: 8 }}>Anular a partida — ninguém perde ou ganha pontos?</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -9911,12 +10031,23 @@ function RegistrarWoInline({ m, p1, p2, dispatch }) {
             <Btn small color={T.borda} onClick={() => setTipo(null)}>Voltar</Btn>
           </div>
         </>
+        )
       ) : (
         <>
+          {/* Os números eram de RATING, sempre — falsos num circuito de pontos,
+              onde o vB-01 (Cap. 07) diz 0 para o ausente e 2 para o adversário.
+              E o "A Favor" dizia "o ausente não perde pontos": o servidor CONTA o
+              a_favor para a suspensão do Cap. 07 no Sistema B, então a tela estava
+              escondendo do organizador que aquele clique aproxima alguém de ser
+              suspenso. (Guardião do Admin, medido rodando o motor.) */}
           <div style={{ fontSize: 11, color: "#9db3a8", marginBottom: 8 }}>
-            {tipo === "culposo"
-              ? "Quem faltou (confirmou e não foi)? Leva −15; o adversário ganha +8."
-              : "Quem sumiu desde o início? O adversário (presente) ganha +8; o ausente não perde pontos."}
+            {SISTEMA_ATIVO === "B"
+              ? (tipo === "culposo"
+                  ? "Quem faltou (confirmou e não foi)? Fica com 0 pontos; o adversário ganha 2. Conta como W.O. injustificado — no 2º, suspensão."
+                  : "Quem sumiu desde o início? O adversário (presente) ganha 2 pontos; o ausente fica com 0. Conta como W.O. injustificado — no 2º, suspensão.")
+              : (tipo === "culposo"
+                  ? "Quem faltou (confirmou e não foi)? Leva −15; o adversário ganha +8."
+                  : "Quem sumiu desde o início? O adversário (presente) ganha +8; o ausente não perde pontos.")}
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <Btn small color="#c25a45" onClick={() => aplicar(m.p1Id, m.p2Id)}>{primeiro(p1)} faltou</Btn>
@@ -10043,7 +10174,7 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
     pedidosExclusao.length && { icon:"🗑️", txt:`${pedidosExclusao.length} pedido(s) de exclusão de dados`, acao:"Finalizar", cor:T.vermelho, id:"pend-exclusao" },
     pendentesWo.length && { icon:"📨", txt:`${pendentesWo.length} solicitação(ões) de W.O.`, acao:"Aprovar ou recusar", cor:T.madeira, id:"pend-wo" },
     waiting.length && { icon:"🔔", txt:`${waiting.length} placar(es) para conferir`, acao:"Validar ou rejeitar", cor:T.verde2, id:"pend-validar" },
-    rodadasProntas.length && { icon:"🧮", txt: rodadasProntas.length === 1 ? `Rodada ${rodadasProntas[0]} pronta (prazo fechou)` : `${rodadasProntas.length} rodadas prontas pra fechar`, acao:"Processar rating", cor:T.terracota, id:"pend-calculo" },
+    rodadasProntas.length && { icon:"🧮", txt: rodadasProntas.length === 1 ? `Rodada ${rodadasProntas[0]} pronta (prazo fechou)` : `${rodadasProntas.length} rodadas prontas pra fechar`, acao: SISTEMA_ATIVO === "B" ? "Processar pontos" : "Processar rating", cor:T.terracota, id:"pend-calculo" },
     incompletosVencidos.length && { icon:"⏰", txt:`${incompletosVencidos.length} jogo(s) sem placar com prazo vencido`, acao:"Cobrar / lançar / W.O.", cor:T.vermelho, id:"pend-incompleto" },
   ].filter(Boolean);
 
@@ -11178,6 +11309,24 @@ function AthleteGames({ state, dispatch, athlete }) {
       {estatisticasAbertas && <EstatisticasView state={state} athlete={eu} onClose={()=>setEstatisticasAbertas(false)}/>}
       {cartaAberta && <CartaModal athlete={eu} posicao={minhaPos>=0?minhaPos+1:null} onClose={()=>setCartaAberta(false)} podeBaixar/>}
       {editarAberto && <EditarPerfilView athlete={eu} dispatch={dispatch} onClose={()=>setEditarAberto(false)} state={state} telefone={athlete.phone}/>}
+      {/* ⚠️ O AVISO QUE O REGULAMENTO PROMETE E QUE NÃO EXISTIA. O Cap. 07 do
+          vB-01 diz, com todas as letras: "Há aviso formal no 1º injustificado."
+          Não havia card, não havia mensagem, não havia nada — o atleta podia ser
+          SUSPENSO no 2º W.O. sem nunca ter sido avisado do 1º, e é texto que ele
+          assinou. (Guardião da Experiência do Atleta, 29/09/2026.)
+          Só o dono do número o vê: quem mostrava era o painel do organizador. */}
+      {(eu.woCulpososTemporada || 0) >= 1 && (
+        <Card style={{marginBottom:12, border:"1px solid rgba(194,90,69,0.5)", background:"rgba(194,90,69,0.12)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>
+            ⚠️ {eu.woCulpososTemporada === 1 ? "Você tem 1 W.O. injustificado nesta temporada" : `Você tem ${eu.woCulpososTemporada} W.O. injustificados nesta temporada`}
+          </div>
+          <div style={{fontSize:12,color:"#e8b0a0",lineHeight:1.7}}>
+            {eu.woCulpososTemporada === 1
+              ? <>No <strong style={{color:"#F0EAE0"}}>2º</strong> você é suspenso do circuito — é o que diz o capítulo de W.O. e Faltas do regulamento. Se a ausência teve motivo, peça a justificativa pelo app: aprovada pelo organizador, ela deixa de contar.</>
+              : <>Você atingiu o limite do capítulo de W.O. e Faltas. Fale com o organizador — se alguma das ausências teve motivo, a justificativa aprovada deixa de contar.</>}
+          </div>
+        </Card>
+      )}
       {naFilaDeEspera && (
         <Card style={{marginBottom:12, border:"1px solid rgba(156,111,62,0.45)", background:"rgba(156,111,62,0.12)"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>⏳ Sua inscrição foi aprovada — você está na fila de espera</div>

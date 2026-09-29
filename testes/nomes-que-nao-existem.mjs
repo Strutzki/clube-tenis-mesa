@@ -24,6 +24,7 @@
 // abre, e nada na bateria acusa.
 
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ok, igual, secao, placar } from "./ferramentas.mjs";
@@ -69,6 +70,48 @@ secao("Nenhum nome usado no app deixou de existir");
     "a regra no-undef continua ligada no .oxlintrc.json");
   ok(cfg?.env?.browser === true,
     "os globais de navegador continuam declarados — sem isso a regra vira ruído");
+}
+
+secao("Nenhum CAMPO de estado é lido sem existir");
+{
+  // A asserção acima roda o `no-undef`, que pega NOME indefinido. Ela NÃO pega
+  // campo inexistente num objeto que existe: `state.pareamento` é sintaxe
+  // perfeitamente válida num `state` que existe, e devolve `undefined` calado.
+  //
+  // Isto nasceu de um erro meu em 29/09/2026: escrevi `state.pareamento` em duas
+  // telas para escolher o texto do método de pareamento. O campo não existe no
+  // `INIT`. Não quebraria nada — `undefined` cai no ramo do sorteio —, mas a tela
+  // diria "sorteio aleatório" num circuito de GRUPOS, calada, e nenhum portão
+  // acusaria: o build passa (é JS válido), o `no-undef` passa (o `state` existe),
+  // e a bateria não executa o App.jsx.
+  //
+  // É a mesma FAMÍLIA do `sistemaAtivo={sistemaAtivo}` de 13/09 que deixou o app
+  // em tela branca, e a diferença é o sintoma: aquele explodia, este mente. O que
+  // mente é pior, porque ninguém vai procurar.
+  //
+  // Medido na hora de escrever: 29 campos no `INIT`, 27 lidos como `state.X`, e
+  // ZERO fora da lista depois do conserto. A asserção só é viável porque a lista
+  // está limpa — se um dia o estado passar a ganhar campos por reducer sem
+  // declará-los no `INIT`, declare-os lá (com comentário) em vez de afrouxar isto.
+  const fonte = fs.readFileSync(path.join(RAIZ, "src", "App.jsx"), "utf8");
+  const i = fonte.indexOf("const INIT = {");
+  ok(i > 0, "o objeto de estado inicial (`INIT`) foi localizado");
+  const fim = fonte.indexOf("\n};", i);
+  ok(fim > i, "e o fim dele também");
+  const bloco = fonte.slice(i, fim);
+  const declarados = new Set([...bloco.matchAll(/^ {2}([a-zA-Z_]\w*)\s*:/gm)].map(m => m[1]));
+  ok(declarados.size > 20, `o INIT declara os campos esperados (achados: ${declarados.size})`);
+
+  // Só o CÓDIGO, sem comentários: o comentário que EXPLICA este defeito cita
+  // `state.pareamento`, e sem esta limpeza a asserção se afogaria na própria
+  // explicação — armadilha que já me pegou três vezes hoje, em outro arquivo.
+  const semComentario = fonte
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/[^\n]*/gm, "");
+  const usados = new Set([...semComentario.matchAll(/\bstate\.([a-zA-Z_]\w*)/g)].map(m => m[1]));
+  const fora = [...usados].filter(c => !declarados.has(c)).sort();
+  igual(fora, [],
+    `nenhum campo é lido como state.X sem estar declarado no INIT (achados: ${fora.join(", ") || "nenhum"})`);
 }
 
 process.exit(placar("Nomes que não existem"));

@@ -258,46 +258,68 @@ secao("O motor carimba a versão certa em circuito novo");
     "o carimbo da versão está no CRIAR_CIRCUITO (insert), não num update");
 }
 
-secao("Teto do circuito: a regra e o motor concordam");
+secao("Teto do circuito: 20 para todos, e o regulamento diz isso");
 {
   const motor = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "admin-action", "index.ts"), "utf8");
-  // Decisão do Juliano, 10/09: teto 20, mínimo 10. O motor não fazia valer:
-  // criação sem limite superior, edição com mínimo 2. Os dois pontos precisam
-  // usar a MESMA regra, senão o texto que o atleta aceita ("teto de 20") mente.
-  // Regra do Juliano, 10/09: máximo 20 atletas por circuito, mínimo 8. O 8 é o
-  // ponto abaixo do qual o pareamento REPETE confrontos na mesma temporada de 6
-  // rodadas — é a razão do "mínimo 8 ativos" do Cap. 13, não um número solto.
+
+  // ⚠️ ESTA SEÇÃO JÁ DEFENDEU OS DOIS LADOS, E A HISTÓRIA PRECISA FICAR ESCRITA,
+  // porque ela é o registro de uma decisão do Juliano — não de uma correção técnica.
+  //
+  //  10/09/2026 — decisão dele: o teto é regra da PLATAFORMA, 20 para todos.
+  //  27/09/2026 — o Guardião do Regulamento notou que o CÓDIGO não fazia isso: a
+  //               criação perguntava o teto (8 a 20). Eu tratei como defeito do
+  //               TEXTO e mudei o regulamento para "até 20, definido pelo
+  //               organizador", alinhando a prosa ao código. Estas asserções
+  //               nasceram então, carimbando aquela redação.
+  //  29/09/2026 — perguntei a ele, e a decisão de 10/09 **fica de pé**: o teto é
+  //               da plataforma. Ou seja, em 27/09 eu alinhei o lado errado —
+  //               quem estava fora da decisão era o código, não o texto.
+  //
+  // E isso tem uma consequência que vale mais que a regra: a linha do teto é
+  // CONTEÚDO COMPARTILHADO do Sistema A, então ela renderiza para o **v03-12**,
+  // que TEM aceite gravado. A troca de 27/09 alterou o texto que aquele recibo
+  // aponta, sem re-aceite — um desvio da regra 7, cometido por mim e não
+  // registrado. Voltar a "teto de 20" **restaura** o texto original e desfaz o
+  // desvio, em vez de criar outro.
   const clamps = (motor.match(/Math\.min\(20, Math\.max\(8,/g) || []).length;
-  igual(clamps, 2, `criação e edição usam o mesmo limite 8..20 (achados: ${clamps})`);
-  ok(!/Math\.max\(2, Math\.round\(Number\(p\.maxAtletas\)/.test(motor),
-    "a edição não aceita mais teto abaixo do mínimo");
+  igual(clamps, 0, `nem a criação nem a configuração aparam um teto por circuito (achados: ${clamps})`);
+  ok(/const maxAtletas = 20;/.test(motor),
+    "o motor CRAVA 20 na criação — o `p.maxAtletas` do cliente é ignorado de propósito");
+  const cfg = motor.slice(motor.indexOf('case "DEFINIR_CONFIG_CIRCUITO"'), motor.indexOf('case "', motor.indexOf('case "DEFINIR_CONFIG_CIRCUITO"') + 10));
+  ok(!/max_atletas/.test(cfg),
+    "e a configuração do circuito não escreve o teto — nem a de um organizador");
 
-  // A TELA tem de barrar antes: sem limite superior nela, o organizador digitava
-  // 50, o botão acendia, o motor cortava para 20 em silêncio e ninguém avisava.
-  // Achado independente do guardião de regulamento E do de segurança.
-  ok(/Number\(maxAtletas\) >= 8 && Number\(maxAtletas\) <= 20/.test(fonte),
-    "a tela de criação barra fora da faixa 8..20, em vez de deixar o motor cortar calado");
-  ok(/De 8 a 20 atletas\./.test(fonte),
-    "a legenda diz a faixa inteira, não só o mínimo");
+  // A tela não pergunta o teto em lugar nenhum, e AVISA qual é.
+  ok(!/Number\(maxAtletas\)/.test(fonte),
+    "nenhuma tela pergunta o teto do circuito");
+  ok(/Todo circuito tem teto de <strong[^>]*>20 atletas<\/strong> por temporada/.test(fonte),
+    "e a criação avisa qual é o teto, para o admin não descobrir depois");
+  ok(/é regra da plataforma, igual para todos, e não se configura por circuito/.test(fonte),
+    "dizendo que é regra da plataforma, não escolha dele");
 
-  // ⚠️ ESTA ASSERÇÃO DEFENDIA O NÚMERO ERRADO, e o comentário dela explicava por quê
-  // de um jeito que era falso: dizia "não é mais configurável, então ramificá-lo seria
-  // mentir". Isso vale para as RODADAS, que passaram a ser fixas em 6 — **não** para o
-  // TETO, que continua configurável por circuito, entre 8 e 20, em dois lugares do
-  // motor (`Math.min(20, Math.max(8, ...))` na criação e na edição). Ou seja: 20 é o
-  // máximo da PLATAFORMA, não o teto de cada circuito, e um circuito de 12 vagas tinha
-  // um regulamento prometendo 20 ao atleta.
-  // Eu havia importado o argumento das rodadas para o teto. Pego pelo Guardião do
-  // Regulamento em 27/09/2026 — é o mesmo padrão do `"ativo_backlog"`: a asserção
-  // carimbava o defeito em vez de proteger a regra.
-  // Conferido no banco em 27/09/2026: existe 1 circuito (o BH) com `max_atletas` = 20,
-  // então nenhum atleta havia aceitado um número falso.
-  ok(/teto de até 20 atletas por temporada, definido pelo organizador/.test(fonte),
-    "o regulamento diz teto de ATÉ 20, definido pelo organizador — não um 20 fixo");
-  ok(!/teto de 20 atletas por temporada"/.test(fonte),
-    "e a redação antiga, que prometia 20 fixo, não pode voltar");
-  ok(/teto de atletas do circuito \(até 20\)/.test(fonte),
-    "a cláusula da fila de espera também diz 'até 20', não 20 cravado");
+  // E os TRÊS textos do regulamento voltaram a dizer a verdade.
+  //
+  // ⚠️ AS DUAS ASSERÇÕES ABAIXO JÁ PASSARAM PELO MOTIVO ERRADO, e vale dizer como,
+  // porque é o defeito mais teimoso desta bateria. A positiva casava
+  // `/teto de 20 atletas por temporada/` — que o texto de PONTOS também contém —
+  // então ela ficava verde com o texto de RATING sabotado. E a negativa proibia
+  // "até 20, definido pelo organizador", que é a redação do texto de PONTOS: o de
+  // rating diz "até 20 ATLETAS POR TEMPORADA, definido pelo organizador", com
+  // quatro palavras no meio. A regex nunca casava com o que ela existia para
+  // proibir. Medido por mutação: a troca do texto de rating passava VERDE.
+  // Agora cada asserção é ancorada na frase INTEIRA do seu próprio texto.
+  ok(/"Cada circuito tem um teto de 20 atletas por temporada",/.test(fonte),
+    "o regulamento de RATING (compartilhado com o v03-12) diz teto de 20, fixo");
+  ok(!/teto de até 20 atletas/.test(fonte),
+    "e a redação de 27/09, que prometia teto por circuito, não pode voltar ao texto de rating");
+  ok(!/definido pelo organizador"/.test(fonte),
+    "nem por outra forma de dizer a mesma coisa");
+  ok(/"Após o prazo de prioridade, as vagas não confirmadas abrem para a fila de espera, respeitando o teto de 20 atletas do circuito",/.test(fonte),
+    "a cláusula da fila de espera também diz 20, não 'até 20'");
+  ok(/O circuito tem um teto de 20 atletas por temporada<\/span> — regra da plataforma, igual para todos\./.test(fonte),
+    "e o regulamento de PONTOS diz o mesmo, na frase inteira");
+  ok(!/até 20, definido pelo organizador/.test(fonte),
+    "e a redação antiga do texto de pontos também não volta");
 }
 
 secao("A frase de preço não é garantia absoluta");
@@ -1952,9 +1974,8 @@ secao("O regulamento de PONTOS diz a verdade sobre o que o motor faz");
     "e dizendo com letra que é FIXO, não configurável");
 
   // ── os três silêncios: regras que o motor aplica e o texto calava ─────────
-  ok(/O circuito tem um teto de atletas por temporada[\s\S]{0,80}até 20, definido pelo organizador/.test(fonte),
-    "o teto de atletas está escrito no regulamento de pontos — e como ATÉ 20, não 20 fixo");
-  ok(/fila de espera[\s\S]{0,200}aprovação não é o mesmo que vaga garantida/.test(fonte),
+  ok(/O circuito tem um teto de 20 atletas por temporada[\s\S]{0,80}regra da plataforma/.test(fonte),
+    "o teto de atletas está escrito no regulamento de pontos — e como 20 fixo, que é o que o motor faz");  ok(/fila de espera[\s\S]{0,200}aprovação não é o mesmo que vaga garantida/.test(fonte),
     "e a fila de espera, com o aviso de que aprovação não é vaga");
   ok(/Não há entrada nas duas últimas rodadas/.test(fonte),
     "o corte de entrada nas duas últimas rodadas está escrito");

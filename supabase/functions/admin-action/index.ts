@@ -1617,7 +1617,14 @@ Deno.serve(async (req) => {
         // mesma temporada de 6 rodadas — por isso o Cap. 13 exige 8 ativos para abrir.
         // Antes não havia limite SUPERIOR aqui (dava para criar um circuito com 100) e
         // a edição usava outro mínimo (2). Agora os dois pontos usam a mesma regra.
-        const maxAtletas = p.maxAtletas != null ? Math.min(20, Math.max(8, Math.round(Number(p.maxAtletas) || 20))) : 20;
+        // TETO FIXO EM 20, decisao do Juliano de 29/09/2026 confirmando a de
+        // 10/09: o teto e regra da PLATAFORMA, nao configuracao de circuito. O
+        // `p.maxAtletas` e' IGNORADO de proposito -- se um dia alguem montar a
+        // chamada com outro valor, o circuito nasce com 20 mesmo assim, e nao com
+        // um numero que o regulamento nao promete. O 8 do Cap. 13 continua sendo
+        // o MINIMO PARA COMECAR a temporada, que e' outra regra e vive no motor
+        // da virada, nao aqui.
+        const maxAtletas = 20;
         const rodadas = 6; // Fixo em 6 rodadas por temporada (Cap. 13).
 
         if (!nome) return jsonResponse({ sucesso: false, erro: "Nome do circuito é obrigatório." }, 400);
@@ -1679,17 +1686,12 @@ Deno.serve(async (req) => {
         const upd: Record<string, unknown> = {};
         if (typeof p.nome === "string") upd.nome_circuito = p.nome.trim() || "Clube do Tênis de Mesa";
         if (p.dataInicio !== undefined) upd.data_inicio_temporada = p.dataInicio || null;
-        // RECUSA em vez de adivinhar (28/09/2026, Guardião de Segurança). O
-        // `Number(p.maxAtletas) || 20` transformava "abc" em **20 em silêncio** --
-        // e em todo o resto deste motor o padrão é recusar: `DESARQUIVAR`,
-        // `versao_regulamento`, `idadeDeISO`. Esta linha era a exceção. Fora da
-        // faixa continua sendo APARADO (8..20 é sempre válido, e a tela já bloqueia
-        // antes): o que passa a recusar é o que não é número nenhum.
-        if (p.maxAtletas !== undefined) {
-          const n = Number(p.maxAtletas);
-          if (!Number.isFinite(n)) return jsonResponse({ sucesso: false, erro: "O teto de atletas tem de ser um número de 8 a 20." }, 400);
-          upd.max_atletas = Math.min(20, Math.max(8, Math.round(n))); // mesma regra da criação: teto 20, mínimo 8
-        }
+        // `maxAtletas` NAO e' mais aceito aqui (29/09/2026, decisao do Juliano).
+        // O teto e regra da plataforma -- 20 para todos --, entao a configuracao
+        // do circuito nao o escreve, nem a de um organizador. O campo estava nesta
+        // acao desde antes, e a tela chegou a oferece-lo na fatia 0.10.9, que foi
+        // desfeita antes de subir. Se voltar um dia, volta como decisao de
+        // plataforma, nao de circuito.
         if (p.pixChave !== undefined) upd.pix_chave = (typeof p.pixChave === "string" && p.pixChave.trim()) ? p.pixChave.trim() : null;
         if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
         await setCfg(circuitoId, upd);

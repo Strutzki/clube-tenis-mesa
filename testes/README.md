@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 845 asserções (28/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 836 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -159,6 +159,14 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | o aviso da criação volta a eleger UMA diferença | 1 vermelha |
 | o motivo do botão desabilitado some | 1 vermelha — **ficava VERDE** até a asserção da frase existir |
 | a cor semântica volta para o TEXTO pequeno (3,06:1) | 3 vermelhas |
+| **O teto volta a ser da plataforma — 29/09/2026 (8 sabotagens, 8 vermelhas)** | |
+| motor: o teto volta a ser escolhido pelo cliente na criação | 2 vermelhas |
+| motor: a configuração volta a escrever o teto | 1 vermelha |
+| tela: volta o campo do teto na criação | 1 vermelha |
+| regulamento de RATING: volta a prometer teto por circuito | 3 vermelhas — **ficava VERDE**: a asserção negativa proibia *"até 20, definido pelo organizador"*, a redação do texto de **pontos**; o de rating diz *"até 20 **atletas por temporada**, definido pelo organizador"*. A regex nunca casava com o que existia para proibir, e a positiva casava uma frase que os dois textos contêm |
+| regulamento de RATING: some a frase do teto inteira | 1 vermelha |
+| regulamento de PONTOS: volta a prometer teto por circuito | 3 vermelhas |
+| regulamento: a cláusula da fila volta a dizer "até 20" | 1 vermelha |
 | **O 2º circuito — 28/09/2026 (14 sabotagens, 14 vermelhas)** | |
 | motor: o teto volta a ser ignorado no `DEFINIR_CONFIG_CIRCUITO` | 1 vermelha |
 | motor: o mínimo de 8 cai (um teto de 3 passaria) | 1 vermelha |

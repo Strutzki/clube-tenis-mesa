@@ -66,6 +66,21 @@ o recibo aponta para uma etiqueta cujo conteúdo ninguém consegue exibir. A cur
 está construída e no ar (o re-aceite dispara na divergência), e ela é argumento para
 **carimbar a v03-13 antes de criar o 2º circuito**, não depois.
 
+**E o desfecho, que veio depois da revisão:** perguntei ao Juliano se a decisão dele
+de 10/09 — *o teto é regra da plataforma, 20 para todos* — ficava revogada pelo
+código. **Ela fica de pé**, e **metade da fatia foi desfeita antes de subir.** O
+0.10.9 deixa de existir como item: não havia campo porque **não deve haver campo**.
+Eu tinha lido a divergência entre código e decisão como defeito do código, e em 27/09
+alinhei o lado errado — mudei o *regulamento* em vez do *motor*.
+E desfazer **consertou um desvio da regra 7 que eu não tinha registrado**: a linha do
+teto é conteúdo compartilhado do Sistema A, então a troca de 27/09 alterou o texto que
+o recibo do **v03-12** aponta, sem re-aceite. Restaurar a frase original devolve o
+texto ao que era quando os aceites foram colhidos.
+**A lição de acervo:** quando o código e uma decisão registrada divergem, a pergunta
+*"qual dos dois está errado?"* precisa ir ao Juliano **antes** de eu alinhar um ao
+outro. Em 27/09 eu decidi sozinho, e decidi para o lado errado; o índice canônico
+estava certo o tempo todo e eu o tratei como desatualizado.
+
 **Segue aberto, e é decisão do Juliano:** os 16 `.claude/agents/*.md` dizem "82
 asserções". **Quinta rodada** que o Curador aponta, e ele sugere tratá-lo como
 bloqueante na próxima.

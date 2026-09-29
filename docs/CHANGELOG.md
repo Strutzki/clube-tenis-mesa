@@ -5,10 +5,28 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
-### 2026-09-28 — O caminho do 2º circuito: o admin passa a ver e a poder mudar (0.10.7, 0.10.9)
+### 2026-09-29 — O caminho do 2º circuito: o admin passa a ver o regulamento (0.10.7) — e o teto volta a ser regra da plataforma
 
 **A SUBIR — ainda não publicado.** `admin-action` **v62 → v63** e front por
 `git push`. Decisão do Juliano: *"comece pelo 2º circuito"*.
+
+⚠️ **METADE DESTA FATIA FOI DESFEITA ANTES DE SUBIR, e o motivo é bom o bastante
+para abrir a entrada.** O 0.10.9 (teto editável por circuito) foi escrito, revisado
+pelas 8 duplas e **removido** — porque eu perguntei ao Juliano se a decisão dele de
+**10/09/2026** (*o teto é regra da plataforma, 20 para todos*) ficava revogada pelo
+código, que tinha ido para o outro lado em duas ondas, e **ela fica de pé**.
+
+Ou seja: eu tinha lido a divergência entre código e decisão como **defeito do
+código**, e alinhei o lado errado — em 27/09 mudei o *regulamento* para *"até 20,
+definido pelo organizador"*, e em 28/09 criei o campo na tela. O conserto certo era o
+inverso. Agora o motor **crava 20**, nenhuma tela pergunta, e os três textos do
+regulamento voltaram a dizer "20".
+
+**E isso desfez um desvio da regra 7 que eu não tinha registrado.** A linha do teto é
+**conteúdo compartilhado do Sistema A**, então ela renderiza para o **v03-12** — a
+versão do BH, que **tem aceite gravado**. A troca de 27/09 alterou o texto que aquele
+recibo aponta, sem re-aceite, que é exatamente o que a regra 7 proíbe. Restaurar a
+frase original **devolve o texto ao que era quando os aceites foram colhidos**.
 
 **Ordem: motor primeiro, app depois — e a ordem aqui é de QUALIDADE, não de risco.**
 Verifiquei em vez de afirmar: o `git diff` de `supabase/functions/` tem **uma única
@@ -26,7 +44,7 @@ Motor primeiro só garante que o admin nunca veja a tela nova sem o dado.
 admin conseguir **operá-lo depois**, e eram dois buracos do gatilho "antes de abrir
 o 2º circuito".
 
-**1. A tela afirmava que o teto era fixo em 20 — e não era (0.10.9).** O motor
+**1. *(DESFEITO — ver acima.)* A tela afirmava que o teto era fixo em 20 — e não era (0.10.9).** O motor
 sempre aceitou `maxAtletas` no `DEFINIR_CONFIG_CIRCUITO`; a tela não oferecia o
 campo, e ainda dizia *"O teto é fixo em 20 atletas por circuito"*, frase que deixou
 de ser verdade quando a criação passou a perguntar (8 a 20). Quem criasse um
@@ -123,9 +141,20 @@ reescrita `!== null &&`; a **guarda irmã** no `login-atleta` não — e a mesma
 regressão voltava verde. Terceira vez na série que um conserto cai de um lado só, e
 virou regra no `GOVERNANCA_AGENTES.md`.
 
-**Bateria: 776 → 845 asserções, 0 falhas, saída 0.** 26 mutações no total (14 da
-fatia + 12 das condições), **26 vermelhas** — quatro delas só ficaram vermelhas
-**depois** de o instrumento ou a asserção serem consertados.
+**5. E a asserção do teto passou a proteger o lado certo — depois de passar VERDE
+pelo motivo errado.** Ao inverter a regra, mutei o texto de rating de volta para a
+redação de 27/09 e **a bateria ficou verde**. A asserção negativa proibia *"até 20,
+definido pelo organizador"* — que é a redação do texto de **pontos**. O texto de
+**rating** diz *"até 20 **atletas por temporada**, definido pelo organizador"*, com
+quatro palavras no meio, então a regex nunca casava com o que ela existia para
+proibir. E a positiva casava uma frase que os **dois** textos contêm, ficando verde
+com um deles sabotado. As duas passaram a ser ancoradas na **frase inteira do seu
+próprio texto**. É a quarta vez nesta sessão que uma asserção minha passa pelo motivo
+errado, e a segunda por regex escrita a partir do texto vizinho.
+
+**Bateria: 776 → 836 asserções, 0 falhas, saída 0.** 34 mutações no total (14 da
+fatia, 12 das condições, 8 da inversão do teto), **34 vermelhas** — cinco delas só
+ficaram vermelhas **depois** de o instrumento ou a asserção serem consertados.
 
 ---
 

@@ -956,21 +956,31 @@ atleta inscrito."*
   `REGULAMENTOS_NOVOS_CIRCUITOS.md` promete que ele é "a critério do admin do
   circuito"; o código entrega "sempre não", travado na criação. Um organizador
   que queira fazer torneio não tem caminho. *(Admin)*
-- **0.10.9 — ✅ RESOLVIDO em 28/09/2026 (no fonte).** *Não havia campo para editar o
-  teto de um circuito existente.* O motor sempre aceitou
-  (`DEFINIR_CONFIG_CIRCUITO`); a tela não oferecia — e, pior, **afirmava** "o teto é
-  fixo em 20 atletas por circuito", frase que deixou de ser verdade quando a criação
-  passou a perguntar (8 a 20). Criar com o teto errado era irreversível pela tela.
-  O card de configuração ganhou o campo, e **a tela bloqueia fora da faixa 8–20** em
-  vez de deixar o motor aparar em silêncio — aparar sem dizer faria o admin digitar
-  50, ver "salvo" e ficar com 20 sem saber.
-  **E a tela diz o que acontece de verdade ao baixar o teto:** conferi executando o
-  motor que o teto é lido **só na entrada** (`INCLUIR_NO_CIRCUITO` e a promoção do
-  backlog), então baixá-lo **não remove ninguém** — só fecha a entrada até alguém
-  sair. Com o circuito mais cheio que o teto novo, a tela avisa isso em vez de
-  bloquear: fechar a entrada com o circuito cheio é decisão legítima do admin.
-  **16 asserções**, 8 delas rodando o motor de verdade — inclusive a que prova, pela
-  execução, que baixar o teto não mexe em quem já está dentro. *(Admin)*
+- **0.10.9 — ❌ DESFEITO em 29/09/2026, por decisão do Juliano. O item deixa de
+  existir.** *Não havia campo para editar o teto de um circuito existente.*
+  A fatia chegou a ser escrita e revisada pelas 8 duplas (commit `f229432`), e foi
+  **desfeita antes de subir**. O motivo não é técnico: perguntei ao Juliano se a
+  decisão dele de **10/09/2026** — *o teto é regra da plataforma, 20 para todos* —
+  ficava revogada pelo código, que tinha ido para o outro lado em duas ondas. Ela
+  **fica de pé**.
+  Ou seja: **não havia campo porque não deve haver campo.** O item era uma lacuna
+  aparente, criada por eu ter lido a divergência entre código e decisão como defeito
+  do código. O conserto certo foi o inverso: o motor voltou a cravar 20, nenhuma tela
+  pergunta, e os três textos do regulamento voltaram a dizer "20".
+  **O que sobrou de bom da fatia desfeita, e por isso ela valeu:**
+  (a) o defeito de **ressincronização** que ela expôs — campo inicializado a partir do
+  estado sem `useEffect`, que fazia o Salvar gravar o valor de um circuito no outro —
+  virou asserção **genérica**: todo campo do painel nessa condição precisa
+  ressincronizar, e ela pega o próximo que nascer torto;
+  (b) a frase falsa do card (*"é o texto que os atletas **aceitaram**"*, falso para 14
+  de 15 no BH) foi achada e corrigida, e o card passou a **contar** quem não aceitou;
+  (c) o **0.10.7** foi resolvido em duas pontas e fica (ver acima);
+  (d) e o terceiro furo de instrumento em 48h foi encontrado — o banco falso não
+  recortava colunas na escrita.
+  **E desfez um desvio da regra 7 que não estava registrado:** a linha do teto é
+  conteúdo compartilhado do Sistema A e renderiza para o **v03-12**, que tem aceite.
+  A troca de 27/09 alterou o texto que aquele recibo aponta, sem re-aceite. Restaurar
+  a frase original devolve o texto ao que era quando os aceites foram colhidos.
 
 ### Gatilho: antes do 1º circuito de terceiro (e pede advogado)
 
@@ -1008,28 +1018,18 @@ atleta inscrito."*
 
 ### Sem gatilho — higiene
 
-- **0.10.26 — O teto editável alcança o BH, cujo regulamento crava "20" sem
-  ressalva.** *(Curador, 28/09/2026 — hoje inofensivo; decidir antes do carimbo da
-  v03-13.)* O card de configuração **não é escopado por circuito**, então o teto do
-  BH passou a ser editável pela tela — e isso funciona de verdade (grava em
-  `configuracao.max_atletas`, que é o que o motor lê para o BH). Só que os dois
-  regulamentos do BH — `v03-12.md` (o que os 15 aceitaram) e `v03-13.md` (o que
-  está para ser carimbado) — dizem *"Cada circuito tem um teto de **20** atletas"*,
-  **sem** o "até 20, definido pelo organizador" que o texto de circuito novo ganhou
-  em 27/09. **Não é defeito de código:** o motor apara em 8..20 e nenhum consumidor
-  de `max_atletas` remove atleta. É a proteção que existe para o circuito novo (o
-  texto acompanhando a coluna) **não existindo** para o legado. Três saídas, e a
-  escolha é do Guardião do Regulamento com o do Admin: (a) escopar o campo para
-  não-BH; (b) corrigir a frase na **v03-13, antes do carimbo** — é onde sai barato,
-  porque a v03-13 ainda não tem aceite; (c) aceitar e registrar. **O v03-12 não se
-  toca** — é o registro do que os atletas aceitaram.
-- **0.10.27 — O "✅ Incluir agora" oferece o que o servidor recusa quando o
-  circuito está cheio.** *(Admin, 28/09/2026 — era inalcançável até o teto virar
-  editável.)* O gate da tela (`podeIncluirBacklog`) confere o último terço e o
-  pagamento, **não o teto**. O admin clica e o motor recusa com *"Circuito cheio
-  (N/X). Abra uma vaga antes de incluir."* A mensagem do servidor é boa, então não
-  quebra nada — mas é o padrão "a tela oferece, o servidor recusa" que já apareceu
-  três vezes nesta onda. `motivoBloqueioInclusao` já tem o formato para dizer
+- **0.10.26 — ✅ RESOLVIDO em 29/09/2026 pela decisão do teto fixo.** *O teto editável
+  alcançava o BH, cujo regulamento crava "20" sem ressalva.* Com o teto voltando a ser
+  regra da plataforma, o texto do BH está **correto** e o campo que o contradizia
+  deixou de existir. O item nasceu e morreu no mesmo dia, e fica como registro de que
+  a pergunta foi feita.
+- **0.10.27 — O "✅ Incluir agora" oferece o que o servidor recusa quando o circuito
+  está cheio.** *(Admin, 28/09/2026 — continua aberto, e é pré-existente.)* O gate da
+  tela (`podeIncluirBacklog`) confere o último terço e o pagamento, **não o teto**. O
+  admin clica e o motor recusa com *"Circuito cheio (N/X)."* A mensagem do servidor é
+  boa, então não quebra nada — mas é o padrão "a tela oferece, o servidor recusa" que
+  já apareceu três vezes nesta onda. Alcançável com o circuito cheio em 20, que é o
+  caso do BH quando lotar. `motivoBloqueioInclusao` já tem o formato para dizer
   "circuito cheio (N/X)".
 - **0.6.29 — O rate-limit do CPF é chaveado num cabeçalho que o cliente pode
   escolher.** *(Segurança, 28/09/2026 — precisa de verificação AO VIVO, não de

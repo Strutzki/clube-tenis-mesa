@@ -251,18 +251,23 @@ achar). Também está no rascunho do CHANGELOG e em "Backend", no topo.
   da lista (`VERSOES_COM_TORNEIO`) travado por asserção, não só a forma. Passa
   hoje, 0 falhas. O item ficava aberto no índice desde 10/09; a correção não
   tinha sido refletida aqui.
-- **`max_atletas` configurável, mas o Cap. 11 crava "20"** — ⚠️ **REABERTO em
-  28/09/2026 pelo item 0.10.9, e precisa de uma palavra do Juliano.**
-  *Registro anterior, de 27/09:* ~~RESOLVIDO, decisão do Juliano de 10/09/2026:
-  deixou de ser configurável por circuito — teto fixo 8..20 para todos, e o texto
-  "teto de 20" também é fixo (não ramifica).~~
-  **As duas metades daquela premissa caíram.** O teto **é** por circuito: a criação
-  pergunta (8 a 20) desde a Fatia A1, e a configuração passou a editá-lo pela tela
-  em 28/09 (0.10.9). E o texto **deixou** de ser fixo: `src/App.jsx` diz *"um teto
-  de **até 20** atletas por temporada, **definido pelo organizador**"* desde 27/09.
-  **Falta decidir:** a decisão de 10/09 fica revogada? O código se afastou dela em
-  duas ondas seguidas, e o índice registrava como encerrada uma escolha que não é
-  mais a que está em produção. Achado pelo Curador na revisão de `f229432`.
+- ~~`max_atletas` configurável, mas o Cap. 11 crava "20"~~ — **RESOLVIDO DE VERDADE
+  em 29/09/2026, e agora o código concorda.** Decisão do Juliano de 10/09/2026,
+  **reconfirmada por ele em 29/09**: o teto é regra da **plataforma** — 20 para todo
+  circuito — e não se configura por circuito.
+  **O que tinha acontecido, e vale registrar porque foi um erro de leitura meu:** o
+  índice dava o item por encerrado desde 10/09, mas o **código nunca foi alinhado** —
+  a criação perguntava o teto (8 a 20) desde a Fatia A1. Em 27/09 o Guardião do
+  Regulamento notou a divergência, e eu alinhei **o lado errado**: mudei o
+  *regulamento* para *"até 20, definido pelo organizador"*, em vez de alinhar o
+  código à decisão. Em 28/09 fui adiante e criei o campo do teto na tela (0.10.9).
+  Em 29/09 perguntei ao Juliano, e a decisão de 10/09 **ficou de pé** — então a fatia
+  foi **desfeita antes de subir** e o código voltou para a decisão: o motor crava 20,
+  nenhuma tela pergunta, e os três textos do regulamento voltaram a dizer "20".
+  **E isso desfez um desvio da regra 7 que eu não tinha registrado:** a linha do teto
+  é conteúdo compartilhado do Sistema A, então a troca de 27/09 alterou o texto que o
+  recibo do **v03-12** aponta, sem re-aceite. Restaurar a frase original devolve
+  aquele texto ao que era quando os aceites foram colhidos.
 - ~~`GOVERNANCA_AGENTES.md` — a seção "Vereditos já emitidos (histórico)" não
   ganha entrada desde 07/09/2026"~~ — **RESOLVIDO em 14/09/2026.** A entrada
   da Onda 0.10 (0.10.1+0.10.2+0.10.6) foi escrita, com as três opções do

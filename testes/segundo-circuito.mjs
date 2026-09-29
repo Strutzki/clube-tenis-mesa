@@ -79,7 +79,7 @@ secao("O 2º circuito nasce de PONTOS, e o servidor devolve o recibo do que grav
   const { banco, motor } = await montarMotor({ funcoes: { arquivar_partidas_temporada_circuito: () => null } });
   const r = await comoAdmin(motor, "CRIAR_CIRCUITO", {
     slug: "bh-pontos", nome: "Circuito BH — Pontos", cidade: "Belo Horizonte", uf: "MG",
-    sistema: "B", pareamento: "sorteio", maxAtletas: 16,
+    sistema: "B", pareamento: "sorteio", maxAtletas: 16, // pedido de propósito: tem de ser IGNORADO
   });
   ok(r.corpo?.sucesso === true, `CRIAR_CIRCUITO de pontos respondeu sucesso (veio: ${JSON.stringify(r.corpo?.erro ?? r.corpo?.sucesso)})`);
 
@@ -87,7 +87,8 @@ secao("O 2º circuito nasce de PONTOS, e o servidor devolve o recibo do que grav
   igual(criado?.sistema, "B", "o circuito nasce no Sistema B");
   igual(criado?.pareamento, "sorteio", "com o pareamento que o admin escolheu");
   igual(criado?.regulamento_versao, "vB-01", "e carimbado com o regulamento de PONTOS, não com o v03-12 do BH");
-  igual(criado?.max_atletas, 16, "e com o teto que o admin pediu, não com 20 fixo");
+  igual(criado?.max_atletas, 20,
+    "e com o teto da PLATAFORMA (20) — o `maxAtletas: 16` do pedido é ignorado de propósito");
   igual(criado?.inscricoes_abertas, false, "nasce com as inscrições FECHADAS — ninguém entra por acidente");
 
   // 0.10.7: o recibo. Antes o select não trazia a versão, então a tela de
@@ -95,115 +96,48 @@ secao("O 2º circuito nasce de PONTOS, e o servidor devolve o recibo do que grav
   // e o admin descobria (ou não) depois, por outro caminho.
   igual(r.corpo?.dados?.regulamento_versao, "vB-01",
     "e o SERVIDOR devolve a versão, para a confirmação mostrar o que foi gravado e não o que a tela mandou");
-  igual(r.corpo?.dados?.max_atletas, 16,
-    "e devolve o teto gravado também");
+  igual(r.corpo?.dados?.max_atletas, 20,
+    "e devolve o teto gravado também — que é o da plataforma, não o pedido");
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-secao("O teto de um circuito que JÁ EXISTE passa a ser editável (0.10.9)");
+secao("O teto NÃO é configurável por circuito — decisão do Juliano, 29/09/2026");
 {
-  // Rodando o motor de verdade: é a única forma de provar que o campo chega ao
-  // banco. A tela mandar o payload não prova nada se o motor ignorar a chave.
+  // HISTÓRIA, porque esta seção já defendeu o contrário e o registro importa:
+  // a fatia 0.10.9 chegou a criar o campo do teto na tela (o motor já aceitava), e
+  // foi DESFEITA antes de subir. Perguntei ao Juliano se a decisão dele de 10/09 —
+  // "o teto é regra da plataforma, 20 para todos" — ficava revogada pelo código,
+  // que tinha ido para o outro lado em duas ondas. Ela **fica de pé**. Então quem
+  // estava fora da decisão era o código, não o texto.
   const { banco, motor } = await montarMotor({
     circuitos: [circuito(BH), circuito(NOVO, { slug: "bh-pontos", sistema: "B", pareamento: "sorteio", max_atletas: 20, regulamento_versao: "vB-01" })],
     funcoes: { arquivar_partidas_temporada_circuito: () => null },
   });
   const r = await comoAdmin(motor, "DEFINIR_CONFIG_CIRCUITO", { circuitoId: NOVO, nome: "Circuito BH — Pontos", maxAtletas: 12 });
-  ok(r.corpo?.sucesso === true, `DEFINIR_CONFIG_CIRCUITO respondeu sucesso (veio: ${JSON.stringify(r.corpo?.erro ?? r.corpo?.sucesso)})`);
   const c = banco.acha("circuitos", x => x.id === NOVO);
-  igual(c?.max_atletas, 12, "o teto novo chega ao banco");
-  igual(c?.regulamento_versao, "vB-01", "e a versão do regulamento NÃO é tocada por um salvamento de configuração");
-}
-{
-  // A faixa do motor é 8..20, e ele APARA em silêncio. Isso é backstop aceitável
-  // (8..20 é sempre válido), mas aparar sem dizer faria o admin digitar 50, ver
-  // "salvo" e ficar com 20 sem saber — por isso a TELA bloqueia antes. As duas
-  // asserções abaixo fixam o backstop; as de fonte adiante fixam o bloqueio.
-  const { banco, motor } = await montarMotor({
-    // ⚠️ Parte de 12, NÃO de 20: com 20 no cenário, a asserção do aparo passava
-    // mesmo que o motor não escrevesse nada. Era verde pelo motivo errado.
-    circuitos: [circuito(BH), circuito(NOVO, { slug: "bh-pontos", sistema: "B", pareamento: "sorteio", max_atletas: 12 })],
-    funcoes: { arquivar_partidas_temporada_circuito: () => null },
-  });
-  await comoAdmin(motor, "DEFINIR_CONFIG_CIRCUITO", { circuitoId: NOVO, maxAtletas: 50 });
-  igual(banco.acha("circuitos", x => x.id === NOVO)?.max_atletas, 20, "teto acima de 20 é aparado para 20 pelo motor");
-  await comoAdmin(motor, "DEFINIR_CONFIG_CIRCUITO", { circuitoId: NOVO, maxAtletas: 3 });
-  igual(banco.acha("circuitos", x => x.id === NOVO)?.max_atletas, 8, "e abaixo de 8 é elevado para 8 — o mínimo do Cap. 13");
-}
-{
-  // Baixar o teto NÃO tira ninguém: ele é conferido só na ENTRADA. Provado
-  // executando, porque é exatamente o medo de quem vai mexer no campo novo.
-  const ATL = "cccc0001-0000-4000-8000-000000000001";
-  const { banco, motor } = await montarMotor({
-    circuitos: [circuito(BH), circuito(NOVO, { slug: "bh-pontos", sistema: "B", pareamento: "sorteio", max_atletas: 20 })],
-    atletas: [atleta(ATL, { status: "ativo", pendente_circuito: false })],
-    circuito_atletas: [{ id: "mmmm0001-0000-4000-8000-000000000001", circuito_id: NOVO, atleta_id: ATL, status: "ativo", pendente_circuito: false, saldo_temp: 0, vitorias: 0, derrotas: 0 }],
-    funcoes: { arquivar_partidas_temporada_circuito: () => null },
-  });
-  const antes = banco.tabelas.circuito_atletas.filter(m => m.circuito_id === NOVO && m.status === "ativo").length;
-  await comoAdmin(motor, "DEFINIR_CONFIG_CIRCUITO", { circuitoId: NOVO, maxAtletas: 8 });
-  const depois = banco.tabelas.circuito_atletas.filter(m => m.circuito_id === NOVO && m.status === "ativo").length;
-  igual(depois, antes, "baixar o teto NÃO remove ninguém do circuito — ele só fecha a entrada");
+  igual(c?.max_atletas, 20, "mandar `maxAtletas` na configuração NÃO muda o teto — ele não é mais escrito por aqui");
+  igual(c?.nome_circuito, "Circuito BH — Pontos", "e o resto da configuração continua funcionando");
+  igual(c?.regulamento_versao, "vB-01", "e a versão do regulamento não é tocada por um salvamento de configuração");
+  ok(r.corpo?.sucesso === true, "a chamada não falha — o campo é ignorado, não recusado");
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────
 secao("A tela deixou de mentir sobre o teto, e passou a mostrar o regulamento");
 {
-  // A frase que estava no card de configuração até 28/09/2026.
+  // A afirmação "o teto é fixo em 20 atletas por circuito" saiu do card em 28/09,
+  // e o campo que a substituiu saiu em 29/09. O que sobrou é o certo: a tela não
+  // pergunta o teto em lugar nenhum, e a criação AVISA qual é.
   ok(!/O teto é fixo em 20 atletas por circuito/.test(fonteSemComentario),
-    "a afirmação 'o teto é fixo em 20 atletas por circuito' saiu da tela — ela era falsa desde que a criação passou a perguntar");
-
-  // O campo novo, e o bloqueio em vez do aparo silencioso.
-  // Mesma redação nos dois lugares (criação e configuração) — eram "Máx. de
-  // atletas" e "Máximo de atletas no circuito", com duas ajudas quase iguais.
-  igual((fonte.match(/>Máx\. de atletas<\/(div|label)>/g) || []).length, 2,
-    "o campo do teto tem a MESMA redação na criação e na configuração");
-  ok(/const tetoValido = Number\(tetoEdit\) >= 8 && Number\(tetoEdit\) <= 20;/.test(fonte),
-    "e a tela valida a mesma faixa do motor (8 a 20)");
-  ok(/disabled=\{!tetoValido\}/.test(fonte),
-    "e BLOQUEIA o salvamento fora da faixa, em vez de deixar o motor aparar em silêncio");
-  // O MOTIVO do botão morto fica imediatamente abaixo dele — padrão da casa. Em
-  // f229432 ele estava a ~78px, atrás de um bloco com borda própria.
-  ok(/Ajuste o teto para um número entre 8 e 20 para poder salvar\./.test(fonte),
-    "e o motivo do botão desabilitado está escrito, logo abaixo dele");
-
-  // ── CONTRASTE: cor semântica na BORDA/FUNDO, nunca no texto pequeno ───────
-  // Em f229432 os três tons do card ficaram em 3,00 / 3,06 / 3,96:1 — todos
-  // abaixo dos 4,5:1 que a WCAG AA pede para texto pequeno — e na ordem errada:
-  // o texto "está normal" era o mais legível e os dois de alerta os menos. Esta
-  // lição já estava escrita neste mesmo arquivo, sobre esta mesma cor, na
-  // `AcaoErroBar`. Elemento gráfico tem piso 3:1; texto pequeno, 4,5:1.
-  const cardCfg = fonte.slice(fonte.indexOf("⚙️ Configuração do circuito"), fonte.indexOf("💾 Salvar", fonte.indexOf("⚙️ Configuração do circuito")));
-  ok(cardCfg.length > 0, "o card de configuração foi localizado no fonte");
-  ok(!/fontSize:11,color:"#c25a45"/.test(cardCfg) && !/color: tetoValido \? "#7d9188" : "#c25a45"/.test(cardCfg),
-    "nenhum texto de 11px do card usa #c25a45, que dá 3,06:1 — abaixo do mínimo de 4,5:1");
-  ok(!/fontSize:11,color:"#9C6F3E"/.test(cardCfg),
-    "nem #9C6F3E, que dá 3,00:1");
-  ok(/borderLeft:"3px solid #c25a45"/.test(cardCfg) && /borderLeft:"3px solid #9C6F3E"/.test(cardCfg),
-    "as duas cores semânticas vivem na BORDA, onde o piso é 3:1 e elas passam");
-  ok(/color:"#f8c4b4"/.test(cardCfg) && /color:"#e8c9a0"/.test(cardCfg),
-    "e o texto dos dois avisos usa tons legíveis — #f8c4b4 (8,55:1) e #e8c9a0");
-  // Manda só o que MUDOU: antes ia `nome` e `maxAtletas` sempre, então quem
-  // entrava para corrigir o nome regravava o teto — e no BH reescrevia
-  // `configuracao.nome_circuito` a cada gravação de teto.
-  ok(/payload\.maxAtletas = Number\(tetoEdit\);/.test(fonte),
-    "o Salvar manda o teto quando ele mudou");
-  ok(/if \(Object\.keys\(payload\)\.length === 0\) return;/.test(fonte),
-    "e não chama o servidor quando nada mudou");
-  ok(!/payload:\{nome:nomeEdit\.trim\(\)\|\|"Clube do Tênis de Mesa", maxAtletas:/.test(fonte),
-    "e a forma que mandava os dois sempre não voltou");
-
-  // O aviso de baixar o teto com o circuito mais cheio que ele.
-  // ⚠️ `<=`, não `<`. A fila do backlog congela quando `teto <= dentro`, não só
-  // quando é menor — com 8 dentro e teto 8, zero promovidos e, antes, zero aviso.
-  ok(/const tetoFechaEntrada = tetoValido && Number\(tetoEdit\) <= ativosNoCircuito;/.test(fonte),
-    "o aviso dispara quando o teto FECHA A ENTRADA (<=), não só quando é menor que os de dentro");
-  ok(!/Number\(tetoEdit\) < ativosNoCircuito/.test(fonteSemComentario),
-    "e a forma `<`, que deixava o caso 'teto igual ao número de dentro' sem aviso, não voltou");
-  ok(/atletas no backlog deixam de entrar automaticamente/.test(fonte),
-    "e o aviso nomeia quem de fato é afetado: os do backlog, que param de entrar");
-  ok(/não tira ninguém/.test(fonte),
-    "e diz o que acontece de verdade — não tira ninguém, só fecha a entrada");
+    "a frase antiga do card não voltou");
+  ok(!/Máx\. de atletas<\/(div|label)>/.test(fonte),
+    "e não há campo de teto em tela nenhuma — nem na criação, nem na configuração");
+  ok(!/tetoEdit|tetoValido|tetoFechaEntrada/.test(fonteSemComentario),
+    "nem o estado que sustentava o campo");
+  ok(/Todo circuito tem teto de <strong[^>]*>20 atletas<\/strong> por temporada/.test(fonte),
+    "a criação avisa qual é o teto — o admin não descobre depois");
+  ok(/não se configura por circuito/.test(fonte),
+    "e diz que é regra da plataforma, não escolha dele");
 }
 {
   // 0.10.7 — o admin VÊ a versão. Só leitura, e a tela diz por quê.
@@ -317,10 +251,11 @@ secao("O que NÃO mudou: o carimbo de quem já aceitou e o sistema do circuito")
   // do 0.6.22 está sendo tomada, não de que algo quebrou.
   ok(!/case "TROCAR_SISTEMA"/.test(motorFonte),
     "não existe ação para trocar o sistema de um circuito — o 2º circuito é NOVO, não o BH convertido");
-  ok(/if \(p\.maxAtletas !== undefined\) \{/.test(motorFonte),
-    "e o teto continua sendo a única coisa nova que a configuração escreve");
-  ok(/if \(!Number\.isFinite\(n\)\) return jsonResponse/.test(motorFonte),
-    "e um teto não-numérico é RECUSADO, não vira 20 em silêncio — o resto do motor recusa em vez de adivinhar");
+  const motorSemComentario = motorFonte.replace(/\/\/[^\n]*/g, "");
+  ok(!/p\.maxAtletas/.test(motorSemComentario),
+    "o motor não lê `maxAtletas` do cliente em lugar nenhum — nem na criação, nem na configuração");
+  ok(/const maxAtletas = 20;/.test(motorFonte),
+    "a criação crava 20, o teto da plataforma");
   // Mesma razão: até o PRÓXIMO `case "`, não `+1200`. O case tinha 836 caracteres
   // e a janela 1200 — 364 de folga num case que acumula campos de configuração.
   // Com ele crescido, a escrita proibida cairia FORA da janela e a bateria ficaria

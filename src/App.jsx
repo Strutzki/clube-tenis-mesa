@@ -1339,11 +1339,10 @@ function reducer(state, action) {
     }
 
     case "DEFINIR_CONFIG_CIRCUITO": {
-      const { nome, dataInicio, maxAtletas } = action.payload || {};
+      const { nome, dataInicio } = action.payload || {};
       return { ...state,
         ...(nome !== undefined ? { nomeCircuito: nome || "Clube do Tênis de Mesa" } : {}),
         ...(dataInicio !== undefined ? { dataInicioTemporada: dataInicio || null } : {}),
-        ...(maxAtletas !== undefined ? { maxAtletas: Number(maxAtletas) || 20 } : {}),
       };
     }
 
@@ -3050,14 +3049,23 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
         ]}/>
         <Box cor="#6a9d7a" titulo="🎟️ Teto do Circuito & Fila de Espera">
           <Ul items={[
-            // 27/09/2026: dizia "teto de 20", número fixo. Mas `max_atletas` É
-            // configurável por circuito, entre 8 e 20 (o motor faz
-            // Math.min(20, Math.max(8, ...)) na criação E na edição). 20 é o máximo da
-            // plataforma, não o teto de cada circuito: um circuito de 12 vagas teria um
-            // regulamento prometendo 20. Achado pelo Guardião do Regulamento, que
-            // notou que eu havia importado para o TETO o argumento das RODADAS —
-            // rodadas deixaram de ser configuráveis, o teto não.
-            "Cada circuito tem um teto de até 20 atletas por temporada, definido pelo organizador",
+            // ⚠️ ESTE BLOCO É COMPARTILHADO COM O v03-12 — a versão do BH, que TEM
+            // aceite gravado. Por isso ele tem história, e ela precisa ficar escrita:
+            //
+            // Até 27/09/2026 dizia "teto de 20", número fixo. Naquele dia eu troquei
+            // para "até 20, definido pelo organizador", porque `max_atletas` ERA
+            // configurável por circuito e o texto prometia o que o código não
+            // cumpria. A correção era necessária, mas ela **alterou o texto que o
+            // recibo do v03-12 aponta**, sem re-aceite — o que a regra 7 proíbe. Foi
+            // um desvio meu, e não estava registrado.
+            //
+            // Em 29/09/2026 o Juliano decidiu manter a escolha de 10/09: o teto é
+            // regra da PLATAFORMA, 20 para todos, e não se configura por circuito. O
+            // motor voltou a cravar 20. Então "teto de 20" voltou a ser **verdade**,
+            // e restaurar a frase original **desfaz** o desvio de 27/09 em vez de
+            // criar outro: o texto do v03-12 volta a ser o que era quando os aceites
+            // foram colhidos.
+            "Cada circuito tem um teto de 20 atletas por temporada",
             "Com o circuito cheio, novos interessados entram em fila de espera, por ordem de chegada",
             "Vagas que abrem (desistência, não-renovação ou suspensão) são preenchidas pela fila, na ordem — mediante aprovação do administrador",
           ]}/>
@@ -3165,7 +3173,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
           <Ul items={[
             "Pré-abertura: a próxima temporada pode ser aberta antes de a atual terminar — inscrição, renovação e pagamento ficam disponíveis sem interromper a temporada em curso",
             "Prioridade de renovação: nos 7 dias anteriores ao início, os atletas do circuito atual e os aprovados aguardando vaga têm prioridade para renovar e garantir a vaga",
-            "Após o prazo de prioridade, as vagas não confirmadas abrem para a fila de espera, respeitando o teto de atletas do circuito (até 20)",
+            "Após o prazo de prioridade, as vagas não confirmadas abrem para a fila de espera, respeitando o teto de 20 atletas do circuito",
             "A vaga só é garantida com o pagamento da temporada confirmado pelo administrador",
             "Rating nunca zera — acumulado entre temporadas e anos",
             "Ranking zera no início de cada nova temporada (saldo de pontos)",
@@ -3318,7 +3326,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
             atleta encontra primeiro. Corrigido em 27/09/2026 (Guardião do Regulamento);
             o regulamento de rating já dizia isso com letra. */}
         <p style={s.p}>A inscrição é feita pelo próprio app. O atleta entra em <span style={s.dest}>0 pontos</span> e, depois de aprovado pelo administrador, entra na fila para ser pareado nas rodadas.</p>
-        <p style={s.p}><span style={s.dest}>O circuito tem um teto de atletas por temporada</span> — até 20, definido pelo organizador. Se estiver cheio, a inscrição aprovada fica em <span style={s.dest}>fila de espera</span> e entra quando abrir vaga: aprovação não é o mesmo que vaga garantida.</p>
+        <p style={s.p}><span style={s.dest}>O circuito tem um teto de 20 atletas por temporada</span> — regra da plataforma, igual para todos. Se estiver cheio, a inscrição aprovada fica em <span style={s.dest}>fila de espera</span> e entra quando abrir vaga: aprovação não é o mesmo que vaga garantida.</p>
         <p style={s.p}><span style={s.dest}>Não há entrada nas duas últimas rodadas</span> da temporada. Quem for aprovado nesse período estreia na temporada seguinte, e aí desde a primeira rodada.</p>
         <p style={s.p}>A temporada só começa com <span style={s.dest}>no mínimo 8 atletas</span> ativos. Com menos que isso, o início é adiado — o administrador pode prorrogar as inscrições ou esperar. Mas se, <span style={s.dest}>durante</span> a temporada, o número de ativos cair abaixo de 8, a temporada <span style={s.dest}>continua normalmente</span> com quem ficou: a queda não interrompe o circuito.</p>
       </div>
@@ -7463,17 +7471,16 @@ function CriarCircuitoCard({ chamarAdminAction }) {
   const [slug, setSlug] = useState("");
   const [sistema, setSistema] = useState(null);       // "A" | "B"
   const [pareamento, setPareamento] = useState(null); // "sorteio" | "grupos"
-  const [maxAtletas, setMaxAtletas] = useState("20");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
   const [criado, setCriado] = useState(null);
 
   const slugLimpo = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
-  const podeCriar = !!(nome.trim() && slugLimpo.length >= 2 && slugLimpo !== "bh" && sistema && (sistema === "A" || pareamento) && Number(maxAtletas) >= 8 && Number(maxAtletas) <= 20);
+  const podeCriar = !!(nome.trim() && slugLimpo.length >= 2 && slugLimpo !== "bh" && sistema && (sistema === "A" || pareamento));
 
   function reset() {
     setNome(""); setCidade(""); setUf(""); setSlug(""); setSistema(null);
-    setPareamento(null); setMaxAtletas("20"); setErro(""); setCriado(null);
+    setPareamento(null); setErro(""); setCriado(null);
   }
   async function criar() {
     setSalvando(true); setErro(""); setCriado(null);
@@ -7485,7 +7492,6 @@ function CriarCircuitoCard({ chamarAdminAction }) {
         slug: slugLimpo,
         sistema,
         pareamento: sistema === "B" ? pareamento : null,
-        maxAtletas: Number(maxAtletas) || 20,
       });
       setCriado(dados);
     } catch (e) {
@@ -7613,10 +7619,12 @@ function CriarCircuitoCard({ chamarAdminAction }) {
                   </div>
                 )}
 
-                <div style={{marginTop:14}}>
-                  <div style={lbl}>Máx. de atletas</div>
-                  <input value={maxAtletas} onChange={e=>setMaxAtletas(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric" style={{...inp, maxWidth:120}}/>
-                  <div style={{fontSize:11,color: (Number(maxAtletas)>=8 && Number(maxAtletas)<=20) ? T.cinza : T.vermelho,marginTop:4}}>De 8 a 20 atletas. Abaixo de 8, o pareamento repetiria confrontos na mesma temporada.</div>
+                {/* O CAMPO DO TETO SAIU EM 29/09/2026 — decisão do Juliano,
+        mantendo a de 10/09: 20 atletas para todo circuito, regra da
+        plataforma. O motor crava 20 no `CRIAR_CIRCUITO`; isto aqui é só o
+        aviso, para o admin não descobrir depois. */}
+                <div style={{marginTop:14,fontSize:11.5,color:"#9db3a8",lineHeight:1.55}}>
+                  Todo circuito tem teto de <strong style={{color:T.offwhite}}>20 atletas</strong> por temporada — é regra da plataforma, igual para todos, e não se configura por circuito. Cheio, os aprovados ficam em fila de espera.
                 </div>
 
                 {erro && <div style={{fontSize:13,color:T.vermelho,marginTop:14}}>{erro}</div>}
@@ -8266,35 +8274,14 @@ function RegulamentoDoCircuitoCard({ versaoAtual, nomeCircuito, athletes, chamar
 
 function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg, msgsStatus }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
-  // ROADMAP 0.10.9: o motor sempre aceitou `maxAtletas` no DEFINIR_CONFIG_CIRCUITO;
-  // a tela e que nao oferecia -- e ainda afirmava "o teto e fixo em 20", que deixou
-  // de ser verdade quando a criacao passou a perguntar (8 a 20).
-  const [tetoEdit, setTetoEdit] = useState(String(state.maxAtletas || 20));
+
   // Ressincroniza quando o nome muda no banco (recarga, troca de circuito, ou
   // correção feita por fora). Sem isto, o campo guardava o valor da montagem e
   // o botão Salvar o regravava por cima — desfazendo em silêncio uma alteração
   // feita enquanto esta aba estava aberta.
   useEffect(() => { setNomeEdit(state.nomeCircuito || ""); }, [state.nomeCircuito]);
-  // O MESMO para o teto, e o campo nasceu SEM isto em f229432 — herdando, palavra
-  // por palavra, o defeito que o comentário acima descreve. Três guardiões pegaram
-  // (Admin, Designer, Confiabilidade), e o caminho é o comum, não o exótico:
-  // `AdminDashboard` NÃO remonta na troca de circuito (é o único da lista sem
-  // `key={circuitoSelId}`), então o campo ficava com o teto do circuito ANTERIOR —
-  // a tela já exibia o número errado — e o Salvar, que manda `maxAtletas` sempre,
-  // gravava esse valor velho no circuito novo. Em silêncio.
-  useEffect(() => { setTetoEdit(String(state.maxAtletas || 20)); }, [state.maxAtletas]);
+
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
-  // Teto (ROADMAP 0.10.9). A mesma faixa do motor: 8 a 20. A tela BLOQUEIA fora
-  // dela em vez de deixar o motor aparar em silencio -- aparar sem dizer faria o
-  // admin digitar 50, ver "salvo" e ficar com 20 sem saber.
-  const tetoValido = Number(tetoEdit) >= 8 && Number(tetoEdit) <= 20;
-  const ativosNoCircuito = ativos.length;
-  // ⚠️ `<=`, não `<`. A fila do backlog congela quando `teto <= atletas dentro`
-  // (`promoverBacklog`: `vagas = max - nCirc; if (vagas <= 0) return 0`). Com 8
-  // dentro e o admin digitando 8 — a forma mais natural de dizer "não quero
-  // crescer mais" — o aviso não aparecia e a fila parava. Provado rodando o motor
-  // pelo Guardião da Experiência do Atleta: teto 8 com 8 dentro = 0 promovidos.
-  const tetoFechaEntrada = tetoValido && Number(tetoEdit) <= ativosNoCircuito;
   // Quem NAO aceitou a versao em vigor. A funcao ja existia (`atletasSemAceite`,
   // 19/09) e e' a mesma que alimenta o aviso previo e o card do regulamento -- as
   // tres listas foram alinhadas de proposito, porque a divergencia entre elas era
@@ -8646,36 +8633,13 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
         <input value={nomeEdit} onChange={e=>setNomeEdit(e.target.value)}
           style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:10,outline:"none",boxSizing:"border-box"}}/>
 
-        <label style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>Máx. de atletas</label>
-        <input value={tetoEdit} onChange={e=>setTetoEdit(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric"
-          style={{background:"#1C2B27",border:`1px solid ${tetoValido?"rgba(255,255,255,0.1)":"#c25a45"}`,borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,maxWidth:110,marginBottom:6,outline:"none",boxSizing:"border-box"}}/>
-        {/* ⚠️ A COR SEMÂNTICA VAI NA BORDA E NO FUNDO, NUNCA NO TEXTO PEQUENO.
-    Em f229432 os três tons deste card ficaram em 3,00 / 3,06 / 3,96:1 — todos
-    abaixo do mínimo de 4,5:1 — e na ordem ERRADA: o texto "está normal" era o
-    mais legível e os dois de alerta os menos. Pior: esta lição já está escrita
-    neste arquivo, na `AcaoErroBar`, sobre esta mesma cor:
-    "#c25a45 sobre este fundo dá 2,7:1, e a WCAG AA pede 4,5:1". Elemento
-    gráfico (borda/fundo) tem piso 3:1; texto pequeno tem 4,5:1. */}
-        {tetoValido ? (
-          <div style={{fontSize:11,color:"#9db3a8",marginBottom: tetoFechaEntrada ? 6 : 10, lineHeight:1.5}}>
-            De 8 a 20. Abaixo de 8, o pareamento repetiria confrontos na mesma temporada.
-          </div>
-        ) : (
-          <div style={{fontSize:11,color:"#f8c4b4",background:"rgba(220,90,48,0.12)",borderLeft:"3px solid #c25a45",borderRadius:6,padding:"7px 9px",marginBottom:10,lineHeight:1.5}}>
-            O teto tem de ser um número <strong style={{color:"#F0EAE0"}}>de 8 a 20</strong>. Abaixo de 8, o pareamento repetiria confrontos na mesma temporada.
-          </div>
-        )}
-        {/* Baixar o teto NAO tira ninguem de dentro: `max_atletas` e' lido so na
-    ENTRADA (`INCLUIR_NO_CIRCUITO` e `promoverBacklog`) -- conferido executando o
-    motor. Dizer isso na tela em vez de bloquear: e' decisao legitima do admin
-    fechar a entrada com o circuito cheio. */}
-        {tetoFechaEntrada && (
-          <div style={{fontSize:11,color:"#e8c9a0",background:"rgba(156,111,62,0.16)",borderLeft:"3px solid #9C6F3E",borderRadius:6,padding:"7px 9px",marginBottom:10,lineHeight:1.5}}>
-            Hoje há <strong style={{color:"#F0EAE0"}}>{ativosNoCircuito}</strong> atletas no circuito. Um teto de {Number(tetoEdit)} <strong style={{color:"#F0EAE0"}}>não tira ninguém</strong> — só fecha a entrada de novos até alguém sair.
-            {backlogCount > 0 && <> E os <strong style={{color:"#F0EAE0"}}>{backlogCount}</strong> atletas no backlog deixam de entrar automaticamente até abrir vaga — o app não avisa isso a eles.</>}
-          </div>
-        )}
-
+        {/* O CAMPO DO TETO SAIU EM 29/09/2026 — decisão do Juliano, mantendo a de
+    10/09: o teto é regra da PLATAFORMA (20 para todos), não botão do
+    organizador. A fatia 0.10.9 chegou a criá-lo e foi desfeita antes de subir.
+    O que fica da revisão daquela fatia, porque valeu: o defeito de
+    ressincronização que ela expôs (campo inicializado do estado sem
+    `useEffect`) virou asserção GENÉRICA — ela guarda o campo do nome hoje e
+    pega o próximo campo que nascer torto. */}
         <div style={{fontSize:11,color:"#9db3a8",marginBottom:10,lineHeight:1.5,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
           {/* ROADMAP 0.10.7 — o admin nao via a versao do regulamento em tela
       NENHUMA. Meia verdade, e o Guardiao do Admin corrigiu: para o SUPER-ADMIN o
@@ -8701,22 +8665,14 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
     quem entrava para corrigir o nome regravava o teto (e no BH reescrevia
     `configuracao.nome_circuito` a cada gravação de teto, virando o nome padrão
     se o estado estivesse vazio no mount). Pegado por Admin e Segurança. */}
-        <Btn small color="#D85A30" disabled={!tetoValido}
+        {/* Manda só se o nome MUDOU — não chama o servidor à toa, e no BH não
+    reescreve `configuracao.nome_circuito` sem motivo. */}
+        <Btn small color="#D85A30"
           onClick={()=>{
-            const payload = {};
             const nomeNovo = nomeEdit.trim() || "Clube do Tênis de Mesa";
-            if (nomeNovo !== (state.nomeCircuito || "")) payload.nome = nomeNovo;
-            if (Number(tetoEdit) !== Number(state.maxAtletas || 20)) payload.maxAtletas = Number(tetoEdit);
-            if (Object.keys(payload).length === 0) return; // nada mudou: não chama o servidor
-            dispatch({type:"DEFINIR_CONFIG_CIRCUITO",payload});
+            if (nomeNovo === (state.nomeCircuito || "")) return;
+            dispatch({type:"DEFINIR_CONFIG_CIRCUITO",payload:{nome:nomeNovo}});
           }}>💾 Salvar</Btn>
-        {/* O motivo do botao morto fica IMEDIATAMENTE abaixo dele -- o padrao da
-    casa. Em f229432 ele estava a ~78px, atras de um bloco com borda propria. */}
-        {!tetoValido && (
-          <div style={{fontSize:11,color:"#9db3a8",marginTop:6,lineHeight:1.5}}>
-            Ajuste o teto para um número entre 8 e 20 para poder salvar.
-          </div>
-        )}
       </Card>
     </div>
   );

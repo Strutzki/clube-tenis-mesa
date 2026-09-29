@@ -10223,7 +10223,14 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
         <div id="pend-exclusao"/>
         <SecTitle>🗑️ Pedidos de exclusão de dados ({pedidosExclusao.length})</SecTitle>
         <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
-          O atleta pediu a exclusão dos dados (LGPD). Finalizar anonimiza o cadastro e o remove do circuito — as partidas e o histórico dos adversários são preservados. Não dá pra desfazer.
+          {/* Esta frase prometia "remove do circuito" e era FALSA fora do BH até
+              29/09/2026: a `anonimizar-atleta` era um único update em `atletas` e
+              não tocava o vínculo, então o atleta seguia ativo no circuito, seguia
+              sendo pareado, e o recibo de consentimento dele sobrevivia à
+              revogação. Agora a função alcança o vínculo, a sessão e o documento —
+              e a frase passou a ser verdade. (Guardião Jurídico.) */}
+          O atleta pediu a exclusão dos dados (LGPD). Finalizar apaga nome, telefone, apelido, foto e <b style={{color:T.offwhite}}>CPF</b>, encerra a sessão dele e o tira do circuito — as partidas e o histórico dos adversários são preservados, sem o nome. Não dá pra desfazer.
+          {" "}<b style={{color:T.offwhite}}>Se ele voltar um dia, será um cadastro novo</b>: sem o CPF guardado, o app não reconhece que é a mesma pessoa. Decisão do clube em 29/09/2026 — o direito do titular vem antes da trava de duplicata.
         </div>
         {pedidosExclusao.map(a => (
           <Card key={a.id} style={{border:"1px solid rgba(200,90,69,0.35)"}}>
@@ -11216,7 +11223,7 @@ function EditarPerfilView({ athlete, dispatch, onClose, state, telefone }) {
               // tela do admin já dizia isso certo; só a do titular estava errada,
               // que é justamente a que precisa estar certa.
               <div style={{fontSize:11,color:T.madeira,lineHeight:1.5}}>
-                📩 Pedido de exclusão registrado{athlete.exclusaoSolicitadaEm ? ` em ${fmtDate(String(athlete.exclusaoSolicitadaEm).slice(0,10))}` : ""}. O administrador vai tirar você do circuito e anonimizar seus dados pessoais (nome, telefone, apelido e foto). As partidas que você jogou continuam registradas, porque fazem parte do histórico dos seus adversários.
+                📩 Pedido de exclusão registrado{athlete.exclusaoSolicitadaEm ? ` em ${fmtDate(String(athlete.exclusaoSolicitadaEm).slice(0,10))}` : ""}. O administrador vai tirar você do circuito e apagar seus dados pessoais (nome, telefone, apelido, foto e CPF). As partidas que você jogou continuam registradas sem o seu nome, porque fazem parte do histórico dos seus adversários. Se um dia quiser voltar, será um cadastro novo — o clube não terá como reconhecer que você já participou, e seu histórico não volta.
               </div>
             ) : !confirmandoExcl ? (
               <button onClick={()=>setConfirmandoExcl(true)} style={{fontFamily:T.mono,fontSize:11,letterSpacing:0.5,color:T.vermelho,background:"transparent",border:`1px solid ${T.vermelho}55`,padding:"8px 12px",borderRadius:10,cursor:"pointer"}}>
@@ -11224,8 +11231,23 @@ function EditarPerfilView({ athlete, dispatch, onClose, state, telefone }) {
               </button>
             ) : (
               <div style={{background:`${T.vermelho}12`,border:`1px solid ${T.vermelho}44`,borderRadius:10,padding:"12px 14px"}}>
+                {/* DECISÃO DO JULIANO, 29/09/2026 (fecha o 0.7.2 do ROADMAP):
+                    "vamos excluir quando o cliente pedir, mas deixar claro os
+                    impactos que pode causar caso resolva voltar no futuro".
+                    O que muda: o CPF (guardado só como código embaralhado, nunca
+                    como número) passa a ser APAGADO junto. Ele era o que permitia
+                    reconhecer a mesma pessoa num cadastro novo — e é exatamente
+                    essa consequência que o titular tem de ler ANTES de confirmar,
+                    não descobrir depois. */}
+                <div style={{fontSize:12,color:T.offwhite,lineHeight:1.6,marginBottom:10}}>
+                  Isto solicita a <b>exclusão dos seus dados pessoais</b> (nome, telefone, apelido, foto e CPF). Como esses dados são necessários para jogar, você <b>será removido do circuito</b>.
+                </div>
+                <div style={{fontSize:11,color:"#e8c9a0",lineHeight:1.6,marginBottom:10,background:"rgba(156,111,62,0.12)",border:"1px solid rgba(156,111,62,0.4)",borderRadius:8,padding:"10px 12px"}}>
+                  <b style={{color:T.offwhite}}>Se você quiser voltar no futuro:</b> será um cadastro totalmente novo. O clube <b>não terá como reconhecer</b> que você já participou — seu histórico, seus pontos e sua posição em temporadas anteriores <b>não voltam</b>, e você recomeça do zero. Isso não tem como ser desfeito depois.
+                  <div style={{marginTop:6,color:"#9db3a8"}}>As partidas que você já jogou continuam registradas sem o seu nome, porque fazem parte do histórico dos seus adversários.</div>
+                </div>
                 <div style={{fontSize:12,color:T.offwhite,lineHeight:1.5,marginBottom:10}}>
-                  Isto solicita a <b>exclusão dos seus dados pessoais</b> (nome, telefone, foto). Como esses dados são necessários para jogar, você <b>será removido do circuito</b>. O administrador processa o pedido. Deseja continuar?
+                  O administrador processa o pedido. Deseja continuar?
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <Btn small color={T.vermelho} disabled={pedindoExcl} onClick={async ()=>{

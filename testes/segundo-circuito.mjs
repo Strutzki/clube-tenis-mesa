@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   montarMotor, comoAdmin, circuito, atleta, partida,
-  ok, igual, secao, placar, BH,
+  ok, igual, secao, placar, BH, PIN,
 } from "./ferramentas.mjs";
 import { carregarFuncao } from "./carrega-motor.mjs";
 
@@ -1705,6 +1705,101 @@ secao("O rodízio: a escala da temporada inteira, sem repetir ninguém");
     const { confrontos } = await temporadaCompleta(8, "grupos");
     igual(confrontos.length - new Set(confrontos).size, 0,
       "no modo grupos por faixa também não há repetição");
+  }
+}
+
+secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado pessoal");
+{
+  // ⚠️ Esta função NUNCA TINHA SIDO EXECUTADA por teste nenhum. Ela é a que apaga
+  // dado pessoal a pedido do titular, e a única asserção que existia sobre ela
+  // descrevia o estado que ela deixa — lida do código, não medida.
+  //
+  // O Guardião Jurídico provou rodando: ela era UM ÚNICO update em `atletas`.
+  // Depois de "finalizar exclusão", em circuito não-BH:
+  //   · o vínculo seguia `status: 'ativo'`, e o INICIAR_ETAPA ainda o pareava;
+  //   · `aceite_regulamento`, `versao_regulamento` e `data_aceite_regulamento`
+  //     continuavam lá — o titular revogava e o banco seguia PROVANDO que ele
+  //     tinha aceitado;
+  //   · a sessão do aparelho dele continuava válida;
+  //   · e a tela do admin prometia "remove do circuito", o que era falso.
+  //
+  // DECISÃO DO JULIANO em 29/09/2026, fechando o 0.7.2: o CPF (guardado só como
+  // código embaralhado) passa a ser apagado junto, com a consequência escrita na
+  // tela ANTES de o titular confirmar — ele volta como cadastro novo, e o clube
+  // não tem como reconhecê-lo.
+  const CIRC = "dddd0000-1111-2222-3333-444444444444";
+  const ALVO = "dddd0000-0000-0000-0000-0000000000a1";
+  const OUTRO = "dddd0000-0000-0000-0000-0000000000a2";
+
+  const cenarioLgpd = async () => montarMotor({
+    funcao: "anonimizar-atleta",
+    circuitos: [circuito(BH), circuito(CIRC, { slug: "lgpd", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01" })],
+    atletas: [
+      atleta(ALVO, { nome: "Fulano de Tal", telefone: "31988887777", apelido: "Fu", foto_url: "http://x/f.jpg", exclusao_solicitada_em: "2026-09-20T10:00:00Z" }),
+      atleta(OUTRO, { nome: "Sicrano" }),
+    ],
+    circuito_atletas: [
+      { circuito_id: CIRC, atleta_id: ALVO, status: "ativo", pendente_circuito: false, chave: "k1",
+        aceite_regulamento: true, versao_regulamento: "vB-01", data_aceite_regulamento: "2026-09-01T10:00:00Z" },
+      { circuito_id: CIRC, atleta_id: OUTRO, status: "ativo", aceite_regulamento: true, versao_regulamento: "vB-01" },
+    ],
+    outras: {
+      atleta_documento: [
+        { atleta_id: ALVO, cpf_hash: "hash-do-alvo", data_nascimento: "2012-01-01", responsavel_nome: "Mãe do Fulano", responsavel_cpf_hash: "hash-da-mae" },
+        { atleta_id: OUTRO, cpf_hash: "hash-do-outro" },
+      ],
+      atleta_sessao: [
+        { id: "s-alvo", atleta_id: ALVO, token_hash: "t1", expira_em: new Date(Date.now() + 3600e3).toISOString() },
+        { id: "s-outro", atleta_id: OUTRO, token_hash: "t2", expira_em: new Date(Date.now() + 3600e3).toISOString() },
+      ],
+    },
+  });
+
+  const { banco, motor } = await cenarioLgpd();
+  const r = await motor.chamar({ pin: PIN, id: ALVO });
+  ok(r.corpo?.sucesso === true, `a exclusão conclui (erro: ${JSON.stringify(r.corpo?.erro)})`);
+
+  // ── A identidade global ───────────────────────────────────────────────────
+  const g = banco.acha("atletas", a => a.id === ALVO);
+  igual(g?.nome, "Atleta removido", "o nome sai da identidade global");
+  ok(String(g?.telefone || "").startsWith("removido:"), "o telefone vira um token não-identificável");
+  igual(g?.apelido, null, "o apelido sai");
+  igual(g?.foto_url, null, "a foto sai");
+  igual(g?.status, "arquivado", "e o cadastro fica arquivado");
+
+  // ── O VÍNCULO com o circuito — era o que faltava ──────────────────────────
+  const v = banco.acha("circuito_atletas", c => c.circuito_id === CIRC && c.atleta_id === ALVO);
+  igual(v?.status, "arquivado", "o vínculo com o circuito também é arquivado — a tela do admin promete isso");
+  igual(v?.chave, null, "ele sai da chave");
+  igual(v?.aceite_regulamento, false,
+    "e o RECIBO DE CONSENTIMENTO é revogado no vínculo — o banco não pode continuar provando um aceite que o titular revogou");
+  igual(v?.versao_regulamento, null, "a versão aceita sai junto");
+  igual(v?.data_aceite_regulamento, null, "e a data também");
+
+  // ── O CPF — a decisão do Juliano ──────────────────────────────────────────
+  igual(banco.tabelas.atleta_documento.filter(d => d.atleta_id === ALVO).length, 0,
+    "o documento é APAGADO: some o código do CPF, a data de nascimento e o nome do responsável legal");
+
+  // ── A sessão aberta ───────────────────────────────────────────────────────
+  igual(banco.tabelas.atleta_sessao.filter(x => x.atleta_id === ALVO).length, 0,
+    "a sessão dele é encerrada — sem isto o aparelho continuava entrando no app depois da exclusão");
+
+  // ── E NADA do outro atleta é tocado ───────────────────────────────────────
+  igual(banco.acha("atletas", a => a.id === OUTRO)?.nome, "Sicrano", "o outro atleta não é tocado");
+  igual(banco.acha("circuito_atletas", c => c.atleta_id === OUTRO)?.aceite_regulamento, true,
+    "o recibo do outro atleta continua de pé");
+  igual(banco.tabelas.atleta_documento.filter(d => d.atleta_id === OUTRO).length, 1,
+    "e o documento do outro continua lá");
+  igual(banco.tabelas.atleta_sessao.filter(x => x.atleta_id === OUTRO).length, 1,
+    "e a sessão do outro também");
+
+  // ── Sem PIN não apaga nada ────────────────────────────────────────────────
+  {
+    const { banco: b2, motor: m2 } = await cenarioLgpd();
+    const r2 = await m2.chamar({ pin: "pin-errado", id: ALVO });
+    ok(r2.corpo?.sucesso === false, "com PIN errado a exclusão é recusada");
+    igual(b2.acha("atletas", a => a.id === ALVO)?.nome, "Fulano de Tal", "e nada é apagado");
+    igual(b2.tabelas.atleta_documento.filter(d => d.atleta_id === ALVO).length, 1, "o documento continua lá");
   }
 }
 

@@ -96,5 +96,52 @@ Deno.serve(async (req) => {
   }).eq("id", id);
   if (error) throw error;
 
+  // ── O VINCULO COM CADA CIRCUITO ───────────────────────────────────────────
+  // ⚠️ Ate 29/09/2026 esta funcao era UM UNICO update em `atletas`. Achado do
+  // Guardiao Juridico, provado rodando o motor: depois de "finalizar exclusao" a
+  // linha do atleta em `circuito_atletas` continuava `status: 'ativo'`,
+  // `pendente_circuito: false`, e -- o pior -- com `aceite_regulamento: true`,
+  // `versao_regulamento` e `data_aceite_regulamento` PRESERVADOS. Ou seja: o
+  // titular revogava o consentimento e o banco continuava provando que ele tinha
+  // aceitado. E o `INICIAR_ETAPA` do circuito ainda o pareava normalmente.
+  // No BH nao aparecia, porque la o roster e a propria linha de `atletas`.
+  // A tela do admin promete "anonimiza o cadastro E O REMOVE DO CIRCUITO" -- era
+  // falso fora do BH.
+  const { error: eVinc } = await supabase.from("circuito_atletas").update({
+    status: "arquivado",
+    pendente_circuito: false,
+    chave: null,
+    aceite_regulamento: false,
+    data_aceite_regulamento: null,
+    versao_regulamento: null,
+    motivo_reprovacao: null,
+    quer_renovar: false,
+    renovacao_em: null,
+  }).eq("atleta_id", id);
+  if (eVinc) throw eVinc;
+
+  // ── AS SESSOES ABERTAS ────────────────────────────────────────────────────
+  // Sem isto o aparelho dele continuava entrando no app depois da exclusao.
+  await supabase.from("atleta_sessao").delete().eq("atleta_id", id);
+
+  // ── O DOCUMENTO (CPF) ─────────────────────────────────────────────────────
+  // DECISAO DO JULIANO, 29/09/2026, fechando a pendencia 0.7.2 do ROADMAP:
+  // "vamos excluir quando o cliente pedir, mas deixar claro os impactos que pode
+  // causar caso resolva voltar no futuro".
+  //
+  // O que sai daqui: o hash do CPF, a data de nascimento, e o nome e o hash do CPF
+  // do responsavel legal quando o atleta era menor. Nenhum deles e o numero em si
+  // -- o CPF nunca foi guardado em claro --, mas o hash e identificador estavel de
+  // pessoa, e reter identificador de quem pediu exclusao contraria o pedido.
+  //
+  // O QUE SE PERDE, e esta escrito no texto que o atleta le antes de confirmar:
+  //   · a trava de duplicata deixa de reconhece-lo -- ele pode se cadastrar de novo
+  //     como pessoa nova, e o clube nao tem como saber que e a mesma pessoa;
+  //   · em consequencia, um banimento por fraude (que o regulamento declara
+  //     permanente) deixa de ser aplicavel automaticamente a um cadastro novo. Isto
+  //     e um custo REAL da decisao, e fica registrado aqui para nao ser descoberto
+  //     por acidente depois. O controlador escolheu o direito do titular.
+  await supabase.from("atleta_documento").delete().eq("atleta_id", id);
+
   return jsonResponse({ sucesso: true });
 });

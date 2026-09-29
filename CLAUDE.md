@@ -1,8 +1,18 @@
 # Como se trabalha neste projeto
 
-Plataforma de circuitos de tênis de mesa, **em produção**. O circuito de Belo
-Horizonte (`slug: bh`) roda com atletas reais, pagantes, e é o circuito legado:
-tudo que existe hoje foi construído em volta dele. A arquitetura e o estado do
+Plataforma de circuitos de tênis de mesa. O circuito de Belo Horizonte
+(`slug: bh`) é o circuito **legado**: tudo que existe hoje foi construído em volta
+dele.
+
+⚠️ **O BH ERA UM CIRCUITO DE TESTE, E ELE JÁ ENCERROU** — dito pelo Juliano em
+29/09/2026: *"o circuito BH era de teste e já encerrou"*. Até essa data este arquivo
+dizia que ele rodava "com atletas reais, pagantes", e eu conduzi semanas de trabalho
+sob essa premissa: cada mudança que o tocasse levava comparação antes/depois, hash
+dos dados e rodada completa de guardiões. **O foco agora é a entrada de circuitos
+NOVOS**, e ele pediu para não mexer mais no BH nem tratar de cobrança nele.
+O que isso muda no dia a dia: o BH deixa de ser a razão de ser cauteloso. O cuidado
+continua valendo para **circuito com atleta de verdade** — que é o que o 2º circuito
+vai ser. Não é a cerimônia que estava errada; é o alvo dela que mudou. A arquitetura e o estado do
 desenvolvimento estão em `docs/ESTADO-DEV-app-tenis-de-mesa.md` e no
 `README.md` — não repita aqui. Este arquivo é sobre **como mexer sem quebrar**.
 
@@ -54,7 +64,7 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **956 asserções** (conferido ao vivo em 28/09/2026, somando as 13
+Hoje são **966 asserções** (conferido ao vivo em 28/09/2026, somando as 13
 seções que a bateria imprime). **Não cite este número de memória** — ele mudou em
 sete ondas seguidas; rode `npm run teste` e leia. O `atualizar.sh` roda isso
 antes de publicar e se recusa a subir com teste vermelho. O `testes/README.md`

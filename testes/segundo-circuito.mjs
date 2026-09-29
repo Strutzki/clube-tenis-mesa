@@ -257,6 +257,69 @@ secao("O BH: o slug reservado, e o campo que não pode guardar o circuito errado
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+secao("Em circuito NOVO, gravação que falha não responde 'sucesso' (0.6.18)");
+{
+  // Achado do Guardião de Confiabilidade em 27/09/2026; consertado em 29/09, ANTES
+  // de existir o 2º circuito — que é quando ele deixaria de ser inalcançável.
+  //
+  // O DEFEITO, e por que ele é de circuito NOVO e não do BH: no BH, `atletas` é a
+  // fonte e `circuito_atletas` é o espelho; se o espelho falhar, engolir o erro é o
+  // certo, porque a operação do BH não pode quebrar por causa de uma cópia. Em
+  // circuito não-BH **não há fonte do outro lado**: `status`, `pendente_circuito` e
+  // `chave` são colunas SAZONAIS, então o bloco de identidade sai vazio e o upsert
+  // É A ÚNICA ESCRITA. Engolir o erro ali fazia a ação responder `sucesso: true`
+  // com NADA gravado — e a tela se autocorrigia no `loadFromSupabase()` seguinte,
+  // mostrando o atleta como antes. O admin via "sucesso" e o oposto do que pediu,
+  // sem uma pista do que houve.
+  //
+  // É CLASSE, NÃO CASO: vale para `ARQUIVAR_ATLETA`, `DESARQUIVAR_ATLETA`,
+  // `INCLUIR_NO_CIRCUITO`, `RECUSAR_CIRCUITO` e `DEFINIR_DESCONTO_ATLETA` — todas
+  // passam pelo `writeAtleta`. Por isso o teste exercita mais de uma.
+  const ATL = "dddd0001-0000-4000-8000-000000000881";
+
+  async function cenarioNovo() {
+    const { motor, banco } = await montarMotor({
+      circuitos: [circuito(BH), circuito(NOVO, { slug: "novo-pontos", sistema: "B", pareamento: "grupos", fase: "inscricoes" })],
+      atletas: [atleta(ATL, { nome: "Atleta do circuito novo" })],
+      circuito_atletas: [{ id: "cn-1", circuito_id: NOVO, atleta_id: ATL, status: "ativo", pendente_circuito: true, saldo_temp: 0, vitorias: 0, derrotas: 0 }],
+      funcoes: { arquivar_partidas_temporada_circuito: () => null },
+    });
+    return { motor, banco };
+  }
+
+  // Com o banco recusando a gravação sazonal, a ação NÃO pode dizer sucesso.
+  for (const [acao, payloadExtra] of [
+    ["INCLUIR_NO_CIRCUITO", {}],
+    ["ARQUIVAR_ATLETA", {}],
+  ]) {
+    const { motor, banco } = await cenarioNovo();
+    banco.recusar("circuito_atletas", "upsert", { message: "permission denied", code: "42501" });
+    const r = await comoAdmin(motor, acao, { circuitoId: NOVO, id: ATL });
+    ok(r.status >= 400, `${acao}: com a gravação recusada, a ação NÃO responde sucesso (veio ${r.status})`);
+    ok(r.corpo?.sucesso !== true, `${acao}: e o corpo não diz sucesso`);
+    igual(banco.acha("circuito_atletas", m => m.atleta_id === ATL)?.pendente_circuito, true,
+      `${acao}: e o atleta continua como estava — sem meio-estado`);
+  }
+
+  // E o caminho feliz continua funcionando — senão eu teria "consertado" fechando tudo.
+  {
+    const { motor, banco } = await cenarioNovo();
+    const r = await comoAdmin(motor, "INCLUIR_NO_CIRCUITO", { circuitoId: NOVO, id: ATL });
+    igual(r.status, 200, "sem recusa, incluir no circuito novo funciona");
+    igual(banco.acha("circuito_atletas", m => m.atleta_id === ATL)?.pendente_circuito, false,
+      "e o atleta entra de verdade");
+  }
+
+  // ⚠️ O BH NÃO MUDA: lá o espelho continua best-effort, porque lá ele é mesmo
+  // espelho. Se esta asserção ficar vermelha, o conserto vazou para o lado errado.
+  const motorFonte2 = await import("node:fs/promises").then(f => f.readFile("supabase/functions/admin-action/index.ts", "utf-8"));
+  ok(/if \(!ehEspelho\) throw e;/.test(motorFonte2),
+    "o erro só sobe quando a gravação é a ÚNICA — não quando é espelho");
+  ok(/await mirrorSazonal\(circuitoId, atletaId, campos, \{\}, escreveuIdentidade\);/.test(motorFonte2),
+    "e quem decide isso é se algo foi gravado em `atletas` — não uma lista de ações");
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 secao("O que NÃO mudou: o carimbo de quem já aceitou e o sistema do circuito");
 {
   // O motor continua sem ação para trocar o sistema de um circuito (0.6.22), e

@@ -475,7 +475,17 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   outro circuito, e exigir **403 com zero assinaturas**. Com teste de mutação.
   Amarrado ao **0.6.7** (base jurídica) e ao **0.7.1** (`athlete-action` sem token).
 
-- **0.6.18 — `writeAtleta` responde "sucesso" quando a única escrita falhou.**
+- **0.6.18 — ✅ RESOLVIDO em 29/09/2026 (no fonte), antes de existir o 2º circuito.**
+  *`writeAtleta` responde "sucesso" quando a única escrita falhou.*
+  O `mirrorSazonal` passou a saber se é **espelho** ou **escrita única**, e quem
+  decide é o **fato** (algo foi gravado em `atletas`?), não uma lista de ações — que
+  envelheceria na primeira ação nova. No BH nada muda: lá o espelho continua
+  best-effort, porque lá ele é mesmo espelho.
+  **5 asserções rodando o motor** com o banco recusando a gravação, mais o caminho
+  feliz (senão eu teria "consertado" fechando tudo) e a guarda de que o conserto
+  não vazou para o BH. **3 mutações, 3 vermelhas** — inclusive a que faz o erro
+  subir SEMPRE, que quebraria o BH.
+  *Descrição original, mantida como registro:*
   Achado do Guardião de Confiabilidade em 27/09/2026. Em circuito **não-BH**,
   `status` e `pendente_circuito` são colunas sazonais, então `identidade` sai vazio
   e a única escrita é o `mirrorSazonal` — que é *best-effort* e **engole o erro**

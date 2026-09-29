@@ -50,7 +50,20 @@ function seasonalOnly(obj: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 // Espelha campos sazonais de um atleta na sua participacao no circuito (upsert por (circuito_id, atleta_id)).
-async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+// `ehEspelho`: esta gravacao e o ESPELHO de outra que ja aconteceu, ou e a UNICA?
+// No BH, `atletas` e a fonte e isto aqui e copia -- se a copia falhar, engolir o
+// erro e o certo: a operacao do BH nao pode quebrar por causa do espelho.
+// Em circuito NAO-BH nao ha fonte do outro lado: `status`, `pendente_circuito`,
+// `chave` e afins sao colunas SAZONAIS, entao o bloco de identidade sai vazio e
+// ISTO E A UNICA ESCRITA. Engolir o erro ali fazia a acao responder `sucesso: true`
+// com NADA gravado -- e a tela se autocorrigia no `loadFromSupabase()` seguinte,
+// mostrando o atleta como antes. O admin via "sucesso" e o oposto do que pediu.
+// E CLASSE, NAO CASO: ARQUIVAR, DESARQUIVAR, INCLUIR_NO_CIRCUITO, RECUSAR_CIRCUITO
+// e DEFINIR_DESCONTO_ATLETA passam todas por aqui.
+// (ROADMAP 0.6.18, achado pelo Guardiao de Confiabilidade em 27/09/2026 e
+// consertado em 29/09 -- antes de existir o 2o circuito, que e quando isto
+// deixaria de ser inalcancavel.)
+async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Record<string, unknown>, extra: Record<string, unknown> = {}, ehEspelho = true) {
   try {
     const dados = seasonalOnly(campos);
     if (Object.keys(dados).length === 0 && Object.keys(extra).length === 0) return;
@@ -58,6 +71,7 @@ async function mirrorSazonal(circuitoId: string, atletaId: string, campos: Recor
       .upsert({ circuito_id: circuitoId, atleta_id: atletaId, ...dados, ...extra }, { onConflict: "circuito_id,atleta_id" });
     if (error) throw error;
   } catch (e) {
+    if (!ehEspelho) throw e; // unica escrita: o erro TEM de subir, senao mente "sucesso"
     console.warn("dual-write circuito_atletas falhou (BH segue via atletas):", (e as any)?.message);
   }
 }
@@ -111,11 +125,14 @@ async function writeAtleta(circuitoId: string, atletaId: string, campos: Record<
   if ((await getSistema(circuitoId)) === "B") {
     delete identidade.rating; delete identidade.rating_pico; delete identidade.rating_historico;
   }
-  if (Object.keys(identidade).length > 0) {
+  const escreveuIdentidade = Object.keys(identidade).length > 0;
+  if (escreveuIdentidade) {
     const { error } = await supabase.from("atletas").update(identidade).eq("id", atletaId);
     if (error) throw error;
   }
-  await mirrorSazonal(circuitoId, atletaId, campos);
+  // Se NADA foi para `atletas`, o upsert abaixo e a UNICA escrita da acao inteira --
+  // entao ele nao pode ser best-effort. Ver o comentario do `mirrorSazonal`.
+  await mirrorSazonal(circuitoId, atletaId, campos, {}, escreveuIdentidade);
 }
 
 // --- Leitura por circuito (Fase 4B passo 3) ------------------------------

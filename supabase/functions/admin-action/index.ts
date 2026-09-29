@@ -567,6 +567,36 @@ function idsNoRankingFinal(partidas: any[]): Set<string> {
   return ids;
 }
 
+// Reconta os W.O. injustificados de um atleta A PARTIR DAS PARTIDAS, e grava.
+//
+// Ate 29/09/2026 este numero era ACUMULADO: cada `APLICAR_WO` culposo somava +1 e
+// nada nunca subtraia. Tres defeitos saiam dai, e os tres batem no Cap. 07, que
+// SUSPENDE o atleta no 2o W.O. injustificado:
+//   · aplicar o W.O. duas vezes na mesma partida (dois cliques, chamada repetida,
+//     o admin corrigindo o faltoso) somava duas vezes -- suspensao com um W.O. so;
+//   · aprovar a justificativa depois (`RESPONDER_WO`) NAO devolvia o ponto: o
+//     atleta ficava suspenso por uma falta que o proprio organizador perdoou;
+//   · trocar o tipo de culposo para justificado tinha o mesmo efeito.
+//
+// Derivar em vez de acumular e a mesma escolha de `byesDaTemporada` e
+// `idsNoRankingFinal`: a partida e o fato, o contador e so uma leitura dele. E
+// idempotente por construcao -- rodar duas vezes da o mesmo numero.
+//
+// A regra, valida nos DOIS sistemas: conta partida nao rejeitada em que o atleta e
+// o faltoso e o tipo e `culposo` ou `a_favor`. `justificado` nunca conta. No
+// Sistema A o `a_favor` grava `wo_faltoso_id: null`, entao ele simplesmente nao
+// aparece -- mesmo resultado que a conta antiga dava la, de proposito.
+async function recontarWoCulposos(circuitoId: string, atletaId: string) {
+  const { data: doAtleta, error } = await supabase
+    .from("partidas").select("wo_tipo,rejeitado")
+    .eq("circuito_id", circuitoId).eq("wo_faltoso_id", atletaId);
+  if (error) throw error;
+  const n = (doAtleta ?? []).filter((m: any) =>
+    !m.rejeitado && (m.wo_tipo === "culposo" || m.wo_tipo === "a_favor")).length;
+  await writeAtleta(circuitoId, atletaId, { wo_culposos_temporada: n });
+  return n;
+}
+
 // ── Pareamento do Sistema B (sem rating) ──────────────────────────────────────
 function embaralhar<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -1362,6 +1392,15 @@ Deno.serve(async (req) => {
             }).eq("id", matchId);
             if (errMatch) throw errMatch;
           }
+          // O Cap. 07 suspende no 2o W.O. INJUSTIFICADO. Se o organizador ja tinha
+          // aplicado a falta como culposa e so depois aprovou a justificativa, o
+          // atleta ficava suspenso por uma falta que o proprio organizador
+          // perdoou: nada devolvia o ponto. A recontagem resolve os dois sistemas
+          // de uma vez -- no B a partida vira `justificado`, no A vira `rejeitado`,
+          // e nenhum dos dois conta.
+          const { data: mWo } = await supabase.from("partidas").select("wo_faltoso_id").eq("id", matchId).maybeSingle();
+          const faltouId = mWo?.wo_faltoso_id || null;
+          if (faltouId) await recontarWoCulposos(circuitoId, faltouId);
         }
         return jsonResponse({ sucesso: true });
       }
@@ -1594,10 +1633,7 @@ Deno.serve(async (req) => {
           }).eq("id", matchId);
           if (eWoB) throw eWoB;
           // culposo e a_favor contam como W.O. injustificado (suspensão + desempate); justificado não conta.
-          if ((tipo === "culposo" || tipo === "a_favor") && faltIdB) {
-            const { data: caB } = await supabase.from("circuito_atletas").select("wo_culposos_temporada").eq("circuito_id", circuitoId).eq("atleta_id", faltIdB).single();
-            await writeAtleta(circuitoId, faltIdB, { wo_culposos_temporada: ((caB?.wo_culposos_temporada) || 0) + 1 });
-          }
+          if (faltIdB) await recontarWoCulposos(circuitoId, faltIdB);
           return jsonResponse({ sucesso: true });
         }
         if (tipo === "justificado") {
@@ -1613,11 +1649,7 @@ Deno.serve(async (req) => {
           admin_aprovado_em: now, calculado: false,
         }).eq("id", matchId);
         if (error) throw error;
-        if (tipo === "culposo" && faltosoId) {
-          const { data: atl } = await supabase.from("atletas").select("wo_culposos_temporada").eq("id", faltosoId).single();
-          const novo = ((atl?.wo_culposos_temporada) || 0) + 1;
-          await writeAtleta(circuitoId, faltosoId, { wo_culposos_temporada: novo });
-        }
+        if (faltosoId) await recontarWoCulposos(circuitoId, faltosoId);
         return jsonResponse({ sucesso: true });
       }
 

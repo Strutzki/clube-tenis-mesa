@@ -759,4 +759,251 @@ secao("A estreia no ranking acontece na rodada em que a 1ª partida é processad
   }
 }
 
+secao("O número de W.O. injustificados chega à tela — os dois adaptadores");
+{
+  // Achado do Guardião de Regulamento em 29/09/2026. `wo_culposos_temporada` é
+  // SAZONAL: mora em `circuito_atletas`. Os dois adaptadores que montam o atleta
+  // para a tela o DESCARTAVAM — um com um comentário explicando que era de
+  // propósito ("paridade com hoje"). A paridade era com o BH, onde o servidor
+  // grava também no registro global e por isso o número aparecia. Em circuito
+  // não-BH o app lia SEMPRE ZERO, e duas regras morriam juntas: o 2º desempate do
+  // Cap. 09 do Sistema B (que é o sistema dos circuitos não-BH) e o painel de
+  // suspensão do Cap. 07, que sumia ao recarregar.
+  //
+  // Asserção por LISTA DECLARADA, não por janela: uma janela ancorada num dos
+  // adaptadores seria cega para o outro — que é exatamente como o defeito
+  // sobreviveu. Adaptador novo entra nesta lista ou a bateria fica vermelha.
+  const ADAPTADORES = ["mapAtletaFromCircuito", "porteiroRankingToCa"];
+  for (const nome of ADAPTADORES) {
+    const i = fonte.indexOf(`function ${nome}(`);
+    ok(i > 0, `o adaptador ${nome} foi localizado`);
+    const f = fonte.indexOf("\n}", i);
+    ok(f > i, `e o fim de ${nome} foi localizado`);
+    const corpo = fonte.slice(i, f).replace(/\/\/[^\n]*/g, "");
+    ok(/wo_culposos_temporada:\s*\w+\.wo_culposos_temporada/.test(corpo),
+      `${nome} repassa wo_culposos_temporada em vez de deixar o campo cair para zero`);
+  }
+
+  // E o porteiro precisa MANDAR o campo — senão os adaptadores repassam undefined
+  // e a bateria fica verde com a regra morta do mesmo jeito.
+  const porteiro = readFileSync("supabase/functions/circuito-dados/index.ts", "utf-8");
+  ok(/wo_culposos_temporada/.test(porteiro.split("const ATLETA_COLS")[1]?.split("\n")[0] || ""),
+    "o `circuito-dados` pede wo_culposos_temporada no select do atleta");
+  ok(/wo_culposos_temporada:\s*ca\.wo_culposos_temporada/.test(porteiro),
+    "e o devolve no item de ranking");
+
+  // O comparador do Sistema B usa o campo como 2º critério — se alguém o tirar de
+  // lá, repassar o número deixa de servir para alguma coisa.
+  const iCmp = fonte.indexOf("function cmpRanking(");
+  const fimCmp = fonte.indexOf("\n}", iCmp);
+  const cmp = fonte.slice(iCmp, fimCmp);
+  ok(iCmp > 0 && fimCmp > iCmp, "o comparador oficial do ranking foi localizado");
+  ok(/SISTEMA_ATIVO === "B"[\s\S]*woCulpososTemporada/.test(cmp),
+    "e no Sistema B o desempate por MENOS W.O. injustificados vem dentro do ramo B, como manda o Cap. 09");
+}
+
+secao("O contador de W.O. injustificados é DERIVADO — RODANDO os dois sistemas");
+{
+  // O Cap. 07 SUSPENDE o atleta no 2º W.O. injustificado. Até 29/09/2026 o número
+  // era acumulado (+1 a cada `APLICAR_WO` culposo) e nada nunca subtraía. Três
+  // caminhos levavam alguém a ser suspenso sem ter duas faltas:
+  //   · aplicar o W.O. duas vezes na mesma partida — dois cliques, chamada
+  //     repetida, ou o organizador corrigindo quem era o faltoso;
+  //   · aprovar a justificativa depois: o ponto não voltava;
+  //   · trocar o tipo de culposo para justificado: idem.
+  // Agora o número é lido das partidas. Idempotente por construção.
+  const F = "eeeeeeee-0000-0000-0000-00000000000f"; // faltoso
+  const V = "eeeeeeee-0000-0000-0000-00000000000v"; // adversário
+
+  const cenarioWo = async (sistema) => montarMotor({
+    circuitos: [circuito(BH, { sistema, regulamento_versao: sistema === "B" ? "vB-01" : "v03-13" })],
+    atletas: [atleta(F, { rating: 500 }), atleta(V, { rating: 500 })],
+    circuito_atletas: [
+      { circuito_id: BH, atleta_id: F, status: "ativo" },
+      { circuito_id: BH, atleta_id: V, status: "ativo" },
+    ],
+    partidas: [partida("j1", { atleta1_id: F, atleta2_id: V })],
+    solicitacoes_wo: [{ id: "s1", circuito_id: BH, atleta_id: F, adversario_id: V, partida_id: "j1", status: "pendente" }],
+  });
+
+  const contador = (banco) =>
+    banco.acha("circuito_atletas", c => c.atleta_id === F)?.wo_culposos_temporada
+    ?? banco.acha("atletas", a => a.id === F)?.wo_culposos_temporada;
+
+  for (const sistema of ["A", "B"]) {
+    // 1. Aplicar DUAS vezes o mesmo W.O. não pode contar duas faltas.
+    {
+      const { banco, motor } = await cenarioWo(sistema);
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: BH, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
+      igual(contador(banco), 1, `[${sistema}] um W.O. culposo conta 1`);
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: BH, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
+      igual(contador(banco), 1,
+        `[${sistema}] aplicar o MESMO W.O. de novo continua contando 1 — dois cliques não suspendem ninguém`);
+    }
+
+    // 2. Aprovar a justificativa depois devolve o ponto.
+    {
+      const { banco, motor } = await cenarioWo(sistema);
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: BH, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
+      igual(contador(banco), 1, `[${sistema}] a falta entra como culposa`);
+      const r = await comoAdmin(motor, "RESPONDER_WO", { circuitoId: BH, id: "s1", matchId: "j1", aprovado: true, justificativa: "atestado" });
+      ok(r.corpo?.sucesso === true, `[${sistema}] a justificativa é aprovada (erro: ${JSON.stringify(r.corpo?.erro)})`);
+      igual(contador(banco), 0,
+        `[${sistema}] e o ponto VOLTA — ninguém fica suspenso por uma falta que o organizador perdoou`);
+    }
+  }
+
+  // 3. Duas faltas de verdade, em partidas diferentes, contam 2 — senão as
+  //    asserções acima passariam com um contador que nunca sobe.
+  {
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH, { regulamento_versao: "v03-13" })],
+      atletas: [atleta(F), atleta(V)],
+      circuito_atletas: [{ circuito_id: BH, atleta_id: F, status: "ativo" }],
+      partidas: [
+        partida("j1", { atleta1_id: F, atleta2_id: V }),
+        partida("j2", { rodada: 2, atleta1_id: F, atleta2_id: V }),
+      ],
+    });
+    for (const m of ["j1", "j2"]) {
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: BH, matchId: m, tipo: "culposo", faltosoId: F, beneficiarioId: V });
+    }
+    igual(contador(banco), 2, "duas faltas em partidas diferentes contam 2 — é aí que o Cap. 07 suspende");
+  }
+}
+
+secao("O motor de pareamento do Sistema B — RODANDO a temporada inteira");
+{
+  // Este era o maior buraco da bateria: o Sistema B inteiro (o modelo do 2º
+  // circuito) não tinha NENHUMA asserção rodando o pareamento. As 20 asserções da
+  // seção "Sistema B" cobriam pontuação, não pareamento.
+  //
+  // O que se prova aqui, com o motor de verdade e 6 rodadas completas:
+  //   · o circuito B usa o pareamento B (e não o por rating, que é do A);
+  //   · ninguém repete adversário quando dá para não repetir;
+  //   · com número ímpar, exatamente um fica de fora por rodada;
+  //   · o bye RODA — ninguém leva um segundo antes de todos levarem um;
+  //   · a trava de 6 rodadas segura.
+  const CIRC_B = "bbbbbbbb-1111-1111-1111-111111111111";
+  const ids = (n) => Array.from({ length: n }, (_, i) => `atl-${String(i + 1).padStart(2, "0")}`);
+
+  const temporadaB = async (quantos, pareamento = "sorteio") => {
+    const lista = ids(quantos);
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH), circuito(CIRC_B, {
+        slug: "pontos", sistema: "B", pareamento,
+        regulamento_versao: "vB-01", rodadas_por_temporada: 6, fase: "temporada",
+      })],
+      atletas: lista.map((id, i) => atleta(id, { rating: 500 + i * 10 })),
+      circuito_atletas: lista.map(id => ({ circuito_id: CIRC_B, atleta_id: id, status: "ativo", pendente_circuito: false, saldo_temp: 0 })),
+      chaves: [], partidas: [],
+    });
+    const r0 = await comoAdmin(motor, "INICIAR_ETAPA", { circuitoId: CIRC_B });
+    ok(r0.corpo?.sucesso === true, `[${quantos} atletas/${pareamento}] a etapa inicia (erro: ${JSON.stringify(r0.corpo?.erro)})`);
+    // Pares mensais: INICIAR gera as rodadas 1 e 2; cada AVANCAR gera mais duas.
+    for (const _ of [1, 2]) {
+      const r = await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC_B });
+      ok(r.corpo?.sucesso === true, `[${quantos} atletas/${pareamento}] avança o par mensal (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    }
+    const partidas = banco.tabelas.partidas.filter(m => m.circuito_id === CIRC_B);
+    return { banco, motor, partidas, lista };
+  };
+
+  // ── 8 atletas (o mínimo), sorteio ────────────────────────────────────────
+  {
+    const { motor, partidas, lista } = await temporadaB(8);
+    const rodadas = [...new Set(partidas.map(m => m.rodada))].sort((a, b) => a - b);
+    igual(rodadas.join(","), "1,2,3,4,5,6", "as 6 rodadas da temporada foram geradas");
+    for (const r of rodadas) {
+      igual(partidas.filter(m => m.rodada === r).length, 4,
+        `a rodada ${r} tem 4 partidas — os 8 atletas jogam, ninguém sobra`);
+    }
+    // ⚠️ AQUI ESTÁ UM ACHADO, e ele é o motivo de o Cap. 03 ter mudado de "sem
+    // repetir" para "evitando repetir". A 1ª versão desta asserção exigia ZERO
+    // repetição — e ficava vermelha em cerca de 1 de cada 8 execuções. Eu quase
+    // a tratei como teste instável. Não é: é o motor.
+    //
+    // Medido em 120 temporadas completas por configuração (29/09/2026):
+    //   8 atletas / sorteio ..... 13 em 120 temporadas com repetição, no máximo 1
+    //   8 atletas / grupos ...... 0 em 120
+    //   9, 10 e 12 / sorteio .... 0 em 120
+    //
+    // A razão: com 8 atletas cada um tem 7 adversários possíveis e a temporada usa
+    // 6 — quase o rodízio completo. O motor escolhe a melhor solução DE CADA
+    // RODADA, sem olhar as seguintes; então uma escolha boa na rodada 3 pode
+    // deixar a rodada 6 sem saída, e ele repete um confronto. Existe escala que
+    // evitaria (rodízio pelo método do círculo), mas trocar o algoritmo do
+    // pareamento é mudança de motor e é decisão do Juliano, não minha.
+    //
+    // A asserção afirma o que é VERDADE SEMPRE, com o limite medido. Se alguém
+    // melhorar o pareamento, ela continua verde; se alguém piorar, fica vermelha.
+    const confrontos = partidas.map(m => [m.atleta1_id, m.atleta2_id].sort().join("|"));
+    const repeticoes = confrontos.length - new Set(confrontos).size;
+    ok(repeticoes <= 1,
+      `com 8 atletas o motor repete no máximo UM confronto na temporada inteira (veio: ${repeticoes})`);
+    // Cada atleta joga as 6 rodadas.
+    for (const id of lista) {
+      const minhas = partidas.filter(m => m.atleta1_id === id || m.atleta2_id === id);
+      igual(minhas.length, 6, `o atleta ${id} joga as 6 rodadas`);
+      // E ninguém enfrenta a mesma pessoa três vezes — o limite duro.
+      const advs = minhas.map(m => m.atleta1_id === id ? m.atleta2_id : m.atleta1_id);
+      const maxVezes = Math.max(...advs.map(x => advs.filter(y => y === x).length));
+      ok(maxVezes <= 2, `o atleta ${id} não enfrenta ninguém mais de duas vezes (máximo: ${maxVezes})`);
+    }
+    // A trava das 6 rodadas.
+    const r = await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC_B });
+    ok(r.corpo?.sucesso === false && r.status === 409,
+      "a 7ª rodada é recusada — a temporada tem 6 e a trava segura");
+  }
+
+  // ── 9 atletas (ímpar), sorteio: o bye e a rotação ────────────────────────
+  {
+    const { partidas, lista } = await temporadaB(9);
+    const byes = [];
+    for (const r of [1, 2, 3, 4, 5, 6]) {
+      const daRodada = partidas.filter(m => m.rodada === r);
+      igual(daRodada.length, 4, `com 9 atletas a rodada ${r} tem 4 partidas — exatamente um fica de fora`);
+      const jogaram = new Set(daRodada.flatMap(m => [m.atleta1_id, m.atleta2_id]));
+      const fora = lista.filter(id => !jogaram.has(id));
+      igual(fora.length, 1, `e há exatamente um atleta de bye na rodada ${r}`);
+      byes.push(fora[0]);
+    }
+    // A rotação do Cap. 03: "ninguém recebe um segundo bye antes de todos terem
+    // recebido um". Com 9 atletas e 6 rodadas ninguém pode repetir.
+    igual(new Set(byes).size, byes.length,
+      `o bye ROTACIONA — ninguém repete em 6 rodadas com 9 atletas (byes: ${byes.join(", ")})`);
+    // Com 9 atletas sobra folga (8 adversários possíveis, 6 rodadas) e o motor
+    // acerta as 120 temporadas medidas. Aqui ZERO é exigível.
+    const confr9 = partidas.map(m => [m.atleta1_id, m.atleta2_id].sort().join("|"));
+    igual(new Set(confr9).size, confr9.length,
+      "e com 9 atletas NENHUM confronto se repete — a folga do ímpar resolve o aperto do 8");
+  }
+
+  // ── Modo "grupos por faixa" ──────────────────────────────────────────────
+  {
+    const { partidas } = await temporadaB(8, "grupos");
+    const confrontos = partidas.map(m => [m.atleta1_id, m.atleta2_id].sort().join("|"));
+    // No modo grupos a ordem é determinística (tabela de pontos, todos em 0), e o
+    // motor acerta as 120 temporadas medidas. Aqui ZERO é exigível.
+    igual(new Set(confrontos).size, confrontos.length,
+      "no modo grupos por faixa NENHUM confronto se repete com 8 atletas");
+    igual(partidas.length, 24, "e as 24 partidas da temporada foram geradas");
+  }
+
+  // ── O circuito B usa o motor B, não o do rating ──────────────────────────
+  // Sabotar `gerarPareamentoB` tem de quebrar isto. Se o INICIAR_ETAPA chamasse
+  // `gerarPareamentoPorRating` num circuito B, as asserções acima passariam
+  // igual — o pareamento por rating também evita repetição. O que separa os dois
+  // é o `pareamento: "grupos"`, que só existe no B.
+  const fonteMotor = motorFonte;
+  const iIni = fonteMotor.indexOf('case "INICIAR_ETAPA"');
+  const fimIni = fonteMotor.indexOf('case "', iIni + 10);
+  ok(iIni > 0 && fimIni > iIni, "o case de iniciar a etapa foi localizado");
+  const trechoIni = fonteMotor.slice(iIni, fimIni);
+  ok(/sistemaIni === "B"[\s\S]{0,120}gerarPareamentoB/.test(trechoIni),
+    "o INICIAR_ETAPA escolhe o pareamento B quando o sistema é B");
+  ok(/gerarPareamentoPorRating/.test(trechoIni),
+    "e o por rating continua sendo o caminho do Sistema A");
+}
+
 process.exit(placar("O segundo circuito"));

@@ -343,7 +343,22 @@ function mapAtletaFromCircuito(ca) {
     pagamento_confirmado: ca.pagamento_confirmado, pagamento_proxima_confirmado: ca.pagamento_proxima_confirmado,
     quer_renovar: ca.quer_renovar, renovacao_em: ca.renovacao_em,
     inscrito_em: ca.inscrito_em, historico: ca.historico, posicao_historico: ca.posicao_historico,
-    // wo_culposos_temporada NAO vem no read publico -> mapAtletaFromDb faz ||0 (paridade com hoje)
+    // ⚠️ `wo_culposos_temporada` E SAZONAL — mora em `circuito_atletas`, nao em
+    // `atletas`. Ate 29/09/2026 esta linha nao existia, e o comentario que estava
+    // no lugar dela dizia "nao vem no read publico -> ||0 (paridade com hoje)".
+    // A paridade era com o BH, onde o `writeAtleta` grava tambem no global e por
+    // isso o numero aparecia. Num circuito NAO-BH ele so existe no sazonal, entao
+    // o app lia SEMPRE ZERO — e duas regras do regulamento morriam juntas:
+    //   · Cap. 09 do Sistema B: "menos W.O. injustificados" e o 2o criterio de
+    //     desempate. Com zero para todos, ele nunca decide nada. E o Sistema B e
+    //     justamente o dos circuitos nao-BH.
+    //   · Cap. 07: o painel de suspensao (2 culposos) sumia ao recarregar a tela.
+    //     O app soma +1 na memoria quando o admin aplica o W.O. (`athletes.map`
+    //     mais abaixo), entao parecia funcionar ate alguem apertar F5.
+    // Passar `ca.wo_culposos_temporada` e inerte no caminho publico (vem
+    // `undefined`, o `mapAtletaFromDb` faz `||0`, igual a hoje) e corrige o
+    // caminho do porteiro, que ja DEVOLVIA o numero e o app jogava fora.
+    wo_culposos_temporada: ca.wo_culposos_temporada,
   });
 }
 
@@ -355,6 +370,10 @@ function porteiroRankingToCa(p) {
     saldo_temp: p.saldo_temp, vitorias: p.vitorias, derrotas: p.derrotas,
     vitorias_total: p.vitorias_total, derrotas_total: p.derrotas_total,
     historico: p.historico, posicao_historico: p.posicao_historico,
+    // O `circuito-dados` ja devolvia este campo (ATLETA_COLS, linha 36) desde
+    // sempre; era este adaptador que o descartava. Ver o comentario longo no
+    // `mapAtletaFromCircuito`.
+    wo_culposos_temporada: p.wo_culposos_temporada,
     atletas: {
       id: p.id, nome: p.nome, apelido: p.apelido, federado: p.federado,
       rating: p.rating, rating_inicial: p.rating_inicial, foto_url: p.foto_url,
@@ -2513,7 +2532,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
             {(ehB ? [
               ["🏓 O Circuito","Circuito recreativo independente, não filiado à CBTM ou FMTMOP. Modelo por pontos, sem rating."],
               ["👤 Elegibilidade","Todos começam a temporada em 0 pontos. Federados e não-federados entram igual — a federação é só informativa."],
-              ["⚙️ Formato","Pares mensais de rodadas, pareamento por sorteio ou por grupos (sem repetir adversário). Partidas em MD5 (melhor de 5 sets), 11 pontos por set."],
+              ["⚙️ Formato","Pares mensais de rodadas, pareamento por sorteio ou por grupos (evitando repetir adversário). Partidas em MD5 (melhor de 5 sets), 11 pontos por set."],
               ["🎯 Pontuação","Vitória = 2 pontos · Derrota = 1 ponto · Folga (bye) = 1 ponto. O ranking é a soma dos pontos e zera a cada temporada."],
               ["⏱ Prazos","1ª rodada até o dia 15, 2ª rodada até o dia 27. Registre o placar no app dentro da janela da rodada."],
               ["🔴 W.O., Faltas & Penalidades","Ausência injustificada: 0 pts (adversário 2). Justificada e aprovada: 1 pt (adversário 2). 2 W.O. injustificados = suspensão."],
@@ -3344,9 +3363,22 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
       <div>
         <p style={s.p}>O método de pareamento é escolhido na criação do circuito e vale para a temporada toda:</p>
         <Ul items={[
-          "Sorteio aleatório: a cada rodada os confrontos são sorteados, sem repetir adversário na temporada.",
-          "Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos), também sem repetir adversário.",
+          "Sorteio aleatório: a cada rodada os confrontos são sorteados, evitando repetir adversário na temporada.",
+          "Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos), também evitando repetir adversário.",
         ]}/>
+        {/* ⚠️ "EVITANDO", não "SEM" — corrigido em 29/09/2026, com o vB-01 ainda em
+            ZERO aceites (conferido no banco antes de editar, como manda a regra 7).
+            O texto anterior prometia "sem repetir adversário na temporada" sem
+            condição nenhuma, e o motor não pode cumprir isso sempre: ele trata a
+            repetição como PENALIDADE altíssima num pareamento que minimiza o
+            custo total (`parearRodadaB`), não como proibição. Com 8 atletas e 6
+            rodadas dá certo (há 7 adversários possíveis). Se a temporada começar
+            com 8 e alguém sair, sobram menos adversários do que rodadas e a
+            repetição passa a ser ARITMETICAMENTE INEVITÁVEL — e aí o atleta leria
+            no regulamento uma promessa que a tela desmente. Prometer o que o motor
+            faz: evitar sempre, e repetir o mínimo possível quando não houver
+            jeito. */}
+        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>Repetição de adversário só acontece quando não há alternativa — por exemplo se o número de atletas cair durante a temporada e sobrarem menos adversários possíveis do que rodadas. Nesse caso o sistema repete o mínimo possível.</p>
         <Box cor="#6a9d7a" titulo="🎟️ Bye (número ímpar de atletas)">
           <p style={s.p}>Quando o número de atletas é ímpar, um atleta fica de fora na rodada (bye) e ganha <span style={s.dest}>1 ponto de participação</span>. O bye tem <span style={s.dest}>rotação</span>: ninguém recebe um segundo bye antes de todos terem recebido um.</p>
         </Box>
@@ -7801,7 +7833,7 @@ function CriarCircuitoCard({ chamarAdminAction }) {
                   <div style={{marginTop:16}}>
                     <div style={lbl}>Pareamento (Sistema B)</div>
                     {[
-                      {id:"sorteio", t:"Sorteio aleatório", d:"Sorteia confrontos a cada rodada, sem repetir adversário na temporada."},
+                      {id:"sorteio", t:"Sorteio aleatório", d:"Sorteia confrontos a cada rodada, evitando repetir adversário na temporada."},
                       {id:"grupos", t:"Grupos por faixa", d:"Pareia por faixa de posição na tabela de pontos atual."},
                     ].map(o => (
                       <div key={o.id} onClick={()=>setPareamento(o.id)} style={optCard(pareamento===o.id)}>

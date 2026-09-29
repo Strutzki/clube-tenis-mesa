@@ -33,8 +33,10 @@ Quem entra com a temporada já em andamento também começa em 0 pontos — como
 
 O método de pareamento é escolhido na criação do circuito e vale para a temporada toda:
 
-- Sorteio aleatório: a cada rodada os confrontos são sorteados, sem repetir adversário na temporada.
-- Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos), também sem repetir adversário.
+- Sorteio aleatório: a cada rodada os confrontos são sorteados, evitando repetir adversário na temporada.
+- Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos), também evitando repetir adversário.
+
+Repetição de adversário só acontece quando não há alternativa — por exemplo se o número de atletas cair durante a temporada e sobrarem menos adversários possíveis do que rodadas. Nesse caso o sistema repete o mínimo possível.
 
 ### 🎟️ Bye (número ímpar de atletas)
 

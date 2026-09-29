@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 855 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 868 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -174,6 +174,13 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | a recusa deixa de dizer o número prometido | 4 vermelhas |
 | a guarda migra para DEPOIS de o motor saber o sistema | 10 vermelhas — é a posição dela que a torna transversal aos dois sistemas |
 | `AVANCAR_RODADA` ganha guarda de 8 | 2 vermelhas — quebraria a promessa, nos dois regulamentos, de que a temporada CONTINUA se o número cair durante ela |
+| **A janela de entrada do Cap. 11 — 29/09/2026 (6 sabotagens, 6 vermelhas)** | |
+| a inclusão manual volta a ignorar a janela | 4 vermelhas — era o buraco REAL: `INCLUIR_NO_CIRCUITO` não tinha guarda nenhuma, só a tela |
+| a promoção automática volta a ignorar a janela | 1 vermelha — **ficava VERDE antes de a conta ser unificada**, porque o `AVANCAR_RODADA` gateava em linha e o portão dentro de `promoverBacklog` era redundante |
+| a janela desliza uma rodada (compara a atual, não a próxima) | 5 vermelhas |
+| o último terço vira última metade | 2 vermelhas |
+| a janela passa a valer fora da etapa também (travaria as inscrições) | 4 vermelhas |
+| a conta do último terço volta a ser duplicada no `AVANCAR_RODADA` | 2 vermelhas — mesma família da `janelaRenovacao`: duas contas independentes da mesma regra, que nada obriga a concordar |
 | **O 2º circuito — 28/09/2026 (14 sabotagens, 14 vermelhas)** | |
 | motor: o teto volta a ser ignorado no `DEFINIR_CONFIG_CIRCUITO` | 1 vermelha |
 | motor: o mínimo de 8 cai (um teto de 3 passaria) | 1 vermelha |

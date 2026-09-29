@@ -573,7 +573,32 @@ function calcularPrazos(mesRef?: Date) {
 // (inscrito_em) só até preencher as vagas; o excedente segue na fila. Quando o
 // financeiro está ligado, só promove quem já teve o pagamento confirmado — assim
 // vaga contada = vaga de quem vai jogar. Retorna quantos entraram.
+// A ENTRADA FECHA NO ULTIMO TERCO DA TEMPORADA (Cap. 11) -- e ate 29/09/2026 esta
+// regra vivia SO NA TELA (`_entradaPermitida` no `App.jsx`). O motor nao a conhecia,
+// entao a promocao automatica da fila entrava em QUALQUER rodada, inclusive nas duas
+// ultimas, contrariando o texto que o atleta aceitou: "Nao ha entrada nas duas
+// ultimas rodadas da temporada. Quem for aprovado nesse periodo estreia na temporada
+// seguinte, e ai desde a primeira rodada."
+//
+// Pedido do Juliano em 29/09/2026, ao enunciar a regra de entrada: "permitir a
+// entrada de novos desde que cumpra TODAS AS DEMAIS REGRAS DE ENTRADA". Esta era a
+// que faltava do lado do servidor.
+//
+// A conta e a MESMA da tela, de proposito -- com 6 rodadas, o ultimo terco comeca na
+// rodada 5, entao as rodadas 5 e 6 nao recebem entrada. Fora da fase de etapa
+// (inscricoes, pre-abertura) a entrada e sempre permitida.
+async function entradaPermitida(circuitoId: string): Promise<boolean> {
+  const cfg = await getCfg(circuitoId, "fase,rodadas_por_temporada");
+  if (cfg?.fase !== "etapa") return true;
+  const maxRodadas = Number(cfg?.rodadas_por_temporada) || 6;
+  const inicioUltimoTerco = maxRodadas - Math.ceil(maxRodadas / 3) + 1;
+  const { data: partidas } = await supabase.from("partidas").select("rodada").eq("circuito_id", circuitoId);
+  const maxRodada = (partidas ?? []).reduce((m: number, p: any) => Math.max(m, Number(p.rodada) || 0), 0);
+  return (maxRodada + 1) < inicioUltimoTerco;
+}
+
 async function promoverBacklog(circuitoId: string): Promise<number> {
+  if (!(await entradaPermitida(circuitoId))) return 0; // Cap. 11: nada entra no ultimo terco
   const cfg = await getCfg(circuitoId, "max_atletas,financeiro_ativo");
   const max = cfg?.max_atletas || 20;
   const nCirc = await countAtivosNoCircuito(circuitoId);
@@ -950,6 +975,9 @@ Deno.serve(async (req) => {
       case "INCLUIR_NO_CIRCUITO": {
         const { id } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
+        if (!(await entradaPermitida(circuitoId))) {
+          return jsonResponse({ sucesso: false, erro: "Não há entrada nas duas últimas rodadas da temporada (Cap. 11). Quem for aprovado agora estreia na próxima temporada, desde a primeira rodada." }, 409);
+        }
         const cfg = await getCfg(circuitoId, "max_atletas");
         const max = cfg?.max_atletas || 20;
         const nCirc = await countAtivosNoCircuito(circuitoId);
@@ -1096,11 +1124,14 @@ Deno.serve(async (req) => {
           return jsonResponse({ sucesso: false, erro: `A temporada já tem as ${maxRodadas} rodadas configuradas. Inicie uma nova temporada.` }, 409);
         }
         const rA = roundBase + 1, rB = roundBase + 2;
-        const inicioUltimoTerco = maxRodadas - Math.ceil(maxRodadas / 3) + 1;
-        const permiteEntrada = rA < inicioUltimoTerco;
-        if (permiteEntrada) {
-          await promoverBacklog(circuitoId);
-        }
+        // A conta do ultimo terco ficava AQUI, em linha, e a mesma conta nasceu de
+        // novo no `entradaPermitida()` em 29/09/2026 -- duas contas independentes da
+        // mesma regra, que e exatamente o defeito que a `janelaRenovacao` custou um
+        // dia para desfazer no outro lado do app (tres contas da janela de renovacao,
+        // uma delas invertida, e nada as obrigava a concordar).
+        // Agora e UMA: o portao vive dentro do `promoverBacklog`, que e por onde a
+        // fila entra, e esta chamada passou a ser incondicional.
+        await promoverBacklog(circuitoId);
         const ativos = await getAtivosNoCircuito(circuitoId, !!cfgRod?.financeiro_ativo);
         if (!ativos || ativos.length < 2) {
           return jsonResponse({ sucesso: false, erro: `São necessários ao menos 2 atletas ativos para gerar uma rodada (atual: ${ativos?.length ?? 0}).` }, 400);

@@ -54,7 +54,7 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **855 asserções** (conferido ao vivo em 28/09/2026, somando as 13
+Hoje são **868 asserções** (conferido ao vivo em 28/09/2026, somando as 13
 seções que a bateria imprime). **Não cite este número de memória** — ele mudou em
 sete ondas seguidas; rode `npm run teste` e leia. O `atualizar.sh` roda isso
 antes de publicar e se recusa a subir com teste vermelho. O `testes/README.md`

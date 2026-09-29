@@ -399,6 +399,89 @@ secao("O mínimo de 8 para começar: os DOIS regulamentos prometem, o motor cump
     "o piso de avançar é 2, que é o mínimo para existir uma partida");
 }
 
+secao("A janela de entrada (Cap. 11) passa a existir no SERVIDOR, não só na tela");
+{
+  // Pedido do Juliano, 29/09/2026, ao enunciar a regra de entrada: "permitir a
+  // entrada de novos desde que cumpra TODAS AS DEMAIS REGRAS DE ENTRADA, mas sempre
+  // respeitando o limite máximo de 20".
+  //
+  // O teto de 20 já era respeitado no servidor (duas portas: `INCLUIR_NO_CIRCUITO` e
+  // `promoverBacklog`). A que faltava era a do Cap. 11 — "não há entrada nas duas
+  // últimas rodadas" —, que vivia SÓ na tela (`_entradaPermitida`). Efeito: a
+  // promoção automática da fila entrava em QUALQUER rodada, contrariando o texto que
+  // o atleta aceitou, e o `INCLUIR_NO_CIRCUITO` aceitava se alguém chamasse por fora.
+  //
+  // Com 6 rodadas o último terço começa na rodada 5, então 5 e 6 não recebem entrada.
+  const CIRC = "66660000-0000-4000-8000-000000000999";
+  const NA_FILA = "bbbb0001-0000-4000-8000-000000000991";
+
+  async function cenario(rodadaMaxJogada) {
+    const atletas = [], membros = [], partidas = [];
+    for (let n = 0; n < 8; n++) {
+      const id = `cccc000${n}-0000-4000-8000-0000000009${n}${n}`;
+      atletas.push(atleta(id, { nome: `Dentro ${n}` }));
+      membros.push({ id: `mj-${n}`, circuito_id: CIRC, atleta_id: id, status: "ativo", pendente_circuito: false, saldo_temp: 0, vitorias: 0, derrotas: 0 });
+    }
+    atletas.push(atleta(NA_FILA, { nome: "Na fila" }));
+    membros.push({ id: "mj-fila", circuito_id: CIRC, atleta_id: NA_FILA, status: "ativo", pendente_circuito: true, saldo_temp: 0, vitorias: 0, derrotas: 0 });
+    for (let r = 1; r <= rodadaMaxJogada; r++) {
+      partidas.push(partida(`pj-${r}`, { chave_id: "kj", rodada: r, circuito_id: CIRC, atleta1_id: `cccc0000-0000-4000-8000-000000000900`, atleta2_id: `cccc0001-0000-4000-8000-000000000911` }));
+    }
+    const { motor, banco } = await montarMotor({
+      circuitos: [circuito(BH), circuito(CIRC, { slug: "janela", sistema: "B", pareamento: "grupos", fase: "etapa", rodadas_por_temporada: 6 })],
+      atletas, circuito_atletas: membros, partidas,
+      chaves: [{ id: "kj", nome: "Chave", rodada_atual: rodadaMaxJogada, circuito_id: CIRC }],
+      funcoes: { arquivar_partidas_temporada_circuito: () => null },
+    });
+    return { motor, banco };
+  }
+
+  // Rodada 2 jogada -> a próxima é a 3, ainda fora do último terço: ENTRA.
+  {
+    const { motor, banco } = await cenario(2);
+    const r = await comoAdmin(motor, "INCLUIR_NO_CIRCUITO", { circuitoId: CIRC, id: NA_FILA });
+    igual(r.status, 200, "com a temporada no começo, incluir da fila é permitido");
+    igual(banco.acha("circuito_atletas", m => m.atleta_id === NA_FILA && m.circuito_id === CIRC)?.pendente_circuito, false,
+      "e o atleta entra de verdade");
+  }
+  // Rodada 4 jogada -> a próxima é a 5, que JÁ é o último terço: RECUSA.
+  {
+    const { motor, banco } = await cenario(4);
+    const r = await comoAdmin(motor, "INCLUIR_NO_CIRCUITO", { circuitoId: CIRC, id: NA_FILA });
+    igual(r.status, 409, "nas duas últimas rodadas, o SERVIDOR recusa a inclusão");
+    ok(/duas últimas rodadas/.test(String(r.corpo?.erro || "")),
+      "e a recusa cita a regra que o atleta leu");
+    ok(/estreia na próxima temporada/.test(String(r.corpo?.erro || "")),
+      "e diz o que acontece com ele, em vez de só negar");
+    igual(banco.acha("circuito_atletas", m => m.atleta_id === NA_FILA && m.circuito_id === CIRC)?.pendente_circuito, true,
+      "e ele continua na fila, não em meio-estado");
+  }
+  // E a promoção AUTOMÁTICA respeita a mesma janela — é a porta que ninguém clica.
+  {
+    const { motor, banco } = await cenario(4);
+    await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC });
+    igual(banco.acha("circuito_atletas", m => m.atleta_id === NA_FILA && m.circuito_id === CIRC)?.pendente_circuito, true,
+      "avançar rodada no último terço NÃO promove a fila — a porta automática respeita o Cap. 11");
+  }
+
+  // A conta do servidor tem de ser a MESMA da tela, senão as duas divergem e o botão
+  // acende num estado que o servidor recusa (padrão que já apareceu três vezes).
+  const motorFonte = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "admin-action", "index.ts"), "utf8");
+  igual((motorFonte.match(/Math\.ceil\(maxRodadas \/ 3\)/g) || []).length, 1,
+    "o servidor calcula o último terço UMA vez só — havia duas contas independentes da mesma regra");
+  ok(/const inicioUltimoTerco = maxRodadas - Math\.ceil\(maxRodadas \/ 3\) \+ 1;/.test(motorFonte),
+    "e com a mesma fórmula da tela");
+  const avancarTrecho = motorFonte.slice(motorFonte.indexOf('case "AVANCAR_RODADA"'), motorFonte.indexOf('case "', motorFonte.indexOf('case "AVANCAR_RODADA"') + 10));
+  ok(!/inicioUltimoTerco/.test(avancarTrecho),
+    "avançar rodada não refaz a conta — ela vive no portão por onde a fila entra");
+  ok(/await promoverBacklog\(circuitoId\);/.test(avancarTrecho) && !/permiteEntrada/.test(avancarTrecho),
+    "e a chamada da promoção é incondicional: quem decide é o portão, não o chamador");
+  ok(/return \(maxRodada \+ 1\) < inicioUltimoTerco;/.test(motorFonte),
+    "e compara a PRÓXIMA rodada, como a tela faz");
+  ok(/_inicioUltimoTerco = _maxRodadas - Math\.ceil\(_maxRodadas\/3\) \+ 1/.test(fonte),
+    "e a tela continua com a fórmula que o servidor espelha");
+}
+
 secao("A frase de preço não é garantia absoluta");
 {
   // O Guardião Jurídico: quem escreve o regulamento é a plataforma, mas quem

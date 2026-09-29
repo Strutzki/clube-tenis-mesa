@@ -1006,4 +1006,252 @@ secao("O motor de pareamento do Sistema B — RODANDO a temporada inteira");
     "e o por rating continua sendo o caminho do Sistema A");
 }
 
+secao("O atleta aprovado no circuito novo consegue ENTRAR no app — RODANDO inscrição, aprovação e sessão");
+{
+  // O bloqueio mais grave que a auditoria achou, e o mais silencioso: o atleta se
+  // inscrevia, o organizador aprovava, e ele NUNCA conseguia entrar. Provado
+  // rodando os dois motores.
+  //
+  // O caminho: `INSCREVER` cria a linha em `atletas` com status "pendente"; a
+  // aprovação chama `writeAtleta`, e `status` é SAZONAL, então num circuito
+  // não-BH ele vai SÓ para `circuito_atletas` — o `atletas.status` fica
+  // "pendente" para sempre. E o `login-atleta` recusa com `cadastro_inativo`
+  // (403) em SESSAO, PARTICIPAR e LOGIN_ORGANIZADOR olhando justamente o global.
+  // A tela fecha junto: "Seu cadastro ainda não foi aprovado pelo admin".
+  // No BH nada disso aparecia, porque lá o servidor grava nos dois lugares.
+  const NOVO = "99999999-9999-9999-9999-999999999999";
+  const TOKEN = "token-da-sessao-do-novato";
+  const sha = (t) => createHash("sha256").update(t).digest("hex");
+
+  const cenarioEntrada = async () => {
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH), circuito(NOVO, { slug: "novo", sistema: "B", regulamento_versao: "vB-01", inscricoes_abertas: true })],
+      atletas: [], circuito_atletas: [],
+      funcoes: { get_cpf_pepper: () => "pimenta-de-teste", dedup_por_cpf_hash: () => [{ existe: false, atleta_id: null }] },
+      outras: { atleta_documento: [], tentativas_busca_cpf: [], atleta_sessao: [] },
+    });
+    const aa = await carregarFuncao("athlete-action", banco);
+    const r = await aa.chamar({
+      acao: "INSCREVER",
+      payload: {
+        circuitoId: NOVO, nome: "Novato da Silva", telefone: "31999998888",
+        aceiteRegulamento: true, aceiteLGPD: true,
+        cpf: "52998224725", cpfConsent: true, cpfConsentVersao: "cpf-2026-08-v1",
+        dataNascimento: "1990-01-01",
+      },
+    });
+    ok(r.corpo?.sucesso === true, `a inscrição no circuito novo conclui (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    const id = banco.tabelas.atletas[0]?.id;
+    ok(!!id, "e o atleta foi criado");
+    return { banco, motor, id };
+  };
+
+  {
+    const { banco, motor, id } = await cenarioEntrada();
+    igual(banco.acha("atletas", a => a.id === id)?.status, "pendente",
+      "recém-inscrito, a identidade global nasce pendente — como deve ser");
+
+    const rv = await comoAdmin(motor, "INSCRICAO_VALIDAR", { circuitoId: NOVO, id, rating: 500, approved: true });
+    ok(rv.corpo?.sucesso === true, `o organizador aprova a inscrição (erro: ${JSON.stringify(rv.corpo?.erro)})`);
+    igual(banco.acha("circuito_atletas", c => c.atleta_id === id)?.status, "ativo",
+      "o vínculo com o circuito fica ativo");
+    igual(banco.acha("atletas", a => a.id === id)?.status, "ativo",
+      "E A IDENTIDADE GLOBAL TAMBÉM — sem isto o atleta aprovado nunca entra no app");
+
+    // A prova que importa: o motor do login deixa ele entrar.
+    banco.tabelas.atleta_sessao.push({ id: "s1", atleta_id: id, token_hash: sha(TOKEN), expira_em: new Date(Date.now() + 3600e3).toISOString() });
+    const login = await carregarFuncao("login-atleta", banco);
+    const rs = await login.chamar({ acao: "SESSAO", token: TOKEN });
+    ok(rs.corpo?.sucesso === true && rs.corpo?.erro !== "cadastro_inativo",
+      `e o login-atleta reidrata a sessão dele em vez de recusar com cadastro_inativo (veio: ${JSON.stringify(rs.corpo?.erro ?? "ok")})`);
+  }
+
+  // Reprovar num circuito NÃO pode trancar a porta dos outros: a identidade é da
+  // pessoa, o vínculo é do circuito. Por isso a promoção é só para cima.
+  {
+    const { banco, motor, id } = await cenarioEntrada();
+    await comoAdmin(motor, "INSCRICAO_VALIDAR", { circuitoId: NOVO, id, rating: 500, approved: true });
+    await comoAdmin(motor, "INSCRICAO_VALIDAR", { circuitoId: NOVO, id, approved: false, motivo: "não compareceu" });
+    igual(banco.acha("circuito_atletas", c => c.atleta_id === id)?.status, "reprovado",
+      "reprovar depois marca o VÍNCULO como reprovado");
+    igual(banco.acha("atletas", a => a.id === id)?.status, "ativo",
+      "mas a identidade global continua ativa — ser reprovado num circuito não tranca a porta dos outros");
+  }
+}
+
+secao("O circuito de PONTOS não encosta no rating global — RODANDO as duas portas");
+{
+  // A pergunta do Juliano era "um não interferindo no outro". Este era o caso em
+  // que interferia, e do pior jeito: em silêncio e para sempre.
+  //
+  // `rating`, `rating_inicial`, `rating_pico` e `rating_historico` NÃO são sazonais
+  // — vão para `atletas`, a identidade GLOBAL que a pessoa carrega para todos os
+  // circuitos dela. O `writeAtleta` já barrava três deles num circuito de pontos.
+  // FALTAVA `rating_inicial` — e ele é escrito justamente pela porta de entrada:
+  // `INSCRICAO_VALIDAR` grava `rating_inicial: rating` ao aprovar uma inscrição.
+  //
+  // Então aprovar alguém no circuito de PONTOS reescrevia o `rating_inicial` global
+  // daquela pessoa: o número com que ela entrou no circuito de RATING, que é a base
+  // da linha do tempo dela no BH. Com o que o cliente mandasse, ou com `undefined`,
+  // porque no Sistema B nem existe campo de rating na tela para digitar.
+  //
+  // ⚠️ A 1ª versão desta seção testava só `rating` — que JÁ estava protegido — e a
+  // mutação ficou VERDE. Passei pelo motivo errado e quase "consertei" dentro dos
+  // dois `case`, criando a terceira cópia da mesma regra. A asserção agora cobre a
+  // lista inteira, campo a campo, e é por isso que ela pega.
+  const ATL = "77777777-0000-0000-0000-000000000001";
+  const CIRC_PONTOS = "77777777-1111-1111-1111-111111111111";
+  const RATING_DE_VERDADE = 1234;
+
+  const cenarioPontos = async () => montarMotor({
+    circuitos: [
+      circuito(BH, { regulamento_versao: "v03-13" }),
+      circuito(CIRC_PONTOS, { slug: "pontos", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01" }),
+    ],
+    // O atleta existe nos dois: joga rating no BH e pontos no circuito novo.
+    atletas: [atleta(ATL, {
+      rating: RATING_DE_VERDADE, rating_inicial: RATING_DE_VERDADE,
+      rating_pico: RATING_DE_VERDADE, rating_historico: [{ data: "2026-01-01", rating: RATING_DE_VERDADE }],
+      nome: "Fulano",
+    })],
+    circuito_atletas: [
+      { circuito_id: BH, atleta_id: ATL, status: "ativo" },
+      { circuito_id: CIRC_PONTOS, atleta_id: ATL, status: "pendente", pendente_circuito: false },
+    ],
+  });
+
+  const ratingGlobal = (banco) => banco.acha("atletas", a => a.id === ATL)?.rating;
+  // A lista INTEIRA da identidade de rating. Testar um campo só foi o erro da 1ª
+  // versão: `rating` estava protegido e `rating_inicial` não, e a bateria não viu.
+  // ⚠️ Medido com mutação campo a campo (29/09/2026): tirar a proteção de `rating`
+  // ou de `rating_inicial` deixa a bateria VERMELHA — são os dois que alguma ação
+  // do organizador realmente escreve. Tirar a de `rating_pico` ou a de
+  // `rating_historico` deixa a bateria VERDE, porque hoje NENHUMA ação os escreve
+  // num circuito de pontos: elas são defesa em profundidade, e esta asserção NÃO as
+  // protege. Está escrito aqui para ninguém ler a lista e achar que protege.
+  const CAMPOS_DE_RATING = ["rating", "rating_inicial", "rating_pico"];
+  const conferirIdentidadeIntacta = (banco, quando) => {
+    const g = banco.acha("atletas", a => a.id === ATL);
+    for (const campo of CAMPOS_DE_RATING) {
+      igual(g?.[campo], RATING_DE_VERDADE,
+        `${quando}: o campo global \`${campo}\` do atleta não se mexe`);
+    }
+    igual(JSON.stringify(g?.rating_historico), JSON.stringify([{ data: "2026-01-01", rating: RATING_DE_VERDADE }]),
+      `${quando}: e o histórico de rating dele fica intacto`);
+  };
+
+  // 1. Aprovar no circuito de pontos.
+  {
+    const { banco, motor } = await cenarioPontos();
+    const r = await comoAdmin(motor, "INSCRICAO_VALIDAR", { circuitoId: CIRC_PONTOS, id: ATL, rating: 300, approved: true });
+    ok(r.corpo?.sucesso === true, `a aprovação no circuito de pontos conclui (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    igual(banco.acha("circuito_atletas", c => c.circuito_id === CIRC_PONTOS && c.atleta_id === ATL)?.status, "ativo",
+      "o vínculo com o circuito de pontos fica ativo");
+    conferirIdentidadeIntacta(banco, "aprovando no circuito de pontos com o cliente mandando 300");
+  }
+
+  // 2. Editar o atleta pelo painel do circuito de pontos.
+  {
+    const { banco, motor } = await cenarioPontos();
+    const r = await comoAdmin(motor, "EDITAR_ATLETA", { circuitoId: CIRC_PONTOS, id: ATL, nome: "Fulano Corrigido", telefone: "31900000000", rating: 300, status: "ativo" });
+    ok(r.corpo?.sucesso === true, `a edição conclui (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    igual(banco.acha("atletas", a => a.id === ATL)?.nome, "Fulano Corrigido",
+      "o nome, que é identidade de verdade, é corrigido");
+    conferirIdentidadeIntacta(banco, "arrumando o nome pelo painel do circuito de pontos");
+  }
+
+  // 3. E no circuito de RATING as duas ações continuam podendo — senão o conserto
+  //    teria quebrado o Sistema A em vez de proteger o B.
+  {
+    const { banco, motor } = await cenarioPontos();
+    await comoAdmin(motor, "EDITAR_ATLETA", { circuitoId: BH, id: ATL, nome: "Fulano", telefone: "31900000000", rating: 999, status: "ativo" });
+    igual(ratingGlobal(banco), 999,
+      "no circuito de RATING o organizador continua podendo ajustar o rating — a guarda é só do Sistema B");
+  }
+}
+
+secao("Um circuito não age sobre o outro — nem pelo super-admin");
+{
+  // O organizador sempre foi escopado por RECURSO: passar um matchId de outro
+  // circuito devolve 403. O super-admin não era — e o raciocínio de antes ("ele
+  // pode tudo, não há o que negar") respondia a pergunta errada.
+  //
+  // A pergunta aqui não é PERMISSÃO, é COERÊNCIA: a ação diz em que circuito está
+  // agindo e diz em que partida. Se os dois discordam, isso nunca é intenção — é
+  // bug de quem chamou, e obedecer é o pior desfecho possível.
+  //
+  // E o risco não é teórico neste app: o painel do admin é por circuito e já teve
+  // estado sobrevivendo à troca de circuito. Com a tela no circuito B e um matchId
+  // do circuito A sobrando na memória, o motor validava, imputava resultado ou
+  // aplicava W.O. NO OUTRO CIRCUITO, em silêncio.
+  const OUTRO = "33333333-aaaa-4444-8888-333333333333";
+  const A1 = "aa000000-0000-4000-8000-000000000001";
+  const A2 = "aa000000-0000-4000-8000-000000000002";
+
+  const doisCircuitos = async () => montarMotor({
+    circuitos: [circuito(BH, { regulamento_versao: "v03-13" }), circuito(OUTRO, { slug: "outro", sistema: "B", regulamento_versao: "vB-01" })],
+    atletas: [atleta(A1), atleta(A2)],
+    circuito_atletas: [
+      { circuito_id: BH, atleta_id: A1, status: "ativo" },
+      { circuito_id: BH, atleta_id: A2, status: "ativo" },
+    ],
+    chaves: [{ id: "chave1", nome: "Chave A", rodada_atual: 1, circuito_id: BH }],
+    // A partida é do BH. Toda ação abaixo vai dizer que está no circuito OUTRO.
+    partidas: [partida("jbh", { circuito_id: BH, atleta1_id: A1, atleta2_id: A2, p1_placar1: 3, p1_placar2: 1, p2_placar1: 3, p2_placar2: 1 })],
+  });
+
+  const ACOES_COM_PARTIDA = [
+    ["VALIDATE_RESULT", { approved: true }],
+    ["ADMIN_IMPUTAR_RESULTADO", { score1: 3, score2: 0 }],
+    ["DESFAZER_VALIDACAO", {}],
+    ["MARCAR_RESULTADO_COMUNICADO", { comunicado: true }],
+    ["APLICAR_WO", { tipo: "culposo", faltosoId: A1, beneficiarioId: A2 }],
+  ];
+
+  for (const [acao, extra] of ACOES_COM_PARTIDA) {
+    const { banco, motor } = await doisCircuitos();
+    const antes = JSON.stringify(banco.acha("partidas", m => m.id === "jbh"));
+    const r = await comoAdmin(motor, acao, { circuitoId: OUTRO, matchId: "jbh", ...extra });
+    igual(r.status, 403,
+      `o super-admin no circuito OUTRO não consegue ${acao} numa partida do BH`);
+    igual(JSON.stringify(banco.acha("partidas", m => m.id === "jbh")), antes,
+      `e a partida do BH fica byte-idêntica depois do ${acao} recusado`);
+  }
+
+  // E a mesma ação, apontando para o circuito certo, continua funcionando — senão
+  // a trava teria virado uma parede em vez de uma guarda.
+  {
+    const { banco, motor } = await doisCircuitos();
+    const r = await comoAdmin(motor, "VALIDATE_RESULT", { circuitoId: BH, matchId: "jbh", approved: true });
+    ok(r.corpo?.sucesso === true, `no circuito certo a validação passa (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    igual(banco.acha("partidas", m => m.id === "jbh")?.validado, true, "e a partida do BH é validada");
+  }
+
+  // Atleta de outro circuito: mesma ideia, pela outra porta.
+  {
+    const { banco, motor } = await doisCircuitos();
+    const r = await comoAdmin(motor, "ARQUIVAR_ATLETA", { circuitoId: OUTRO, id: A1 });
+    igual(r.status, 403,
+      "o super-admin no circuito OUTRO não arquiva um atleta que só participa do BH");
+    igual(banco.acha("circuito_atletas", c => c.circuito_id === BH && c.atleta_id === A1)?.status, "ativo",
+      "e o vínculo dele com o BH fica como estava");
+  }
+
+  // ⚠️ No BH o super-admin NÃO passa pela checagem de membro, e é de propósito: lá
+  // a participação é a própria linha de `atletas` (roster legado), e existe atleta
+  // do BH sem linha em `circuito_atletas`. Exigi-la ali recusaria operação legítima
+  // — a bateria pegou isso na hora quando eu apertei demais.
+  {
+    const ARQ = "bb000000-0000-4000-8000-000000000001";
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH, { regulamento_versao: "v03-13" })],
+      atletas: [atleta(ARQ, { status: "arquivado" })],
+      circuito_atletas: [],
+    });
+    const r = await comoAdmin(motor, "DESARQUIVAR_ATLETA", { circuitoId: BH, id: ARQ });
+    igual(r.status, 200, "no BH o super-admin continua desarquivando atleta sem linha de vínculo — o roster legado vale");
+    igual(banco.acha("atletas", a => a.id === ARQ)?.status, "ativo", "e o atleta volta a ativo");
+  }
+}
+
 process.exit(placar("O segundo circuito"));

@@ -123,7 +123,18 @@ async function writeAtleta(circuitoId: string, atletaId: string, campos: Record<
   // Guard motor B (defesa em profundidade): circuito Sistema B NUNCA escreve identidade de
   // rating na tabela global `atletas` — nem que um bug futuro tente. NAO afeta o BH ('A').
   if ((await getSistema(circuitoId)) === "B") {
-    delete identidade.rating; delete identidade.rating_pico; delete identidade.rating_historico;
+    // ⚠️ `rating_inicial` FALTAVA NESTA LISTA ate 29/09/2026, e ele e escrito pela
+    // porta de entrada: o `INSCRICAO_VALIDAR` grava `rating_inicial: rating` ao
+    // aprovar uma inscricao. Resultado: aprovar alguem no circuito de PONTOS
+    // reescrevia o `rating_inicial` global daquela pessoa -- o numero com que ela
+    // entrou no circuito de RATING, que e a base da linha do tempo dela no BH --
+    // com o que o cliente mandasse, ou com `undefined`, porque no Sistema B nem
+    // existe campo de rating na tela para digitar.
+    //
+    // Eu quase "consertei" isto nos dois `case`, criando a terceira copia da mesma
+    // regra. A guarda e UMA e mora aqui: os `case` nao precisam saber do sistema.
+    delete identidade.rating; delete identidade.rating_inicial;
+    delete identidade.rating_pico; delete identidade.rating_historico;
   }
   const escreveuIdentidade = Object.keys(identidade).length > 0;
   if (escreveuIdentidade) {
@@ -218,6 +229,31 @@ async function countAtivosNoCircuito(circuitoId: string): Promise<number> {
   }
   const { count } = await supabase.from("circuito_atletas").select("*", { count: "exact", head: true }).eq("circuito_id", circuitoId).eq("status", "ativo").eq("pendente_circuito", false);
   return count || 0;
+}
+
+// Promove a IDENTIDADE global do atleta para "ativo". So para cima: nunca rebaixa.
+//
+// ⚠️ Sem isto, atleta que nasce num circuito NAO-BH nao consegue entrar no app
+// NUNCA (achado de 29/09/2026, provado rodando o motor). O caminho era:
+//   · `INSCREVER` cria a linha em `atletas` com status "pendente";
+//   · o organizador aprova -> `INSCRICAO_VALIDAR` chama `writeAtleta`, e `status`
+//     esta em SEASONAL_COLS, entao num circuito nao-BH ele vai SO para
+//     `circuito_atletas`. O `atletas.status` fica "pendente" para sempre;
+//   · e o `login-atleta` recusa com `cadastro_inativo` (403) em LOGIN, SESSAO e
+//     PARTICIPAR olhando justamente o `atletas.status`.
+// No BH nao aparecia porque la o `writeAtleta` grava nos dois lugares.
+//
+// Os dois status querem dizer coisas diferentes, e e por isso que a correcao e
+// esta e nao "tirar status de SEASONAL_COLS":
+//   · `atletas.status`         = a PESSOA existe na plataforma e pode entrar;
+//   · `circuito_atletas.status` = ela e membro DAQUELE circuito, nesta temporada.
+// Por isso a promocao e so para cima: reprovar alguem num circuito nao pode
+// trancar a porta dos outros circuitos dele.
+async function promoverIdentidadeGlobal(atletaId: string) {
+  const { data: atual } = await supabase.from("atletas").select("status").eq("id", atletaId).maybeSingle();
+  if (!atual || atual.status !== "pendente") return; // ja ativo, arquivado ou reprovado: nao mexe
+  const { error } = await supabase.from("atletas").update({ status: "ativo" }).eq("id", atletaId).eq("status", "pendente");
+  if (error) throw error;
 }
 
 const ALLOWED_ORIGINS = [
@@ -799,23 +835,60 @@ Deno.serve(async (req) => {
       const { data: cfFin } = await supabase.from("circuitos").select("org_ve_financeiro").eq("id", circuitoId).maybeSingle();
       if (!cfFin?.org_ve_financeiro) return jsonResponse({ sucesso: false, erro: "O financeiro deste circuito é gerido pela plataforma." }, 403);
     }
+  }
+
+  // ESCOPO POR RECURSO — VALE PARA TODO MUNDO, inclusive o super-admin.
+  //
+  // Ate 29/09/2026 este bloco estava DENTRO do `if (!ehSuper)`. Fazia sentido
+  // quando a pergunta era "permissao": o super-admin pode tudo, entao nao ha o que
+  // negar a ele. So que aqui a pergunta nao e permissao, e COERENCIA: a acao diz em
+  // que circuito esta agindo (`circuitoId`) e diz em que partida (`matchId`). Se os
+  // dois discordam, isso nunca e uma intencao -- e um bug de quem chamou, e a
+  // resposta certa e recusar, nao obedecer.
+  //
+  // O risco nao e teorico neste app: o painel do admin e POR CIRCUITO e ja teve
+  // estado sobrevivendo a troca de circuito (o carry-over que a auditoria de
+  // 29/09/2026 consertou remontando o painel inteiro). Com a tela apontando para o
+  // circuito B e um `matchId` do circuito A sobrando na memoria, o motor validava,
+  // imputava resultado ou aplicava W.O. NO OUTRO CIRCUITO, em silencio, e o
+  // organizador de la nao tinha como saber de onde veio.
+  //
+  // Conferido no banco antes de apertar: 0 atletas sem vinculo e 0 partidas sem
+  // circuito -- entao nenhuma operacao legitima de hoje passa a ser recusada.
+  {
     const pl = payload || {};
     const mf = ORG_MATCH_FIELD[acao];
     if (mf) {
       const mid = pl[mf];
       if (mid) {
         const { data: pm } = await supabase.from("partidas").select("circuito_id").eq("id", mid).maybeSingle();
-        if (!pm || pm.circuito_id !== circuitoId) return jsonResponse({ sucesso: false, erro: "Partida não é do seu circuito." }, 403);
+        if (!pm || pm.circuito_id !== circuitoId) {
+          return jsonResponse({ sucesso: false, erro: ehSuper
+            ? "Esta partida é de outro circuito. Troque de circuito antes de agir sobre ela."
+            : "Partida não é do seu circuito." }, 403);
+        }
       } else if (!ORG_MATCH_OPCIONAL.has(acao)) {
         return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
       }
     }
     const bf = ORG_MEMBRO_FIELD[acao];
-    if (bf) {
+    // ⚠️ A checagem de MEMBRO nao pode valer para o super-admin NO BH, e isso nao e
+    // uma concessao: no BH a participacao E a linha de `atletas` (o roster legado),
+    // e existe atleta do BH sem linha em `circuito_atletas`. Exigi-la ali recusaria
+    // operacao legitima -- a bateria pegou na hora (o super-admin desarquivando no
+    // BH passou a receber 403). Nos circuitos NOVOS, que sao o alvo desta trava,
+    // `circuito_atletas` E a unica membership, entao a checagem vale para todos.
+    const bhIdEscopo = await bhId();
+    const checarMembro = !!bf && (!ehSuper || circuitoId !== bhIdEscopo);
+    if (checarMembro) {
       const aid = pl[bf];
       if (!aid) return jsonResponse({ sucesso: false, erro: "id do atleta é obrigatório" }, 400);
       const { data: mm } = await supabase.from("circuito_atletas").select("atleta_id").eq("circuito_id", circuitoId).eq("atleta_id", aid).maybeSingle();
-      if (!mm) return jsonResponse({ sucesso: false, erro: "Atleta não é do seu circuito." }, 403);
+      if (!mm) {
+        return jsonResponse({ sucesso: false, erro: ehSuper
+          ? "Este atleta não participa do circuito selecionado. Troque de circuito antes de agir sobre ele."
+          : "Atleta não é do seu circuito." }, 403);
+      }
     }
   }
 
@@ -864,10 +937,17 @@ Deno.serve(async (req) => {
       case "INSCRICAO_VALIDAR": {
         const { id, rating, approved, motivo } = payload || {};
         if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
+        // O rating nao chega em `atletas` num circuito de pontos: quem barra e o
+        // `writeAtleta` (guarda unica, "defesa em profundidade"). Nao repetir a
+        // regra aqui e deliberado -- ver o comentario la.
         const update = approved
           ? { status: "ativo", rating, rating_inicial: rating, saldo_temp: 0, pendente_circuito: true }
           : { status: "reprovado", motivo_reprovacao: motivo };
         await writeAtleta(circuitoId, id, update);
+        // Aprovar num circuito qualquer libera a PORTA DE ENTRADA do app. Reprovar
+        // nao a fecha: o atleta pode ser membro de outro circuito. Ver
+        // `promoverIdentidadeGlobal`.
+        if (approved) await promoverIdentidadeGlobal(String(id));
         return jsonResponse({ sucesso: true });
       }
 
@@ -1163,6 +1243,7 @@ Deno.serve(async (req) => {
           return jsonResponse({ sucesso: false, erro: "Este cadastro já foi anonimizado e não pode ser reativado." }, 409);
         }
         await writeAtleta(circuitoId, String(id), { status: "ativo", pendente_circuito: true });
+        await promoverIdentidadeGlobal(String(id));
         return jsonResponse({ sucesso: true, dados: { status: "ativo", pendenteCircuito: true } });
       }
 

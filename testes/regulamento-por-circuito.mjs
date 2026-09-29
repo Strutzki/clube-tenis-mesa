@@ -26,7 +26,17 @@ import { carregarFuncao } from "./carrega-motor.mjs";
 
 const RAIZ = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const bruto = fs.readFileSync(path.join(RAIZ, "src", "App.jsx"), "utf8");
-const semComentarios = t => t.split("\n").filter(l => !/^\s*(\/\/|\{?\/\*)/.test(l)).join("\n");
+// ⚠️ TIRA COMENTÁRIO DE BLOCO ANTES DA FILTRAGEM POR LINHA.
+// O filtro por linha sozinho só reconhece a linha que ABRE o comentário — as
+// continuações de um `{/* ... */}` de várias linhas sobreviviam. Isso fez uma
+// asserção que PROÍBE um texto ficar vermelha por causar do comentário que
+// EXPLICAVA por que aquele texto saiu (29/09/2026, e foi a quarta vez no mesmo dia
+// que uma asserção se afogou na própria explicação). Uma asserção que não consegue
+// distinguir o código do comentário sobre o código não protege nada.
+const semComentarios = t => t
+  .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")   // {/* ... */} do JSX
+  .replace(/\/\*[\s\S]*?\*\//g, "")                // /* ... */ comum
+  .split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n");
 const fonte = semComentarios(bruto);
 
 secao("A escolha do regulamento vem do dado, não do sistema");
@@ -806,10 +816,10 @@ secao("O documento da v03-13 muda UMA cláusula, e só");
   ok(!/\| Entrada na 2ª etapa \(Rodada 3\) \| 80% do valor \|/.test(t13),
     "a v03-13 não promete mais 80% na tabela de valores");
   // Sem atravessar quebra de linha: o .md quebra em "de quem\ningressou".
-  ok(/não cobrará\*\* diferença de valor/.test(t13) && /ingressou na 2ª etapa da temporada 1\/2026/.test(t13),
-    "a v03-13 diz explicitamente que quem já pagou 80% não é cobrado de novo");
-  ok(/ainda não quitou \*\*paga os 80% prometidos\*\*/.test(t13),
-    "e que quem ingressou mas ainda não pagou também está protegido");
+  ok(/não cobrará\*\* diferença de valor de ninguém/.test(t13),
+    "a v03-13 continua obrigando o clube a não cobrar diferença — de NINGUÉM, sem recorte");
+  ok(!/paga os 80% prometidos/.test(t13),
+    "e a promessa de cobrar 80% de quem não quitou saiu — não havia mais quem (12 pagamentos, todos confirmados)");
 
   // A cláusula NÃO pode identificar o protegido por um NÚMERO DE VERSÃO.
   // A 1ª redação dizia "quem ingressou sob a v03-12" — e no banco NENHUM atleta
@@ -824,15 +834,28 @@ secao("O documento da v03-13 muda UMA cláusula, e só");
   // A QUEM o texto se aplica. Esta aqui não conserta isso — só impede a forma
   // que já falhou uma vez. O protegido tem de ser definido por FATO (a data de
   // ingresso), não por etiqueta.
-  const clausula = t13.slice(t13.indexOf("**Não retroatividade.**"), t13.indexOf("**Não retroatividade.**") + 500);
+  // ⚠️ Normaliza a quebra de linha ANTES de testar. O `.md` quebra em coluna fixa,
+  // então a frase parte no meio ("…de ninguém pelo\nque foi pago…") e qualquer
+  // regex escrita a partir da frase inteira falha. Já havia um comentário avisando
+  // disso duas asserções acima, e a armadilha pegou de novo em 29/09/2026 — então
+  // agora é normalização, não regex torta.
+  const clausula = t13.slice(t13.indexOf("**Não retroatividade.**"), t13.indexOf("**Não retroatividade.**") + 500).replace(/\s+/g, " ");
   ok(!/v03-\d+/.test(clausula),
     "a cláusula de não-retroatividade não identifica o protegido por número de versão");
-  ok(/data de ingresso/.test(clausula),
-    "ela identifica o protegido por um FATO — a data de ingresso");
-  // E o mesmo na tela, que é o texto que vale.
-  const naTela = fonte.slice(fonte.indexOf("não cobrará"), fonte.indexOf("não cobrará") + 600);
-  ok(!/sob a v03-\d+/.test(naTela),
-    "na tela também não se identifica o protegido por número de versão");
+  // A 1ª redação identificava o protegido por ETIQUETA ("quem ingressou sob a
+  // v03-12") e não cobria ninguém, porque nenhum atleta do BH tem v03-12 gravado.
+  // A 2ª passou a identificar por FATO (a data de ingresso). A 3ª, de 29/09/2026,
+  // não precisa identificar ninguém: a temporada 1/2026 está financeiramente
+  // encerrada — 12 pagamentos, todos `confirmado`, soma zero — então a cláusula
+  // protege TODOS de uma vez, sem recorte. Menos recorte, menos superfície de erro.
+  ok(/de ninguém pelo que foi pago, ou deixado de pagar, na \*\*temporada 1\/2026\*\*/.test(clausula),
+    "ela protege todos, recortando por TEMPORADA — um fato — e não por etiqueta de versão");
+  ok(/todos os pagamentos dela estão confirmados/.test(clausula),
+    "e diz o FATO que a torna suficiente, em vez de descrever um caso que não existe");
+  // Na TELA a caixa de transição ficou só com a vigência — a cláusula de
+  // não-retroatividade vive no documento, que é onde ela tem efeito jurídico.
+  ok(!/80%/.test(fonte.slice(fonte.indexOf("ehTransicaoV0313 && ("), fonte.indexOf("💵 Valor conforme o momento de entrada"))),
+    "e a caixa de transição da tela não menciona 80% em lugar nenhum");
 
   // O v03-12 é registro histórico: os atletas de hoje aceitaram AQUELE texto.
   // Editá-lo reescreveria o que eles aceitaram.
@@ -1908,10 +1931,28 @@ secao("O texto que protege o atleta está NA TELA, não só no documento");
     "a cláusula de transição tem condição própria, não pega carona no desconto");
   ok(/ehTransicaoV0313 && \(/.test(fonte),
     "e ela só é renderizada sob essa condição");
-  ok(/não cobrará<\/span> diferença de valor de quem ingressou/.test(fonte),
-    "a tela promete, no imperativo, que não haverá cobrança retroativa");
-  ok(/data de ingresso<\/span>, não do momento do pagamento/.test(fonte),
-    "a tela diz que o direito vem da data de INGRESSO — quem não quitou também está protegido");
+  // ⚠️ A CLÁUSULA DE DIREITO ADQUIRIDO SAIU EM 29/09/2026, e o motivo tem de ficar
+  // aqui, porque estas asserções existiam justamente para impedir que ela saísse.
+  //
+  // Pedido do Juliano: "quero retirar qualquer menção a 80% e resolver isso de uma
+  // vez". A cláusula dizia: "quem ingressou sob o regulamento anterior e ainda não
+  // quitou paga os 80% prometidos". Ela é de direito adquirido — apagá-la com
+  // alguém devendo significaria cobrar mais do que a pessoa foi prometida, e eu
+  // teria recusado.
+  //
+  // Ela saiu porque ficou SEM SUJEITO, e isso foi MEDIDO no banco, não suposto:
+  // os 12 pagamentos da temporada 1/2026 estão TODOS `confirmado` e a soma dos
+  // valores é ZERO (a temporada é gratuita por decisão do Juliano, desconto global
+  // em 100%). Dois carregam `percentual = 80` e os dois estão quitados. Ninguém
+  // "ainda não quitou".
+  //
+  // A não-retroatividade CONTINUA no texto, sem o número: o Clube não cobra
+  // diferença de ninguém. O que saiu foi a promessa de cobrar 80% de quem devesse —
+  // porque não há quem.
+  ok(!/paga os 80% prometidos/.test(fonte),
+    "a promessa de cobrar 80% de quem não quitou saiu da tela — ela não tinha mais sujeito");
+  ok(!/80%/.test(fonte.slice(fonte.indexOf("ehTransicaoV0313 && ("), fonte.indexOf("💵 Valor conforme o momento de entrada"))),
+    "e a caixa de transição não menciona 80% em lugar nenhum");
   ok(/a partir da temporada 2\/2026<\/span>/.test(fonte),
     "a tela nomeia a temporada em que a v03-13 passa a valer");
 
@@ -1919,6 +1960,8 @@ secao("O texto que protege o atleta está NA TELA, não só no documento");
   const t13 = fs.readFileSync(path.join(RAIZ, "docs", "REGULAMENTO_TENIS_DE_MESA_v03-13.md"), "utf8");
   ok(/O Clube \*\*não cobrará\*\* diferença de valor/.test(t13),
     "o documento OBRIGA o clube, em vez de só descrever o que vai acontecer");
+  ok(!/paga os 80% prometidos/.test(t13),
+    "e o documento também não promete mais cobrar 80% de quem não quitou");
   ok(/temporada 2\/2026 do Circuito\nBH/.test(t13) || /temporada 2\/2026/.test(t13),
     "o documento nomeia a temporada de vigência");
   ok(!/já é o ajuste/.test(t13),

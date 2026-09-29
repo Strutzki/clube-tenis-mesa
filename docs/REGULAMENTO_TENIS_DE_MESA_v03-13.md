@@ -37,10 +37,9 @@ Quem precisar de condição especial passa a ser tratado individualmente.
 BH**. A temporada **1/2026**, em curso, segue integralmente pela v03-12, inclusive
 no valor.
 
-**Não retroatividade.** O Clube **não cobrará** diferença de valor de quem
-ingressou na 2ª etapa da temporada 1/2026. O direito ao valor reduzido decorre da
-**data de ingresso**, não do momento do pagamento: quem ingressou sob o
-regulamento anterior a esta versão e ainda não quitou **paga os 80% prometidos**.
+**Não retroatividade.** O Clube **não cobrará** diferença de valor de ninguém pelo
+que foi pago, ou deixado de pagar, na **temporada 1/2026**. Aquela temporada está
+encerrada do ponto de vista financeiro: todos os pagamentos dela estão confirmados.
 
 ---
 

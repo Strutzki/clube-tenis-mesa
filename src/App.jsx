@@ -3148,13 +3148,22 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
               Esta versão vigora <span style={s.dest}>a partir da temporada 2/2026</span>. A
               temporada 1/2026 seguiu integralmente pela v03-12, inclusive no valor.
             </p>
-            <p style={{...s.p, marginBottom:0}}>
-              O Clube <span style={s.dest}>não cobrará</span> diferença de valor de quem ingressou
-              na 2ª etapa da temporada 1/2026. O direito ao valor reduzido decorre da{" "}
-              <span style={s.dest}>data de ingresso</span>, não do momento do pagamento: quem
-              ingressou sob o regulamento anterior a esta versão e ainda não quitou
-              paga os 80% prometidos.
-            </p>
+            {/* A 2ª cláusula desta caixa SAIU em 29/09/2026, a pedido do Juliano
+        ("quero retirar qualquer menção a 80% e resolver isso de uma vez"), e
+        só saiu porque ela ficou SEM SUJEITO — o que foi medido, não suposto.
+        Ela dizia: "quem ingressou sob o regulamento anterior e ainda não
+        quitou paga os 80% prometidos". Era uma cláusula de direito adquirido,
+        e apagá-la com alguém devendo significaria cobrar mais do que a pessoa
+        foi prometida.
+        Conferido no banco em 29/09/2026: os 12 pagamentos da temporada 1/2026
+        estão TODOS `confirmado`, e a soma dos valores é ZERO — a temporada é
+        gratuita por decisão do Juliano (desconto global em 100%). Dois deles
+        carregam `percentual = 80`, e os dois já estão quitados. Ou seja:
+        ninguém "ainda não quitou", e a cláusula protegia pessoa nenhuma.
+        Os registros de `pagamentos` com `percentual = 80` FICAM — são recibo
+        do que foi aplicado, não promessa para a frente.
+        A 1ª cláusula fica: dizer a partir de quando a versão vale é o que
+        impede alguém de achar que as regras novas valeram retroativamente. */}
           </Box>
         )}
         <Box cor="#9C6F3E" titulo="💵 Valor conforme o momento de entrada">

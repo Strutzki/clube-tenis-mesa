@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 896 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 898 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -192,6 +192,10 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | o gate de versão vira constante morta | 1 vermelha |
 | o texto perde a rotação | 1 vermelha |
 | o texto promete ponto de participação no rating, que o motor não dá | 1 vermelha |
+| **Tirar o 80% de vez — 29/09/2026 (3 sabotagens, 3 vermelhas)** | |
+| a promessa de cobrar 80% de quem não quitou volta à tela | 3 vermelhas |
+| a cláusula de não-retroatividade volta a recortar por etiqueta de versão | 2 vermelhas |
+| **[instrumento]** o removedor de comentários volta a ser só por linha | 1 vermelha — **ficava VERDE**: o filtro por linha só via a linha que ABRE um `{/* */}`, então o corpo do comentário sobrevivia e uma asserção que PROÍBE um texto se afogava no comentário que EXPLICAVA a saída dele. Quarta vez no mesmo dia |
 | **O 2º circuito — 28/09/2026 (14 sabotagens, 14 vermelhas)** | |
 | motor: o teto volta a ser ignorado no `DEFINIR_CONFIG_CIRCUITO` | 1 vermelha |
 | motor: o mínimo de 8 cai (um teto de 3 passaria) | 1 vermelha |

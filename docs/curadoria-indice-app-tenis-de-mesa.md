@@ -251,12 +251,18 @@ achar). Também está no rascunho do CHANGELOG e em "Backend", no topo.
   da lista (`VERSOES_COM_TORNEIO`) travado por asserção, não só a forma. Passa
   hoje, 0 falhas. O item ficava aberto no índice desde 10/09; a correção não
   tinha sido refletida aqui.
-- ~~`max_atletas` configurável, mas o Cap. 11 crava "20"~~ — **RESOLVIDO**,
-  decisão do Juliano de 10/09/2026: deixou de ser configurável por circuito —
-  teto fixo 8..20 para todos, e o texto "teto de 20" também é fixo (não
-  ramifica). Motor e tela travam a faixa (`testes/regulamento-por-circuito.mjs`,
-  seção "Teto do circuito"). O item ficava aberto no índice desde 10/09; a
-  correção não tinha sido refletida aqui.
+- **`max_atletas` configurável, mas o Cap. 11 crava "20"** — ⚠️ **REABERTO em
+  28/09/2026 pelo item 0.10.9, e precisa de uma palavra do Juliano.**
+  *Registro anterior, de 27/09:* ~~RESOLVIDO, decisão do Juliano de 10/09/2026:
+  deixou de ser configurável por circuito — teto fixo 8..20 para todos, e o texto
+  "teto de 20" também é fixo (não ramifica).~~
+  **As duas metades daquela premissa caíram.** O teto **é** por circuito: a criação
+  pergunta (8 a 20) desde a Fatia A1, e a configuração passou a editá-lo pela tela
+  em 28/09 (0.10.9). E o texto **deixou** de ser fixo: `src/App.jsx` diz *"um teto
+  de **até 20** atletas por temporada, **definido pelo organizador**"* desde 27/09.
+  **Falta decidir:** a decisão de 10/09 fica revogada? O código se afastou dela em
+  duas ondas seguidas, e o índice registrava como encerrada uma escolha que não é
+  mais a que está em produção. Achado pelo Curador na revisão de `f229432`.
 - ~~`GOVERNANCA_AGENTES.md` — a seção "Vereditos já emitidos (histórico)" não
   ganha entrada desde 07/09/2026"~~ — **RESOLVIDO em 14/09/2026.** A entrada
   da Onda 0.10 (0.10.1+0.10.2+0.10.6) foi escrita, com as três opções do

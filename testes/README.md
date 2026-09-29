@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 813 asserções (28/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 845 asserções (28/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -81,7 +81,7 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | tirar a checagem `ehOrganizadorDe` | 3 vermelhas |
 | freio de tentativas de PIN nunca disparar | 1 vermelha |
 | **Onda 0.6 — 27/09/2026 (16 sabotagens, 16 vermelhas)** | |
-| `select("id, telefone")` → `select("*")` em `LISTAR_TELEFONES` | 1 vermelha — **e esta ficava VERDE até o banco falso projetar colunas**; devolvia `pin_hash` e `isento` de todo atleta do circuito |
+| `select("id, telefone")` → `select("*")` em `LISTAR_TELEFONES` | 1 vermelha — **e esta ficava VERDE até o banco falso projetar colunas**; devolvia `pin_hash` e `isento` de todo atleta do circuito. ⚠️ **O conserto de 27/09 cobriu só o caminho do `select`**: o retorno de `insert(...).select(...)`, `update`, `delete` e `upsert` continuou devolvendo a linha inteira até 28/09 — ver a linha `[instrumento]` da tabela do 2º circuito |
 | `status: "ativo"` → `"ativo_backlog"` no `DESARQUIVAR_ATLETA` | 6 vermelhas — 4 delas comportamentais (o atleta não é promovido, não recebe chave, não é pareado), que pegariam o defeito mesmo se alguém "consertasse" a asserção do valor |
 | `DESARQUIVAR` entrando direto no circuito (`pendente_circuito: false`) | 2 vermelhas |
 | `LISTAR_TELEFONES` sem o `.in("id", idsTel)` | 3 vermelhas |
@@ -146,13 +146,26 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | app: a recusa nova deixa de ser traduzida e cai no genérico | 2 vermelhas |
 | app: a tradução deixa de mandar falar com o organizador | 1 vermelha |
 | **[aferidor]** sabotagem que quebra o arquivo antes de imprimir falha | 1 vermelha — **é a prova de que o conserto da régua funciona** |
+| **Condições das 8 duplas sobre o 2º circuito — 28/09/2026 (12 sabotagens, 12 vermelhas)** | |
+| o campo do teto volta a NÃO ressincronizar na troca de circuito | 1 vermelha — era **bug de dados**: o Salvar gravava o teto do circuito anterior no circuito novo, em silêncio |
+| o aviso do teto volta ao limite errado (`<` em vez de `<=`) | 2 vermelhas — com 8 dentro e teto 8 a fila congela e, antes, não havia aviso |
+| o aviso perde a frase do backlog | 1 vermelha |
+| o card volta a AFIRMAR que os atletas *aceitaram* a versão em vigor | 2 vermelhas — era **falso para 14 dos 15** no BH |
+| o card deixa de contar quem não aceitou | 1 vermelha |
+| `login-atleta`: a reescrita proibida `!== null &&` volta | 4 vermelhas — **ficava VERDE**: o conserto de 27/09 ganhou portão no `athlete-action` e não na guarda irmã |
+| motor: o teto não-numérico volta a virar 20 em silêncio | 1 vermelha |
+| motor: o slug `bh` deixa de ser reservado | 2 vermelhas — **ficava VERDE**; o dente de verdade está no `UNIQUE` do banco, a guarda da aplicação é defesa em profundidade |
+| o Salvar volta a mandar nome e teto sempre | 1 vermelha |
+| o aviso da criação volta a eleger UMA diferença | 1 vermelha |
+| o motivo do botão desabilitado some | 1 vermelha — **ficava VERDE** até a asserção da frase existir |
+| a cor semântica volta para o TEXTO pequeno (3,06:1) | 3 vermelhas |
 | **O 2º circuito — 28/09/2026 (14 sabotagens, 14 vermelhas)** | |
 | motor: o teto volta a ser ignorado no `DEFINIR_CONFIG_CIRCUITO` | 1 vermelha |
 | motor: o mínimo de 8 cai (um teto de 3 passaria) | 1 vermelha |
 | motor: `CRIAR_CIRCUITO` deixa de devolver `regulamento_versao` (o recibo) | 2 vermelhas — **ficava VERDE antes**: o banco falso não recortava colunas no retorno de `insert(...).select(...)`, então a asserção do recibo não tinha como enxergar a diferença. Mesmo furo do `select("*")` de `LISTAR_TELEFONES`, cujo conserto de 27/09 só cobriu metade do caminho |
 | motor: circuito de pontos volta a nascer com o regulamento do BH (`v03-12`) | 2 vermelhas |
 | motor: a configuração passa a reescrever `regulamento_versao` | 1 vermelha — é a regra 7: o recibo do atleta não se reescreve por um salvamento de configuração |
-| **[instrumento]** o banco falso volta a NÃO projetar colunas na escrita | 2 vermelhas — **ficava VERDE antes** das 4 asserções que dão portão ao próprio instrumento |
+| **[instrumento]** o banco falso volta a NÃO projetar colunas na escrita | 2 vermelhas — **ficava VERDE antes**. ⚠️ O portão do instrumento tem **2 dentes, não 4**: as outras duas asserções afirmam o lado positivo (as colunas pedidas *vêm*) e continuam verdes com o instrumento sabotado, então são companhia, não portão. Distinção cobrada pelo Guardião de Confiabilidade |
 | tela: a frase falsa "o teto é fixo em 20 atletas por circuito" volta | 1 vermelha |
 | tela: o campo do teto deixa de mandar o valor | 1 vermelha |
 | tela: o bloqueio fora da faixa 8–20 cai (o motor apararia em silêncio) | 1 vermelha |

@@ -7518,9 +7518,14 @@ function CriarCircuitoCard({ chamarAdminAction }) {
                 <div style={{fontSize:14,color:T.offwhite,marginBottom:6}}><strong>{criado.nome_circuito}</strong> — sistema {criado.sistema}{criado.pareamento?` · ${criado.pareamento}`:""}</div>
                 {/* A versão e o teto vêm do que o SERVIDOR gravou, não do que a tela
     mandou — é o recibo, não a intenção (ROADMAP 0.10.7). */}
-                {criado.regulamento_versao && (
-                  <div style={{fontSize:12.5,color:T.cinza,marginBottom:6}}>Regulamento: <strong style={{color:T.offwhite}}>{criado.regulamento_versao}</strong>{criado.max_atletas ? <> · teto de <strong style={{color:T.offwhite}}>{criado.max_atletas}</strong> atletas</> : null}</div>
-                )}
+                {/* Guardas SEPARADAS: o teto estava DENTRO da guarda da versão e
+    desaparecia junto se ela não voltasse, embora tivesse vindo. E faltar a
+    versão em silêncio é pior que dizer que não foi confirmada — o ponto
+    inteiro do 0.10.7 é o admin SABER a versão. */}
+                <div style={{fontSize:12.5,color:"#9db3a8",marginBottom:6}}>
+                  Regulamento: <strong style={{color:T.offwhite}}>{criado.regulamento_versao || "não confirmado — recarregue o painel"}</strong>
+                  {criado.max_atletas ? <> · teto de <strong style={{color:T.offwhite}}>{criado.max_atletas}</strong> atletas</> : null}
+                </div>
                 {/* Dizia "pronto para inscrições" — e o circuito nasce com `inscricoes_abertas:
     false`. O atleta não recebia erro: o circuito simplesmente não aparecia na
     vitrine (a leitura filtra por inscrições abertas), então não havia o que
@@ -7567,15 +7572,27 @@ function CriarCircuitoCard({ chamarAdminAction }) {
                   ))}
                 </div>
 
+                {/* ROADMAP 0.10.7 — o admin nao era avisado de qual regulamento o
+        circuito recebe. Tres correcoes do Guardiao do Regulamento entraram aqui:
+        (a) "a diferenca que importa" elegia UMA de TRES, e deixava de fora a que
+            mais pesa para quem esta definindo preco: o DESCONTO de quem entra na
+            2a etapa (o v03-12 da 80%, o vA-nc-01 nao da);
+        (b) o vB-01 tambem nao tem CERTIFICADO -- e o texto de rating lista o
+            certificado entre o que a temporada INCLUI, entao o admin suporia que
+            atravessa;
+        (c) "invalidaria os aceites" errava o mecanismo: o aceite nao fica
+            invalido, ele passa a APONTAR PARA OUTRO TEXTO -- que e' pior, porque
+            recibo invalido se anuncia e esse continua com cara de estar em ordem.
+        E os `<strong>` cairam de quatro para dois: so o que muda o que ele FAZ. */}
                 {sistema && (
                   <div style={{marginTop:12, background:"rgba(216,90,48,0.08)", border:`1px solid ${T.bordaSuave}`, borderRadius:10, padding:"10px 12px"}}>
-                    <div style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Regulamento que este circuito vai usar</div>
+                    <div style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Regulamento que este circuito vai usar</div>
                     <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{sistema === "A" ? "vA-nc-01" : "vB-01"}</div>
-                    <div style={{fontSize:11.5,color:T.cinza,marginTop:4,lineHeight:1.55}}>
+                    <div style={{fontSize:11.5,color:"#9db3a8",marginTop:4,lineHeight:1.55}}>
                       {sistema === "A"
-                        ? <>É o regulamento de rating para circuitos <strong style={{color:T.offwhite}}>novos</strong> — não é o do BH. A diferença que importa: <strong style={{color:T.offwhite}}>não tem Torneio Presencial de Encerramento</strong>. Esse capítulo é do BH, e o circuito novo nasce sem ele.</>
-                        : <>É o regulamento de pontos fixos. <strong style={{color:T.offwhite}}>Também não tem torneio de encerramento</strong>: a temporada termina na tabela de pontos.</>}
-                      {" "}Este é o texto que <strong style={{color:T.offwhite}}>todo atleta vai aceitar</strong> ao se inscrever, e ele <strong style={{color:T.offwhite}}>não muda depois</strong> — trocar um regulamento já aceito invalidaria os aceites.
+                        ? <>É o regulamento de rating para circuitos novos — não é o do BH, e são <strong style={{color:T.offwhite}}>três diferenças</strong>: não tem o Torneio Presencial de Encerramento nem o certificado do Top 3 (aquele capítulo é do BH); o valor é o mesmo para quem entra em qualquer etapa (o do BH dá 80% a quem entra na 2ª); e o número de rodadas é fixo, não definido pelo organizador. Em troca, os meses de recesso são você que define.</>
+                        : <>É o regulamento de pontos fixos, e o fim de temporada é <strong style={{color:T.offwhite}}>só a tabela de pontos</strong>: não tem torneio de encerramento nem certificado.</>}
+                      {" "}Este é o texto que todo atleta vai aceitar ao se inscrever, e ele não muda depois: o aceite fica gravado apontando para o <em>nome</em> da versão, então reescrever o texto faria os aceites antigos apontarem para algo que ninguém leu. Para mudar regra, publica-se uma versão nova e pede-se o aceite de novo.
                     </div>
                   </div>
                 )}
@@ -8258,13 +8275,32 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
   // o botão Salvar o regravava por cima — desfazendo em silêncio uma alteração
   // feita enquanto esta aba estava aberta.
   useEffect(() => { setNomeEdit(state.nomeCircuito || ""); }, [state.nomeCircuito]);
+  // O MESMO para o teto, e o campo nasceu SEM isto em f229432 — herdando, palavra
+  // por palavra, o defeito que o comentário acima descreve. Três guardiões pegaram
+  // (Admin, Designer, Confiabilidade), e o caminho é o comum, não o exótico:
+  // `AdminDashboard` NÃO remonta na troca de circuito (é o único da lista sem
+  // `key={circuitoSelId}`), então o campo ficava com o teto do circuito ANTERIOR —
+  // a tela já exibia o número errado — e o Salvar, que manda `maxAtletas` sempre,
+  // gravava esse valor velho no circuito novo. Em silêncio.
+  useEffect(() => { setTetoEdit(String(state.maxAtletas || 20)); }, [state.maxAtletas]);
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
   // Teto (ROADMAP 0.10.9). A mesma faixa do motor: 8 a 20. A tela BLOQUEIA fora
   // dela em vez de deixar o motor aparar em silencio -- aparar sem dizer faria o
   // admin digitar 50, ver "salvo" e ficar com 20 sem saber.
   const tetoValido = Number(tetoEdit) >= 8 && Number(tetoEdit) <= 20;
   const ativosNoCircuito = ativos.length;
-  const tetoAbaixoDoAtual = tetoValido && Number(tetoEdit) < ativosNoCircuito;
+  // ⚠️ `<=`, não `<`. A fila do backlog congela quando `teto <= atletas dentro`
+  // (`promoverBacklog`: `vagas = max - nCirc; if (vagas <= 0) return 0`). Com 8
+  // dentro e o admin digitando 8 — a forma mais natural de dizer "não quero
+  // crescer mais" — o aviso não aparecia e a fila parava. Provado rodando o motor
+  // pelo Guardião da Experiência do Atleta: teto 8 com 8 dentro = 0 promovidos.
+  const tetoFechaEntrada = tetoValido && Number(tetoEdit) <= ativosNoCircuito;
+  // Quem NAO aceitou a versao em vigor. A funcao ja existia (`atletasSemAceite`,
+  // 19/09) e e' a mesma que alimenta o aviso previo e o card do regulamento -- as
+  // tres listas foram alinhadas de proposito, porque a divergencia entre elas era
+  // o que permitia o painel dizer "todos aceitaram" com gente em versao antiga.
+  const semAceite = atletasSemAceite(state);
+  const ativosTotal = (state.athletes || []).filter(a => a.status === "ativo").length;
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
   const pendentes = state.athletes.filter(a => a.status === "pendente");
   const roundMatches = state.matches.filter(m => !m.validated && !m.rejeitado);
@@ -8610,30 +8646,77 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
         <input value={nomeEdit} onChange={e=>setNomeEdit(e.target.value)}
           style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:10,outline:"none",boxSizing:"border-box"}}/>
 
-        <label style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>Máximo de atletas no circuito</label>
+        <label style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>Máx. de atletas</label>
         <input value={tetoEdit} onChange={e=>setTetoEdit(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric"
-          style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,maxWidth:110,marginBottom:4,outline:"none",boxSizing:"border-box"}}/>
-        <div style={{fontSize:11,color: tetoValido ? "#7d9188" : "#c25a45", marginBottom: tetoAbaixoDoAtual ? 4 : 10, lineHeight:1.5}}>
-          De 8 a 20. Abaixo de 8, o pareamento repetiria confrontos na mesma temporada.
-        </div>
-        {/* Baixar o teto NAO tira ninguem de dentro: ele e conferido so na ENTRADA
-    (`INCLUIR_NO_CIRCUITO` e a promocao do backlog). Dizer isso na tela em vez de
-    bloquear -- e uma decisao legitima fechar a entrada com o circuito cheio. */}
-        {tetoAbaixoDoAtual && (
-          <div style={{fontSize:11,color:"#9C6F3E",marginBottom:10,lineHeight:1.5}}>
+          style={{background:"#1C2B27",border:`1px solid ${tetoValido?"rgba(255,255,255,0.1)":"#c25a45"}`,borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,maxWidth:110,marginBottom:6,outline:"none",boxSizing:"border-box"}}/>
+        {/* ⚠️ A COR SEMÂNTICA VAI NA BORDA E NO FUNDO, NUNCA NO TEXTO PEQUENO.
+    Em f229432 os três tons deste card ficaram em 3,00 / 3,06 / 3,96:1 — todos
+    abaixo do mínimo de 4,5:1 — e na ordem ERRADA: o texto "está normal" era o
+    mais legível e os dois de alerta os menos. Pior: esta lição já está escrita
+    neste arquivo, na `AcaoErroBar`, sobre esta mesma cor:
+    "#c25a45 sobre este fundo dá 2,7:1, e a WCAG AA pede 4,5:1". Elemento
+    gráfico (borda/fundo) tem piso 3:1; texto pequeno tem 4,5:1. */}
+        {tetoValido ? (
+          <div style={{fontSize:11,color:"#9db3a8",marginBottom: tetoFechaEntrada ? 6 : 10, lineHeight:1.5}}>
+            De 8 a 20. Abaixo de 8, o pareamento repetiria confrontos na mesma temporada.
+          </div>
+        ) : (
+          <div style={{fontSize:11,color:"#f8c4b4",background:"rgba(220,90,48,0.12)",borderLeft:"3px solid #c25a45",borderRadius:6,padding:"7px 9px",marginBottom:10,lineHeight:1.5}}>
+            O teto tem de ser um número <strong style={{color:"#F0EAE0"}}>de 8 a 20</strong>. Abaixo de 8, o pareamento repetiria confrontos na mesma temporada.
+          </div>
+        )}
+        {/* Baixar o teto NAO tira ninguem de dentro: `max_atletas` e' lido so na
+    ENTRADA (`INCLUIR_NO_CIRCUITO` e `promoverBacklog`) -- conferido executando o
+    motor. Dizer isso na tela em vez de bloquear: e' decisao legitima do admin
+    fechar a entrada com o circuito cheio. */}
+        {tetoFechaEntrada && (
+          <div style={{fontSize:11,color:"#e8c9a0",background:"rgba(156,111,62,0.16)",borderLeft:"3px solid #9C6F3E",borderRadius:6,padding:"7px 9px",marginBottom:10,lineHeight:1.5}}>
             Hoje há <strong style={{color:"#F0EAE0"}}>{ativosNoCircuito}</strong> atletas no circuito. Um teto de {Number(tetoEdit)} <strong style={{color:"#F0EAE0"}}>não tira ninguém</strong> — só fecha a entrada de novos até alguém sair.
+            {backlogCount > 0 && <> E os <strong style={{color:"#F0EAE0"}}>{backlogCount}</strong> atletas no backlog deixam de entrar automaticamente até abrir vaga — o app não avisa isso a eles.</>}
           </div>
         )}
 
-        <div style={{fontSize:11,color:"#7d9188",marginBottom:10,lineHeight:1.5,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
-          {/* ROADMAP 0.10.7: o admin nao via a versao do regulamento em tela nenhuma.
-      So leitura, de proposito: trocar uma versao ja aceita invalidaria os
-      recibos dos atletas (regra 7 do CLAUDE.md). */}
-          Regulamento em vigor neste circuito: <strong style={{color:"#F0EAE0"}}>{state.regulamentoVersao || "não definido"}</strong>. É o texto que os atletas aceitaram ao se inscrever, e por isso <strong style={{color:"#F0EAE0"}}>não se troca aqui</strong>.
+        <div style={{fontSize:11,color:"#9db3a8",marginBottom:10,lineHeight:1.5,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+          {/* ROADMAP 0.10.7 — o admin nao via a versao do regulamento em tela
+      NENHUMA. Meia verdade, e o Guardiao do Admin corrigiu: para o SUPER-ADMIN o
+      card `RegulamentoDoCircuitoCard` logo acima ja mostrava a versao e ja troca
+      (com confirmacao por nome). Mas ele e' `!modoOrg` -- para o ORGANIZADOR esta
+      linha e' a unica fonte, e por isso ela precisa dizer QUEM troca, nao que
+      ninguem troca.
+      ⚠️ E a 2a oracao era FALSA: dizia "e o texto que os atletas ACEITARAM", e no
+      BH 14 dos 15 aceitaram v03-3/v03-5/v03-8/v03-11. O app JA TEM a funcao que
+      calcula isso (`atletasSemAceite`, criada em 19/09 justamente para o painel
+      nao poder dizer "todos aceitaram" com gente em versao antiga) -- e este card
+      reintroduzia o mesmo defeito com outra redacao. Agora ele CONTA. */}
+          Regulamento em vigor neste circuito: <strong style={{color:"#F0EAE0"}}>{state.regulamentoVersao || "não definido"}</strong>. É o texto que os atletas <strong style={{color:"#F0EAE0"}}>aceitam</strong> ao se inscrever.
+          {" "}{semAceite.length > 0
+            ? <><strong style={{color:"#e8c9a0"}}>{semAceite.length} de {ativosTotal} atletas ainda não aceitaram esta versão.</strong>{" "}</>
+            : null}
+          {modoOrg
+            ? <>Trocar a versão faria os aceites já gravados apontarem para um texto que ninguém leu, então <strong style={{color:"#F0EAE0"}}>só o dono da plataforma troca</strong> — e com aviso prévio e novo aceite.</>
+            : <>Para trocar, use o card <strong style={{color:"#F0EAE0"}}>📋 Regulamento deste circuito</strong>, logo acima: ele pede confirmação com o nome do circuito, porque trocar faria os aceites já gravados apontarem para um texto que ninguém leu.</>}
         </div>
 
+        {/* Manda só o que MUDOU. Antes mandava `nome` e `maxAtletas` sempre, então
+    quem entrava para corrigir o nome regravava o teto (e no BH reescrevia
+    `configuracao.nome_circuito` a cada gravação de teto, virando o nome padrão
+    se o estado estivesse vazio no mount). Pegado por Admin e Segurança. */}
         <Btn small color="#D85A30" disabled={!tetoValido}
-          onClick={()=>dispatch({type:"DEFINIR_CONFIG_CIRCUITO",payload:{nome:nomeEdit.trim()||"Clube do Tênis de Mesa", maxAtletas:Number(tetoEdit)}})}>💾 Salvar</Btn>
+          onClick={()=>{
+            const payload = {};
+            const nomeNovo = nomeEdit.trim() || "Clube do Tênis de Mesa";
+            if (nomeNovo !== (state.nomeCircuito || "")) payload.nome = nomeNovo;
+            if (Number(tetoEdit) !== Number(state.maxAtletas || 20)) payload.maxAtletas = Number(tetoEdit);
+            if (Object.keys(payload).length === 0) return; // nada mudou: não chama o servidor
+            dispatch({type:"DEFINIR_CONFIG_CIRCUITO",payload});
+          }}>💾 Salvar</Btn>
+        {/* O motivo do botao morto fica IMEDIATAMENTE abaixo dele -- o padrao da
+    casa. Em f229432 ele estava a ~78px, atras de um bloco com borda propria. */}
+        {!tetoValido && (
+          <div style={{fontSize:11,color:"#9db3a8",marginTop:6,lineHeight:1.5}}>
+            Ajuste o teto para um número entre 8 e 20 para poder salvar.
+          </div>
+        )}
       </Card>
     </div>
   );

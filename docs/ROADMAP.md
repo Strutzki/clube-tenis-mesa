@@ -1008,6 +1008,29 @@ atleta inscrito."*
 
 ### Sem gatilho — higiene
 
+- **0.10.26 — O teto editável alcança o BH, cujo regulamento crava "20" sem
+  ressalva.** *(Curador, 28/09/2026 — hoje inofensivo; decidir antes do carimbo da
+  v03-13.)* O card de configuração **não é escopado por circuito**, então o teto do
+  BH passou a ser editável pela tela — e isso funciona de verdade (grava em
+  `configuracao.max_atletas`, que é o que o motor lê para o BH). Só que os dois
+  regulamentos do BH — `v03-12.md` (o que os 15 aceitaram) e `v03-13.md` (o que
+  está para ser carimbado) — dizem *"Cada circuito tem um teto de **20** atletas"*,
+  **sem** o "até 20, definido pelo organizador" que o texto de circuito novo ganhou
+  em 27/09. **Não é defeito de código:** o motor apara em 8..20 e nenhum consumidor
+  de `max_atletas` remove atleta. É a proteção que existe para o circuito novo (o
+  texto acompanhando a coluna) **não existindo** para o legado. Três saídas, e a
+  escolha é do Guardião do Regulamento com o do Admin: (a) escopar o campo para
+  não-BH; (b) corrigir a frase na **v03-13, antes do carimbo** — é onde sai barato,
+  porque a v03-13 ainda não tem aceite; (c) aceitar e registrar. **O v03-12 não se
+  toca** — é o registro do que os atletas aceitaram.
+- **0.10.27 — O "✅ Incluir agora" oferece o que o servidor recusa quando o
+  circuito está cheio.** *(Admin, 28/09/2026 — era inalcançável até o teto virar
+  editável.)* O gate da tela (`podeIncluirBacklog`) confere o último terço e o
+  pagamento, **não o teto**. O admin clica e o motor recusa com *"Circuito cheio
+  (N/X). Abra uma vaga antes de incluir."* A mensagem do servidor é boa, então não
+  quebra nada — mas é o padrão "a tela oferece, o servidor recusa" que já apareceu
+  três vezes nesta onda. `motivoBloqueioInclusao` já tem o formato para dizer
+  "circuito cheio (N/X)".
 - **0.6.29 — O rate-limit do CPF é chaveado num cabeçalho que o cliente pode
   escolher.** *(Segurança, 28/09/2026 — precisa de verificação AO VIVO, não de
   código.)* `athlete-action` toma `ipReq` do **primeiro** elemento do
@@ -1724,6 +1747,15 @@ geral antes de abrir cadastro para terceiros.
   sem piloto. Só o Juliano decide o que comunicar.
 
 ## Fora do escopo — decidido não fazer
+
+- **Trocar a versão do regulamento de um circuito pelo card de configuração.**
+  *(28/09/2026 — ver 0.10.7, terceira ponta.)* Não se faz por configuração. Trocar
+  uma versão já aceita faria o aceite de cada atleta **apontar para um texto que ele
+  nunca leu** — o recibo aponta para uma *string*, e a tela renderiza o texto de
+  hoje para aquela string. O caminho legítimo **existe** e é outro:
+  `DEFINIR_REGULAMENTO_VERSAO`, só super-admin, com confirmação pelo nome do
+  circuito, no card **📋 Regulamento deste circuito** — e com aviso prévio e
+  re-aceite, como a v03-12 → v03-13 vai usar. É a regra 7 do `CLAUDE.md`.
 
 Registrado para não voltar à mesa a cada conversa. Cada item tem o porquê.
 

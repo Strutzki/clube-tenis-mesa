@@ -54,7 +54,7 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **813 asserções** (conferido ao vivo em 28/09/2026, somando as 13
+Hoje são **845 asserções** (conferido ao vivo em 28/09/2026, somando as 13
 seções que a bateria imprime). **Não cite este número de memória** — ele mudou em
 sete ondas seguidas; rode `npm run teste` e leia. O `atualizar.sh` roda isso
 antes de publicar e se recusa a subir com teste vermelho. O `testes/README.md`
@@ -169,6 +169,17 @@ Só **duas** coisas trocam o que os atletas estão usando:
 O `atualizar.sh` **não fala com a Vercel**: ele testa, comita e dá `git push`.
 Quem republica o site é a Vercel, ao ver o push na `main`. Logo, **empurrar para
 o GitHub é publicar** — não existe "só guardar no GitHub" nesta configuração.
+
+⚠️ **Qual lado sobe primeiro, em forma de teste de bolso.** A regra é *sobe
+primeiro o lado que tolera a versão antiga do outro*. Na prática ela se decide numa
+pergunta só: **o servidor passou a DEVOLVER mais, ou a EXIGIR mais?**
+- passou a **devolver** mais (campo novo no `select`, resposta mais rica) → **motor
+  primeiro**: o app novo quer o campo, o motor novo não precisa de nada do app;
+- passou a **exigir** mais (guarda nova, campo obrigatório) → **app primeiro**: o
+  app novo já manda o que o motor vai cobrar, e o app velho ouviria uma recusa que
+  não sabe traduzir.
+*(Formulado pelo Guardião de Confiabilidade em 28/09/2026, depois de as duas
+subidas do dia caírem em lados opostos.)*
 
 ⚠️ **Para conferir se o pacote novo subiu, `curl -L` — sempre.** O domínio
 `clubedotenisdemesabh.com.br` responde **308** redirecionando para o `www`. Um

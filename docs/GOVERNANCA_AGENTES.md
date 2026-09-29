@@ -57,6 +57,51 @@ sandbox que não compilava, e hoje seria trabalho perdido.
 
 ## Vereditos já emitidos (histórico)
 
+### REGRA NOVA, 28/09/2026 (tarde) — conserto de instrumento é conserto de UM CAMINHO
+
+**Três falhas do instrumento em 48 horas, todas achadas por acidente, nenhuma por
+teste:**
+
+1. **27/09** — o banco falso não recortava colunas no `select`, e trocar
+   `select("id, telefone")` por `select("*")` ficava verde **devolvendo `pin_hash`**.
+2. **28/09 (manhã)** — o aferidor de mutação lia "a sabotagem quebrou o arquivo"
+   como **verde**.
+3. **28/09 (tarde)** — o banco falso não recortava colunas na **escrita**, e tirar
+   `regulamento_versao` do `select` do `CRIAR_CIRCUITO` ficava verde.
+
+O terceiro é o que gera a regra, porque ele é o **mesmo defeito do primeiro, no
+caminho que o conserto não cobriu**. Em 27/09 o furo foi tapado onde ele apareceu —
+o `select` — e o retorno de `insert(...).select(...)`, `update`, `delete` e `upsert`
+continuou devolvendo a linha inteira por mais um dia, escondendo um bug que **já
+estava em produção** (o admin criava um circuito e não ficava sabendo sob qual
+regulamento ele nascia).
+
+> **A regra:** conserto de instrumento é conserto de **um caminho**, não da classe.
+> Antes de declarar resolvido, **enumere os caminhos** — leitura e escrita, retorno
+> e efeito — e conserte todos, ou escreva quais ficaram de fora.
+
+**E o corolário que vale mais que os três achados somados:** o instrumento de teste
+é **parte do rito, não andaime**. Ele nasce com asserção contra si mesmo. As duas
+asserções que fazem o banco falso acusar a própria projeção são a primeira vez que
+o instrumento ficou sob a mesma regra que o código — e o argumento para não esperar
+um quarto caso é que os três anteriores só apareceram porque alguém, por sorte,
+mutou a linha certa.
+
+**Uma precisão, do Guardião de Segurança, que evita generalizar demais:** os dois
+furos do banco falso apontam para **lados diferentes**. No `select`, o instrumento
+generoso escondia um risco de **confidencialidade** (`pin_hash` saindo). Na escrita,
+ele escondia um defeito de **correção** (campo vindo `undefined` na tela). A forma é
+a mesma — *o instrumento era mais generoso que a produção* — mas a consequência não,
+e confundi-las levaria a procurar vazamento onde o sintoma é tela vazia.
+
+**E um terceiro caminho da mesma família, achado no mesmo dia:** quando um conserto
+tem **guarda irmã** em outra função, o portão precisa nascer nas duas. O
+`athlete-action` ganhou asserção contra a reescrita `!== null &&`; o `login-atleta`,
+que tem a guarda gêmea, não — e a mesma regressão voltava verde. Terceira vez na
+série que o conserto caiu de um lado só.
+
+---
+
 ### REGRA NOVA, 28/09/2026 — "vermelho" é falha impressa OU saída ≠ 0, nunca as duas exigidas juntas
 
 O aferidor de mutação usado até aqui só classificava uma sabotagem como **vermelha**

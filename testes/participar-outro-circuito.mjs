@@ -326,6 +326,24 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
   ok(!!linhaTraducao, "o app traduz o código novo — sem isso ele cai no genérico 'tente de novo', que aqui é mentira");
   ok(/Fale com o organizador/.test(linhaTraducao || ""),
     "e a frase manda falar com o organizador, que é o único que consegue resolver");
+
+  // ── A FORMA da guarda, e não só o comportamento (28/09/2026) ──────────────
+  // O Guardião de Segurança mutou `=== null ||` de volta para `!== null &&` AQUI
+  // e a bateria ficou VERDE — a mesma regressão que o `athlete-action` já barra,
+  // na guarda IRMÃ, voltando sem ninguém ver. É a terceira vez nesta série que um
+  // conserto cai de um lado só, e o molde já existia a um arquivo de distância.
+  // Por que precisa ser asserção de FONTE: com a guarda de `=== null` de pé, a
+  // linha de baixo nunca recebe nulo, então nenhuma asserção de comportamento
+  // consegue distinguir as duas formas. Inalcançável por construção.
+  {
+    const motorLogin = await import("node:fs/promises")
+      .then(f => f.readFile("supabase/functions/login-atleta/index.ts", "utf-8"));
+    const semComentario = motorLogin.replace(/\/\/[^\n]*/g, "");
+    ok(/if \(idadeArquivo === null\) \{/.test(semComentario),
+      "a guarda do arquivo recusa idade DESCONHECIDA explicitamente");
+    ok(!/idadeArquivo !== null/.test(semComentario),
+      "e a reescrita que transforma idade desconhecida em liberação silenciosa não voltou — a mesma que o athlete-action já barra");
+  }
 }
 
 secao("E a tela do atleta oferece o regulamento antes do PIN");

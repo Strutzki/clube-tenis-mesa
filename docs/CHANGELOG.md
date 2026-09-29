@@ -63,8 +63,69 @@ do caminho. Corrigido, **e desta vez o instrumento ganhou portão contra si mesm
 4 asserções que provam que a escrita com `select` recorta colunas, porque a lição de
 ontem foi que *todo portão novo precisa ser testado contra si mesmo*.
 
-**Bateria: 776 → 813 asserções, 0 falhas, saída 0.** 14 mutações, 14 vermelhas —
-duas delas só ficaram vermelhas **depois** do conserto do banco falso.
+**4. O que as 8 duplas acharam (revisão concluída na madrugada de 29/09).**
+Oito GO, sete com condições. **Um bug de dados de verdade e cinco frases minhas que
+afirmavam a mais.**
+
+**(a) O campo do teto não ressincronizava, e o Salvar gravava por cima.** Três
+duplas pegaram. `tetoEdit` nascia de `useState(state.maxAtletas)` e **não** tinha o
+`useEffect` que o campo do nome tem quatro linhas acima — cujo comentário descreve o
+defeito palavra por palavra. E o `AdminDashboard` é o **único** painel sem
+`key={circuitoSelId}`, então não remonta na troca de circuito. Caminho real: abrir o
+BH (teto 20) → trocar para o circuito novo (teto 12) → o campo **exibe 20**, já
+errado → salvar só o nome → **o teto do circuito novo pula para 20, em silêncio.**
+Corrigido, e com asserção **genérica**: todo campo do painel inicializado a partir do
+estado tem de ressincronizar — pega o próximo que nascer torto, não só este.
+
+**(b) Eu pus uma frase falsa na tela do BH.** O card dizia *"É o texto que os atletas
+**aceitaram** ao se inscrever"*, e no BH **14 dos 15** aceitaram v03-3, v03-5, v03-8
+ou v03-11. Pior: o app **já tem** a função que calcula isso (`atletasSemAceite`,
+criada em 19/09 justamente para o painel não poder dizer "todos aceitaram" com gente
+em versão antiga) — e eu reintroduzi o mesmo defeito com outra redação. Agora a
+frase descreve o mecanismo no presente (*"aceitam"*, verdadeiro em qualquer circuito)
+**e conta**: *"14 de 15 atletas ainda não aceitaram esta versão"*. O card deixou de
+tranquilizar falsamente e virou o **gatilho do 0.10.11**.
+
+**(c) A terceira ponta do 0.10.7 já estava feita, e eu não conferi.** Eu registrei
+que "não dei ao admin o poder de trocar o regulamento, de propósito". O caminho
+**existe** desde 27/09: `DEFINIR_REGULAMENTO_VERSAO`, só super-admin, com
+confirmação pelo nome do circuito, no card **📋 Regulamento deste circuito** — que
+fica **logo acima** do meu. A minha frase *"não se troca aqui"* ficava a poucos
+pixels de um card cuja função inteira é trocar. Agora ela **aponta para ele**; e para
+o **organizador**, para quem aquele card não aparece, ela diz que quem troca é o dono
+da plataforma.
+
+**(d) "Invalidaria os aceites" erra o mecanismo, e errar para mais é pior.** O aceite
+**não** fica inválido: ele passa a **apontar para um texto que ninguém leu**. E isso
+é pior que invalidar, porque recibo inválido se anuncia e esse continua com cara de
+estar em ordem. Corrigido na tela e no comentário.
+
+**(e) "A diferença que importa" elegia uma de três — e deixava de fora a do
+dinheiro.** Entre o `v03-12` do BH e o `vA-nc-01` mudam **três** coisas: o torneio (e
+o certificado do Top 3), o **desconto de 80% para quem entra na 2ª etapa**, e as
+rodadas fixas. Para um admin que está definindo preço, a do desconto é
+discutivelmente a mais importante — e era a que faltava.
+
+**(f) Os três tons do card estavam todos abaixo do mínimo de legibilidade, e na
+ordem errada.** 3,00 / 3,06 / 3,96:1 contra os 4,5:1 que a norma pede — e o texto
+"está tudo normal" era o **mais** legível, os dois de alerta os **menos**. Esta lição
+já estava escrita neste mesmo arquivo, sobre esta mesma cor. A cor semântica foi para
+a **borda** (piso 3:1) e o texto ficou legível. E o motivo do botão desabilitado
+saiu de ~78px de distância para logo abaixo dele.
+
+**(g) O aviso do teto disparava em `<`, mas a fila congela em `<=`.** Com 8 atletas
+dentro e o admin digitando **8** — a forma mais natural de dizer "não quero crescer
+mais" — nenhum aviso aparecia e a fila do backlog parava. Provado rodando o motor.
+Corrigido, e o aviso passou a nomear quem de fato é afetado: os do backlog.
+
+**(h) E uma lacuna do conserto de ontem.** O `athlete-action` ganhou portão contra a
+reescrita `!== null &&`; a **guarda irmã** no `login-atleta` não — e a mesma
+regressão voltava verde. Terceira vez na série que um conserto cai de um lado só, e
+virou regra no `GOVERNANCA_AGENTES.md`.
+
+**Bateria: 776 → 845 asserções, 0 falhas, saída 0.** 26 mutações no total (14 da
+fatia + 12 das condições), **26 vermelhas** — quatro delas só ficaram vermelhas
+**depois** de o instrumento ou a asserção serem consertados.
 
 ---
 

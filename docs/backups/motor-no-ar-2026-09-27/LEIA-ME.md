@@ -108,3 +108,30 @@ O backup do **v10** é o próprio `git show f1650d0:supabase/functions/login-atl
     git checkout f1650d0 -- supabase/functions/login-atleta/index.ts
     npm run motor:publicar -- login-atleta
     npm run motor:conferir
+
+---
+
+## `ar-admin-action-v62.ts` — salvo em 28/09/2026, antes da v63
+
+Terceira rodada seguida em que o Guardião de Confiabilidade acha um backup faltando.
+Havia `ar-admin-action.ts` (07/09), `-pos-cors`, `-v57` e `-v60` (19/09). **v62 não**
+— e v62 é o motor de quase tudo no painel do admin.
+
+**Desta vez é `diff` byte a byte, não evidência convergente.** Ele baixou o fonte do
+ar e comparou contra `git show cd5249a:supabase/functions/admin-action/index.ts`:
+**118.181 caracteres, IDÊNTICOS** (idêntico também a `b4822c1`, o commit publicado
+como v62). A reversibilidade está **provada**, não inferida — este arquivo é
+escrituração da convenção da casa, não pré-requisito de segurança.
+
+**E ele descobriu por que os dois anteriores ficaram com asterisco**, o que fecha uma
+dúvida que estava aberta desde 27/09: quando a resposta da API é grande, a ferramenta
+**salva em arquivo automaticamente** — e aí o `diff` é trivial. O `login-atleta` v9 e
+o `athlete-action` v21 **couberam no contexto** e por isso não foram salvos em disco.
+Era essa, e só essa, a razão do "não afirmo byte-idêntico". **Dá para fechar os dois
+retroativamente**: buscar cada função, gravar o conteúdo em arquivo e rodar o `diff`.
+
+Para reverter o `admin-action`:
+
+    git checkout cd5249a -- supabase/functions/admin-action/index.ts
+    npm run motor:publicar -- admin-action    # sobe como v64 — o número sempre sobe
+    npm run motor:conferir                    # tem de dar 0 divergências

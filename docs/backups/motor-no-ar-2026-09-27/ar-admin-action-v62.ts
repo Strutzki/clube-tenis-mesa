@@ -1656,14 +1656,7 @@ Deno.serve(async (req) => {
           regulamento_versao: sistema === "A" ? "vA-nc-01" : "vB-01",
           inscricoes_abertas: false,
         };
-        // `regulamento_versao` e `max_atletas` entraram no select em 28/09/2026
-        // (ROADMAP 0.10.7): o admin criava um circuito e nao ficava sabendo sob qual
-        // regulamento ele nasceu. Nao e detalhe -- e o texto que TODO atleta daquele
-        // circuito vai aceitar, e um circuito de rating NOVO nasce sem o Torneio de
-        // Encerramento, diferenca que so aparece no documento. A tela de confirmacao
-        // passa a mostrar o que o SERVIDOR gravou, nao o que ela mandou.
-        const { data: ins, error } = await supabase.from("circuitos").insert(novo)
-          .select("id, slug, nome_circuito, sistema, pareamento, regulamento_versao, max_atletas").single();
+        const { data: ins, error } = await supabase.from("circuitos").insert(novo).select("id, slug, nome_circuito, sistema, pareamento").single();
         if (error) {
           const msg = String(error.message || "");
           if (msg.includes("duplicate") || msg.includes("unique") || msg.includes("circuitos_slug_key")) {
@@ -1679,17 +1672,7 @@ Deno.serve(async (req) => {
         const upd: Record<string, unknown> = {};
         if (typeof p.nome === "string") upd.nome_circuito = p.nome.trim() || "Clube do Tênis de Mesa";
         if (p.dataInicio !== undefined) upd.data_inicio_temporada = p.dataInicio || null;
-        // RECUSA em vez de adivinhar (28/09/2026, Guardião de Segurança). O
-        // `Number(p.maxAtletas) || 20` transformava "abc" em **20 em silêncio** --
-        // e em todo o resto deste motor o padrão é recusar: `DESARQUIVAR`,
-        // `versao_regulamento`, `idadeDeISO`. Esta linha era a exceção. Fora da
-        // faixa continua sendo APARADO (8..20 é sempre válido, e a tela já bloqueia
-        // antes): o que passa a recusar é o que não é número nenhum.
-        if (p.maxAtletas !== undefined) {
-          const n = Number(p.maxAtletas);
-          if (!Number.isFinite(n)) return jsonResponse({ sucesso: false, erro: "O teto de atletas tem de ser um número de 8 a 20." }, 400);
-          upd.max_atletas = Math.min(20, Math.max(8, Math.round(n))); // mesma regra da criação: teto 20, mínimo 8
-        }
+        if (p.maxAtletas !== undefined) upd.max_atletas = Math.min(20, Math.max(8, Math.round(Number(p.maxAtletas) || 20))); // mesma regra da criação: teto 20, mínimo 8
         if (p.pixChave !== undefined) upd.pix_chave = (typeof p.pixChave === "string" && p.pixChave.trim()) ? p.pixChave.trim() : null;
         if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
         await setCfg(circuitoId, upd);

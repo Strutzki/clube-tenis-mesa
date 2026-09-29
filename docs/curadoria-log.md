@@ -13,6 +13,65 @@
 > a cópia original (mais abaixo, sob "2026-09-05 — Bootstrap da curadoria...")
 > é a que fica.
 
+## 2026-09-29 (madrugada) — 0.10.9 + 0.10.7: o caminho do 2º circuito, e o terceiro furo de instrumento em 48h
+
+**Fatia ainda NÃO publicada.** Commit congelado `f229432`, revisado pelas **8 duplas**
+(mexe no motor e escreve no banco). **Oito GO, sete com condições**, todas aplicadas
+na madrugada de 29/09 — a revisão atravessou a virada do dia.
+
+**Números reconferidos pelo Curador, e pela primeira vez em três rodadas todos
+certos na origem:** 813 → **845** com as condições; o arquivo novo
+`testes/segundo-circuito.mjs` tinha 37 e foi para 61; a divisão 16 (0.10.9) / 11
+(0.10.7) foi reproduzida asserção por asserção, sem dupla contagem. O método que
+funcionou foi trivial e vale registrar: **contar antes de escrever**, seção a seção,
+em vez de estimar.
+
+**Três coisas desta rodada só existem se forem escritas:**
+
+**1. O terceiro furo de instrumento em 48 horas, e o que ele generaliza.** O banco
+falso recortava colunas no `select` e **não** na escrita, então tirar
+`regulamento_versao` do `select` do `CRIAR_CIRCUITO` ficava verde. É o **mesmo
+defeito de 27/09, no caminho que aquele conserto não cobriu** — e ele escondia um bug
+que já estava em produção. Virou REGRA no `GOVERNANCA_AGENTES.md`: *conserto de
+instrumento é conserto de um caminho; enumere os caminhos antes de declarar
+resolvido*. Com duas precisões que vieram dos guardiões: os dois furos do banco falso
+apontam para lados **diferentes** (confidencialidade vs. correção), e o portão do
+instrumento tem **2 dentes, não 4** — as outras duas asserções são companhia.
+
+**2. Uma correção retroativa de acervo, e a distinção que a justifica.** O
+`testes/README.md` e o `GOVERNANCA_AGENTES.md` registravam o furo de 27/09 como
+*resolvido*. Ele estava resolvido **em metade do caminho**. A distinção que decide:
+o `CHANGELOG` é **histórico append-only** e ficou como estava (descreve o que se
+acreditava naquele dia); os outros dois são **declarações de estado atual**, e dizer
+"resolvido" ali era afirmação falsa **hoje**.
+
+**3. O índice canônico registrava como decisão fechada do Juliano o contrário do
+código.** `curadoria-indice:254` dizia, riscado como resolvido, que `max_atletas`
+*"deixou de ser configurável por circuito"* — decisão de 10/09. As duas metades da
+premissa caíram: é configurável (na criação, e agora editável na tela) e o texto
+deixou de ser o "teto de 20" fixo. **Reaberto, com a pergunta explícita ao Juliano**,
+porque revogar uma decisão dele não é minha.
+
+**O padrão desta rodada, que é o mesmo da anterior em outro eixo:** cinco das oito
+duplas pegaram a **meia-correção** — a conta certa e a prosa em volta errada — e
+desta vez o que sobrou foi **uma frase falsa sobre dado gravado**, na tela do BH.
+Três vezes no mesmo dia uma asserção minha se afogou no comentário que **explicava**
+a armadilha que ela deveria proibir; virou convenção no arquivo de teste (`fonte`
+para exigir presença, `fonteSemComentario` para exigir ausência).
+
+**E um fato do Jurídico que não é desta fatia e é o mais sério do dia:** os textos
+`v03-3`, `v03-5`, `v03-8` e `v03-11` — que 14 dos 15 atletas do BH aceitaram —
+**nunca existiram**, em ponto nenhum do histórico do repositório. Para essas pessoas
+o recibo aponta para uma etiqueta cujo conteúdo ninguém consegue exibir. A cura já
+está construída e no ar (o re-aceite dispara na divergência), e ela é argumento para
+**carimbar a v03-13 antes de criar o 2º circuito**, não depois.
+
+**Segue aberto, e é decisão do Juliano:** os 16 `.claude/agents/*.md` dizem "82
+asserções". **Quinta rodada** que o Curador aponta, e ele sugere tratá-lo como
+bloqueante na próxima.
+
+---
+
 ## 2026-09-28 — 0.6.24 + 0.6.15: a porta da frente, a janela invertida, e duas lições de método
 
 **Fatia ainda NÃO publicada** quando esta entrada foi escrita. Commit congelado

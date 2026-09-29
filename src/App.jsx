@@ -4222,7 +4222,13 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsSta
     ...m, categoria, categoriaLabel: CATEGORIAS_MENSAGEM.find(c=>c.id===categoria)?.label||categoria,
   }));
   const categorias = CATEGORIAS_MENSAGEM.filter(c => {
-    if (c.id === "torneio") return temporadaCompletaCheck(state);
+    // ⚠️ O FILTRO TAMBÉM PRECISA PERGUNTAR SE O CIRCUITO TEM TORNEIO (29/09/2026).
+    // O GERADOR já pergunta (`case "torneio"` chama `circuitoTemTorneio`), mas o
+    // FILTRO não — então num circuito de pontos o chip "🎯 Convocação Torneio —
+    // Notifica os Top 8 classificados" aparecia no painel ao fim da temporada e a
+    // fila vinha VAZIA, sem explicação. Duas telas discordando sobre a mesma regra:
+    // uma oferece, a outra não entrega. (Auditoria multi-circuito.)
+    if (c.id === "torneio") return circuitoTemTorneio(state) && temporadaCompletaCheck(state);
     if (c.id === "renovacao" || c.id === "lembrete_renovacao") return state.proximaAberta;
     // Só aparece quando há alguém para avisar. Sem isto, o admin veria uma
     // categoria vazia e não saberia se é porque todos aceitaram ou porque algo
@@ -5614,9 +5620,17 @@ export default function App() {
   }, [isAdmin]);
 
   // A2: troca o circuito ativo (super-admin) e recarrega. Guarda: não troca durante carga.
+  // Devolve `true` só quando a troca REALMENTE aconteceu. Antes devolvia `undefined`
+  // em duas saídas silenciosas — carga em andamento, e falha de carga com reversão —
+  // e quem chamava seguia adiante achando que estava no circuito novo. O caminho
+  // que dói: os Despachos do Dia trocam de circuito e em seguida mandam
+  // PROCESSAR_RODADA, que "calcula o rating/pontos e não pode ser desfeito". Com a
+  // troca no-opada, ele processava a rodada N do circuito ERRADO — e a faixa verde
+  // anunciava o nome do circuito que ele não tinha tocado.
+  // (Auditoria multi-circuito, 29/09/2026.)
   async function trocarCircuito(circ) {
-    if (!circ || !circ.id || circ.id === CIRCUITO_ATIVO) return;
-    if (dbStatus === "loading") return;
+    if (!circ || !circ.id || circ.id === CIRCUITO_ATIVO) return false;
+    if (dbStatus === "loading") return false;
     const prevAtivo = CIRCUITO_ATIVO, prevSel = circuitoSelId;
     // ⚠️ A ORDEM DESTAS TRÊS LINHAS É A CORREÇÃO, e ela vale DINHEIRO (0.10.23).
     //
@@ -5632,10 +5646,20 @@ export default function App() {
     // desabilitado por `carregando`.
     setCircuitoAtivo(circ.id);
     const ok = await loadFromSupabase();
-    if (ok === false) { setCircuitoAtivo(prevAtivo); setCircuitoSelId(prevSel); return; } // R1: reverte se o load falhar
+    if (ok === false) { setCircuitoAtivo(prevAtivo); setCircuitoSelId(prevSel); return false; } // R1: reverte se o load falhar
     setCircuitoSelId(circ.id);
     dispatch({ type: "SET_MENSAGENS_ENVIADAS", payload: [] }); // A2: limpa o histórico; recarrega no circuito novo (msgsCircRef != CIRCUITO_ATIVO)
     setMsgsStatus("nao-carregado");
+    // A AGENDA DE TELEFONES TAMBÉM É POR CIRCUITO, e não era invalidada.
+    // `garantirTelefones()` devolve o mapa em cache sem reconsultar quando ele já
+    // tem algo dentro, e o `LISTAR_TELEFONES` do motor é escopado por circuito.
+    // Resultado com dois circuitos: os atletas do circuito novo não estavam no
+    // mapa, o botão de WhatsApp montava um link SEM destinatário, e — o grave — o
+    // modal de editar abria com o telefone VAZIO e salvar gravava `telefone: ""` na
+    // tabela GLOBAL `atletas`, que é a credencial de login do atleta em TODOS os
+    // circuitos. (Auditoria multi-circuito, 29/09/2026.)
+    setTelefones({});
+    return true;
   }
 
   // Resolve com o PIN em cache, ou abre o PinPromptModal e espera a confirmação.
@@ -7307,7 +7331,19 @@ const Badge = ({label, color="#D85A30"}) => (
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
 function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg, msgsStatus }) {
-  if (tab === "dashboard") return <AdminDashboard state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} msgsStatus={msgsStatus} />;
+  // ⚠️ `key={circuitoSelId}` NO PAINEL INTEIRO, e não campo a campo (29/09/2026).
+  // Este era o ÚNICO dos quatro painéis sem `key` — `AdminHistorico`,
+  // `AdminMensagens` e `AdminFinanceiro` já tinham. E a consequência não era
+  // cosmética: os painéis-filhos dele guardam estado inicializado a partir do
+  // circuito carregado, e sem remontagem esse estado ATRAVESSA a troca.
+  // O caso que fechou a decisão, achado na auditoria multi-circuito: o
+  // `AbrirProximaPanel` guarda `pix` de `state.pixChave` e não ressincroniza.
+  // Abrir a próxima temporada do circuito A, trocar para B e confirmar gravaria a
+  // CHAVE PIX DE A no circuito B — e essa chave SAI POR WHATSAPP na mensagem de
+  // renovação (`pixLinha`). Os atletas de B pagariam na chave de A.
+  // Consertar campo a campo seria tapar um caminho de uma classe: qualquer painel
+  // novo com `useState(state.…)` nasceria torto de novo. A `key` fecha a classe.
+  if (tab === "dashboard") return <AdminDashboard key={circuitoSelId} state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} msgsStatus={msgsStatus} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
@@ -8222,7 +8258,13 @@ function DespachosDoDiaCard({ fetchDespachos, chamarAdminAction, loadFromSupabas
   async function processar(c) {
     setProcessando(c.id); setErro(""); setMsg("");
     try {
-      if (!modoOrg && trocarCircuito) await trocarCircuito({ id: c.id }); // super-admin: foca no circuito certo
+      // ⚠️ ABORTA SE A TROCA NÃO ACONTECEU. `PROCESSAR_RODADA` calcula rating/pontos
+      // e NÃO PODE SER DESFEITO — mandá-la para o circuito errado é o pior desfecho
+      // possível desta tela.
+      if (!modoOrg && trocarCircuito && c.id !== CIRCUITO_ATIVO) {
+        const trocou = await trocarCircuito({ id: c.id });
+        if (!trocou) { setErro(`Não foi possível focar no circuito "${c.nome}" agora — nada foi processado. Tente de novo em instantes.`); return; }
+      }
       const r = await chamarAdminAction("PROCESSAR_RODADA", { round: c.processarRodada });
       if (loadFromSupabase) await loadFromSupabase(); // atualiza o estado do circuito focado
       await carregar(); // atualiza as contagens
@@ -8242,8 +8284,13 @@ function DespachosDoDiaCard({ fetchDespachos, chamarAdminAction, loadFromSupabas
   const totalGeral = dados?.totais?.total || 0;
   const comPend = (dados?.circuitos || []).filter(c => c.total > 0);
 
-  function abrirCirc(c, tab) {
-    if (!modoOrg && trocarCircuito) trocarCircuito({ id: c.id });
+  // Também espera a troca: sem o `await`, clicar "Abrir" no circuito B levava às
+  // pendências de A — e, se a troca no-opasse, ficava em A sem aviso nenhum.
+  async function abrirCirc(c, tab) {
+    if (!modoOrg && trocarCircuito && c.id !== CIRCUITO_ATIVO) {
+      const trocou = await trocarCircuito({ id: c.id });
+      if (!trocou) { setErro(`Não foi possível abrir "${c.nome}" agora. Tente de novo em instantes.`); return; }
+    }
     setTab(tab || "pendencias");
   }
 
@@ -9187,6 +9234,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
   const [editNome, setEditNome] = useState("");
   const [resetPinConf, setResetPinConf] = useState(false);
   const [editTelefone, setEditTelefone] = useState("");
+  const [avisoEdicao, setAvisoEdicao] = useState("");
   const [editApelido, setEditApelido] = useState("");
   const [editRating, setEditRating] = useState("");
   const [editStatus, setEditStatus] = useState("");
@@ -9255,6 +9303,22 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
     setModo("editar");
   }
   function salvarEdicao() {
+    // ⚠️ TELEFONE VAZIO NÃO É EDIÇÃO — É AGENDA QUE NÃO CARREGOU (29/09/2026).
+    // O campo abre com `telefones[a.id] || ""`, e esse mapa é por circuito e vinha
+    // em cache. Com ele vazio ou velho, o modal abria SEM telefone e salvar gravava
+    // `telefone: ""` na tabela GLOBAL `atletas` — que é a CREDENCIAL DE LOGIN do
+    // atleta em todos os circuitos. Ele perderia o acesso, em todo lugar, por um
+    // campo que ninguém digitou.
+    // A causa foi fechada (a agenda é invalidada na troca de circuito), mas esta é
+    // a guarda de última linha: apagar telefone nunca é o que o admin quis fazer
+    // sem digitar nada. Se ele quiser mesmo remover, é outro caminho, explícito.
+    // (Auditoria multi-circuito. O relatório mediu que a janela existe HOJE, com um
+    // circuito só, se ele abrir a ✏️ antes de a agenda voltar.)
+    if (!String(editTelefone || "").trim()) {
+      setAvisoEdicao("O telefone está vazio — e ele é o login do atleta. Feche e abra de novo: a lista de telefones pode não ter carregado ainda.");
+      return;
+    }
+    setAvisoEdicao("");
     // "ativo_backlog" é só rótulo de UI: mapeia para status=ativo + pendenteCircuito=true
     // (Aprovado — entra na próxima etapa/temporada). Os demais status limpam o flag.
     const isBacklog = editStatus === "ativo_backlog";
@@ -9302,7 +9366,12 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
         <label style={lbl}>Nome completo</label>
         <input style={inp} value={editNome} onChange={e=>setEditNome(e.target.value)}/>
         <label style={lbl}>WhatsApp</label>
-        <input style={inp} value={editTelefone} onChange={e=>setEditTelefone(e.target.value)} type="tel"/>
+        <input style={inp} value={editTelefone} onChange={e=>{ setEditTelefone(e.target.value); if (avisoEdicao) setAvisoEdicao(""); }} type="tel"/>
+        {avisoEdicao && (
+          <div style={{fontSize:11,color:"#f8c4b4",background:"rgba(220,90,48,0.12)",borderLeft:"3px solid #c25a45",borderRadius:6,padding:"7px 9px",marginTop:6,lineHeight:1.5}}>
+            {avisoEdicao}
+          </div>
+        )}
         <label style={lbl}>Apelido (opcional)</label>
         <input style={inp} value={editApelido} onChange={e=>setEditApelido(e.target.value)} placeholder="Como o atleta gostaria de ser chamado?"/>
         <label style={lbl}>Rating</label>

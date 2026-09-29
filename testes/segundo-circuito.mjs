@@ -237,23 +237,47 @@ secao("O BH: o slug reservado, e o campo que não pode guardar o circuito errado
   igual(banco.tabelas.circuitos.length, 1, "e nada é criado — o BH continua sendo a única linha");
 }
 {
-  // O campo do teto nasceu (f229432) SEM ressincronizar na troca de circuito,
-  // herdando o defeito que o comentário do campo do NOME descreve palavra por
-  // palavra. `AdminDashboard` não remonta na troca, então o campo ficava com o
-  // teto do circuito anterior e o Salvar gravava esse valor no circuito novo.
-  // Três guardiões pegaram. A bateria não executa `App.jsx`, então o portão
-  // possível é de fonte — e ele é GENÉRICO de propósito: pega o próximo campo
-  // que nascer torto, não só este.
-  const iDash = fonte.indexOf("function AdminDashboard(");
-  const fimDash = fonte.indexOf("\nfunction ", iDash + 1);
-  ok(iDash > 0 && fimDash > iDash, "o AdminDashboard foi localizado no fonte");
-  const dash = fonte.slice(iDash, fimDash);
-  const camposDoEstado = [...dash.matchAll(/const \[\w+, (set\w+)\] = useState\((?:\(\) => )?(?:String\()?state\.(\w+)/g)];
-  ok(camposDoEstado.length > 0, "há campos do painel inicializados a partir do estado do circuito");
-  const semRessincronizar = camposDoEstado.filter(([, setter, campo]) =>
-    !new RegExp(`useEffect\\(\\(\\) => \\{ ${setter}\\([^)]*\\)[^}]*\\}, \\[state\\.${campo}\\]\\);`).test(dash));
-  igual(semRessincronizar.length, 0,
-    `todo campo do painel inicializado do estado ressincroniza quando o circuito troca (sem isso: ${semRessincronizar.map(m=>m[1]).join(", ")})`);
+  // ⚠️ A MINHA ASSERÇÃO ANTERIOR ERA FALSA, E DO JEITO MAIS PERIGOSO: ela PARECIA
+  // proteção. O texto prometia "todo campo do painel inicializado do estado
+  // ressincroniza quando o circuito troca" — e a janela ia de `function
+  // AdminDashboard(` até a PRÓXIMA `function`, que é justamente
+  // `function AbrirProximaPanel(`. Medido: a janela enxergava UM campo
+  // (`setNomeEdit`) e parava exatamente onde os campos tortos começavam.
+  // Dentro do `AbrirProximaPanel`, que o painel RENDERIZA, havia dois:
+  // `setNomeNova ← state.nomeCircuito` e `setPix ← state.pixChave`, nenhum com
+  // resync — e o `pix` é a chave que SAI POR WHATSAPP na mensagem de renovação.
+  // A bateria estava VERDE com o defeito dentro do painel que a asserção dizia
+  // cobrir, sem precisar de sabotagem nenhuma.
+  // É a lição do CLAUDE.md reaparecendo: "a janela ancorada na função é fiel ao
+  // CORPO dela e por isso não vê quem a invoca". (Auditoria multi-circuito, 29/09.)
+  //
+  // O CONSERTO NÃO FOI CAMPO A CAMPO: tapar `pix` e `nomeNova` fecharia UM caminho
+  // de uma classe, e o próximo painel nasceria torto. O painel inteiro passou a
+  // remontar na troca (`key={circuitoSelId}`), e esta asserção passou a varrer o
+  // ARQUIVO INTEIRO com lista declarada.
+  const campos = [...fonte.matchAll(/const \[\w+, (set\w+)\] = useState\((?:\(\) => )?(?:String\()?state\.(\w+)/g)];
+  ok(campos.length > 0, "há campos de tela inicializados a partir do estado do circuito");
+
+  const funcoes = [...fonte.matchAll(/^function (\w+)\(/gm)].map(m => ({ nome: m[1], i: m.index }));
+  const donoDe = (pos) => { let d = null; for (const f of funcoes) if (f.i < pos) d = f.nome; else break; return d; };
+  const donos = [...new Set(campos.map(c => donoDe(c.index)))].sort();
+
+  // LISTA DECLARADA: componente novo com campo derivado do estado OBRIGA alguém a
+  // vir aqui dizer como ele está protegido. Mesmo padrão do documento do
+  // regulamento — linha nova tem de ser declarada, não suposta.
+  const declarados = {
+    AdminDashboard:    "key={circuitoSelId} — remonta na troca, e os painéis-filhos junto",
+    AbrirProximaPanel: "filho do AdminDashboard, coberto pela key do pai. Guardava a CHAVE PIX do circuito anterior",
+    AdminFinanceiro:   "key={circuitoSelId}",
+    AdminMensagens:    "key={circuitoSelId}",
+  };
+  const naoDeclarados = donos.filter(d => !(d in declarados));
+  igual(naoDeclarados.length, 0,
+    `todo componente com campo derivado do estado do circuito está declarado e protegido (sem declaração: ${naoDeclarados.join(", ")})`);
+
+  for (const comp of ["AdminDashboard", "AdminHistorico", "AdminMensagens", "AdminFinanceiro"]) {
+    ok(new RegExp(`<${comp} key=\\{circuitoSelId\\}`).test(fonte), `${comp} remonta ao trocar de circuito`);
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -382,6 +406,52 @@ secao("O atleta na fila sabe que está na fila, e o admin sabe quem fica de fora
   const motorTxt = await import("node:fs/promises").then(f => f.readFile("supabase/functions/admin-action/index.ts", "utf-8"));
   igual((motorTxt.match(/if \(exigePagamento\) q = q\.eq\("pagamento_confirmado", true\);/g) || []).length, 2,
     "o motor realmente exclui quem não pagou do roster — nos dois caminhos, BH e não-BH");
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+secao("Trocar de circuito: a troca DIZ se aconteceu, e a agenda é invalidada");
+{
+  // Duas saídas silenciosas do `trocarCircuito` e um cache que sobrevivia à troca.
+  // As duas foram achadas pela auditoria multi-circuito de 29/09/2026 e são do
+  // tipo que só aparece com dois circuitos — mas a segunda tem uma janela HOJE.
+  //
+  // (a) `trocarCircuito` devolvia `undefined` em dois casos — carga em andamento, e
+  //     falha de carga com reversão. Quem chamava seguia adiante achando que estava
+  //     no circuito novo. O caminho que dói: os Despachos do Dia trocam de circuito
+  //     e em seguida mandam `PROCESSAR_RODADA`, que **calcula rating/pontos e não
+  //     pode ser desfeito**. Com a troca no-opada, processava a rodada do circuito
+  //     ERRADO — e a faixa verde anunciava o nome do circuito que não foi tocado.
+  //
+  // (b) a agenda de telefones (`telefones`) é **por circuito** — `LISTAR_TELEFONES`
+  //     filtra por circuito no motor —, mas `garantirTelefones()` devolve o cache
+  //     sem reconsultar quando ele já tem algo, e a troca não o limpava. Além do
+  //     botão de WhatsApp montar link sem destinatário, o modal de editar abria com
+  //     o telefone VAZIO e salvar gravava `telefone: ""` na tabela GLOBAL `atletas`
+  //     — que é a CREDENCIAL DE LOGIN do atleta em TODOS os circuitos.
+  const fonteApp2 = await import("node:fs/promises").then(f => f.readFile("src/App.jsx", "utf-8"));
+  const iTroca = fonteApp2.indexOf("async function trocarCircuito(circ)");
+  const fimTroca = fonteApp2.indexOf("\n  }", iTroca) + 4;
+  ok(iTroca > 0 && fimTroca > iTroca, "a função de trocar circuito foi localizada");
+  const troca = fonteApp2.slice(iTroca, fimTroca);
+
+  igual((troca.match(/return false;/g) || []).length, 3,
+    "as TRÊS saídas sem troca devolvem `false` — nenhuma sai em silêncio");
+  ok(/return true;/.test(troca), "e a saída com troca devolve `true`");
+  ok(!/\breturn;\s*$/m.test(troca), "nenhum `return` mudo sobrou");
+  ok(/setTelefones\(\{\}\);/.test(troca),
+    "e a agenda de telefones é invalidada na troca — ela é por circuito");
+
+  // Quem chama tem de ABORTAR quando a troca não aconteceu.
+  ok(/const trocou = await trocarCircuito\(\{ id: c\.id \}\);\s*\n\s*if \(!trocou\)/.test(fonteApp2.replace(/\r/g, "")),
+    "quem troca antes de uma ação confere o resultado antes de seguir");
+  igual((fonteApp2.match(/if \(!trocou\)/g) || []).length, 2,
+    "nos DOIS lugares: processar a rodada e abrir o circuito");
+  ok(/nada foi processado/.test(fonteApp2),
+    "e a recusa diz ao admin que NADA foi processado — não deixa dúvida");
+
+  // A guarda de última linha: telefone vazio não apaga o login do atleta.
+  ok(/if \(!String\(editTelefone \|\| ""\)\.trim\(\)\) \{/.test(fonteApp2),
+    "salvar com telefone vazio é recusado — ele é o login do atleta em todos os circuitos");
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

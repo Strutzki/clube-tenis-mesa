@@ -1134,6 +1134,39 @@ atleta inscrito."*
   **8 asserções, 4 mutações, 4 vermelhas** — inclusive a que apagaria o rating do
   circuito **de rating**, que seria o conserto errado.
 
+- **0.10.32 — ✅ RESOLVIDO em 29/09/2026 (no fonte). A auditoria multi-circuito: o
+  que o estado da tela carregava de um circuito para o outro.**
+  Pedida pelo Juliano antes de criar o 2º circuito. Cinco achados, e os três
+  primeiros **gravam dado errado no circuito errado**:
+  - **A chave PIX.** `AbrirProximaPanel` guardava `pix` de `state.pixChave` e não
+    ressincronizava, e o painel-pai era o **único** dos quatro sem
+    `key={circuitoSelId}`. Abrir a próxima temporada de A, trocar para B e confirmar
+    gravaria a **chave PIX de A no circuito B** — e essa chave **sai por WhatsApp**
+    na mensagem de renovação. Os atletas de B pagariam na chave de A.
+    **Conserto: a `key` no painel inteiro**, não campo a campo — tapar `pix` e
+    `nomeNova` fecharia um caminho de uma classe, e o próximo painel nasceria torto.
+  - **A troca que falhava em silêncio.** `trocarCircuito` devolvia `undefined` em
+    duas saídas. Os Despachos do Dia trocam de circuito e em seguida mandam
+    `PROCESSAR_RODADA` — que calcula rating/pontos e **não pode ser desfeito**. Com a
+    troca no-opada, processava a rodada do circuito **errado**, e a faixa verde
+    anunciava o nome do circuito que não foi tocado. Agora devolve booleano e quem
+    chama **aborta**.
+  - **A agenda de telefones.** É por circuito, e não era invalidada na troca. Além do
+    botão de WhatsApp montar link sem destinatário, o modal de editar abria com o
+    telefone **vazio** e salvar gravava `telefone: ""` na tabela **global** `atletas`
+    — a **credencial de login** do atleta em todos os circuitos. Agenda invalidada na
+    troca, mais guarda de última linha que recusa salvar telefone vazio.
+  - **A categoria do torneio** aparecia em circuito sem torneio: o gerador
+    perguntava, o **filtro** não. O chip surgia e a fila vinha vazia.
+  - **E a minha asserção genérica era FALSA, do jeito mais perigoso — ela parecia
+    proteção.** Prometia "todo campo do painel ressincroniza" e a janela ia até a
+    próxima `function`, que é justamente `AbrirProximaPanel`: enxergava **um** campo
+    e parava exatamente onde os tortos começavam. A bateria estava **verde com o
+    defeito dentro do painel que ela dizia cobrir**, sem precisar de sabotagem.
+    Refeita: varre o **arquivo inteiro** com **lista declarada** — componente novo
+    com campo derivado do estado obriga alguém a dizer como ele está protegido.
+  **19 asserções, 7 mutações, 7 vermelhas.**
+
 ### Sem gatilho — higiene
 
 - **0.10.28 — O circuito de rating NOVO promete certificado do Top 3, e ninguém

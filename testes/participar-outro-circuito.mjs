@@ -540,9 +540,16 @@ secao("Num circuito SEM torneio, nada promete torneio (0.10.5)");
       "nem a legenda do 'C'");
   }
 
-  // (c) a mensagem
+  // (c) a mensagem — e são DUAS pontas, não uma.
   ok(/if \(!circuitoTemTorneio\(state\)\) return \[\];/.test(fonteApp),
-    "(c) a convocação do torneio não é oferecida num circuito que não tem torneio");
+    "(c) o GERADOR da convocação não produz nada num circuito sem torneio");
+  // ⚠️ O FILTRO da categoria também, e ele estava de fora (auditoria multi-circuito,
+  // 29/09/2026). O gerador perguntava; o filtro não. Resultado num circuito de
+  // pontos: ao fim da temporada o chip "🎯 Convocação Torneio — Notifica os Top 8
+  // classificados" APARECIA no painel e a fila vinha vazia, sem explicação. Duas
+  // telas discordando sobre a mesma regra — uma oferece, a outra não entrega.
+  ok(/if \(c\.id === "torneio"\) return circuitoTemTorneio\(state\) && temporadaCompletaCheck\(state\);/.test(fonteApp),
+    "e o FILTRO da categoria também — o chip nem chega a aparecer");
 
   // ⚠️ FAIL-CLOSED: versão desconhecida NÃO tem torneio. Prometer um evento que
   // talvez não exista é pior que omitir um que existe — o segundo o organizador

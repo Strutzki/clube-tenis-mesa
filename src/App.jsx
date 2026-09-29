@@ -2537,7 +2537,12 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
               ["⏱ Prazos","1ª rodada até o dia 15, 2ª rodada até o dia 27. Registre o placar no app dentro da janela da rodada."],
               ["🔴 W.O., Faltas & Penalidades","Ausência injustificada: 0 pts (adversário 2). Justificada e aprovada: 1 pt (adversário 2). 2 W.O. injustificados = suspensão."],
               ["🚫 Fraude","Registro de resultado falso = banimento permanente do Circuito."],
-              ["🥇 Ranking & Desempate","Soma de pontos. Empate: menos W.O. injustificados → confronto direto → % de aproveitamento → saldo de sets → sorteio."],
+              // ⚠️ "→ sorteio" SAIU (29/09/2026). Ele foi removido do Cap. 09 em 27/09, trocado
+              // por "Decisão do administrador, registrada (Cap. 13)" — e a correção pegou o
+              // RegulamentoView e o .md gerado, e esqueceu ESTE resumo, que é o texto que o
+              // atleta lê NO MOMENTO DE MARCAR O ACEITE. Achado do guardião do Atleta.
+              // De todas as superfícies, esta é a que mais importa: é a do consentimento.
+              ["🥇 Ranking & Desempate","Soma de pontos. Empate: menos W.O. injustificados → confronto direto → % de aproveitamento → saldo de sets → decisão do administrador, registrada."],
               ["💰 Valor","Quando houver, o valor da temporada é informado na inscrição. Abandono no meio da temporada = bloqueio de 1 temporada."],
               ["📋 Disposições Gerais","Casos omissos decididos pelo administrador. O regulamento pode ser atualizado com aviso prévio."],
             ] : [
@@ -3369,18 +3374,30 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
         {/* ⚠️ "EVITANDO", não "SEM" — corrigido em 29/09/2026, com o vB-01 ainda em
             ZERO aceites (conferido no banco antes de editar, como manda a regra 7).
             O texto anterior prometia "sem repetir adversário na temporada" sem
-            condição nenhuma, e o motor não pode cumprir isso sempre: ele trata a
+            condição nenhuma, e o motor não pode cumprir isso: ele trata a
             repetição como PENALIDADE altíssima num pareamento que minimiza o
-            custo total (`parearRodadaB`), não como proibição. Com 8 atletas e 6
-            rodadas dá certo (há 7 adversários possíveis). Se a temporada começar
-            com 8 e alguém sair, sobram menos adversários do que rodadas e a
-            repetição passa a ser ARITMETICAMENTE INEVITÁVEL — e aí o atleta leria
-            no regulamento uma promessa que a tela desmente. Prometer o que o motor
-            faz: evitar sempre, e repetir o mínimo possível quando não houver
-            jeito. */}
-        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>Repetição de adversário só acontece quando não há alternativa — por exemplo se o número de atletas cair durante a temporada e sobrarem menos adversários possíveis do que rodadas. Nesse caso o sistema repete o mínimo possível.</p>
+            custo da RODADA CORRENTE (`parearRodadaB`), não como proibição, e nunca
+            olha as rodadas seguintes.
+
+            ⚠️⚠️ E A 1ª VERSÃO DESTE TEXTO TAMBÉM ESTAVA ERRADA. Ela dizia que a
+            repetição vinha de o número de atletas cair durante a temporada — e o
+            comentário aqui afirmava "com 8 atletas e 6 rodadas dá certo".
+            Medição própria, 120 temporadas completas por configuração, confirmada
+            pelo Guardião de Regulamento (14/120 na medição dele):
+
+              8 atletas / sorteio ..... 13 em 120, com o GRUPO COMPLETO, ninguém saindo
+              8 atletas / grupos ...... 0 em 120
+              9, 10 e 12 / sorteio .... 0 em 120
+
+            Com 8 atletas existe rodízio de 6 rodadas sem repetir (é o de 7). O motor
+            não o encontra porque otimiza rodada a rodada. Ou seja: havia alternativa,
+            e a causa que o texto apontava era a errada — e 8 é o MÍNIMO que o
+            regulamento permite, logo a configuração mais provável de um circuito novo.
+            A queda de roster É causa real (medido: 60/60 quando cai de 8 para 6), só
+            não é a única. O texto agora nomeia as duas. */}
+        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A repetição é rara e pode acontecer por dois motivos: se o número de atletas cair durante a temporada e sobrarem menos adversários possíveis do que rodadas, e aí ela é inevitável; ou, mesmo com o grupo completo, porque o sistema monta a melhor combinação de cada rodada sem olhar as seguintes — em circuitos pequenos isso às vezes deixa a última rodada sem alternativa. Quando acontece, é no máximo um confronto repetido na temporada.</p>
         <Box cor="#6a9d7a" titulo="🎟️ Bye (número ímpar de atletas)">
-          <p style={s.p}>Quando o número de atletas é ímpar, um atleta fica de fora na rodada (bye) e ganha <span style={s.dest}>1 ponto de participação</span>. O bye tem <span style={s.dest}>rotação</span>: ninguém recebe um segundo bye antes de todos terem recebido um.</p>
+          <p style={s.p}>Quando o número de atletas é ímpar, um atleta fica de fora na rodada (bye) e ganha <span style={s.dest}>1 ponto de participação</span>. O bye tem <span style={s.dest}>rotação</span>: ninguém recebe um segundo bye antes de todos terem recebido um. Quem entra com a temporada já em andamento é o último da fila do bye.</p>
         </Box>
         <p style={{...s.p, fontSize:11, color:"#7d9188"}}>Os dois confrontos do mês são fotografados no início do mês (antes de processar a 1ª rodada), então a faixa da 2ª rodada usa a tabela do começo do mês.</p>
       </div>
@@ -5297,9 +5314,18 @@ const MSGS_ATLETA = new Set([
   "Sua sessão expirou. Entre de novo para confirmar o aceite.",
   // Inscricao sem vinculo ao circuito (29/09/2026). A linha de `circuito_atletas`
   // e o UNICO registro de que o atleta e deste circuito; sem ela a inscricao e
-  // desfeita no servidor. O atleta precisa ler que nada foi salvo — o generico
-  // mandava ele conferir o Wi-Fi no clique final de uma inscricao paga.
-  "Não foi possível concluir sua inscrição neste circuito. Nada foi salvo — tente de novo em instantes.",
+  // desfeita no servidor. O generico mandava ele conferir o Wi-Fi no clique final
+  // de uma inscricao paga.
+  // ⚠️ A 1a versao desta frase dizia "Nada foi salvo" e o Guardiao Juridico mostrou
+  // que era PARCIALMENTE FALSO: o registro de tentativas de CPF grava o IP antes de
+  // tudo e nada o limpa. Prometer ao titular o que o sistema nao faz, para vencer um
+  // erro de rede, nao vale a pena.
+  "Sua inscrição não foi concluída. Tente de novo em instantes.",
+  // E quando nem o desfazimento funciona: mandar tentar de novo levaria o atleta ao
+  // erro de telefone duplicado e dali ao de cadastro nao aprovado, para sempre.
+  // (Sem aspas no comentario: a assercao extrai TUDO entre aspas deste bloco e
+  // trata como mensagem da lista. Ja me pegou DUAS vezes hoje.)
+  "Não conseguimos concluir nem desfazer sua inscrição. Fale com o organizador antes de tentar de novo.",
   "Placar inválido.",
   // Guarda de menor de idade no INSCREVER (27/09/2026). A porta da frente nao tinha
   // nenhuma, e a tela era a unica trava — o servidor aceitava menor sem responsavel se
@@ -10408,7 +10434,12 @@ function RankingView({ state, currentAthleteId, isAdmin=false }) {
 
       {!temPartidas && (
         <div style={{background:"rgba(156,111,62,0.1)",border:`1px solid ${T.madeira}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontFamily:T.mono,fontSize:10,color:T.madeira,lineHeight:1.5}}>
-          Nenhuma partida validada ainda — saldo zerado para todos. O ranking se atualiza após cada resultado confirmado.
+          {/* "PROCESSADA", não "validada": o portão de entrada no ranking é
+              `calculado` (ver `estaNoRanking`), e o Cap. 08 do vB-01 diz que os
+              pontos entram quando o organizador PROCESSA a rodada. O texto antigo
+              mandava o atleta que já tinha confirmado o placar com o adversário
+              olhar para um saldo zero sem entender. (Guardião do Atleta, 29/09.) */}
+          Nenhuma rodada processada ainda — saldo zerado para todos. O ranking se atualiza quando o organizador processa a rodada.
         </div>
       )}
 
@@ -10435,7 +10466,9 @@ function RankingView({ state, currentAthleteId, isAdmin=false }) {
         {temTorneio
           ? <><span style={{color:T.terracota,fontWeight:700}}>C</span> = classificado para o torneio final até o momento</>
           : SISTEMA_ATIVO === "B"
-          ? "Desempate: menos W.O. culposos · confronto direto · aproveitamento · saldo de sets"
+          // "injustificados" é a palavra do regulamento que ele aceitou (Cap. 09);
+          // "culposos" é a palavra do banco de dados. (Guardião do Atleta, 29/09.)
+          ? "Desempate: menos W.O. injustificados · confronto direto · aproveitamento · saldo de sets · decisão do administrador"
           : "Desempate: vitórias · confronto direto · rating"}
       </div>
     </div>

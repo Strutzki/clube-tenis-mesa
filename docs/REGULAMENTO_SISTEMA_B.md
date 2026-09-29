@@ -41,8 +41,12 @@ No B **ninguém tem rating de entrada**: todos começam a temporada em **0 ponto
 
 ## Cap. 03 — Pareamento *(reescrito)*
 Método escolhido na criação, para a temporada toda:
-- **Sorteio aleatório** a cada rodada, sem repetir adversário na temporada. *(era "equilibrado" — corrigido: a spec diz aleatório, e sem rating não há como "equilibrar".)*
-- **Grupos por faixa** de posição na tabela de pontos, sem repetir adversário.
+- **Sorteio aleatório** a cada rodada, ~~sem repetir~~ **evitando** repetir adversário na temporada. *(era "equilibrado" — corrigido: a spec diz aleatório, e sem rating não há como "equilibrar".)*
+- **Grupos por faixa** de posição na tabela de pontos, ~~sem repetir~~ **evitando** repetir adversário.
+- ⚠️ **Terceiro ponto em que esta nota contradizia o código** (o cabeçalho fala de dois),
+  achado em 29/09/2026: *"sem repetir"* é promessa absoluta e o motor trata repetição como
+  **penalidade**. Corrigido no `vB-01` real — ver `docs/REGULAMENTO_vB-01.md` e ROADMAP
+  0.10.34. Mantido aqui riscado, como registro do que a nota dizia.
 - **Regra dos dois confrontos:** como o par mensal sai no dia 1º, a faixa/pareamento da R2 é fotografado na tabela **do início do mês (antes de processar a R1)** — igual à lógica do A.
 
 ## Cap. 05 — Pontuação *(substitui "Rating CBTM")*

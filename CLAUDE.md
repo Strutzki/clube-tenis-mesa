@@ -64,13 +64,17 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **1011 asserções** (conferido ao vivo em 28/09/2026, somando as 13
-seções que a bateria imprime). **Não cite este número de memória** — ele mudou em
-sete ondas seguidas; rode `npm run teste` e leia. O `atualizar.sh` roda isso
+Hoje são **1149 asserções** (conferido ao vivo pelo Curador em 29/09/2026, tarde,
+somando as **13 seções** que a bateria imprime, no commit `707c40f`; saída 0).
+**Não cite este número de memória** — ele mudou em dez ondas seguidas, e esta
+linha dizia **1011** até a auditoria multi-circuito de 29/09 acrescentar 138;
+rode `npm run teste` e leia. O `atualizar.sh` roda isso
 antes de publicar e se recusa a subir com teste vermelho. O `testes/README.md`
-traz o mesmo número, e desde 27/09/2026 a tabela de arquivos dele está completa
-(todos os que existem — confira com `ls testes/*.mjs`, não pelo número: esta frase
-já nasceu velha uma vez, no mesmo dia) — era a dívida antiga registrada em
+traz o mesmo número, e a tabela de arquivos dele tem de listar **todos** os que
+existem — confira com `ls testes/*.mjs`, não pelo número: esta frase já nasceu
+velha **duas** vezes (27/09, e de novo em 29/09, quando `segundo-circuito.mjs`
+— hoje o 2º maior arquivo da bateria — passou dias fora da tabela enquanto este
+parágrafo afirmava que ela estava completa). Era a dívida antiga registrada em
 `docs/curadoria-indice-app-tenis-de-mesa.md`.
 
 Ela carrega **quatro Edge Functions de verdade** — `admin-action`,
@@ -312,8 +316,12 @@ ar** — não presuma que é a do arquivo.
 - `supabase/functions/admin-action/index.ts` — **o motor**, ~1.700 linhas. As
   ações do organizador (INICIAR_ETAPA, AVANCAR_RODADA, PROCESSAR_RODADA,
   APLICAR_WO, NOVA_TEMPORADA, financeiro, papéis) saem de um `switch (acao)`.
-  São **46** hoje — e conte em vez de citar de memória, porque este número
-  apodreceu em sete ondas seguidas:
+  São **46** hoje — **reconferido pelo Curador em 29/09/2026** no commit
+  `707c40f`, rodando o `grep` abaixo: a auditoria multi-circuito acrescentou
+  guardas e funções auxiliares (`idsNoRankingFinal`, `recontarWoCulposos`,
+  `promoverIdentidadeGlobal`, `byesDaTemporada`, `entradaPermitida`), mas
+  **nenhuma ação nova** ao `switch`. Conte em vez de citar de memória, porque
+  este número apodreceu em sete ondas seguidas:
   `grep -o '^      case "[A-Z_]*"' supabase/functions/admin-action/index.ts | sort -u | wc -l`
 - `supabase/functions/athlete-action/index.ts` — o que o atleta pode fazer
   (ENVIAR_PLACAR, INSCREVER, RENOVAR, SOLICITAR_WO...).
@@ -391,8 +399,12 @@ gravar rating num circuito que não tem rating.
 - **`atualizar.sh` publica tudo que estiver na pasta.** Desde 07/09/2026 ele
   lista os arquivos e espera você digitar `S` antes de mandar — leia a lista:
   arquivo temporário esquecido ali viaja junto.
-- **A bateria executa quatro Edge Functions e uma única função do app.**
-  Reconferido em 28/09/2026 rodando `grep` nos testes, não de memória. Quem
+- **A bateria executa quatro Edge Functions e DUAS funções puras do app.**
+  Reconferido em 29/09/2026 rodando `grep` nos testes, não de memória. *(Esta
+  linha dizia "uma única função do app" até 29/09: a segunda —
+  `circuitoTemTorneio` — passou a ser extraída e executada em
+  `participar-outro-circuito.mjs` e ninguém trouxe o fato para cá. Ver o fim
+  desta seção.)* Quem
   carrega e executa código de verdade é `carregarFuncao(nome, banco)`
   (`testes/carrega-motor.mjs`) — **é esse o nome**, não `carregarMotor`, que não
   existe. `montarMotor({ funcao: "..." })` escolhe qual carregar (padrão:
@@ -403,7 +415,12 @@ gravar rating num circuito que não tem rating.
     versão do `INSCREVER`. São **7 cenários comportamentais** do
     `ACEITAR_REGULAMENTO` (`testes/regulamento-por-circuito.mjs`, seção "O
     re-aceite RODANDO"), com sessão gravada como SHA-256 de verdade, mais o
-    cenário do `INSCREVER`;
+    cenário do `INSCREVER`. **Desde 29/09/2026 ela também é carregada em
+    `testes/segundo-circuito.mjs`** (três pontos: a auto-validação do placar por
+    circuito, o recibo de consentimento que não se perde em silêncio, e a
+    inscrição no circuito novo). Conte os pontos de carga com
+    `grep -n 'carregarFuncao("athlete-action"' testes/*.mjs` em vez de citar
+    daqui;
   - **`comprovante-url`** — novo em 27/09/2026 (item 0.6.4). São **16 asserções**
     em `testes/onda-06.mjs` rodando a função de verdade, com um `storage` de
     mentira (`testes/banco-falso.mjs`) que registra o que foi assinado —
@@ -415,13 +432,17 @@ gravar rating num circuito que não tem rating.
     regulamento declarado pelo atleta, a comparação com a versão do circuito, e o
     responsável legal obrigatório para menor de 18. Precisa de duas funções de
     banco no cenário (`get_cpf_pepper` e `dedup_por_cpf_hash`), que o banco em
-    memória serve pelo parâmetro `funcoes`.
+    memória serve pelo parâmetro `funcoes`. **Desde 29/09/2026 o `SESSAO`
+    também é executado**, em `testes/segundo-circuito.mjs` — foi por ele que a
+    auditoria provou o bloqueio em que o atleta aprovado num circuito não-BH
+    ficava com `atletas.status = "pendente"` e o login recusava com
+    `cadastro_inativo`. O `LOGIN` e o `RENOVAR` seguem sem asserção.
 
-  **`src/App.jsx` não é executado por teste nenhum — com uma exceção, deliberada e
-  única** (e o `login-atleta` passou a ser executado em 27/09/2026, mas só no
-  `PARTICIPAR`; o `LOGIN` e o `SESSAO` seguem sem asserção).
+  **`src/App.jsx` não é executado por teste nenhum — com DUAS exceções,
+  deliberadas** (e o `login-atleta` passou a ser executado em 27/09/2026 no
+  `PARTICIPAR` e em 29/09/2026 no `SESSAO`).
 
-  A exceção é `janelaRenovacao`, a conta da janela de renovação: ela é uma função
+  A primeira é `janelaRenovacao`, a conta da janela de renovação: ela é uma função
   **pura** — recebe uma data, devolve datas, e só depende de `Date`. A bateria a
   **extrai do fonte e a executa** com datas reais, em
   `testes/regulamento-por-circuito.mjs`, seção *"A janela de renovação prioritária —
@@ -429,6 +450,14 @@ gravar rating num circuito que não tem rating.
   entrando e saindo. Foi o único jeito de proteger uma **conta de data**, que é onde
   o erro do 0.6.15 morava — três contas separadas e invertidas, que nenhuma regex
   acusaria, porque cada uma delas, lida isolada, parecia certa.
+
+  A segunda é **`circuitoTemTorneio`**, em
+  `testes/participar-outro-circuito.mjs`: ela só fecha sobre a constante
+  `VERSOES_COM_TORNEIO`, que entra no mesmo recorte, e executá-la cobre as
+  entradas que nenhuma regex exercitava (versão `null`, vazia, estado sem o
+  campo, estado nulo, e o `.trim()`). Foi ela que pegou o fail-open em que
+  "versão desconhecida ganhava torneio" — a asserção anterior olhava os pontos
+  de **chamada**, e a sabotagem morava **dentro** da função.
 
   **Quando repetir a técnica — as quatro condições, todas obrigatórias:**
   (1) a função é **pura** (mesma entrada → mesma saída, sem estado, sem React, sem

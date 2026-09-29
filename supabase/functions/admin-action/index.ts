@@ -200,7 +200,7 @@ async function getAtivosNoCircuito(circuitoId: string, exigePagamento: boolean):
     if (exigePagamento) q = q.eq("pagamento_confirmado", true);
     const { data, error } = await q;
     if (error) throw error;
-    return data || [];
+    return await semIntrusosDeOutroCircuito(bh, data || []);
   }
   let q = supabase.from("circuito_atletas").select("*, atletas!inner(*)").eq("circuito_id", circuitoId).eq("status", "ativo").eq("pendente_circuito", false);
   if (exigePagamento) q = q.eq("pagamento_confirmado", true);
@@ -208,6 +208,36 @@ async function getAtivosNoCircuito(circuitoId: string, exigePagamento: boolean):
   if (error) throw error;
   return (data || []).map(mergeAtletaCircuito);
 }
+// Tira do resultado do BH quem e membro de OUTRO circuito e nao e membro do BH.
+//
+// ⚠️ Por que isto existe, e por que nao bastava marcar o atleta novo como
+// "pendente_circuito" (29/09/2026): o roster do BH e derivado da tabela GLOBAL
+// `atletas`, que nao tem coluna de circuito. Todo atleta globalmente "ativo" cai
+// num dos dois baldes do BH -- roster (`pendente_circuito=false`) ou FILA DE
+// ESPERA (`pendente_circuito=true`) -- e o `promoverBacklog` esvazia a fila para
+// dentro do roster no `INICIAR_ETAPA`. Nao existe terceiro estado. Ou seja: o
+// remedio "poe na fila" apenas adiava a invasao por uma acao.
+//
+// A regra e a que o Guardiao de Seguranca propos, e ela recusa ZERO operacao
+// legitima hoje (conferido em producao: 15 atletas, 15 vinculos, todos do BH):
+//   · tem vinculo com o BH            -> e do BH, entra;
+//   · nao tem vinculo com circuito nenhum -> roster legado puro, entra;
+//   · so tem vinculo com outro circuito  -> NAO e do BH, fica de fora.
+// Um atleta que jogue nos dois tem vinculo com os dois, e continua entrando.
+async function semIntrusosDeOutroCircuito(bh: string, linhas: any[]): Promise<any[]> {
+  if (!linhas.length) return linhas;
+  const ids = linhas.map((a: any) => a.id).filter(Boolean);
+  const { data: vinculos, error } = await supabase
+    .from("circuito_atletas").select("atleta_id,circuito_id").in("atleta_id", ids);
+  if (error) throw error;
+  const temBh = new Set<string>();
+  const temOutro = new Set<string>();
+  (vinculos ?? []).forEach((v: any) => {
+    if (v.circuito_id === bh) temBh.add(v.atleta_id); else temOutro.add(v.atleta_id);
+  });
+  return linhas.filter((a: any) => temBh.has(a.id) || !temOutro.has(a.id));
+}
+
 // Atletas por ids, no formato de `atletas` (para o motor de rating).
 async function getAtletasPorIds(circuitoId: string, ids: string[]): Promise<any[]> {
   const bh = await bhId();
@@ -224,8 +254,10 @@ async function getAtletasPorIds(circuitoId: string, ids: string[]): Promise<any[
 async function countAtivosNoCircuito(circuitoId: string): Promise<number> {
   const bh = await bhId();
   if (circuitoId === bh) {
-    const { count } = await supabase.from("atletas").select("*", { count: "exact", head: true }).eq("status", "ativo").eq("pendente_circuito", false);
-    return count || 0;
+    // Conta a lista JA FILTRADA, e nao um `count` cru: senao o teto do BH passaria
+    // a incluir atleta de outro circuito que o roster nao mostra.
+    const { data } = await supabase.from("atletas").select("id").eq("status", "ativo").eq("pendente_circuito", false);
+    return (await semIntrusosDeOutroCircuito(bh, data || [])).length;
   }
   const { count } = await supabase.from("circuito_atletas").select("*", { count: "exact", head: true }).eq("circuito_id", circuitoId).eq("status", "ativo").eq("pendente_circuito", false);
   return count || 0;
@@ -239,8 +271,13 @@ async function countAtivosNoCircuito(circuitoId: string): Promise<number> {
 //   · o organizador aprova -> `INSCRICAO_VALIDAR` chama `writeAtleta`, e `status`
 //     esta em SEASONAL_COLS, entao num circuito nao-BH ele vai SO para
 //     `circuito_atletas`. O `atletas.status` fica "pendente" para sempre;
-//   · e o `login-atleta` recusa com `cadastro_inativo` (403) em LOGIN, SESSAO e
-//     PARTICIPAR olhando justamente o `atletas.status`.
+//   · e o `login-atleta` recusa com `cadastro_inativo` (403) em SESSAO, PARTICIPAR
+//     e LOGIN_ORGANIZADOR olhando justamente o `atletas.status`.
+//     ⚠️ Esta linha dizia "LOGIN, SESSAO e PARTICIPAR" e estava ERRADA: o `LOGIN` e
+//     o `DEFINIR_PIN` NAO conferem status (`login-atleta` :191 e :222). Na pratica
+//     o pendente cria o PIN e so depois a TELA o barra (`App.jsx`). Corrigido em
+//     29/09/2026 pelo guardiao do Atleta -- comentario errado e pior que comentario
+//     nenhum, porque alguem le para decidir.
 // No BH nao aparecia porque la o `writeAtleta` grava nos dois lugares.
 //
 // Os dois status querem dizer coisas diferentes, e e por isso que a correcao e
@@ -250,9 +287,35 @@ async function countAtivosNoCircuito(circuitoId: string): Promise<number> {
 // Por isso a promocao e so para cima: reprovar alguem num circuito nao pode
 // trancar a porta dos outros circuitos dele.
 async function promoverIdentidadeGlobal(atletaId: string) {
-  const { data: atual } = await supabase.from("atletas").select("status").eq("id", atletaId).maybeSingle();
+  const { data: atual } = await supabase.from("atletas")
+    .select("status,exclusao_solicitada_em,telefone").eq("id", atletaId).maybeSingle();
   if (!atual || atual.status !== "pendente") return; // ja ativo, arquivado ou reprovado: nao mexe
-  const { error } = await supabase.from("atletas").update({ status: "ativo" }).eq("id", atletaId).eq("status", "pendente");
+
+  // ⚠️ AS DUAS PORTAS DA LGPD. Elas ja guardavam o `DESARQUIVAR_ATLETA` desde
+  // 27/09/2026, e a promocao nova abriu uma TERCEIRA porta para o mesmo lugar --
+  // regressao introduzida por mim em 29/09 e medida pelo Guardiao de Seguranca:
+  // atleta com pedido de exclusao em aberto, aprovado numa inscricao de rotina,
+  // tinha a identidade global reativada. Na arvore anterior isso nao acontecia,
+  // porque num circuito nao-BH o `INSCRICAO_VALIDAR` nao encostava em
+  // `atletas.status`.
+  // Ficam AQUI, e nao no `case`, porque a promocao tem mais de um chamador: regra
+  // duplicada e a origem de metade dos defeitos desta auditoria.
+  if (atual.exclusao_solicitada_em) return;
+  if (String(atual.telefone || "").startsWith("removido:")) return;
+
+  // `pendente_circuito: true` NAO e detalhe -- e o que impede o atleta do circuito
+  // novo de cair no ROSTER DO BH. O roster legado e
+  // `atletas where status='ativo' and pendente_circuito=false`, e a coluna tem
+  // DEFAULT false no banco, e o INSCREVER nao a manda. Sem esta linha, aprovar
+  // alguem no circuito de pontos o punha para jogar no BH: o Guardiao Juridico
+  // provou rodando o INICIAR_ETAPA do BH, que respondeu com os intrusos pareados
+  // contra atletas do BH. E o `CLAUDE.md` ja nomeava essa armadilha; eu a reabri
+  // por outra porta.
+  // O `login-atleta` so olha `status` (nunca `pendente_circuito`), entao o atleta
+  // continua entrando no app -- que era o ponto da promocao.
+  const { error } = await supabase.from("atletas")
+    .update({ status: "ativo", pendente_circuito: true })
+    .eq("id", atletaId).eq("status", "pendente");
   if (error) throw error;
 }
 
@@ -760,8 +823,10 @@ async function promoverBacklog(circuitoId: string): Promise<number> {
   if (circuitoId === bh) {
     let q = supabase.from("atletas").select("id").eq("status", "ativo").eq("pendente_circuito", true);
     if (cfg?.financeiro_ativo) q = q.eq("pagamento_confirmado", true);
-    const { data: fila } = await q.order("inscrito_em", { ascending: true }).limit(vagas);
-    ids = (fila || []).map((a: any) => a.id);
+    const { data: fila } = await q.order("inscrito_em", { ascending: true });
+    // Filtra ANTES de aplicar o teto de vagas: senao um intruso ocuparia vaga da
+    // fila do BH e empurraria um atleta legitimo para tras.
+    ids = (await semIntrusosDeOutroCircuito(bh, fila || [])).slice(0, vagas).map((a: any) => a.id);
     if (!ids.length) return 0;
     const { error } = await supabase.from("atletas").update({ pendente_circuito: false }).in("id", ids);
     if (error) throw error;
@@ -1698,6 +1763,19 @@ Deno.serve(async (req) => {
         const { matchId, tipo, faltosoId, beneficiarioId } = payload || {};
         if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
         if (!["justificado", "culposo", "a_favor"].includes(tipo)) return jsonResponse({ sucesso: false, erro: "tipo deve ser 'justificado', 'culposo' ou 'a_favor'" }, 400);
+        // Quem estava marcado como faltoso ANTES desta chamada. Sem isto a
+        // recontagem e idempotente POR ATLETA, mas nao POR PARTIDA: o organizador
+        // corrigindo quem faltou deixava a falta lancada para os DOIS, e o Cap. 07
+        // suspende com duas. Achado do Guardiao de Regulamento em 29/09/2026,
+        // medido: F=1 e V=1 depois de um W.O. so.
+        const { data: woAntes } = await supabase.from("partidas").select("wo_faltoso_id").eq("id", matchId).maybeSingle();
+        const faltosoAnterior = woAntes?.wo_faltoso_id || null;
+        const recontarEnvolvidos = async (novoFaltoso: string | null) => {
+          const alvos = new Set<string>();
+          if (faltosoAnterior) alvos.add(faltosoAnterior);
+          if (novoFaltoso) alvos.add(novoFaltoso);
+          for (const id of alvos) await recontarWoCulposos(circuitoId, id);
+        };
         // Sistema B (Fatia 5): W.O. NÃO anula — vira pontos no processamento (adversário +2; ausente +1 justificado / 0 injustificado).
         if ((await getSistema(circuitoId)) === "B") {
           if (!beneficiarioId) return jsonResponse({ sucesso: false, erro: "beneficiarioId é obrigatório" }, 400);
@@ -1714,12 +1792,20 @@ Deno.serve(async (req) => {
           }).eq("id", matchId);
           if (eWoB) throw eWoB;
           // culposo e a_favor contam como W.O. injustificado (suspensão + desempate); justificado não conta.
-          if (faltIdB) await recontarWoCulposos(circuitoId, faltIdB);
+          await recontarEnvolvidos(faltIdB);
           return jsonResponse({ sucesso: true });
         }
         if (tipo === "justificado") {
           const { error } = await supabase.from("partidas").update({ rejeitado: true, motivo_rejeicao: "W.O. Justificado" }).eq("id", matchId);
           if (error) throw error;
+          // ⚠️ ESTE `return` SAIA ANTES DE RECONTAR (ate 29/09/2026). No Sistema A,
+          // trocar um W.O. de culposo para justificado NAO devolvia o ponto: o
+          // atleta ficava a uma falta da suspensao do Cap. 07 por uma falta que o
+          // proprio organizador perdoou. O comentario do `RESPONDER_WO` afirmava
+          // "resolve os dois sistemas de uma vez" -- resolvia UM. Conserto de
+          // instrumento e conserto de UM caminho (licao de 28/09).
+          // A partida agora esta `rejeitado: true`, entao a recontagem a ignora.
+          await recontarEnvolvidos(null);
           return jsonResponse({ sucesso: true });
         }
         if (!beneficiarioId) return jsonResponse({ sucesso: false, erro: "beneficiarioId é obrigatório" }, 400);
@@ -1730,7 +1816,7 @@ Deno.serve(async (req) => {
           admin_aprovado_em: now, calculado: false,
         }).eq("id", matchId);
         if (error) throw error;
-        if (faltosoId) await recontarWoCulposos(circuitoId, faltosoId);
+        await recontarEnvolvidos(tipo === "culposo" ? (faltosoId || null) : null);
         return jsonResponse({ sucesso: true });
       }
 

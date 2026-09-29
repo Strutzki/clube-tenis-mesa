@@ -26,13 +26,19 @@ for comunicado como pronto.
 Não estavam em plano nenhum; apareceram ao mapear o banco e o repositório em
 07/09/2026. Nenhuma é urgente hoje; todas cobram juros.
 
-- **0.1 — A bateria cobre o motor e começou a cobrir o front.** São **154
-  asserções** (`npm run teste`), ligadas ao `atualizar.sh`. O `src/App.jsx` saiu
-  do zero: `pacote.mjs` (11) e `erros-na-tela.mjs` (12) leem o fonte e travam
-  decisões. Falta cobrir: o resto do front, o `athlete-action`, o
-  `login-atleta`, o pareamento (`INICIAR_ETAPA`/`AVANCAR_RODADA`), os desempates
-  do ranking e o financeiro. O carregador já serve para todas — faltam as
-  asserções. Ver `testes/README.md`.
+- **0.1 — A bateria cobre o motor e começou a cobrir o front.** ⚠️ **O número
+  desta linha é histórico, de 07/09/2026: eram 154 asserções. Hoje são 1149**
+  (conferido em 29/09/2026 — rode `npm run teste`, não cite daqui).
+  Ligadas ao `atualizar.sh`. O `src/App.jsx` saiu do zero: `pacote.mjs` e
+  `erros-na-tela.mjs` leem o fonte e travam decisões.
+  **Do "falta cobrir" original, já foi coberto:** o `athlete-action` (executado),
+  o `login-atleta` (`PARTICIPAR` e `SESSAO`), o **pareamento do Sistema B**
+  rodando temporada completa, e os desempates do **Sistema B**.
+  **Continua faltando:** o resto do front, o pareamento **por rating** em
+  temporada completa, os desempates do **Sistema A** (`cmpRankingDB`), o
+  `circuito-dados` em execução, o `LOGIN`/`RENOVAR` do `login-atleta`, e o
+  financeiro. O carregador já serve para todas — faltam as asserções.
+  Ver `testes/README.md`.
 - **0.2 — O Instagram não tem dono.** `instagram_config` guarda credenciais da
   Meta, `instagram_publicacoes` tem 42 publicações registradas, e nada disso
   aparece em plano, roadmap ou changelog. O token da Meta **expira a cada ~60
@@ -963,10 +969,18 @@ atleta inscrito."*
   atleta **leu** e o que o clube pode **provar** que ele leu.
   **A trava:** a bateria regenera e compara. Mudar o texto na tela sem regerar deixa
   o teste **vermelho** — medido por mutação. **6 asserções, 3 mutações, 3 vermelhas.**
+  **Exercitada em 29/09/2026** pela correção do Cap. 03 (0.10.34): o texto mudou na
+  tela, o documento foi regenerado, e o arquivo bate.
   **Falta o `vA-nc-01`:** o gerador já tem o formato para recebê-lo (basta uma
   entrada em `ALVOS`), mas o conteúdo dele é o do Sistema A com ramificações por
   versão, e gerar isso pede o mesmo cuidado que o B teve. Fica para quando existir um
   circuito de rating novo — hoje não existe nenhum.
+  ⚠️ **Duas coisas ficaram por dizer, e o Curador as levantou em 29/09/2026** — o
+  cabeçalho do script **anuncia** o alvo `A-nc` que o `ALVOS` não tem (rodar cai em
+  `uso:` e sai 2), e o campo **`resumo` é escrito à mão dentro do gerador**, sem
+  proteção nenhuma: a trava compara o arquivo com a saída do próprio script, e o
+  `resumo` está nos dois lados. Detalhe e conserto proposto em **"Decisões ainda em
+  aberto"**.
   *Descrição original, mantida como registro:* Ele existe como
   prosa no `REGULAMENTOS_NOVOS_CIRCUITOS.md` e como ramificação no `App.jsx`.
   Não há `docs/REGULAMENTO_vA-nc-01.md`. Um documento que o atleta aceita
@@ -1166,6 +1180,97 @@ atleta inscrito."*
     Refeita: varre o **arquivo inteiro** com **lista declarada** — componente novo
     com campo derivado do estado obriga alguém a dizer como ele está protegido.
   **19 asserções, 7 mutações, 7 vermelhas.**
+
+- **0.10.33 — ✅ RESOLVIDO em 29/09/2026 (no fonte, commit `f1cd61c`). Bloco 1 da
+  auditoria: o que CORROMPIA DADO em circuito não-BH.** Quatro defeitos, todos com
+  asserção **rodando o motor** (não regex) e mutação provada vermelha:
+  - `AVANCAR_RODADA` caía num `|| "key_1"` — **a chave do BH** — quando o circuito não
+    tinha chave. Recusa com 409 agora; e o `INICIAR_ETAPA` deixou de engolir o erro do
+    insert da chave.
+  - `ENVIAR_PLACAR` lia `configuracao` id=1 (a tabela legada **do BH**) para decidir
+    auto-validação em **qualquer** circuito. O botão do organizador gravava em
+    `circuitos.auto_validar_placar`, coluna que **ninguém lia**. Com o BH ligado — o
+    estado de produção — o circuito novo auto-validava sem ter como desligar.
+  - O `mirrorSazonal` do `athlete-action` era best-effort **sem exceção**, e em circuito
+    não-BH ele é a **única** escrita. O re-aceite respondia `sucesso: true` **sem gravar
+    o recibo de consentimento**; na inscrição era pior, porque em `atletas` não existe
+    coluna de circuito e a linha de `circuito_atletas` é o **único** registro de que o
+    atleta é daquele circuito — sem ela, atleta órfão e o app dizendo "inscrição feita".
+  - `NOVA_TEMPORADA` montava o ranking final com `validado && !rejeitado` e a tela com
+    `calculado && !rejeitado`. Discordam nos **W.O.**, que são calculados e pontuam mas
+    nunca são validados: **quem fazia a temporada em W.O. sumia do histórico** e todos
+    abaixo subiam uma posição — permanente, sem desfazer. Virou **uma** conta,
+    `idsNoRankingFinal`, nos três lugares que perguntavam isso.
+  ⚠️ **Registrado porque pegou o autor:** ao unificar, o `PROCESSAR_RODADA` perdeu a
+  **estreia no ranking** (as partidas só viram `calculado` no fim da própria ação) e a
+  bateria ficou **verde** — não havia asserção para a estreia. Tem agora.
+  **Bateria 1011 → 1035.**
+
+- **0.10.34 — ✅ RESOLVIDO em 29/09/2026 (no fonte, commit `6266f11`). Bloco 2 da
+  auditoria: o que CONTRADIZIA O REGULAMENTO.** ⚠️ **Com meia correção declarada e uma
+  decisão aberta** — ver as duas entradas novas em "Decisões ainda em aberto".
+  - **O número de W.O. injustificados nunca chegava à tela em circuito não-BH.** Ele é
+    **sazonal** (mora em `circuito_atletas`) e os dois adaptadores do app o descartavam —
+    um deles com um comentário dizendo que era de propósito, *"paridade com hoje"*. A
+    paridade era **com o BH**, onde o servidor grava também no registro global. Em
+    circuito novo o app lia sempre **zero**, e duas regras morriam juntas: o **2º
+    desempate do Cap. 09 do Sistema B** — que é justamente o sistema dos circuitos
+    não-BH — e o **painel de suspensão do Cap. 07**, que sumia ao recarregar a tela. O
+    `circuito-dados` já devolvia o campo; era o app que jogava fora.
+    ⚠️ **Falta metade, e ela não é do autor resolver** — ver a decisão pendente.
+  - **O contador era ACUMULADO e nunca decrementava.** Três caminhos suspendiam (Cap. 07,
+    2 faltas) quem tinha uma só: aplicar o W.O. duas vezes na mesma partida, aprovar a
+    justificativa depois, trocar culposo por justificado. Agora é **derivado** das
+    partidas (`recontarWoCulposos`) — idempotente por construção — e o `RESPONDER_WO`
+    reconta ao aprovar.
+  - **MUDANÇA DE REGRA NO `vB-01`.** O Cap. 03 prometia *"sem repetir adversário na
+    temporada"*, em **três** lugares (regulamento, card de criação, resumo da inscrição),
+    e o motor trata repetição como **penalidade altíssima** num pareamento que minimiza
+    custo — não como proibição. Medido em **120 temporadas completas por configuração**:
+    8 atletas/sorteio → **13 em 120** com uma repetição; 8/grupos → 0; 9, 10 e 12/sorteio
+    → 0. Ou seja, **a promessa já era falsa no mínimo de 8 atletas, ~1 temporada em 8.**
+    Texto corrigido para *"evitando repetir"*, com a explicação de quando repete.
+    **Regra 7 cumprida:** `vB-01` conferido no banco com **zero aceites** antes de editar,
+    então é edição no lugar, sem versão nova. `docs/REGULAMENTO_vB-01.md` regenerado.
+  - **O motor de pareamento do Sistema B ganhou cobertura** — era o maior buraco da
+    bateria: o modelo do 2º circuito não tinha asserção nenhuma rodando pareamento. Agora
+    roda 6 rodadas completas em três configurações.
+  **Bateria 1035 → 1109**, mais 40 execuções seguidas sem falha para descartar
+  instabilidade.
+
+- **0.10.35 — ✅ RESOLVIDO em 29/09/2026 (no fonte, commit `707c40f`). Bloco 3 da
+  auditoria: o que TRAVAVA A OPERAÇÃO.**
+  - **O atleta aprovado no circuito novo NUNCA conseguia entrar no app.** O bloqueio mais
+    grave da auditoria, e o mais silencioso. `INSCREVER` cria a linha em `atletas` com
+    status `"pendente"`; a aprovação chama `writeAtleta`, e `status` é **sazonal** — num
+    circuito não-BH ele vai só para `circuito_atletas`, e `atletas.status` fica
+    `"pendente"` **para sempre**. O `login-atleta` recusa com `cadastro_inativo` (403) em
+    `SESSAO`, `PARTICIPAR` e `LOGIN_ORGANIZADOR` olhando justamente o global, e a tela
+    fecha com *"Seu cadastro ainda não foi aprovado pelo admin"*. **No BH não aparecia**
+    porque lá o servidor grava nos dois lugares. Provado rodando os dois motores.
+    `promoverIdentidadeGlobal` promove **só para cima**: reprovar num circuito não tranca
+    a porta dos outros circuitos da pessoa.
+  - **`rating_inicial` escapava da guarda do Sistema B.** O `writeAtleta` já barrava
+    `rating`, `rating_pico` e `rating_historico` num circuito de pontos; faltava
+    `rating_inicial` — justamente o que a porta de entrada escreve. **Aprovar alguém no
+    circuito de PONTOS reescrevia o `rating_inicial` global dessa pessoa**: o número com
+    que ela entrou no circuito de **rating**.
+    ⚠️ **Registrado porque o autor errou:** a 1ª asserção testou só `rating` — que **já**
+    estava protegido — e a mutação ficou **verde**. Ele passou pelo motivo errado e quase
+    "consertou" dentro de dois `case`, criando a **terceira cópia** da mesma regra. O
+    conserto é **uma linha na guarda única**.
+  - **O escopo por recurso valia só para o organizador.** Não é pergunta de permissão, é
+    de **coerência**: se a ação diz um circuito e o `matchId` é de outro, isso nunca é
+    intenção. Com a tela no circuito B e um `matchId` do A sobrando, o motor validava,
+    imputava resultado ou aplicava W.O. **no outro circuito**, em silêncio. Agora vale
+    para o super-admin também, nas **5** ações que recebem `matchId` e nas que recebem
+    atleta. **Exceção deliberada:** no BH a checagem de **membro** não se aplica ao
+    super-admin, porque lá a participação é a própria linha de `atletas` (roster legado) e
+    há atleta do BH sem linha de vínculo — a bateria pegou isso na hora quando o autor
+    apertou demais.
+  Conferido no banco antes de apertar o escopo: **0 atletas sem vínculo, 0 partidas sem
+  circuito** — nenhuma operação legítima de hoje passa a ser recusada.
+  **Bateria 1109 → 1149.**
 
 ### Sem gatilho — higiene
 
@@ -1948,6 +2053,74 @@ geral antes de abrir cadastro para terceiros.
 
 ## Decisões ainda em aberto
 
+- **⚠️ O 2º desempate do Cap. 09 continua MORTO em circuito PÚBLICO.** *(29/09/2026,
+  registrado pelo Curador; achado declarado pelo autor no commit `6266f11`.)*
+  O item 0.10.34 consertou o **caminho do porteiro** (circuito privado, via
+  `circuito-dados`): o campo `wo_culposos_temporada` agora atravessa os dois adaptadores
+  do app. **Mas em circuito público o app lê `circuito_atletas` direto**, e essa coluna
+  **não tem grant de leitura para o visitante anônimo** — ela foi **excluída de
+  propósito** na fase 4C, junto com `desconto_pct` e `isento`, por decisão do Guardião de
+  Segurança (`fase4c_reabrir_leitura.sql`, comentário *"23 colunas seguras; EXCLUI
+  desconto_pct, isento, wo_culposos_temporada"*, com teste anon obrigatório exigindo
+  **401** naquela coluna).
+  **Consequência de hoje:** num circuito **público** de Sistema B, o app lê zero para
+  todo mundo, e o 2º critério de desempate do Cap. 09 (*"menos W.O. injustificados"*)
+  **nunca decide nada** — o ranking cai direto para o 3º critério, silenciosamente. O
+  Cap. 07 (painel de suspensão por 2 culposos) tem o mesmo buraco no caminho público.
+  **A decisão é do Juliano, e é de privacidade, não técnica:** o número de faltas
+  injustificadas de um atleta passa a ser **legível por qualquer visitante da internet**
+  se a coluna for liberada. Os três caminhos possíveis:
+  1. **Liberar a coluna ao `anon`** (uma linha de `grant select`) — resolve, e torna o
+     dado público. ⚠️ Passa pelo Guardião de Segurança **e** pelo Jurídico, e pela regra
+     4 do `CLAUDE.md` (grant na mesma migração).
+  2. **Expor o número pelo porteiro também no circuito público** — mantém o dado fora do
+     alcance direto, custa uma mudança de leitura no app.
+  3. **Não fazer nada e dizer isso no regulamento** — o Cap. 09 passaria a descrever um
+     desempate que só vale em circuito privado, o que é pior.
+  **Enquanto não for decidido, o Cap. 09 promete o que o app não cumpre em circuito
+  público** — é a regra 6 do `CLAUDE.md` em aberto, com data.
+
+- **⚠️ O pareamento do Sistema B REPETE adversário com exatamente 8 atletas no sorteio.**
+  *(29/09/2026, medido, não estimado.)* Em **120 temporadas completas** por configuração:
+  **8 atletas / sorteio → 13 em 120** temporadas com **uma** repetição de confronto;
+  8/grupos → 0 em 120; 9, 10 e 12 / sorteio → 0 em 120.
+  **A causa:** com 8 atletas cada um tem **7** adversários possíveis e a temporada usa
+  **6** — quase o rodízio completo. O motor escolhe a melhor solução **de cada rodada**,
+  sem olhar as seguintes; uma escolha boa na rodada 3 pode deixar a rodada 6 sem saída.
+  E **8 é o mínimo de atletas**, ou seja, é a configuração mais provável do 2º circuito.
+  **O texto já foi alinhado ao motor** (*"evitando repetir"*, com a explicação) — então
+  ninguém está sendo enganado hoje. O que fica em aberto é o contrário: **alinhar o motor
+  ao que seria melhor.** Existe algoritmo que evita sempre (rodízio pelo método do
+  círculo), mas **trocar o algoritmo de pareamento é mudança de MOTOR** — toca a regra da
+  competição, exige as 8 duplas, e mudaria o pareamento de qualquer circuito B futuro.
+  **Não é decisão de agente.** A asserção da bateria afirma hoje o limite medido
+  (no máximo 1 repetição, ninguém enfrenta o mesmo três vezes): se alguém melhorar o
+  pareamento ela continua verde; se alguém piorar, fica vermelha.
+
+- **⚠️ O `vA-nc-01` continua SEM documento gerado, e o gerador tem um campo sem
+  proteção.** *(29/09/2026, dívida nova, apontada pelo Curador.)* Duas coisas, e as duas
+  são do item 0.10.3:
+  1. **`scripts/gerar-regulamento.mjs` anuncia no cabeçalho um uso que não existe.** O
+     comentário diz `node scripts/gerar-regulamento.mjs A-nc > docs/REGULAMENTO_vA-nc-01.md`,
+     mas o objeto `ALVOS` tem **só a chave `"B"`**. Rodar com `A-nc` cai no
+     `console.error("uso: ... B")` e sai com código 2. **Não existe
+     `docs/REGULAMENTO_vA-nc-01.md`** — o texto do regulamento de rating dos circuitos
+     novos continua só dentro do `App.jsx` e no trecho compartilhado de
+     `REGULAMENTOS_NOVOS_CIRCUITOS.md`. **Dimensão:** acrescentar a chave `"A-nc"`
+     (`fn: "ConteudoCap"`/`caps:` do ramo de rating) mais uma asserção igual à do `"B"`.
+     O gatilho continua sendo o 1º circuito de rating que não seja o BH.
+  2. **O campo `resumo` de cada alvo é escrito À MÃO dentro do gerador, e nada o
+     protege.** A asserção da bateria compara o arquivo do repositório com a **saída do
+     próprio script** — e o `resumo` está nos dois lados, porque o script o produz. Logo,
+     **mudar o texto na tela não invalida o `resumo`**: ele é a única frase do documento
+     que pode divergir do app sem a bateria acusar, e é a **primeira** que o atleta lê.
+     Ele afirma hoje três regras de conteúdo (V=2/D=1/bye=1, ranking que zera na virada,
+     e *"não há torneio de encerramento nem certificado"*). É exatamente o defeito que o
+     próprio cabeçalho do script diz estar evitando — *"transcrever cria a segunda cópia
+     da mesma regra"* — sobrevivendo dentro do gerador. **Conserto possível:** derivar o
+     resumo do fonte, ou (mais barato) uma asserção que exija cada afirmação do `resumo`
+     no texto gerado dos capítulos.
+
 - **⚠️ A v03-13 ganhou um capítulo novo e AINDA NÃO FOI CARIMBADA.** *(29/09/2026.)*
   O capítulo do **bye** (número ímpar de atletas) entrou na `v03-13` e na
   `vA-nc-01` — e **não** na `v03-12`, que tem aceite gravado. Isso quer dizer que,
@@ -2010,7 +2183,7 @@ Registrado para não voltar à mesa a cada conversa. Cada item tem o porquê.
 | `GOVERNANCA_AGENTES.md` | quem revisa o quê + histórico de vereditos |
 | `CHANGELOG.md` | o que foi ao ar, com a versão de cada função |
 | `ESTADO-DEV-app-tenis-de-mesa.md` | retrato do desenvolvimento |
-| `REGULAMENTO_*` | as regras da competição — A: v03-12 (BH, vigente) + v03-13 (BH, próxima temporada, ver 0.10.15); `vA-nc-01`/B `vB-01` (circuitos novos) em `REGULAMENTOS_NOVOS_CIRCUITOS.md`, sem `.md` canônico próprio ainda (ver 0.10.3) |
+| `REGULAMENTO_*` | as regras da competição — A: v03-12 (BH, vigente) + v03-13 (BH, próxima temporada, ver 0.10.15); **B: `REGULAMENTO_vB-01.md`, canônico e GERADO** do app desde 29/09/2026 — **não edite à mão**, edite a tela e rode `scripts/gerar-regulamento.mjs B` (a bateria recusa divergência); `vA-nc-01` ainda **sem `.md` próprio**, mora em `REGULAMENTOS_NOVOS_CIRCUITOS.md` (ver 0.10.3). `REGULAMENTO_SISTEMA_B.md` é **nota de projeto**, não regulamento |
 | `TERMOS_ORGANIZADOR.md`, `POLITICA_PRIVACIDADE.md` | minutas, **sem revisão jurídica** |
 | `ESPEC_CPF_SEGURANCA.md`, `SEGURANCA_RPC_AUDIT.md` | como o CPF é blindado |
 | `historico/` | planos concluídos, guardados pelo porquê |

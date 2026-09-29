@@ -13,6 +13,87 @@
 > a cópia original (mais abaixo, sob "2026-09-05 — Bootstrap da curadoria...")
 > é a que fica.
 
+## 2026-09-29 (tarde) — A auditoria multi-circuito: o acervo depois de 4 commits, e a dívida que a onda contraiu
+
+**Árvore congelada em `707c40f`** (conferido no início e no fim da curadoria; não
+andou). Escopo: `16cdf58`, `f1cd61c`, `6266f11`, `707c40f`. **Nada no ar** —
+`admin-action` v64 e `athlete-action` v22 seguem sendo o que os atletas usam,
+conferido ao vivo com `npm run motor:listar`.
+
+**Números medidos, não citados.** `npm run teste` → **1149 asserções, 0 falhas**, 13
+seções, saída 0. O `grep` do `switch` do `admin-action` → **46 ações**, inalterado: a
+onda acrescentou cinco funções auxiliares (`idsNoRankingFinal`, `recontarWoCulposos`,
+`promoverIdentidadeGlobal`, `byesDaTemporada`, `entradaPermitida`) e **nenhuma ação
+nova**. Vale registrar que os dois números do `CLAUDE.md` estavam em estados opostos:
+a contagem de asserções, **errada por 138**; a do `switch`, **certa** — e a linha que a
+acompanha (*"conte em vez de citar"*) é a razão de a segunda ter sobrevivido.
+
+**A lição desta rodada: a frase que se protege sozinha envelhece melhor que o número.**
+O `CLAUDE.md` afirmava que *"desde 27/09/2026 a tabela de arquivos do `testes/README.md`
+está completa (todos os que existem — confira com `ls testes/*.mjs`, não pelo número:
+esta frase já nasceu velha uma vez)"*. Ela nasceu velha **uma segunda vez**: o
+`segundo-circuito.mjs` — hoje 231 asserções, o 2º maior arquivo da bateria — **nunca
+entrou na tabela**, e o parágrafo que garantia a completude passou dias sendo falso
+enquanto se citava a si mesmo como prova. Corrigido nos dois lados: a tabela ganhou a
+linha, e o `testes/README.md` ganhou o aviso de que **arquivo novo entra na mesma
+mudança que o cria**. O padrão é o mesmo do `placar()` sem `process.exit`: o que parece
+proteção e não é custa mais que a ausência dela.
+
+**Drift corrigido (rotina, sem efeito de conteúdo):**
+- `CLAUDE.md` — 1011 → **1149**; `switch` reconferido em 46; e **três afirmações que a
+  onda tornou falsas**: *"uma única função do app"* é executada (são **duas**:
+  `janelaRenovacao` e `circuitoTemTorneio`, esta última já executada antes desta onda e
+  nunca trazida para cá), *"o `LOGIN` e o `SESSAO` seguem sem asserção"* (o `SESSAO`
+  passou a ser executado), e o `athlete-action` carregado só em dois arquivos.
+- `testes/README.md` — contagem, a linha do `segundo-circuito.mjs`, e o *"o que ainda
+  não é testado"*, que listava **pareamento** e **desempates** como descobertos depois
+  de a onda cobrir os dois no Sistema B.
+- `README.md` — dizia **627 asserções** em dois lugares, e que o front *"não é executado
+  por teste nenhum"*.
+- `docs/ESTADO-DEV` — versões do motor conferidas ao vivo (v62/v21/v9 → **v64/v22/v11**,
+  três deploys atrás), o aviso de que o fonte está à frente do ar, e o `vB-01` com
+  documento canônico.
+- `docs/CHANGELOG.md` — entrada da onda, marcada em vermelho como **NÃO no ar**, com a
+  ordem de subida (**app primeiro**: o servidor passou a exigir mais).
+- `docs/ROADMAP.md` — **0.10.33, 0.10.34 e 0.10.35** (os três blocos), o 0.1 com o
+  "falta cobrir" atualizado, o 0.10.3 com as duas ressalvas do gerador, e a tabela "o que
+  está ativo em `docs/`" que ainda dizia que o `vB-01` não tinha `.md` próprio.
+- **Três cópias de "sem repetir adversário" sobreviveram fora do regulamento gerado** e
+  foram alinhadas: `REGULAMENTOS_NOVOS_CIRCUITOS.md`, `ROTEIRO_TESTE_SISTEMA_B.md` (onde
+  a promessa virava um **falso negativo de teste manual** ~1 vez em 8) e a nota de
+  projeto `REGULAMENTO_SISTEMA_B.md`. **A trava do gerador só protege o arquivo que ele
+  gera** — as cópias em prosa de outros documentos continuam sem proteção nenhuma, e é
+  por isso que elas sobreviveram à correção do próprio regulamento.
+- `docs/GOVERNANCA_AGENTES.md` — aberta a entrada desta rodada, com a tabela das **8
+  duplas** a preencher e o veredito do Curador já dentro.
+
+**Dívida nova, levada a "Decisões ainda em aberto" do ROADMAP (é do Juliano, não minha):**
+1. **`wo_culposos_temporada` sem grant para o `anon`.** O bloco 2 consertou o caminho do
+   porteiro; em circuito **público** o app lê `circuito_atletas` direto e a coluna foi
+   **excluída de propósito** na fase 4C (`fase4c_reabrir_leitura.sql` a exclui por nome e
+   o teste anon obrigatório exige **401** nela). Logo, **o 2º critério de desempate do
+   Cap. 09 do Sistema B continua morto em circuito público** — e o Sistema B é o dos
+   circuitos não-BH. Liberar a coluna torna o número de faltas de um atleta legível por
+   qualquer visitante: é decisão de **privacidade**, não técnica.
+2. **O pareamento repete adversário com exatamente 8 atletas no sorteio** — 13 em 120
+   temporadas medidas, e **8 é o mínimo**, ou seja a configuração mais provável do 2º
+   circuito. O texto já foi alinhado ao motor; alinhar o motor ao texto é **mudança de
+   motor**.
+3. **O `vA-nc-01` continua sem documento gerado** — o cabeçalho de
+   `scripts/gerar-regulamento.mjs` anuncia o alvo `A-nc`, o `ALVOS` só tem `"B"`, e rodar
+   com `A-nc` sai com código 2. **E o campo `resumo` é escrito à mão dentro do gerador**:
+   a asserção compara o arquivo com a saída do próprio script, e o `resumo` está nos dois
+   lados — então **mudar o texto na tela não o invalida**. É a primeira frase que o atleta
+   lê e a única do documento que pode divergir do app sem a bateria acusar. O defeito que
+   o cabeçalho do script diz estar evitando, sobrevivendo dentro do script.
+
+**Sinalizado, não tocado:** apareceu no projeto Supabase uma Edge Function **`arte` v1**
+(criada 29/09/2026, 11h52 BRT) **sem pasta neste repositório e sem registro em documento
+nenhum**. Presumivelmente de outro produto na mesma conta; confirmar dono antes de
+qualquer `--prune`. E `circuito-dados`/`despachos-do-dia` **continuam** com
+`entrypoint_path` numa pasta de rascunho do projeto de torneios — achado de 19/09,
+reconferido ao vivo hoje, ainda aberto.
+
 ## 2026-09-29 (madrugada) — 0.10.9 + 0.10.7: o caminho do 2º circuito, e o terceiro furo de instrumento em 48h
 
 **Fatia ainda NÃO publicada.** Commit congelado `f229432`, revisado pelas **8 duplas**

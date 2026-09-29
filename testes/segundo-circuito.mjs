@@ -663,8 +663,28 @@ secao("Recibo de consentimento não se perde em silêncio — RODANDO o motor");
       `a inscrição sem vínculo ao circuito é recusada (veio: ${JSON.stringify(r.corpo?.sucesso)})`);
     igual(banco.tabelas.atletas.length, antes,
       "e o atleta recém-criado é DESFEITO — não fica órfão, existindo globalmente e membro de circuito nenhum");
-    ok(/Nada foi salvo/.test(String(r.corpo?.erro || "")),
-      "e a mensagem diz que nada foi salvo, em vez de mandar o atleta conferir a conexão no clique final de uma inscrição paga");
+    // ⚠️ A frase NÃO promete mais "nada foi salvo". O Guardião Jurídico mostrou que
+    // era parcialmente falso: o registro de tentativas de CPF grava o IP antes de
+    // tudo e nada o limpa. A frase agora afirma só o que é verdade — que a
+    // inscrição não foi concluída — e continua dizendo o que fazer.
+    igual(String(r.corpo?.erro || ""), "Sua inscrição não foi concluída. Tente de novo em instantes.",
+      "e a mensagem diz o que houve e o que fazer, em vez de mandar o atleta conferir a conexão no clique final de uma inscrição paga");
+  }
+
+  // ── E quando NEM O DESFAZIMENTO funciona ────────────────────────────────
+  // Achado do Guardião Jurídico e do guardião do Atleta: o `delete` de rollback
+  // não checava o próprio erro, e a resposta afirmava "nada foi salvo" de
+  // qualquer jeito. Se ele falhar, sobra um atleta órfão — com CPF e, no caso de
+  // menor, o nome do responsável — e mandar "tente de novo" leva o atleta ao erro
+  // de telefone duplicado e dali a um beco sem saída, invisível ao organizador.
+  {
+    const { banco, fn } = await cenario();
+    banco.recusar("circuito_atletas", "upsert", { message: "simulando falha", code: "XX000" });
+    banco.recusar("atletas", "delete", { message: "o desfazimento também falhou", code: "XX000" });
+    const r = await fn.chamar({ acao: "INSCREVER", payload: inscricaoCompleta });
+    ok(r.corpo?.sucesso === false, "a inscrição é recusada");
+    igual(String(r.corpo?.erro || ""), "Não conseguimos concluir nem desfazer sua inscrição. Fale com o organizador antes de tentar de novo.",
+      "e a mensagem manda FALAR COM O ORGANIZADOR — não 'tente de novo', que levaria a um beco sem saída");
   }
 
   // Sem o vínculo recusando, o mesmo caminho conclui — senão as três asserções
@@ -726,6 +746,51 @@ secao("A virada não apaga do histórico quem jogou W.O. — RODANDO a ação ma
     igual(todas.join(","), "1,2,3",
       "e as três posições são 1, 2 e 3 — sem ninguém subindo de degrau por causa de um atleta apagado");
   }
+}
+
+secao("A virada no CIRCUITO NOVO também preserva quem jogou W.O. — o ramo que importa");
+{
+  // A seção acima roda com `circuitoId: BH`, e o `NOVA_TEMPORADA` tem DOIS ramos:
+  // o do BH (tabelas legadas) e o dos demais (`circuito_atletas`). O guardião de
+  // Regulamento sabotou o ramo NÃO-BH de volta para `validado` e a bateria ficou
+  // VERDE: a correção estava protegida no BH — que já encerrou — e desprotegida
+  // no caminho que o 2º circuito vai usar.
+  //
+  // É a mesma família do erro do cenário logo acima: testar o caminho que eu
+  // conheço em vez do caminho que vai rodar.
+  const CIRC_NOVO = "77770000-1111-2222-3333-444444444444";
+  const P = "77770000-0000-0000-0000-00000000000p"; // jogou partida normal
+  const W = "77770000-0000-0000-0000-00000000000w"; // fez a temporada em W.O.
+  const T = "77770000-0000-0000-0000-00000000000t"; // terceiro
+
+  const { banco, motor } = await montarMotor({
+    circuitos: [
+      circuito(BH, { regulamento_versao: "v03-13" }),
+      circuito(CIRC_NOVO, { slug: "novo-virada", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01" }),
+    ],
+    atletas: [atleta(P), atleta(W), atleta(T)],
+    circuito_atletas: [
+      { circuito_id: CIRC_NOVO, atleta_id: P, status: "ativo", saldo_temp: 4 },
+      { circuito_id: CIRC_NOVO, atleta_id: W, status: "ativo", saldo_temp: 2 },
+      { circuito_id: CIRC_NOVO, atleta_id: T, status: "ativo", saldo_temp: 1 },
+    ],
+    partidas: [
+      partida("n1", { circuito_id: CIRC_NOVO, atleta1_id: P, atleta2_id: T, placar1: 3, placar2: 0, validado: true, calculado: true }),
+      // A partida do W é W.O.: calculada e pontuando, mas NUNCA validada.
+      partida("n2", { circuito_id: CIRC_NOVO, rodada: 2, atleta1_id: W, atleta2_id: T, wo_tipo: "a_favor", wo_beneficiario_id: W, validado: false, calculado: true }),
+    ],
+    funcoes: { arquivar_partidas_temporada_circuito: () => null },
+  });
+
+  const r = await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: CIRC_NOVO });
+  ok(r.corpo?.sucesso === true, `a virada do circuito novo conclui (erro: ${JSON.stringify(r.corpo?.erro)})`);
+  const hist = (id) => banco.acha("circuito_atletas", c => c.circuito_id === CIRC_NOVO && c.atleta_id === id)?.historico || [];
+  igual(hist(W).length, 1,
+    `no circuito NOVO, quem fez a temporada em W.O. recebe linha de histórico (veio: ${JSON.stringify(hist(W))})`);
+  const pos = (id) => hist(id)[0]?.pos;
+  igual([pos(P), pos(W), pos(T)].sort((a, b) => a - b).join(","), "1,2,3",
+    "e as três posições são 1, 2 e 3 — ninguém sobe de degrau por causa de um atleta apagado");
+  igual(pos(W), 2, "o atleta do W.O. fica em 2º, que é o que os 2 pontos dele valem pelo Cap. 09");
 }
 
 secao("A estreia no ranking acontece na rodada em que a 1ª partida é processada");
@@ -814,43 +879,159 @@ secao("O contador de W.O. injustificados é DERIVADO — RODANDO os dois sistema
   // Agora o número é lido das partidas. Idempotente por construção.
   const F = "eeeeeeee-0000-0000-0000-00000000000f"; // faltoso
   const V = "eeeeeeee-0000-0000-0000-00000000000v"; // adversário
+  const CIRC_B_WO = "eeeeeeee-1111-1111-1111-111111111111";
 
-  const cenarioWo = async (sistema) => montarMotor({
-    circuitos: [circuito(BH, { sistema, regulamento_versao: sistema === "B" ? "vB-01" : "v03-13" })],
-    atletas: [atleta(F, { rating: 500 }), atleta(V, { rating: 500 })],
-    circuito_atletas: [
-      { circuito_id: BH, atleta_id: F, status: "ativo" },
-      { circuito_id: BH, atleta_id: V, status: "ativo" },
-    ],
-    partidas: [partida("j1", { atleta1_id: F, atleta2_id: V })],
-    solicitacoes_wo: [{ id: "s1", circuito_id: BH, atleta_id: F, adversario_id: V, partida_id: "j1", status: "pendente" }],
-  });
+  // ⚠️ ESTA SEÇÃO ANUNCIAVA "RODANDO OS DOIS SISTEMAS" E RODAVA O SISTEMA A DUAS
+  // VEZES. O cenário montava `circuito(BH, { sistema })` — e o `getSistema()` do
+  // motor devolve "A" para o BH POR CRAVAÇÃO (`if (circuitoId === bh) return "A"`),
+  // sem nunca olhar a coluna `sistema`. Os rótulos `[B]` eram falsos.
+  //
+  // O guardião de Regulamento provou da forma mais direta: pôs um `throw` na
+  // primeira linha do ramo Sistema B do `APLICAR_WO` e a bateria ficou VERDE,
+  // 1149/1149. O ramo inteiro do W.O. no modelo de PONTOS — o modelo do 2º
+  // circuito — era código morto para a bateria. Quatro sabotagens passaram verdes
+  // por causa disto: tirar a recontagem do ramo B, tirar o `a_favor` da conta,
+  // tirar o escopo por circuito da recontagem, e a virada de temporada no ramo
+  // não-BH.
+  //
+  // A correção é o cenário, não a asserção: o Sistema B precisa de um circuito que
+  // NÃO seja o BH. O portão que prova que agora roda de verdade está no fim da
+  // seção.
+  const circuitoDoSistema = (sistema) => sistema === "B" ? CIRC_B_WO : BH;
 
-  const contador = (banco) =>
-    banco.acha("circuito_atletas", c => c.atleta_id === F)?.wo_culposos_temporada
-    ?? banco.acha("atletas", a => a.id === F)?.wo_culposos_temporada;
+  const cenarioWo = async (sistema) => {
+    const cid = circuitoDoSistema(sistema);
+    return montarMotor({
+      circuitos: [
+        circuito(BH, { regulamento_versao: "v03-13" }),
+        circuito(CIRC_B_WO, { slug: "pontos-wo", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01" }),
+      ],
+      atletas: [atleta(F, { rating: 500 }), atleta(V, { rating: 500 })],
+      circuito_atletas: [
+        { circuito_id: cid, atleta_id: F, status: "ativo" },
+        { circuito_id: cid, atleta_id: V, status: "ativo" },
+      ],
+      partidas: [partida("j1", { circuito_id: cid, atleta1_id: F, atleta2_id: V })],
+      solicitacoes_wo: [{ id: "s1", circuito_id: cid, atleta_id: F, adversario_id: V, partida_id: "j1", status: "pendente" }],
+    });
+  };
+
+  const contador = (banco, sistema) => {
+    const cid = circuitoDoSistema(sistema);
+    return banco.acha("circuito_atletas", c => c.circuito_id === cid && c.atleta_id === F)?.wo_culposos_temporada
+      ?? banco.acha("atletas", a => a.id === F)?.wo_culposos_temporada;
+  };
 
   for (const sistema of ["A", "B"]) {
+    const CIRC = circuitoDoSistema(sistema);
     // 1. Aplicar DUAS vezes o mesmo W.O. não pode contar duas faltas.
     {
       const { banco, motor } = await cenarioWo(sistema);
-      await comoAdmin(motor, "APLICAR_WO", { circuitoId: BH, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
-      igual(contador(banco), 1, `[${sistema}] um W.O. culposo conta 1`);
-      await comoAdmin(motor, "APLICAR_WO", { circuitoId: BH, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
-      igual(contador(banco), 1,
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CIRC, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
+      igual(contador(banco, sistema), 1, `[${sistema}] um W.O. culposo conta 1`);
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CIRC, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
+      igual(contador(banco, sistema), 1,
         `[${sistema}] aplicar o MESMO W.O. de novo continua contando 1 — dois cliques não suspendem ninguém`);
     }
 
     // 2. Aprovar a justificativa depois devolve o ponto.
     {
       const { banco, motor } = await cenarioWo(sistema);
-      await comoAdmin(motor, "APLICAR_WO", { circuitoId: BH, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
-      igual(contador(banco), 1, `[${sistema}] a falta entra como culposa`);
-      const r = await comoAdmin(motor, "RESPONDER_WO", { circuitoId: BH, id: "s1", matchId: "j1", aprovado: true, justificativa: "atestado" });
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CIRC, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
+      igual(contador(banco, sistema), 1, `[${sistema}] a falta entra como culposa`);
+      const r = await comoAdmin(motor, "RESPONDER_WO", { circuitoId: CIRC, id: "s1", matchId: "j1", aprovado: true, justificativa: "atestado" });
       ok(r.corpo?.sucesso === true, `[${sistema}] a justificativa é aprovada (erro: ${JSON.stringify(r.corpo?.erro)})`);
-      igual(contador(banco), 0,
+      igual(contador(banco, sistema), 0,
         `[${sistema}] e o ponto VOLTA — ninguém fica suspenso por uma falta que o organizador perdoou`);
     }
+  }
+
+  // 3. TROCAR O TIPO de culposo para justificado devolve o ponto — nos DOIS
+  //    sistemas. O commit do Bloco 2 declarava isto consertado e, no Sistema A,
+  //    NÃO estava: o ramo `justificado` do APLICAR_WO dava `return` antes de
+  //    recontar. Achado do Guardião de Regulamento, medido rodando o motor.
+  for (const sistema of ["A", "B"]) {
+    const CIRC = circuitoDoSistema(sistema);
+    const { banco, motor } = await cenarioWo(sistema);
+    await comoAdmin(motor, "APLICAR_WO", { circuitoId: CIRC, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
+    igual(contador(banco, sistema), 1, `[${sistema}] a falta entra como culposa`);
+    const r = await comoAdmin(motor, "APLICAR_WO", { circuitoId: CIRC, matchId: "j1", tipo: "justificado", faltosoId: F, beneficiarioId: V });
+    ok(r.corpo?.sucesso === true, `[${sistema}] o organizador reclassifica o W.O. como justificado (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    igual(contador(banco, sistema), 0,
+      `[${sistema}] e o ponto VOLTA ao reclassificar — o Cap. 07 não pode suspender por falta perdoada`);
+  }
+
+  // 4. CORRIGIR QUEM FALTOU não pode deixar a falta lançada para os dois. Era o
+  //    outro caso que o commit listava como consertado e não estava: a recontagem
+  //    era idempotente por ATLETA, não por PARTIDA.
+  for (const sistema of ["A", "B"]) {
+    const CIRC = circuitoDoSistema(sistema);
+    const { banco, motor } = await cenarioWo(sistema);
+    await comoAdmin(motor, "APLICAR_WO", { circuitoId: CIRC, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
+    await comoAdmin(motor, "APLICAR_WO", { circuitoId: CIRC, matchId: "j1", tipo: "culposo", faltosoId: V, beneficiarioId: F });
+    const doV = () => banco.acha("circuito_atletas", c => c.circuito_id === CIRC && c.atleta_id === V)?.wo_culposos_temporada
+      ?? banco.acha("atletas", a => a.id === V)?.wo_culposos_temporada;
+    igual(doV(), 1, `[${sistema}] o faltoso corrigido fica com a falta`);
+    igual(contador(banco, sistema), 0,
+      `[${sistema}] e o faltoso ANTERIOR é zerado — um W.O. não pode contar para duas pessoas`);
+  }
+
+  // 5. No Sistema B o "a favor" TAMBÉM conta como injustificado (vB-01, Cap. 07),
+  //    e no Sistema A não conta (v03-12 fala em "2 W.O.s culposos"). Sem esta
+  //    asserção, tirar o `a_favor` da conta passava verde.
+  {
+    const { banco, motor } = await cenarioWo("B");
+    const r = await comoAdmin(motor, "APLICAR_WO", { circuitoId: CIRC_B_WO, matchId: "j1", tipo: "a_favor", beneficiarioId: V });
+    ok(r.corpo?.sucesso === true, `o W.O. "a favor" é aceito no circuito de pontos (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    igual(contador(banco, "B"), 1,
+      'no Sistema B o "a favor" conta como injustificado para o ausente — é o que o Cap. 07 do vB-01 manda');
+  }
+  {
+    const { banco, motor } = await cenarioWo("A");
+    await comoAdmin(motor, "APLICAR_WO", { circuitoId: BH, matchId: "j1", tipo: "a_favor", beneficiarioId: V });
+    igual(contador(banco, "A") || 0, 0,
+      'no Sistema A o "a favor" NÃO conta — o v03-12 suspende por "2 W.O.s culposos", e são coisas diferentes');
+  }
+
+  // 6. A recontagem é ESCOPADA POR CIRCUITO. Sem esta asserção, tirar o filtro
+  //    `circuito_id` passava verde — numa onda cujo tema é isolamento entre
+  //    circuitos, era a linha que mais merecia portão.
+  {
+    const OUTRO_B = "eeeeeeee-2222-2222-2222-222222222222";
+    const { banco, motor } = await montarMotor({
+      circuitos: [
+        circuito(BH, { regulamento_versao: "v03-13" }),
+        circuito(CIRC_B_WO, { slug: "pontos-a", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01" }),
+        circuito(OUTRO_B, { slug: "pontos-b", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01" }),
+      ],
+      atletas: [atleta(F), atleta(V)],
+      circuito_atletas: [
+        { circuito_id: CIRC_B_WO, atleta_id: F, status: "ativo" },
+        { circuito_id: OUTRO_B, atleta_id: F, status: "ativo" },
+      ],
+      // O MESMO atleta falta nos DOIS circuitos.
+      partidas: [
+        partida("ja", { circuito_id: CIRC_B_WO, atleta1_id: F, atleta2_id: V }),
+        partida("jb", { circuito_id: OUTRO_B, atleta1_id: F, atleta2_id: V }),
+      ],
+    });
+    await comoAdmin(motor, "APLICAR_WO", { circuitoId: CIRC_B_WO, matchId: "ja", tipo: "culposo", faltosoId: F, beneficiarioId: V });
+    await comoAdmin(motor, "APLICAR_WO", { circuitoId: OUTRO_B, matchId: "jb", tipo: "culposo", faltosoId: F, beneficiarioId: V });
+    const no = (cid) => banco.acha("circuito_atletas", c => c.circuito_id === cid && c.atleta_id === F)?.wo_culposos_temporada;
+    igual(no(CIRC_B_WO), 1, "a falta do circuito A conta 1 no circuito A");
+    igual(no(OUTRO_B), 1,
+      "e a do circuito B conta 1 no circuito B — a contagem não soma entre circuitos, nem vaza de um para o outro");
+  }
+
+  // 7. O PORTÃO DO CENÁRIO. Esta asserção não testa regra nenhuma: ela prova que o
+  //    ramo Sistema B do APLICAR_WO é MESMO executado. Foi o teste que o guardião
+  //    usou para mostrar que esta seção inteira rodava o Sistema A duas vezes.
+  //    Se alguém voltar a montar o cenário do B com o BH, isto fica vermelho.
+  {
+    const { motor } = await cenarioWo("B");
+    const r = await comoAdmin(motor, "APLICAR_WO", { circuitoId: CIRC_B_WO, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: null });
+    igual(r.corpo?.erro, "beneficiarioId é obrigatório",
+      "o cenário do Sistema B alcança MESMO o ramo B do motor — esta recusa só existe lá (o ramo A não exige beneficiário no culposo… exige faltoso)");
   }
 
   // 3. Duas faltas de verdade, em partidas diferentes, contam 2 — senão as
@@ -1252,6 +1433,178 @@ secao("Um circuito não age sobre o outro — nem pelo super-admin");
     igual(r.status, 200, "no BH o super-admin continua desarquivando atleta sem linha de vínculo — o roster legado vale");
     igual(banco.acha("atletas", a => a.id === ARQ)?.status, "ativo", "e o atleta volta a ativo");
   }
+}
+
+secao("A promoção da identidade global é um portão — não um comentário");
+{
+  // Três achados dos guardiões, todos na mesma função, todos provados rodando:
+  //
+  // 1. [Jurídico] A trava "só para cima" NÃO TINHA TESTE. Ele sabotou as DUAS
+  //    cópias da regra juntas (o `return` antecipado e o filtro do `update`) e a
+  //    bateria ficou VERDE. Sem essa linha, um cadastro ANONIMIZADO volta a
+  //    "ativo" e o login deixa entrar quem exerceu o direito de exclusão.
+  // 2. [Segurança] REGRESSÃO QUE EU INTRODUZI: o `INSCRICAO_VALIDAR` não tinha
+  //    guarda de LGPD nenhuma. Quem pediu exclusão dos dados era reativado por uma
+  //    aprovação de rotina. Antes dos meus commits isso não acontecia.
+  // 3. [Jurídico] A promoção punha o atleta do circuito novo DENTRO DO ROSTER DO
+  //    BH: o roster legado é `status='ativo' AND pendente_circuito=false`, e a
+  //    coluna nasce `false`. Ele provou rodando o INICIAR_ETAPA do BH.
+  const NOVO = "88880000-1111-2222-3333-444444444444";
+  const cenarioPromo = async (campos = {}) => montarMotor({
+    circuitos: [
+      circuito(BH, { regulamento_versao: "v03-13" }),
+      circuito(NOVO, { slug: "promo", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01" }),
+    ],
+    atletas: [atleta("alvo", { status: "pendente", pendente_circuito: false, ...campos })],
+    circuito_atletas: [{ circuito_id: NOVO, atleta_id: "alvo", status: "pendente", pendente_circuito: false }],
+  });
+  const global = (banco) => banco.acha("atletas", a => a.id === "alvo");
+
+  // ── 1. O caminho feliz continua funcionando ──────────────────────────────
+  {
+    const { banco, motor } = await cenarioPromo();
+    await comoAdmin(motor, "INSCRICAO_VALIDAR", { circuitoId: NOVO, id: "alvo", approved: true });
+    igual(global(banco)?.status, "ativo", "aprovado no circuito novo, o cadastro global vira ativo");
+    igual(global(banco)?.pendente_circuito, true,
+      "E ENTRA NA FILA DE ESPERA GLOBAL — é isso que o mantém fora do roster do BH");
+  }
+
+  // ── 2. O roster do BH, atravessando o consumidor ─────────────────────────
+  // Conferir o valor gravado não basta (lição de 27/09): a prova é o BH iniciar a
+  // etapa e o intruso NÃO aparecer.
+  {
+    const { banco, motor } = await montarMotor({
+      circuitos: [
+        circuito(BH, { regulamento_versao: "v03-13" }),
+        circuito(NOVO, { slug: "promo", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01" }),
+      ],
+      atletas: [
+        ...Array.from({ length: 8 }, (_, i) => atleta(`bh-${i}`, { status: "ativo", pendente_circuito: false })),
+        atleta("intruso", { status: "pendente", pendente_circuito: false }),
+      ],
+      circuito_atletas: [{ circuito_id: NOVO, atleta_id: "intruso", status: "pendente", pendente_circuito: false }],
+      chaves: [], partidas: [],
+    });
+    await comoAdmin(motor, "INSCRICAO_VALIDAR", { circuitoId: NOVO, id: "intruso", rating: 500, approved: true });
+    const r = await comoAdmin(motor, "INICIAR_ETAPA", { circuitoId: BH });
+    ok(r.corpo?.sucesso === true, `a etapa do BH inicia (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    igual(r.corpo?.dados?.atletas, 8,
+      "e o BH começa com os 8 atletas DELE — o aprovado no circuito novo não entrou no roster do BH");
+    const doIntruso = banco.tabelas.partidas.filter(m => m.atleta1_id === "intruso" || m.atleta2_id === "intruso");
+    igual(doIntruso.length, 0, "o intruso não foi pareado em partida nenhuma do BH");
+    igual(banco.acha("atletas", a => a.id === "intruso")?.chave, undefined,
+      "e não recebeu chave do BH");
+  }
+
+  // ── 3. As duas portas da LGPD ────────────────────────────────────────────
+  {
+    const { banco, motor } = await cenarioPromo({ exclusao_solicitada_em: "2026-09-01T10:00:00Z" });
+    await comoAdmin(motor, "INSCRICAO_VALIDAR", { circuitoId: NOVO, id: "alvo", approved: true });
+    igual(global(banco)?.status, "pendente",
+      "quem PEDIU EXCLUSÃO dos dados não é reativado por uma aprovação de rotina");
+  }
+  {
+    const { banco, motor } = await cenarioPromo({ telefone: "removido:alvo" });
+    await comoAdmin(motor, "INSCRICAO_VALIDAR", { circuitoId: NOVO, id: "alvo", approved: true });
+    igual(global(banco)?.status, "pendente",
+      "e um cadastro JÁ ANONIMIZADO também não volta à vida por aqui");
+  }
+
+  // ── 4. A trava "só para cima", com os estados que importam ───────────────
+  // Sabotar AS DUAS cópias juntas tem de ficar vermelho — hoje ficava verde.
+  for (const [status, extra, oQue] of [
+    ["arquivado", { telefone: "removido:alvo" }, "anonimizado"],
+    ["arquivado", {}, "arquivado"],
+    ["reprovado", {}, "reprovado"],
+  ]) {
+    const { banco, motor } = await cenarioPromo({ status, ...extra });
+    await comoAdmin(motor, "INSCRICAO_VALIDAR", { circuitoId: NOVO, id: "alvo", approved: true });
+    igual(global(banco)?.status, status,
+      `a promoção NÃO rebaixa nem levanta quem está ${oQue} — ela só age sobre "pendente"`);
+  }
+
+  // E o consumidor: o login continua recusando quem não foi promovido.
+  {
+    const { banco, motor } = await cenarioPromo({ status: "arquivado", telefone: "removido:alvo" });
+    await comoAdmin(motor, "INSCRICAO_VALIDAR", { circuitoId: NOVO, id: "alvo", approved: true });
+    banco.tabelas.atleta_sessao.push({ id: "s9", atleta_id: "alvo", token_hash: createHash("sha256").update("tok").digest("hex"), expira_em: new Date(Date.now() + 3600e3).toISOString() });
+    const login = await carregarFuncao("login-atleta", banco);
+    const rs = await login.chamar({ acao: "SESSAO", token: "tok" });
+    igual(rs.corpo?.erro, "cadastro_inativo",
+      "e o login-atleta continua recusando o cadastro anonimizado — a porta não reabriu por via lateral");
+  }
+}
+
+secao("A auto-validação lê o circuito DA PARTIDA — o atleta não escolhe a regra");
+{
+  // Achado do Guardião de Segurança, e o defeito é meu: ao consertar a
+  // auto-validação eu transformei `payload.circuitoId` — até então decorativo no
+  // ENVIAR_PLACAR — em PARÂMETRO DE DECISÃO, sem validar de onde ele vem.
+  //
+  // O ataque, exatamente como ele o rodou: partida do circuito novo, com a
+  // auto-validação DESLIGADA pelo organizador; os dois atletas mandam o mesmo
+  // placar declarando `circuitoId: <BH>` (que está LIGADO). Antes: auto-validava,
+  // passando por cima do botão do organizador.
+  const NOVO = "99990000-1111-2222-3333-444444444444";
+  const { banco } = await montarMotor({
+    circuitos: [
+      circuito(BH, { auto_validar_placar: true }),
+      circuito(NOVO, { slug: "atacado", sistema: "B", auto_validar_placar: false }),
+    ],
+    configuracao: [{ id: 1, fase: "temporada", temporada_numero: 1, temporada_ano: 2026, rodadas_por_temporada: 6, auto_validar_placar: true }],
+    atletas: [atleta("a1"), atleta("a2")],
+    chaves: [{ id: "chaveN", nome: "N", rodada_atual: 1, circuito_id: NOVO }],
+    partidas: [partida("jN", { circuito_id: NOVO, chave_id: "chaveN", atleta1_id: "a1", atleta2_id: "a2", p2_placar1: 3, p2_placar2: 1 })],
+  });
+  const fn = await carregarFuncao("athlete-action", banco);
+  const r = await fn.chamar({
+    acao: "ENVIAR_PLACAR",
+    // O atleta MENTE o circuito no corpo do pedido.
+    payload: { circuitoId: BH, matchId: "jN", athleteId: "a1", score1: 3, score2: 1 },
+  });
+  ok(r.corpo?.sucesso === true, "o placar é aceito normalmente");
+  ok(r.corpo?.dados?.autoValidado !== true,
+    "mas NÃO é auto-validado — o motor pergunta à partida de que circuito ela é, e ignora o que o atleta declarou");
+  igual(banco.acha("partidas", m => m.id === "jN")?.validado, false,
+    "e a partida continua esperando o organizador, que foi o que ele configurou");
+}
+
+secao("Avançar a rodada sem chave é RECUSADO — a correção que não tinha portão");
+{
+  // Esta era a correção mais grave do Bloco 1: o `AVANCAR_RODADA` caía num
+  // `|| "key_1"` — a chave do BH — quando o circuito não tinha chave. O Guardião
+  // de Segurança já tinha provado que isso voltava o BH da rodada 6 para a 2.
+  //
+  // O Guardião de Confiabilidade sabotou a correção de volta e a bateria ficou
+  // INTEIRA VERDE. Motivo: TODOS os cenários de `AVANCAR_RODADA` da bateria rodam
+  // `INICIAR_ETAPA` antes, que cria a chave — então o ramo "circuito sem chave"
+  // nunca era alcançado por asserção nenhuma. A correção estava certa e
+  // desprotegida.
+  const SEM_CHAVE = "aaaa0000-1111-2222-3333-444444444444";
+  const { banco, motor } = await montarMotor({
+    circuitos: [
+      circuito(BH, { regulamento_versao: "v03-13" }),
+      circuito(SEM_CHAVE, { slug: "sem-chave", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01", fase: "etapa" }),
+    ],
+    atletas: Array.from({ length: 8 }, (_, i) => atleta(`s-${i}`)),
+    circuito_atletas: Array.from({ length: 8 }, (_, i) => ({ circuito_id: SEM_CHAVE, atleta_id: `s-${i}`, status: "ativo", pendente_circuito: false })),
+    // A chave é DO BH, e está na rodada 6. O circuito novo não tem chave nenhuma.
+    chaves: [{ id: "key_1", nome: "Chave Única", rodada_atual: 6, circuito_id: BH }],
+    partidas: [],
+  });
+
+  const r = await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: SEM_CHAVE });
+  igual(r.status, 409, "avançar a rodada num circuito sem chave é recusado com 409");
+  ok(/inicie a etapa/i.test(String(r.corpo?.erro || "")),
+    `e a mensagem diz o que fazer (veio: ${JSON.stringify(r.corpo?.erro)})`);
+
+  // O que a recusa está protegendo: a chave do BH.
+  igual(banco.acha("chaves", c => c.id === "key_1")?.rodada_atual, 6,
+    "e a chave do BH continua na rodada 6 — era ela que o `|| \"key_1\"` reescrevia");
+  igual(banco.tabelas.partidas.length, 0,
+    "nenhuma partida foi criada — nem no circuito novo, nem no BH");
+  igual(banco.tabelas.chaves.length, 1,
+    "e nenhuma chave foi inventada pelo caminho");
 }
 
 process.exit(placar("O segundo circuito"));

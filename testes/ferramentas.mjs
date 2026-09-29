@@ -56,7 +56,14 @@ export const PADROES_DO_BANCO = {
   tentativas_login_admin: { tentativa_em: agora },
   tentativas_busca_telefone: { tentativa_em: agora },
   tentativas_busca_cpf: { tentativa_em: agora },
-  partidas: { criado_em: agora },
+  // ⚠️ `rejeitado`/`validado`/`calculado` têm DEFAULT false no Postgres, e o banco
+  // falso não modelava isso (achado do guardião do Admin, 29/09/2026). Como o
+  // INICIAR_ETAPA e o AVANCAR_RODADA inserem partida SEM esses campos, todo
+  // cenário que gerasse partidas pelo motor e depois chamasse PROCESSAR_RODADA
+  // recebia `{processadas: 0}` — e passava VERDE sem processar nada, porque as
+  // consultas filtram por `.eq("rejeitado", false)`. É a família "passa pelo
+  // motivo errado": o instrumento discordando do banco de verdade.
+  partidas: { criado_em: agora, rejeitado: () => false, validado: () => false, calculado: () => false },
   partidas_historico: { arquivada_em: agora },
   mensagens_enviadas: { enviado_em: agora },
   pagamentos: { criado_em: agora },

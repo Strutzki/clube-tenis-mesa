@@ -4,8 +4,15 @@
 npm run teste
 ```
 
-Hoje são 1011 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
-recusa a subir com teste vermelho. Confira rodando; não cite de memória.
+Hoje são **1149 asserções, 0 falhas** — conferido pelo Curador em 29/09/2026 (tarde),
+somando as **13 seções** que a bateria imprime, no commit `707c40f`. O `atualizar.sh`
+roda isso antes de publicar e se recusa a subir com teste vermelho. Confira rodando;
+não cite de memória.
+
+⚠️ **A tabela abaixo tem de listar TODOS os arquivos** — confira com `ls testes/*.mjs`,
+nunca pela contagem. Em 29/09/2026 o `segundo-circuito.mjs` (231 asserções, o 2º maior
+da bateria) estava fora dela **enquanto o `CLAUDE.md` afirmava que a tabela estava
+completa**. Arquivo novo entra aqui na mesma mudança que o cria.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
 
@@ -27,6 +34,7 @@ que é útil; não prova nada sobre o código que está no ar.
 | `sistema-b.mjs` | Sistema B: pontos V=2/D=1, W.O. que não anula, bye do ímpar, e a garantia de que um circuito de pontos **nunca** escreve rating |
 | `isolamento.mjs` | Operar um circuito não toca em outro; escopo do organizador; exclusão global × por circuito; virada de temporada; freio do PIN |
 | `permissoes.mjs` | A allowlist do organizador, o portão do financeiro, e o escopo por circuito do `LISTAR_TELEFONES` (inclusive: a ação devolve só `id` e `telefone`) |
+| `segundo-circuito.mjs` | O 2º circuito de ponta a ponta (231 asserções): criação e recibo do servidor, teto fixo, slug `bh` reservado, gravação que falha não responde "sucesso", fila de espera, troca de circuito, auto-validação do placar **por circuito**, recibo de consentimento, a virada de temporada não apagando quem jogou W.O., o contador de W.O. injustificados **derivado**, o **motor de pareamento do Sistema B rodando 6 rodadas completas**, o atleta aprovado conseguindo entrar no app (`SESSAO`), e o circuito de pontos não encostando no rating global |
 | `participar-outro-circuito.mjs` | Atleta existente entrando num 2º circuito (`PARTICIPAR` do `login-atleta`, rodando de verdade): aceite do regulamento declarado, versão conferida contra a do circuito, e responsável legal obrigatório para menor de 18 |
 | `onda-06.mjs` | Onda 0.6: desarquivar (e a prova de que o desarquivado volta a ser pareado), as duas guardas de LGPD, a recusa do BH na leitura da cobrança, e o comprovante de W.O. do organizador — este roda a função `comprovante-url` |
 | `mensagens.mjs` | Registro de mensagens enviadas: o motor não pode responder "sucesso" com a gravação falhando |
@@ -230,6 +238,10 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | tela: o aviso do regulamento na CRIAÇÃO some | 1 vermelha |
 | tela: o aviso perde a parte do torneio (a diferença que só o documento mostra) | 1 vermelha |
 | tela: a confirmação deixa de mostrar o que o servidor gravou e volta a adivinhar | 1 vermelha |
+| **Auditoria multi-circuito — 29/09/2026 (commits `16cdf58`, `f1cd61c`, `6266f11`, `707c40f`)** | |
+| ⚠️ **Linha do Curador, e ela é um débito, não um registro.** As mutações desta onda foram rodadas e declaradas nas mensagens de commit — 7 vermelhas para a fatia 0.10.32 (o estado de tela que atravessava a troca de circuito), e as demais descritas em prosa, sabotagem a sabotagem, nos três blocos. **Não foram tabuladas aqui uma a uma, e eu não vou inventar o número de vermelhas de cada uma.** Quem rodar a próxima onda: transcreva desta tabela o padrão, não a prosa do commit | — |
+| bloco 3 — mutação **campo a campo** da guarda de rating do Sistema B | `rating` e `rating_inicial` **vermelhos**; `rating_pico` e `rating_historico` **verdes, e corretamente** — nenhuma ação os escreve. Está escrito no teste para ninguém ler a lista e achar que ela protege os quatro. A 1ª asserção do autor testou só `rating` (que **já** estava protegido) e a mutação ficou verde: passou pelo motivo errado |
+| bloco 2 — a asserção de pareamento que exigia **zero** repetição | **vermelha em ~1 de cada 8 execuções** — e não era teste instável, era o motor. Ver "decisão pendente" no ROADMAP. 40 execuções seguidas sem falha depois de a asserção passar a afirmar o limite medido |
 
 ## O portão: todo arquivo termina em `process.exit(placar(...))`
 
@@ -253,11 +265,23 @@ regulamento. Corrigido, e provado sabotando uma asserção do regulamento: o
   registra que um trecho de texto está lá — **não** prova comportamento. Para
   **texto de tela** isso é o certo, porque a afirmação é literalmente "esta frase
   está aqui"; para regra, não serve.
-- `circuito-dados` — o carregador já serve para ela; faltam as asserções. E o
-  `login-atleta` só é coberto no `PARTICIPAR`: o `LOGIN`, o `SESSAO` e o
-  `RENOVAR` seguem sem asserção nenhuma. O `athlete-action` **já é executado** (8 cenários: os 7 do
-  `ACEITAR_REGULAMENTO` mais o do `INSCREVER`), e o `comprovante-url` também
-  (16 asserções, desde 27/09/2026).
-- Pareamento e geração de jogos (`INICIAR_ETAPA`, `AVANCAR_RODADA`).
-- Desempates do ranking (`cmpRankingDB` / `cmpRankingB`).
+- `circuito-dados` — o carregador já serve para ela; **faltam as asserções de
+  comportamento**. O que existe hoje é leitura de fonte (`segundo-circuito.mjs`
+  confere que ela pede e devolve `wo_culposos_temporada`), que registra texto,
+  não prova execução.
+- `login-atleta` — cobertos o `PARTICIPAR` (desde 27/09/2026) e o `SESSAO`
+  (desde 29/09/2026, em `segundo-circuito.mjs`). O `LOGIN` e o `RENOVAR` seguem
+  sem asserção nenhuma.
+- O `athlete-action` **já é executado** (os 7 cenários do `ACEITAR_REGULAMENTO`,
+  o do `INSCREVER`, e mais três em `segundo-circuito.mjs` desde 29/09/2026), e o
+  `comprovante-url` também (16 asserções, desde 27/09/2026).
+- ~~Pareamento e geração de jogos (`INICIAR_ETAPA`, `AVANCAR_RODADA`)~~ —
+  **coberto em 29/09/2026 para o Sistema B**, rodando 6 rodadas completas em três
+  configurações (8/sorteio, 8/grupos, 9/sorteio): pareamento, rotação do bye,
+  limite de repetição de adversário e a trava das 6 rodadas. O Sistema A tem a
+  rotação do bye coberta (`rating.mjs`); o **pareamento por rating** ainda não
+  roda temporada completa.
+- Desempates do ranking — o **Sistema B** ganhou os cinco níveis em 29/09/2026
+  (ROADMAP 0.10.24) e o 2º critério (menos W.O. injustificados) tem asserção de
+  fonte no `cmpRanking`. O **Sistema A** (`cmpRankingDB`) segue sem asserção.
 - O financeiro.

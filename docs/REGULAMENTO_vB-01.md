@@ -36,11 +36,11 @@ O método de pareamento é escolhido na criação do circuito e vale para a temp
 - Sorteio aleatório: a cada rodada os confrontos são sorteados, evitando repetir adversário na temporada.
 - Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos), também evitando repetir adversário.
 
-Repetição de adversário só acontece quando não há alternativa — por exemplo se o número de atletas cair durante a temporada e sobrarem menos adversários possíveis do que rodadas. Nesse caso o sistema repete o mínimo possível.
+A repetição é rara e pode acontecer por dois motivos: se o número de atletas cair durante a temporada e sobrarem menos adversários possíveis do que rodadas, e aí ela é inevitável; ou, mesmo com o grupo completo, porque o sistema monta a melhor combinação de cada rodada sem olhar as seguintes — em circuitos pequenos isso às vezes deixa a última rodada sem alternativa. Quando acontece, é no máximo um confronto repetido na temporada.
 
 ### 🎟️ Bye (número ímpar de atletas)
 
-Quando o número de atletas é ímpar, um atleta fica de fora na rodada (bye) e ganha **1 ponto de participação**. O bye tem **rotação**: ninguém recebe um segundo bye antes de todos terem recebido um.
+Quando o número de atletas é ímpar, um atleta fica de fora na rodada (bye) e ganha **1 ponto de participação**. O bye tem **rotação**: ninguém recebe um segundo bye antes de todos terem recebido um. Quem entra com a temporada já em andamento é o último da fila do bye.
 
 Os dois confrontos do mês são fotografados no início do mês (antes de processar a 1ª rodada), então a faixa da 2ª rodada usa a tabela do começo do mês.
 

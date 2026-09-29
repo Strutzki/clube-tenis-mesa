@@ -58,6 +58,54 @@ sandbox que não compilava, e hoje seria trabalho perdido.
 
 ## Vereditos já emitidos (histórico)
 
+### RODADA ABERTA, 29/09/2026 (tarde) — auditoria multi-circuito, commit congelado `707c40f`
+
+**Os vereditos desta rodada entram AQUI, nesta seção, um parágrafo por dupla** — é o
+lugar onde o `CLAUDE.md` (regra 3 e passo 3 do rito) manda registrar, e é o único
+registro que sobrevive à conversa. O Curador abre a entrada para que os guardiões a
+completem em vez de cada um devolver parecer só no chat.
+
+**Escopo da rodada: as 8 duplas completas.** A mudança toca **motor** (`admin-action`,
+`athlete-action`), **regra de competição** (Cap. 03, 07 e 09 do `vB-01`) e **dado pessoal**
+(`atletas.status`, `rating_inicial` global, telefone que é credencial de login) — três
+das quatro coisas que o `CLAUDE.md` diz não terem conserto depois.
+
+**Árvore congelada:** `707c40f`. Quatro commits no escopo: `16cdf58` (tela), `f1cd61c`
+(bloco 1 — o que corrompia dado), `6266f11` (bloco 2 — o que contradizia o regulamento),
+`707c40f` (bloco 3 — o que travava a operação). **Nada está no ar**: `admin-action` v64 e
+`athlete-action` v22 seguem sendo o que os atletas usam.
+
+**Bateria: 1149 asserções, 0 falhas**, 13 seções, saída 0 — medido pelo Curador em
+29/09/2026, não citado de memória. Build OK (declarado nos commits).
+
+| Dupla | Por que está no escopo | Veredito |
+|---|---|---|
+| Confiabilidade + supervisor | sempre; e aqui há ordem de subida de duas funções, sem rollback de Edge Function | *(a preencher)* |
+| Regulamento/Motor + supervisor | Cap. 03 mudou de "sem repetir" para "evitando repetir"; `idsNoRankingFinal`, `recontarWoCulposos`, `byesDaTemporada`, `entradaPermitida` | *(a preencher)* |
+| Segurança + supervisor | `promoverIdentidadeGlobal` escreve em `atletas`; escopo por recurso estendido ao super-admin, **com exceção deliberada no BH** | *(a preencher)* |
+| Jurídico/LGPD + supervisor | o recibo de consentimento que respondia sucesso sem gravar; o `vB-01` editado no lugar sob a regra 7 | *(a preencher)* |
+| Admin + supervisor | Despachos do Dia abortando; agenda de telefones; guarda do telefone vazio | *(a preencher)* |
+| Atleta + supervisor | o atleta aprovado que não conseguia entrar; a mensagem de inscrição não concluída | *(a preencher)* |
+| Marca/Visual + supervisor | o aviso novo no modal de edição e o texto do Cap. 03 na tela | *(a preencher)* |
+| Curador + supervisor | acervo e drift | **GO-com-condições** — ver abaixo |
+
+**Curador do Projeto — GO-com-condições (29/09/2026).** Documentação auditada e
+corrigida nesta rodada: `CLAUDE.md` (contagem 1011 → **1149**; o `switch` reconferido em
+**46**, inalterado; três afirmações que a onda tornou falsas), `testes/README.md`
+(contagem, e o `segundo-circuito.mjs` que **faltava na tabela** enquanto o `CLAUDE.md`
+afirmava que ela estava completa), `docs/CHANGELOG.md` (entrada da onda, marcada **não
+no ar**), `docs/ESTADO-DEV` (versões conferidas ao vivo), `docs/ROADMAP.md` (0.10.33 a
+0.10.35, mais três decisões pendentes), e as três cópias de *"sem repetir adversário"*
+que sobreviveram fora do regulamento gerado. **Condições, todas de decisão do Juliano e
+nenhuma de código:** (1) o grant de `wo_culposos_temporada` ao `anon` — sem ele o **2º
+desempate do Cap. 09 continua morto em circuito público**; (2) o algoritmo de pareamento
+do Sistema B com 8 atletas; (3) o `vA-nc-01` sem documento gerado e o campo `resumo` do
+gerador sem proteção. As três estão em `docs/ROADMAP.md`, "Decisões ainda em aberto".
+**Sem veto de código** — é curadoria, não revisão.
+
+⚠️ **Enquanto esta tabela tiver linha "(a preencher)", o resumo do de acordo não pode
+ser levado ao Juliano** — é o passo 3 do rito, e ele antecede o passo 4.
+
 ### REGRA NOVA, 28/09/2026 (tarde) — conserto de instrumento é conserto de UM CAMINHO
 
 **Três falhas do instrumento em 48 horas, todas achadas por acidente, nenhuma por

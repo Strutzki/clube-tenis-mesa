@@ -12,7 +12,7 @@ Este arquivo é o **mapa do que existe**. Como mexer sem quebrar está no
 ```bash
 npm install          # só na primeira vez
 npm run dev          # abre o app na sua máquina, em localhost
-npm run teste        # a bateria: 627 asserções sobre 4 Edge Functions de verdade
+npm run teste        # a bateria: 1149 asserções sobre 4 Edge Functions de verdade
 npm run build        # verifica se o app compila
 npm run lint         # confere o estilo do código
 ```
@@ -174,10 +174,15 @@ Levantadas ao mapear o banco em 07/09/2026, sem decisão tomada:
   arquivada duas vezes.
 - **A bateria cobre o servidor, não o front.** `npm run teste` carrega e executa
   **quatro Edge Functions de verdade** — `admin-action` (o grosso),
-  `athlete-action`, `comprovante-url` e `login-atleta` (este só no `PARTICIPAR`;
-  `LOGIN`, `SESSAO` e `RENOVAR` seguem descobertos). São 627 asserções em
-  27/09/2026 — **confira rodando, não cite de memória**: este número mudou em oito
-  ondas seguidas, e ficou errado por 7 vezes aqui. Ver `testes/README.md`.
-  **O front (`src/App.jsx`) não é executado por teste nenhum**: o que existe são
+  `athlete-action`, `comprovante-url` e `login-atleta` (este no
+  `PARTICIPAR` e, desde 29/09/2026, no `SESSAO`; `LOGIN` e `RENOVAR` seguem
+  descobertos). São **1149 asserções** em 29/09/2026 — **confira rodando, não cite
+  de memória**: este número mudou em dez ondas seguidas, e ficou errado por 8 vezes
+  aqui (esta linha dizia **627** enquanto a bateria já passava de mil). Ver
+  `testes/README.md`.
+  **O front (`src/App.jsx`) quase não é executado por teste**: o que existe são
   checagens por regex no texto fonte, que registram que um trecho está lá e **não**
-  provam comportamento.
+  provam comportamento. As **duas** exceções são funções **puras** extraídas do
+  fonte e executadas de verdade — `janelaRenovacao` (a conta da janela de renovação)
+  e `circuitoTemTorneio` (a versão do regulamento decide se há torneio). As quatro
+  condições para repetir a técnica estão no `CLAUDE.md`.

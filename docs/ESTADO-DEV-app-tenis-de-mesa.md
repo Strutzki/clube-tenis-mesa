@@ -1,26 +1,36 @@
 # Estado do desenvolvimento — App do Clube do Tênis de Mesa (multi-circuito)
 
-**Atualizado: 05/set/2026** (conteúdo), com correções pontuais do Curador em 19/09/2026 — veja as marcas "corrigido em 19/09/2026" abaixo; o resto do documento **não** foi revisado nessa data e continua com o retrato de 05/set. Documento de estado escrito pela sessão de desenvolvimento (pasta do código). **Fonte de verdade continua sendo o app em produção + Supabase**, não este doc. Substitui, em atualidade, o `RETOMADA-app-clube-tenis-mesa.md` de julho (que está superado).
+**Atualizado: 05/set/2026** (conteúdo), com correções pontuais do Curador em 19/09/2026 e **29/09/2026** — veja as marcas de data abaixo; o resto do documento **não** foi revisado nessas datas e continua com o retrato de 05/set. Documento de estado escrito pela sessão de desenvolvimento (pasta do código). **Fonte de verdade continua sendo o app em produção + Supabase**, não este doc. Substitui, em atualidade, o `RETOMADA-app-clube-tenis-mesa.md` de julho (que está superado).
 
 ## Regra vigente
 - Regulamento **A (rating/CBTM): v03-12** — 1ª rodada até dia **15**, 2ª rodada até dia **27**.
   (Existe uma **v03-13**, 13/09/2026, que tira o desconto por etapa; só passa a
   valer no BH quando carimbada na próxima virada — ver `docs/ROADMAP.md` 0.10.15.
   Este documento em si já está datado — ver aviso na linha 1.)
-- Regulamento **B (pontos fixos): vB-01**.
+- Regulamento **B (pontos fixos): vB-01** — **desde 29/09/2026 ele tem documento
+  canônico próprio**, `docs/REGULAMENTO_vB-01.md`, **gerado** do texto que o app exibe
+  por `scripts/gerar-regulamento.mjs` (não edite à mão; a bateria recusa divergência).
+  Até essa data o texto que o atleta aceita morava só dentro do `App.jsx`.
+  **Zero aceites gravados** no banco até hoje — é o regulamento do 2º circuito, que
+  ainda não existe. O `vA-nc-01` (rating, circuitos novos) **continua sem `.md`
+  próprio** — ver ROADMAP 0.10.3.
 - BH em produção **nunca é prejudicado**; toda mudança é comparada byte-a-byte antes de subir.
 
 ## Arquitetura (Modelo B — multi-circuito)
 - Identidade + **rating global**: tabela `atletas`. Sazonal **por circuito**: `circuito_atletas`. Config: `circuitos` (o BH usa `configuracao`).
 - Supabase: projeto `clube-tenis-mesa`, id `eultwfzzlgcmcikobmmy`, schema `public`.
 - Front: `src/App.jsx` (SPA único, ~9 mil linhas). Deploy: `atualizar.sh` → Vercel.
-- Backend (Edge Functions) no ar — **conferido ao vivo em 27/09/2026** (`list_edge_functions`, projeto `eultwfzzlgcmcikobmmy`): `admin-action` **v62**, `athlete-action` **v21**, `login-atleta` **v9**, `comprovante-url` **v3**, `circuito-dados` v4, `despachos-do-dia` v6, `anonimizar-atleta` v2, `resetar-pin-atleta` v2, `backup-clube-tenis-mesa` v6. *(Histórico da correção: em 19/09 o Curador achou esta linha seis deploys atrasada; em 27/09 ela estava dois atrás de novo, depois da Onda 0.6. O número apodrece — rode `npm run motor:listar` em vez de citar daqui.)* Também no projeto, de OUTROS produtos: `torneios-api` v8 e `backup-clube-beach-tennis` v2 — nunca publicar nem apagar daqui.
+- Backend (Edge Functions) no ar — **conferido ao vivo em 29/09/2026** (`npm run motor:listar`, projeto `eultwfzzlgcmcikobmmy`): `admin-action` **v64**, `athlete-action` **v22**, `login-atleta` **v11**, `comprovante-url` **v3**, `circuito-dados` v4, `despachos-do-dia` v6, `anonimizar-atleta` v2, `resetar-pin-atleta` v2, `backup-clube-tenis-mesa` v6. *(Histórico da correção: em 19/09 o Curador achou esta linha seis deploys atrasada; em 27/09 ela estava dois atrás; em 29/09, três. O número apodrece — rode `npm run motor:listar` em vez de citar daqui.)*
+  ⚠️ **Em 29/09/2026 o fonte de `admin-action` e `athlete-action` está À FRENTE do ar** (a auditoria multi-circuito, `docs/CHANGELOG.md`): quem investigar bug do motor está olhando a **v64/v22**, não o arquivo do repositório.
+  Também no projeto, de OUTROS produtos: `torneios-api` v8 e `backup-clube-beach-tennis` v2 — nunca publicar nem apagar daqui. **Novo em 29/09/2026:** apareceu uma função **`arte` v1** no mesmo projeto, criada às 11h52 (BRT), **sem pasta correspondente neste repositório e sem registro em documento nenhum** — o Curador a sinaliza sem tocar nela; presumivelmente de outro produto. Confirmar dono antes de qualquer `--prune`.
+  ⚠️ **`circuito-dados` e `despachos-do-dia` continuam com `entrypoint_path` apontando para uma pasta de rascunho do projeto de TORNEIOS** (reconferido ao vivo em 29/09/2026 — achado aberto desde 19/09): sem rollback confiável para essas duas.
   ⚠️ **Esta linha envelhece a cada deploy.** Não confie nela para investigar bug de motor: rode `npm run motor:listar`. A fonte de verdade das versões é `docs/curadoria-indice-app-tenis-de-mesa.md` (seção "Backend"), e o que está pendente de subir está em `docs/CHANGELOG.md`.
 
 ## O que JÁ está no ar (desde julho até 05/set)
 - Fundação multi-circuito (Modelo B) + roteamento por circuito.
 - Criar circuito + formulário "Novo circuito" + seletor de circuito no admin.
-- **Motor do Sistema B** (pontos V=2/D=1, pareamento sorteio/grupos + bye rotativo, W.O. automatizado) — validado em 400 temporadas simuladas.
+- **Motor do Sistema B** (pontos V=2/D=1, pareamento sorteio/grupos + bye rotativo, W.O. automatizado) — validado em 400 temporadas simuladas. ⚠️ **Correção de 29/09/2026:** essa simulação de 05/set era um harness, não a bateria. A bateria só passou a **rodar o pareamento do Sistema B** em 29/09/2026 (`testes/segundo-circuito.mjs`), e foi ela que mediu o que a simulação não tinha reportado: com **exatamente 8 atletas no modo sorteio** o motor **repete um confronto em 13 de cada 120 temporadas** — e 8 é o **mínimo** de atletas, ou seja, a configuração mais provável do 2º circuito. O regulamento foi alinhado ao motor; **trocar o algoritmo é decisão em aberto** (ver ROADMAP, "Decisões ainda em aberto"). Não leia "validado em 400 temporadas" como "pareia sem repetir".
+- ⚠️ **Quatro defeitos que só apareciam em circuito NÃO-BH foram achados em 29/09/2026 e estão corrigidos NO FONTE, não no ar** — inclusive um que impedia o atleta aprovado num circuito novo de **entrar no app**. Ver `docs/CHANGELOG.md` (entrada "a auditoria multi-circuito") e ROADMAP 0.10.32–0.10.35. Até subirem, **a lista acima de "o que já está no ar" descreve o multi-circuito com esses defeitos dentro**.
 - Inscrição por circuito (o atleta escolhe o circuito aberto).
 - **CPF como identidade nacional** — blindado (só hash), consentimento LGPD específico.
 - **Participar** — atleta existente entra num 2º circuito sem duplicar identidade/rating.

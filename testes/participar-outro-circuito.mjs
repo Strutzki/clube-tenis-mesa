@@ -512,8 +512,14 @@ secao("Num circuito SEM torneio, nada promete torneio (0.10.5)");
   // nenhuma. Os dois textos foram conferidos contra o `cmpRanking`, linha a linha.
   ok(/\? <><span style=\{\{color:T\.terracota,fontWeight:700\}\}>C<\/span> = classificado/.test(fonteApp),
     "a legenda do 'C' só aparece onde há torneio");
-  ok(/Desempate: menos W\.O\. culposos · confronto direto · aproveitamento · saldo de sets/.test(fonteApp),
-    "e sem torneio o rodapé mostra o desempate do Sistema B, na ordem que o cmpRanking aplica");
+  // "injustificados", não "culposos": é a palavra do Cap. 09 que o atleta aceitou;
+  // "culposo" é a palavra da coluna do banco. E o rodapé passou a listar os SEIS
+  // critérios, não quatro — ele parava no 4º e o regulamento tem 6. (Guardião do
+  // Atleta, 29/09/2026.)
+  ok(/Desempate: menos W\.O\. injustificados · confronto direto · aproveitamento · saldo de sets · decisão do administrador/.test(fonteApp),
+    "e sem torneio o rodapé mostra o desempate do Sistema B, na ordem que o cmpRanking aplica, com a palavra do regulamento");
+  ok(!/Desempate: menos W\.O\. culposos/.test(fonteApp),
+    "e a palavra do banco de dados ('culposos') não aparece mais no texto que o atleta lê");
   ok(/Desempate: vitórias · confronto direto · rating/.test(fonteApp),
     "e o do Sistema A, idem");
   ok(/\{\(temCorte \? sorted\.slice\(0, CORTE\) : sorted\)\.map/.test(fonteApp),

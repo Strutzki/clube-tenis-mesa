@@ -162,8 +162,16 @@ Cada circuito define suas categorias. **No Sistema B ninguém tem rating de entr
 
 ## Cap. 03 — Sistema de Pareamento
 O método é escolhido na criação do circuito e vale para a temporada toda:
-- **Sorteio aleatório** a cada rodada, sem repetir adversário na temporada; ou
-- **Grupos por faixa** de posição na tabela de pontos, sem repetir adversário.
+- **Sorteio aleatório** a cada rodada, **evitando** repetir adversário na temporada; ou
+- **Grupos por faixa** de posição na tabela de pontos, também **evitando** repetir adversário.
+
+Repetição de adversário só acontece quando não há alternativa. **Corrigido em
+29/09/2026** (ROADMAP 0.10.34): o texto dizia *"sem repetir"*, sem condição, e o motor
+trata repetição como **penalidade**, não proibição — com **8 atletas no sorteio** ele
+repete um confronto em **13 de cada 120** temporadas medidas. O `vB-01` tinha **zero
+aceites** no banco, então foi edição no lugar (regra 7). ⚠️ **O texto canônico do `vB-01`
+é `docs/REGULAMENTO_vB-01.md`, gerado do app** — este arquivo é a referência de projeto
+dos dois regulamentos novos; se os dois divergirem, vale o gerado.
 Como as duas rodadas do mês saem no dia 1º, o pareamento da 2ª é fotografado na tabela **do início do mês** (antes de processar a 1ª).
 
 ## Cap. 04 — Reputação & Comprovação

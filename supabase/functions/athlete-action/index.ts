@@ -376,9 +376,26 @@ Deno.serve(async (req) => {
           } catch (eMemb) {
             // Sem membership nao ha inscricao: desfaz o atleta recem-criado, como
             // o rollback do documento acima faz, para nao deixar orfao.
-            await supabase.from("atletas").delete().eq("id", novoAtleta.id);
+            //
+            // ⚠️ O ERRO DO DELETE E LIDO (Guardiao Juridico + Guardiao do Atleta,
+            // 29/09/2026). Ate aqui ele era `await ... .delete()` sem `if (error)`,
+            // e a resposta afirmava "Nada foi salvo" de qualquer jeito. Se o delete
+            // falhasse -- a mesma indisponibilidade que acabara de derrubar a
+            // escrita do vinculo --, sobrava um atleta orfao COM cpf_hash, data de
+            // nascimento e nome do responsavel em claro, e o titular lia que nada
+            // fora salvo. Afirmar ao titular um fato que o banco nao sustenta e
+            // exatamente o defeito que esta onda veio consertar.
+            const { error: eUndo } = await supabase.from("atletas").delete().eq("id", novoAtleta.id);
             console.error("membership circuito_atletas falhou; inscricao desfeita:", (eMemb as any)?.message);
-            return jsonResponse({ sucesso: false, erro: "Não foi possível concluir sua inscrição neste circuito. Nada foi salvo — tente de novo em instantes." }, 500);
+            if (eUndo) {
+              // O beco sem saida que o guardiao do Atleta mapeou: mandar "tente de
+              // novo" aqui leva o atleta a "telefone ja cadastrado" e dali a "seu
+              // cadastro nao foi aprovado", para sempre -- e o organizador nao o ve,
+              // porque ele nao tem vinculo com circuito nenhum.
+              console.error("ROLLBACK FALHOU — atleta orfao em `atletas`:", novoAtleta.id, (eUndo as any)?.message);
+              return jsonResponse({ sucesso: false, erro: "Não conseguimos concluir nem desfazer sua inscrição. Fale com o organizador antes de tentar de novo." }, 500);
+            }
+            return jsonResponse({ sucesso: false, erro: "Sua inscrição não foi concluída. Tente de novo em instantes." }, 500);
           }
         }
         return jsonResponse({ sucesso: true });
@@ -392,7 +409,7 @@ Deno.serve(async (req) => {
         }
 
         const { data: partida, error: errP } = await supabase
-          .from("partidas").select("atleta1_id,atleta2_id,prazo,fora_do_prazo,validado,rejeitado,wo_tipo,p1_placar1,p1_placar2,p2_placar1,p2_placar2").eq("id", matchId).single();
+          .from("partidas").select("circuito_id,atleta1_id,atleta2_id,prazo,fora_do_prazo,validado,rejeitado,wo_tipo,p1_placar1,p1_placar2,p2_placar1,p2_placar2").eq("id", matchId).single();
         if (errP) throw errP;
         if (!partida) return jsonResponse({ sucesso: false, erro: "Partida não encontrada." }, 404);
         if (partida.validado || partida.rejeitado) {
@@ -429,10 +446,21 @@ Deno.serve(async (req) => {
           // producao hoje), a partida do circuito novo era auto-validada assim
           // mesmo. O organizador dele nao tinha como desligar: o botao gravava numa
           // coluna que ninguem consultava.
-          const ehBhAuto = circuitoId === (await bhId());
+          // ⚠️ O CIRCUITO VEM DA PARTIDA, NAO DO CLIENTE. Achado do Guardiao de
+          // Seguranca em 29/09/2026, e o defeito e meu: ao consertar a
+          // auto-validacao eu transformei `payload.circuitoId` -- que ate entao era
+          // decorativo aqui -- em PARAMETRO DE DECISAO, sem validar a origem dele.
+          // Medido: partida de um circuito com a auto-validacao DESLIGADA pelo
+          // organizador, os dois atletas mandando o mesmo placar com
+          // `circuitoId: <BH>` no corpo do pedido -> `autoValidado: true`. O atleta
+          // escolhia de qual circuito saia a regra e passava por cima do botao do
+          // organizador. A partida sempre soube a que circuito pertence; bastava
+          // perguntar a ela.
+          const circuitoDaPartida = (partida as any).circuito_id || circuitoId;
+          const ehBhAuto = circuitoDaPartida === (await bhId());
           const { data: cfg } = ehBhAuto
             ? await supabase.from("configuracao").select("auto_validar_placar").eq("id", 1).maybeSingle()
-            : await supabase.from("circuitos").select("auto_validar_placar").eq("id", circuitoId).maybeSingle();
+            : await supabase.from("circuitos").select("auto_validar_placar").eq("id", circuitoDaPartida).maybeSingle();
           if (cfg?.auto_validar_placar === true && !partida.wo_tipo && !isForaPrazo) {
             const ehA = athleteId === partida.atleta1_id;
             const p1p1 = ehA ? score1 : partida.p1_placar1;

@@ -5,6 +5,103 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-09-29 (tarde) — ⛔ NO FONTE, **NÃO NO AR**: a auditoria multi-circuito, em quatro blocos
+
+⛔ **NADA DISTO ESTÁ NO AR.** Conferido ao vivo pelo Curador em 29/09/2026 com
+`npm run motor:listar`: o que os atletas estão usando agora é **`admin-action` v64**,
+**`athlete-action` v22**, `login-atleta` v11, `comprovante-url` v3, `circuito-dados` v4,
+`despachos-do-dia` v6. A auditoria mexeu em **`admin-action` e `athlete-action`**, então
+**o fonte destas duas está à frente do ar** — antes de investigar qualquer bug do motor,
+é a v64/v22 que está rodando, não o arquivo do repositório. O front também está só no
+fonte (sem push).
+
+**Commits congelados:** `16cdf58` (tela) → `f1cd61c` (bloco 1) → `6266f11` (bloco 2) →
+`707c40f` (bloco 3). **Bateria: 1149 asserções, 0 falhas** (era 1011 antes da onda).
+Build OK. Produção intocada: 15 atletas, 15 vínculos, 34 partidas, hash de competição
+`a9d58024792ff6be24b821d85f6793fe`.
+
+**A tela — o que o estado carregava de um circuito para o outro** (ROADMAP 0.10.32,
+só `src/App.jsx`):
+- a **chave PIX** de um circuito podia ser gravada no outro, e ela **sai por WhatsApp**
+  na mensagem de renovação. Conserto: `key={circuitoSelId}` no painel inteiro;
+- `trocarCircuito` falhava em silêncio e os **Despachos do Dia** processavam a rodada do
+  circuito **errado** — `PROCESSAR_RODADA` não se desfaz. Agora devolve booleano e quem
+  chama aborta;
+- a **agenda de telefones** não era invalidada na troca; salvar a edição gravava
+  `telefone: ""` na tabela **global** `atletas`, que é a **credencial de login** em todos
+  os circuitos. Agenda invalidada, mais guarda que recusa salvar telefone vazio;
+- a categoria "Convocação Torneio" aparecia em circuito sem torneio.
+
+**Bloco 1 — o que corrompia dado** (`f1cd61c`; `admin-action` + `athlete-action`):
+- `AVANCAR_RODADA` caía num `|| "key_1"` — a chave **do BH** — quando o circuito não
+  tinha chave. Agora recusa com 409;
+- `ENVIAR_PLACAR` lia `configuracao` id=1 (a tabela legada do BH) para decidir
+  auto-validação em **qualquer** circuito; com o BH ligado (o estado de produção) o
+  circuito novo auto-validava sem ter como desligar;
+- o `mirrorSazonal` do `athlete-action` era best-effort **sem exceção**, e em circuito
+  não-BH ele é a **única** escrita: o re-aceite respondia `sucesso: true` **sem gravar o
+  recibo de consentimento**, e a inscrição deixava o atleta **órfão** dizendo "inscrição
+  feita". Agora o erro sobe, a inscrição é desfeita, e a mensagem diz que nada foi salvo;
+- `NOVA_TEMPORADA` montava o ranking final com `validado && !rejeitado` e a tela com
+  `calculado && !rejeitado`: **quem fazia a temporada em W.O. sumia do histórico** e
+  todos abaixo subiam uma posição, permanentemente. Virou uma conta só,
+  **`idsNoRankingFinal`**, nos três lugares.
+
+**Bloco 2 — o que contradizia o regulamento** (`6266f11`; motor + tela + o documento):
+- o **número de W.O. injustificados** nunca chegava à tela em circuito não-BH (ele é
+  sazonal e os dois adaptadores do app o descartavam), matando o **2º desempate do
+  Cap. 09** e o painel de suspensão do **Cap. 07**;
+- o contador era **acumulado** e nunca decrementava — três caminhos suspendiam por
+  2 faltas quem tinha uma só. Agora é **derivado** das partidas
+  (**`recontarWoCulposos`**), idempotente por construção;
+- **mudança de regra do `vB-01`:** o Cap. 03 prometia *"sem repetir adversário na
+  temporada"*, em três lugares, e o motor trata repetição como **penalidade**, não
+  proibição. Medido em 120 temporadas por configuração: **8 atletas/sorteio → 13 em 120
+  com uma repetição**; 8/grupos, 9, 10 e 12/sorteio → 0 em 120. Texto corrigido para
+  *"evitando repetir"*, com a explicação de quando repete. **Regra 7 cumprida:** o
+  `vB-01` foi conferido no banco e tem **zero aceites**, então a edição é no lugar, sem
+  versão nova. `docs/REGULAMENTO_vB-01.md` regenerado pelo
+  `scripts/gerar-regulamento.mjs`;
+- o **motor de pareamento do Sistema B** ganhou cobertura — era o maior buraco da
+  bateria.
+
+**Bloco 3 — o que travava a operação** (`707c40f`; `admin-action`):
+- **o atleta aprovado no circuito novo nunca conseguia entrar no app.** `INSCREVER` cria
+  a linha em `atletas` com status `pendente`; `status` é **sazonal**, então num circuito
+  não-BH a aprovação só escreve em `circuito_atletas` e o global fica `pendente` para
+  sempre — e o `login-atleta` recusa com `cadastro_inativo` (403) em `SESSAO`,
+  `PARTICIPAR` e `LOGIN_ORGANIZADOR`. No BH não aparecia porque lá o servidor grava nos
+  dois lugares. **`promoverIdentidadeGlobal`** promove **só para cima**: reprovar num
+  circuito não tranca a porta dos outros;
+- `rating_inicial` escapava da guarda do Sistema B: aprovar alguém no circuito de
+  **pontos** reescrevia o `rating_inicial` **global** da pessoa — o número com que ela
+  entrou no circuito de **rating**;
+- o **escopo por recurso** valia só para o organizador; com a tela num circuito e um
+  `matchId` de outro, o super-admin validava, imputava resultado ou aplicava W.O. **no
+  circuito errado**, em silêncio. Agora vale para ele também, nas 5 ações que recebem
+  `matchId` e nas que recebem atleta. **Exceção deliberada:** no BH a checagem de membro
+  não se aplica ao super-admin, porque lá a participação é a própria linha de `atletas`.
+  Conferido no banco antes de apertar: 0 atletas sem vínculo, 0 partidas sem circuito.
+
+**Funções novas no motor** (todas em `admin-action`): `idsNoRankingFinal`,
+`recontarWoCulposos`, `promoverIdentidadeGlobal`, `byesDaTemporada`, `entradaPermitida`.
+Nenhuma ação nova no `switch` — seguem **46**.
+
+**Ordem de subida, quando o Juliano autorizar** (pela regra de bolso do `CLAUDE.md`): o
+servidor passou a **exigir mais** (recusa 409 sem chave, escopo por recurso, inscrição
+desfeita quando o vínculo falha) **e** o app passou a traduzir recusas novas → **app
+primeiro, motor depois**. As duas funções sobem uma por vez
+(`npm run motor:publicar -- admin-action`, depois `athlete-action`), e **antes da
+primeira** é obrigatório salvar o fonte do ar em `docs/backups/motor-no-ar-<data>/` —
+não há rollback de Edge Function.
+
+**O que fica pendente, e é decisão do Juliano** (detalhe no ROADMAP, "Decisões ainda
+em aberto"): o grant de leitura de `wo_culposos_temporada` para o visitante anônimo
+(sem ele o 2º desempate do Cap. 09 continua morto em circuito **público**); o algoritmo
+de pareamento do Sistema B; e o `vA-nc-01` ainda sem documento gerado.
+
+---
+
 ### 2026-09-29 (4ª subida) — NO AR: os quatro que travavam abrir e rodar circuitos
 
 **NO AR desde 29/09/2026** (de acordo do Juliano: *"pode subir"*).

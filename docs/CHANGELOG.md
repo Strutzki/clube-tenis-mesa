@@ -5,6 +5,42 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-09-29 (3ª subida) — NO AR: o caminho do circuito novo
+
+**NO AR desde 29/09/2026** (de acordo do Juliano: *"pode subir"*).
+Front por push `4cf6e8b..d505f52`, bundle `index-Bh12URua.js`, site HTTP 200.
+`admin-action` **v63 → v64**. `athlete-action` v22, `login-atleta` v11 e
+`comprovante-url` v3 **não** foram tocados. `motor:conferir` com **0 divergências**.
+
+**Ordem: app primeiro.** O motor passou a **recusar** onde antes respondia sucesso, e
+é o app que traduz a recusa — pela regra de bolso, *o servidor que passa a exigir mais
+vai depois*.
+
+**Dados antes e depois, idênticos** nas nove tabelas.
+
+**Smoke no pacote publicado:** baixei o bundle do ar e confirmei as cinco frases novas
+— a caixa da fila de espera, o *"não é erro do app"*, o aviso de quem fica de fora da
+rodada, o *"assim que houver vaga"* e a zona de classificação do BH (que não podia
+sumir).
+
+**O que este pacote leva — os quatro itens que o Juliano pediu, mais um:**
+- **0.6.18** — em circuito novo, gravação que falha parou de responder "sucesso".
+  Era a única falha que morderia o 2º circuito no dia 1;
+- **0.6.16** — o atleta aprovado aguardando vaga passou a **saber** que está na fila,
+  e a mensagem de WhatsApp parou de prometer entrada sem condição;
+- **0.6.6** (metade universal) — o admin passa a ver, **antes de iniciar a rodada e
+  com nomes**, quem fica de fora por falta de pagamento; e a paridade e o mínimo de 8
+  passaram a contar **quem vai jogar**, não quem está ativo;
+- **0.10.8** — o torneio deixou de ser "decisão de ninguém": o documento parou de
+  prometer uma escolha que não existe;
+- **0.10.3** — o regulamento de pontos **ganhou documento**, gerado do próprio app,
+  com trava que impede ele de divergir da tela. Até aqui o texto que o atleta aceita
+  morava só dentro do `App.jsx`.
+
+**Bateria: 987 asserções, 0 falhas.** 15 mutações nesta rodada, 15 vermelhas.
+
+---
+
 ### 2026-09-29 (2ª subida) — NO AR: o torneio deixa de vazar para circuito que não tem
 
 **NO AR desde 29/09/2026** (de acordo do Juliano: *"podemos seguir então"*).

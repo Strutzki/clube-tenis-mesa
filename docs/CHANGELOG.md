@@ -5,6 +5,40 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-09-29 — NO AR: o regulamento desvinculado, o bye com rotação, e o 80% fora do que o atleta lê
+
+**NO AR desde 29/09/2026** (de acordo do Juliano: *"publica e vamos em frente"*).
+`admin-action` **v62 → v63**, e o front por push `cd5249a..decd649`, bundle
+`index-D3bMzH9x.js`, site HTTP 200. **Ordem: motor primeiro**, pela regra de bolso
+que nasceu ontem — *o servidor passou a DEVOLVER mais, então o motor vai primeiro*.
+`motor:conferir` com **0 divergências** e `verify_jwt` intacto nas nove funções.
+`athlete-action` v22, `login-atleta` v11 e `comprovante-url` v3 **não** foram tocados
+(o `git diff` de `supabase/functions/` tinha um arquivo só).
+
+**Dados antes e depois, idênticos:** atletas 15, circuitos 1, circuito_atletas 15,
+`atleta_documento` 0, partidas 34, chaves 1, pagamentos 12, W.O. 5, sessões 10,
+mensagens 288. E **três** impressões digitais inalteradas — competição
+`f76240cc…`, rating `43abc1de…` e, nova nesta subida, a **configuração dos
+circuitos** `d33245dd…` (slug, versão do regulamento, teto e percentual), que é
+exatamente o que esta fatia mexeu no código e não podia mexer no dado.
+Roster do BH intacto: **12 no circuito, 2 no backlog, 1 suspenso**.
+
+**Smoke:** site 200; `login-atleta` responde; `admin-action` v63 exige PIN.
+O caminho de escrita não foi exercitado ao vivo de propósito — criar circuito é
+gravação, e o nome/slug ainda dependem da decisão do Juliano.
+
+**O que este pacote leva, em uma linha cada:**
+- o regulamento **só fala do circuito em que o atleta está entrando** — saiu a caixa
+  de transição e o Cap. 2 deixou de impor a categoria do BH a circuito novo;
+- o **80%** não aparece mais em nada que o atleta leia (falta só o carimbo da v03-13);
+- o **bye** ganhou rotação no Sistema A e capítulo no texto;
+- o **mínimo de 8** e a **janela de entrada do Cap. 11** passaram a ter portão no
+  servidor, não só na tela;
+- o admin passou a **ver** o regulamento do circuito, e é avisado na criação;
+- e o **teto voltou a ser regra da plataforma**, 20 para todos.
+
+---
+
 ### 2026-09-29 — O caminho do 2º circuito: o admin passa a ver o regulamento (0.10.7) — e o teto volta a ser regra da plataforma
 
 **A SUBIR — ainda não publicado.** `admin-action` **v62 → v63** e front por

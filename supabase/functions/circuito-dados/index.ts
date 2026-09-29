@@ -13,6 +13,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// PIN global do super-admin. Mesma variavel de ambiente que o `admin-action` usa.
+// `?? ""` em vez de `!`: se a variavel faltar, a comparacao abaixo nunca casa
+// (fail-closed) em vez de a funcao inteira estourar no boot.
+const ADMIN_PIN = Deno.env.get("ADMIN_PIN") ?? "";
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const ALLOWED_ORIGINS = [
@@ -153,6 +157,25 @@ Deno.serve(async (req) => {
         if (await ehMembroOuOrg(circuitoId, a.id)) acesso = true; else motivo = "nao_membro";
       }
     }
+    // ── Super-admin: PIN global. ──────────────────────────────────────────────
+    // ⚠️ Este caminho FALTAVA, e o efeito foi medido pelo guardiao do Admin em
+    // 29/09/2026: num circuito PRIVADO o super-admin levava 403 aqui, o app caia em
+    // silencio na leitura anonima, e lia ZERO em `wo_culposos_temporada` -- ou seja,
+    // a correcao do desempate do Cap. 09 era inerte justamente para o dono da
+    // plataforma. Circuito publico ja passava pelo `circ.publico` la em cima.
+    //
+    // O `tentativas_login_admin` e o MESMO freio do `admin-action`: sem ele, esta
+    // funcao viraria um oraculo para adivinhar o PIN global sem limite nenhum.
+    if (!acesso && typeof pin === "string" && pin && !telefone) {
+      const desde = new Date(Date.now() - 15 * 60_000).toISOString();
+      const { count } = await supabase.from("tentativas_login_admin")
+        .select("*", { count: "exact", head: true }).gte("tentativa_em", desde).eq("sucesso", false);
+      if ((count ?? 0) >= 5) return jsonResponse({ sucesso: false, erro: "muitas_tentativas" }, 429);
+      const okSuper = !!ADMIN_PIN && pin === ADMIN_PIN;
+      await supabase.from("tentativas_login_admin").insert({ sucesso: okSuper });
+      if (okSuper) acesso = true;
+    }
+
     if (!acesso) return jsonResponse({ sucesso: false, erro: motivo }, 403);
 
     // ── Serve ranking (circuito_atletas + identidade) + jogos ──

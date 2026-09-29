@@ -1099,29 +1099,27 @@ secao("O motor de pareamento do Sistema B — RODANDO a temporada inteira");
       igual(partidas.filter(m => m.rodada === r).length, 4,
         `a rodada ${r} tem 4 partidas — os 8 atletas jogam, ninguém sobra`);
     }
-    // ⚠️ AQUI ESTÁ UM ACHADO, e ele é o motivo de o Cap. 03 ter mudado de "sem
-    // repetir" para "evitando repetir". A 1ª versão desta asserção exigia ZERO
-    // repetição — e ficava vermelha em cerca de 1 de cada 8 execuções. Eu quase
-    // a tratei como teste instável. Não é: é o motor.
+    // ⚠️ ESTA ASSERÇÃO JÁ TOLEROU UMA REPETIÇÃO, e a história importa.
     //
-    // Medido em 120 temporadas completas por configuração (29/09/2026):
-    //   8 atletas / sorteio ..... 13 em 120 temporadas com repetição, no máximo 1
-    //   8 atletas / grupos ...... 0 em 120
-    //   9, 10 e 12 / sorteio .... 0 em 120
+    // A 1ª versão exigia zero e ficava vermelha em ~1 de cada 8 execuções. Eu quase
+    // a tratei como teste instável e mexi no teste. Não era: era o motor. Medi 120
+    // temporadas completas por configuração e o Guardião de Regulamento refez a
+    // medição por conta própria:
+    //   8 atletas / sorteio ..... 13/120 (eu) e 14/120 (ele), sempre 1 repetição
+    //   8 atletas / grupos, 9, 10, 12 .... 0/120
+    // A causa: o motor resolvia o ótimo DE CADA RODADA sem olhar as seguintes, e
+    // com 8 atletas (7 adversários possíveis, 6 rodadas) isso fechava a saída da
+    // última. Então a asserção passou a afirmar o limite medido (`<= 1`), e o
+    // regulamento passou a prometer só "evitando repetir".
     //
-    // A razão: com 8 atletas cada um tem 7 adversários possíveis e a temporada usa
-    // 6 — quase o rodízio completo. O motor escolhe a melhor solução DE CADA
-    // RODADA, sem olhar as seguintes; então uma escolha boa na rodada 3 pode
-    // deixar a rodada 6 sem saída, e ele repete um confronto. Existe escala que
-    // evitaria (rodízio pelo método do círculo), mas trocar o algoritmo do
-    // pareamento é mudança de motor e é decisão do Juliano, não minha.
-    //
-    // A asserção afirma o que é VERDADE SEMPRE, com o limite medido. Se alguém
-    // melhorar o pareamento, ela continua verde; se alguém piorar, fica vermelha.
+    // Em 29/09/2026 o Juliano decidiu: "Não pode ter repetição de atleta." O motor
+    // ganhou o rodízio pelo método do círculo (`escalaCirculo`) e a medição foi
+    // refeita: 0/120 em TODAS as configurações. A asserção volta a exigir ZERO —
+    // agora com o motor capaz de cumprir.
     const confrontos = partidas.map(m => [m.atleta1_id, m.atleta2_id].sort().join("|"));
     const repeticoes = confrontos.length - new Set(confrontos).size;
-    ok(repeticoes <= 1,
-      `com 8 atletas o motor repete no máximo UM confronto na temporada inteira (veio: ${repeticoes})`);
+    igual(repeticoes, 0,
+      "com 8 atletas NENHUM confronto se repete na temporada — decisão do Juliano em 29/09/2026");
     // Cada atleta joga as 6 rodadas.
     for (const id of lista) {
       const minhas = partidas.filter(m => m.atleta1_id === id || m.atleta2_id === id);
@@ -1129,7 +1127,7 @@ secao("O motor de pareamento do Sistema B — RODANDO a temporada inteira");
       // E ninguém enfrenta a mesma pessoa três vezes — o limite duro.
       const advs = minhas.map(m => m.atleta1_id === id ? m.atleta2_id : m.atleta1_id);
       const maxVezes = Math.max(...advs.map(x => advs.filter(y => y === x).length));
-      ok(maxVezes <= 2, `o atleta ${id} não enfrenta ninguém mais de duas vezes (máximo: ${maxVezes})`);
+      igual(maxVezes, 1, `o atleta ${id} enfrenta cada adversário UMA vez só (máximo: ${maxVezes})`);
     }
     // A trava das 6 rodadas.
     const r = await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC_B });
@@ -1605,6 +1603,109 @@ secao("Avançar a rodada sem chave é RECUSADO — a correção que não tinha p
     "nenhuma partida foi criada — nem no circuito novo, nem no BH");
   igual(banco.tabelas.chaves.length, 1,
     "e nenhuma chave foi inventada pelo caminho");
+}
+
+secao("O rodízio: a escala da temporada inteira, sem repetir ninguém");
+{
+  // Decisão do Juliano em 29/09/2026: "Não pode ter repetição de atleta."
+  // O motor ganhou o método do círculo — fixa um atleta e gira os demais, gerando
+  // n-1 rodadas sem nenhuma repetição. É o rodízio de tabela de campeonato.
+  //
+  // Três propriedades sustentam isso, e as três precisam de portão próprio:
+  //   1. zero repetição (a regra)
+  //   2. a ordem é ESTÁVEL dentro da temporada — o INICIAR gera as rodadas 1 e 2 e
+  //      cada AVANCAR gera mais duas; se a ordem mudasse entre as chamadas, o
+  //      rodízio se perderia e a repetição voltaria pela porta dos fundos
+  //   3. a ordem MUDA na virada — senão o "sorteio" que o regulamento promete
+  //      seria a mesma tabela todo ano
+  const CIRC = "cccc0000-1111-2222-3333-444444444444";
+  const ids = (n) => Array.from({ length: n }, (_, i) => `rod-${String(i).padStart(2, "0")}`);
+
+  const temporadaCompleta = async (quantos, pareamento, tempNum = 1) => {
+    const lista = ids(quantos);
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH), circuito(CIRC, {
+        slug: "rodizio", sistema: "B", pareamento, regulamento_versao: "vB-01",
+        rodadas_por_temporada: 6, fase: "temporada", temporada_numero: tempNum,
+      })],
+      atletas: lista.map(id => atleta(id)),
+      circuito_atletas: lista.map(id => ({ circuito_id: CIRC, atleta_id: id, status: "ativo", pendente_circuito: false, saldo_temp: 0 })),
+      chaves: [], partidas: [],
+    });
+    await comoAdmin(motor, "INICIAR_ETAPA", { circuitoId: CIRC });
+    await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC });
+    await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC });
+    const partidas = banco.tabelas.partidas.filter(m => m.circuito_id === CIRC);
+    const confronto = (m) => [m.atleta1_id, m.atleta2_id].sort().join("-");
+    const daRodada = (r) => partidas.filter(m => m.rodada === r).map(confronto).sort().join(" ");
+    return { partidas, lista, daRodada, confrontos: partidas.map(confronto) };
+  };
+
+  // ── 1. ZERO repetição, nas configurações que o regulamento permite ────────
+  for (const n of [8, 9, 12, 20]) {
+    const { confrontos, lista, partidas } = await temporadaCompleta(n, "sorteio");
+    igual(confrontos.length - new Set(confrontos).size, 0,
+      `com ${n} atletas, NENHUM confronto se repete nas 6 rodadas`);
+    // E o rodízio não pode ter deixado ninguém de fora de graça.
+    // ⚠️ A 1ª versão desta asserção exigia 5 jogos para todo mundo no ímpar, e
+    // estava ERRADA — suposição minha, não medição. Com 9 atletas e 6 rodadas só
+    // SEIS pessoas folgam (uma por rodada); as outras três jogam as seis. A conta
+    // fecha: 6×5 + 3×6 = 48 = 6 rodadas × 4 partidas × 2 atletas.
+    const jogos = lista.map(id => partidas.filter(m => m.atleta1_id === id || m.atleta2_id === id).length);
+    igual(jogos.reduce((x, y) => x + y, 0), partidas.length * 2,
+      `com ${n} atletas, a soma dos jogos individuais bate com o total de partidas`);
+    ok(jogos.every(j => j === 6 || (n % 2 === 1 && j === 5)),
+      `com ${n} atletas, ninguém fica de fora de graça (jogos por atleta: ${[...new Set(jogos)].sort().join(" ou ")})`);
+    if (n % 2 === 1) {
+      igual(jogos.filter(j => j === 5).length, 6,
+        `com ${n} atletas, exatamente 6 pessoas folgaram uma vez — uma por rodada`);
+    }
+  }
+
+  // ── 2. A ordem é ESTÁVEL dentro da temporada ──────────────────────────────
+  // Duas montagens independentes da MESMA temporada têm de dar a mesma rodada 1.
+  // Se isto quebrar, as rodadas 3-6 deixam de pertencer ao mesmo rodízio.
+  {
+    const a = await temporadaCompleta(8, "sorteio", 1);
+    const b = await temporadaCompleta(8, "sorteio", 1);
+    igual(a.daRodada(1), b.daRodada(1),
+      "a rodada 1 da mesma temporada é idêntica em execuções independentes — é o que mantém o rodízio de pé entre o INICIAR e os AVANCAR");
+    igual(a.daRodada(5), b.daRodada(5),
+      "e a rodada 5 também — ela é gerada numa chamada separada, três ações depois");
+  }
+
+  // ── 3. A ordem MUDA na virada de temporada ────────────────────────────────
+  {
+    const t1 = await temporadaCompleta(8, "sorteio", 1);
+    const t2 = await temporadaCompleta(8, "sorteio", 2);
+    const t3 = await temporadaCompleta(8, "sorteio", 3);
+    const r1 = [t1.daRodada(1), t2.daRodada(1), t3.daRodada(1)];
+    igual(new Set(r1).size, 3,
+      `o sorteio é REFEITO a cada temporada — as três primeiras rodadas são diferentes (${r1.join(" | ")})`);
+  }
+
+  // ── O bye continua rotacionando, e agora sai do próprio rodízio ───────────
+  {
+    const { partidas, lista } = await temporadaCompleta(9, "sorteio");
+    const byes = [];
+    for (const r of [1, 2, 3, 4, 5, 6]) {
+      const jogaram = new Set(partidas.filter(m => m.rodada === r).flatMap(m => [m.atleta1_id, m.atleta2_id]));
+      const fora = lista.filter(id => !jogaram.has(id));
+      igual(fora.length, 1, `com 9 atletas, exatamente um folga na rodada ${r}`);
+      byes.push(fora[0]);
+    }
+    igual(new Set(byes).size, 6,
+      `e ninguém folga duas vezes em 6 rodadas (${byes.join(", ")}) — o "fantasma" do rodízio gira junto`);
+  }
+
+  // ── O modo GRUPOS continua no pareamento dinâmico, de propósito ───────────
+  // Ele pareia por proximidade na tabela de pontos, que muda a cada rodada — um
+  // rodízio fixo contradiria o próprio Cap. 03. E a medição dele já era 0/120.
+  {
+    const { confrontos } = await temporadaCompleta(8, "grupos");
+    igual(confrontos.length - new Set(confrontos).size, 0,
+      "no modo grupos por faixa também não há repetição");
+  }
 }
 
 process.exit(placar("O segundo circuito"));

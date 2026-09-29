@@ -401,6 +401,11 @@ async function fetchCircuitoPorteiro(circuitoId, cred) {
     const body = { circuitoId };
     if (cred && cred.token) body.sessionToken = cred.token;                       // atleta: token de sessão
     else if (cred && cred.telefone && cred.pin) { body.telefone = cred.telefone; body.pin = cred.pin; } // organizador: telefone+PIN
+    // Super-admin: PIN global, sem telefone. O porteiro distingue os dois pelo
+    // `telefone` ausente. Só entra quando o PIN JÁ ESTÁ EM CACHE — a carga do
+    // circuito não pode abrir o modal de PIN do nada, e um circuito privado sem
+    // PIN em cache degrada para a leitura anônima, como já fazia.
+    else if (cred && cred.pinSuper) { body.pin = cred.pinSuper; }
     const res = await fetch(`${SUPA_URL}/functions/v1/circuito-dados`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
@@ -2553,7 +2558,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
             {(ehB ? [
               ["🏓 O Circuito","Circuito recreativo independente, não filiado à CBTM ou FMTMOP. Modelo por pontos, sem rating."],
               ["👤 Elegibilidade","Todos começam a temporada em 0 pontos. Federados e não-federados entram igual — a federação é só informativa."],
-              ["⚙️ Formato","Pares mensais de rodadas, pareamento por sorteio ou por grupos (evitando repetir adversário). Partidas em MD5 (melhor de 5 sets), 11 pontos por set."],
+              ["⚙️ Formato","Pares mensais de rodadas, pareamento por sorteio ou por grupos (sem repetir adversário). Partidas em MD5 (melhor de 5 sets), 11 pontos por set."],
               ["🎯 Pontuação","Vitória = 2 pontos · Derrota = 1 ponto · Folga (bye) = 1 ponto. O ranking é a soma dos pontos e zera a cada temporada."],
               ["⏱ Prazos","1ª rodada até o dia 15, 2ª rodada até o dia 27. Registre o placar no app dentro da janela da rodada."],
               ["🔴 W.O., Faltas & Penalidades","Ausência injustificada: 0 pts (adversário 2). Justificada e aprovada: 1 pt (adversário 2). 2 W.O. injustificados = suspensão."],
@@ -3389,34 +3394,28 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
       <div>
         <p style={s.p}>O método de pareamento é escolhido na criação do circuito e vale para a temporada toda:</p>
         <Ul items={[
-          "Sorteio aleatório: a cada rodada os confrontos são sorteados, evitando repetir adversário na temporada.",
-          "Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos), também evitando repetir adversário.",
+          "Sorteio aleatório: a ordem do rodízio é sorteada no início de cada temporada, e a partir dela todos os confrontos são montados de uma vez — sem repetir adversário na temporada.",
+          "Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos), também sem repetir adversário.",
         ]}/>
-        {/* ⚠️ "EVITANDO", não "SEM" — corrigido em 29/09/2026, com o vB-01 ainda em
-            ZERO aceites (conferido no banco antes de editar, como manda a regra 7).
-            O texto anterior prometia "sem repetir adversário na temporada" sem
-            condição nenhuma, e o motor não pode cumprir isso: ele trata a
-            repetição como PENALIDADE altíssima num pareamento que minimiza o
-            custo da RODADA CORRENTE (`parearRodadaB`), não como proibição, e nunca
-            olha as rodadas seguintes.
-
-            ⚠️⚠️ E A 1ª VERSÃO DESTE TEXTO TAMBÉM ESTAVA ERRADA. Ela dizia que a
-            repetição vinha de o número de atletas cair durante a temporada — e o
-            comentário aqui afirmava "com 8 atletas e 6 rodadas dá certo".
-            Medição própria, 120 temporadas completas por configuração, confirmada
-            pelo Guardião de Regulamento (14/120 na medição dele):
-
-              8 atletas / sorteio ..... 13 em 120, com o GRUPO COMPLETO, ninguém saindo
-              8 atletas / grupos ...... 0 em 120
-              9, 10 e 12 / sorteio .... 0 em 120
-
-            Com 8 atletas existe rodízio de 6 rodadas sem repetir (é o de 7). O motor
-            não o encontra porque otimiza rodada a rodada. Ou seja: havia alternativa,
-            e a causa que o texto apontava era a errada — e 8 é o MÍNIMO que o
-            regulamento permite, logo a configuração mais provável de um circuito novo.
-            A queda de roster É causa real (medido: 60/60 quando cai de 8 para 6), só
-            não é a única. O texto agora nomeia as duas. */}
-        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A repetição é rara e pode acontecer por dois motivos: se o número de atletas cair durante a temporada e sobrarem menos adversários possíveis do que rodadas, e aí ela é inevitável; ou, mesmo com o grupo completo, porque o sistema monta a melhor combinação de cada rodada sem olhar as seguintes — em circuitos pequenos isso às vezes deixa a última rodada sem alternativa. Quando acontece, é no máximo um confronto repetido na temporada.</p>
+        {/* ⚠️ ESTE TEXTO MUDOU DUAS VEZES EM 29/09/2026, e o registro importa mais
+            que o texto final.
+            (1) Ele dizia "sem repetir adversário na temporada", sem condição. Medi
+                120 temporadas completas por configuração e o motor repetia em
+                13/120 com 8 atletas — o MÍNIMO permitido. O Guardião de
+                Regulamento refez a medição e achou 14/120. A promessa era falsa.
+            (2) Troquei para "evitando repetir" e escrevi que a causa era atleta
+                sair no meio da temporada. TAMBÉM ERRADO: acontecia com o grupo
+                COMPLETO de 8. A causa real era o motor resolver o ótimo de cada
+                rodada sem olhar as seguintes — com 7 adversários possíveis e 6
+                rodadas, uma escolha boa na rodada 3 fechava a saída da rodada 6.
+            (3) O Juliano decidiu: "Não pode ter repetição de atleta." O motor
+                ganhou o rodízio pelo método do círculo (`escalaCirculo`), que monta
+                a temporada inteira de uma vez. Medição refeita: 0/120 em TODAS as
+                configurações. Só AGORA o "sem repetir" é verdade — e por isso ele
+                voltou ao texto.
+            O vB-01 seguia com ZERO aceites nas duas tabelas em cada uma das três
+            edições (conferido no banco antes de cada uma, regra 7). */}
+        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>A única situação em que um confronto pode se repetir é se o número de atletas mudar no meio da temporada, porque aí o rodízio precisa ser refeito com quem está ativo. Mesmo nesse caso o sistema repete o mínimo possível.</p>
         <Box cor="#6a9d7a" titulo="🎟️ Bye (número ímpar de atletas)">
           <p style={s.p}>Quando o número de atletas é ímpar, um atleta fica de fora na rodada (bye) e ganha <span style={s.dest}>1 ponto de participação</span>. O bye tem <span style={s.dest}>rotação</span>: ninguém recebe um segundo bye antes de todos terem recebido um. Quem entra com a temporada já em andamento é o último da fila do bye.</p>
         </Box>
@@ -5590,12 +5589,35 @@ export default function App() {
       let solicitacoesWoLog = [];
       try { solicitacoesWoLog = await db.getSolicitacoesWo(); }
       catch(e) { console.warn("Solicitações de W.O. indisponíveis (migration pendente?):", e.message); }
-      // Circuito privado (não-BH): o anon não enxerga ranking/jogos (RLS). Busca pelo
-      // PORTEIRO com a credencial do atleta (se houver). BH e circuitos abertos NÃO passam
-      // por aqui — seguem exatamente o caminho anon de sempre (footprint-zero).
+      // Circuito NÃO-BH: a leitura passa pelo PORTEIRO (`circuito-dados`). O BH
+      // continua no caminho anon de sempre — Regra 2, footprint-zero.
+      //
+      // ⚠️ ANTES ISTO SÓ VALIA PARA CIRCUITO PRIVADO, e a decisão do Juliano em
+      // 29/09/2026 ("pode nascer de qualquer uma das formas, o admin decide quando
+      // abrir") tornou isso insuficiente. O motivo é uma coluna:
+      // `wo_culposos_temporada` NÃO TEM permissão de leitura para o visitante em
+      // `circuito_atletas` — foi excluída de propósito na fase 4C, junto com
+      // `desconto_pct` e `isento`, por decisão de um guardião. Logo, no caminho
+      // anon o app lê ZERO para todo mundo, e o 2º critério de desempate do Cap. 09
+      // do Sistema B (menos W.O. injustificados) nunca decide nada — além de o
+      // painel de suspensão do Cap. 07 sumir a cada recarga.
+      //
+      // O porteiro resolve sem reverter aquela decisão: ele roda com service role,
+      // já pede a coluna (`ATLETA_COLS`) e já a devolve, e para circuito PÚBLICO
+      // serve qualquer um sem credencial (`let acesso = !!circ.publico`). Ou seja:
+      // a coluna continua fora do alcance da chave anônima, e chega à tela pela
+      // porta certa.
+      //
+      // Degradação segura: se o porteiro falhar, `dadosPort` vem `null` e a leitura
+      // anon que já foi feita continua valendo — exatamente o comportamento de hoje.
       let atletasEf = atletas, partidasEf = partidas;
-      if (config?.[0]?.publico === false && CIRCUITO_ATIVO !== CIRCUITO_BH_ID) {
-        const dadosPort = await fetchCircuitoPorteiro(CIRCUITO_ATIVO, getAtletaCred() || getOrgCred());
+      if (CIRCUITO_ATIVO !== CIRCUITO_BH_ID) {
+        // Ordem: atleta (token) → organizador (telefone+PIN) → super-admin (PIN
+        // global em cache). Sem credencial nenhuma, circuito público ainda passa
+        // (o porteiro libera) e privado cai na leitura anônima, como antes.
+        const pinSuper = getPinCache();
+        const credPorteiro = getAtletaCred() || getOrgCred() || (pinSuper ? { pinSuper } : null);
+        const dadosPort = await fetchCircuitoPorteiro(CIRCUITO_ATIVO, credPorteiro);
         if (dadosPort) {
           atletasEf = (dadosPort.ranking || []).map(porteiroRankingToCa);
           partidasEf = dadosPort.partidas || [];
@@ -7917,7 +7939,7 @@ function CriarCircuitoCard({ chamarAdminAction, recarregarCircuitos }) {
                   <div style={{marginTop:16}}>
                     <div style={lbl}>Pareamento (Sistema B)</div>
                     {[
-                      {id:"sorteio", t:"Sorteio aleatório", d:"Sorteia confrontos a cada rodada, evitando repetir adversário na temporada."},
+                      {id:"sorteio", t:"Sorteio aleatório", d:"Sorteia confrontos a cada rodada, sem repetir adversário na temporada."},
                       {id:"grupos", t:"Grupos por faixa", d:"Pareia por faixa de posição na tabela de pontos atual."},
                     ].map(o => (
                       <div key={o.id} onClick={()=>setPareamento(o.id)} style={optCard(pareamento===o.id)}>
@@ -9322,7 +9344,7 @@ function IniciarEtapaPanel({ state, dispatch }) {
         {/* O circuito já grava QUAL método usa (`pareamento`), e a tela não
             ramificava: dizia "proximidade de rating" também no circuito de pontos,
             que não tem rating. (Guardião do Admin, 29/09/2026.) */}
-        Os confrontos serão gerados por <b>{SISTEMA_ATIVO === "B" ? (PAREAMENTO_ATIVO === "grupos" ? "grupos por faixa de pontos" : "sorteio aleatório") : "proximidade de rating"}</b>, evitando repetir duelos da temporada (capítulo "Estrutura das Rodadas"). As duas rodadas do mês são publicadas de uma vez.
+        Os confrontos serão gerados por <b>{SISTEMA_ATIVO === "B" ? (PAREAMENTO_ATIVO === "grupos" ? "grupos por faixa de pontos" : "sorteio aleatório") : "proximidade de rating"}</b>, sem repetir duelos da temporada (capítulo "Estrutura das Rodadas"). As duas rodadas do mês são publicadas de uma vez.
       </div>
       {naoPagaram.length > 0 && (
         <div style={{background:"rgba(216,90,48,0.12)",borderLeft:"3px solid #c25a45",borderRadius:8,padding:"9px 11px",marginBottom:10,fontSize:11.5,color:"#f8c4b4",lineHeight:1.6}}>

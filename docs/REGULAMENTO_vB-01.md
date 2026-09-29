@@ -33,10 +33,10 @@ Quem entra com a temporada já em andamento também começa em 0 pontos — como
 
 O método de pareamento é escolhido na criação do circuito e vale para a temporada toda:
 
-- Sorteio aleatório: a cada rodada os confrontos são sorteados, evitando repetir adversário na temporada.
-- Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos), também evitando repetir adversário.
+- Sorteio aleatório: a ordem do rodízio é sorteada no início de cada temporada, e a partir dela todos os confrontos são montados de uma vez — sem repetir adversário na temporada.
+- Grupos por faixa: o pareamento segue a posição na tabela de pontos (níveis próximos), também sem repetir adversário.
 
-A repetição é rara e pode acontecer por dois motivos: se o número de atletas cair durante a temporada e sobrarem menos adversários possíveis do que rodadas, e aí ela é inevitável; ou, mesmo com o grupo completo, porque o sistema monta a melhor combinação de cada rodada sem olhar as seguintes — em circuitos pequenos isso às vezes deixa a última rodada sem alternativa. Quando acontece, é no máximo um confronto repetido na temporada.
+A única situação em que um confronto pode se repetir é se o número de atletas mudar no meio da temporada, porque aí o rodízio precisa ser refeito com quem está ativo. Mesmo nesse caso o sistema repete o mínimo possível.
 
 ### 🎟️ Bye (número ímpar de atletas)
 

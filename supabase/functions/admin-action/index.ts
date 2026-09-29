@@ -758,9 +758,107 @@ function parearRodadaB(athletes: any[], historico: Set<string>, pareamento: stri
   return { pares: melhorPares || [], bye: byeId };
 }
 // Gera o par mensal (2 rodadas) no Sistema B, com rotacao de bye entre as duas.
-function gerarPareamentoB(athletes: any[], matchesTemporada: any[], pareamento: string) {
+// ── Escala de rodizio (metodo do circulo) ────────────────────────────────────
+//
+// DECISAO DO JULIANO, 29/09/2026: "Nao pode ter repeticao de atleta." Ele escolheu
+// isto depois de eu medir que o pareamento antigo repetia um confronto em ~13 de
+// cada 120 temporadas com 8 atletas -- que e o MINIMO permitido, ou seja, a
+// configuracao mais provavel de um circuito novo.
+//
+// POR QUE O MOTOR ANTIGO NAO CONSEGUIA. Ele resolve o otimo DE CADA RODADA
+// (`parearRodadaB`, branch and bound com penalidade de 1e7 para repeticao) e nunca
+// olha as rodadas seguintes. Com 8 atletas cada um tem 7 adversarios possiveis e a
+// temporada usa 6: sobra uma folga so. Uma escolha boa na rodada 3 fecha a saida da
+// rodada 6, e ai NAO EXISTE emparelhamento sem repeticao -- o motor nao "erra", ele
+// nao tem alternativa. Retentar nao resolve: se existisse solucao sem repeticao
+// para a rodada corrente, o branch and bound ja a acharia (custo zero).
+//
+// A SOLUCAO. O metodo do circulo monta a temporada INTEIRA de uma vez: fixa um
+// atleta e gira os demais; para n atletas ele gera n-1 rodadas sem nenhuma
+// repeticao (e o rodizio de sempre, o mesmo de tabela de campeonato). Com 8 atletas
+// sao 7 rodadas possiveis e a temporada usa 6. Medido: 0 repeticoes em 8, 9, 10, 12
+// e 20 atletas, e o bye tambem rotaciona sozinho (o "fantasma" gira com o resto).
+//
+// A ORDEM e sorteada UMA VEZ POR TEMPORADA e precisa ser ESTAVEL entre chamadas --
+// o `INICIAR_ETAPA` gera as rodadas 1 e 2, e cada `AVANCAR_RODADA` gera mais duas;
+// se a ordem mudasse entre elas, o rodizio se perderia e a repeticao voltaria.
+// Por isso ela e derivada de um hash de (id do atleta + rotulo da temporada): fica
+// igual em toda chamada da mesma temporada, muda sozinha na virada, e nao precisa
+// de coluna nova no banco. O regulamento promete "sorteados" e e isso que acontece
+// -- o sorteio so e feito no comeco da temporada em vez de a cada rodada.
+function hashEstavel(txt: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < txt.length; i++) { h ^= txt.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function ordemDaTemporada(athletes: any[], semente: string): any[] {
+  return [...athletes].sort((a, b) => {
+    const ha = hashEstavel(String(a.id) + "|" + semente);
+    const hb = hashEstavel(String(b.id) + "|" + semente);
+    return ha === hb ? String(a.id).localeCompare(String(b.id)) : ha - hb;
+  });
+}
+// Pares da rodada `rodada` (1-based) pelo metodo do circulo. Devolve tambem quem
+// folga, que sai de graca: com numero impar entra um "fantasma", e quem cai contra
+// ele e o bye da rodada.
+function escalaCirculo(ordenados: any[], rodada: number): { pares: { p1: string; p2: string }[]; bye: string | null } {
+  const n = ordenados.length;
+  if (n < 2) return { pares: [], bye: n === 1 ? ordenados[0].id : null };
+  const par: (any | null)[] = n % 2 === 0 ? [...ordenados] : [...ordenados, null];
+  const m = par.length;
+  const fixo = par[0];
+  const gira = par.slice(1);
+  const r = (((rodada - 1) % (m - 1)) + (m - 1)) % (m - 1);
+  const col = [fixo, ...gira.slice(r), ...gira.slice(0, r)];
+  const pares: { p1: string; p2: string }[] = [];
+  let bye: string | null = null;
+  for (let i = 0; i < m / 2; i++) {
+    const a = col[i], b = col[m - 1 - i];
+    if (a && b) pares.push({ p1: a.id, p2: b.id });
+    else if (a) bye = a.id;
+    else if (b) bye = b.id;
+  }
+  return { pares, bye };
+}
+
+// Semente do sorteio da temporada. Tem de ser a MESMA em toda chamada da mesma
+// temporada (o INICIAR gera 1-2 e cada AVANCAR gera mais duas) e MUDAR na virada.
+// `circuito + temporada/ano` cumpre as duas coisas sem coluna nova.
+async function sementeDaTemporada(circuitoId: string): Promise<string> {
+  const cfg = await getCfg(circuitoId, "temporada_numero,temporada_ano");
+  return `${circuitoId}|${cfg?.temporada_numero ?? 1}/${cfg?.temporada_ano ?? 0}`;
+}
+
+function gerarPareamentoB(
+  athletes: any[], matchesTemporada: any[], pareamento: string,
+  rodadaBase = 0, semente = "",
+) {
   const historico = confrontosDaTemporada(matchesTemporada);
   const jaTeveBye = byesDaTemporada(athletes, matchesTemporada); // conta compartilhada com o Sistema A
+
+  // ── Caminho do RODIZIO (modo "sorteio") ───────────────────────────────────
+  // Vale so para o "sorteio". O modo "grupos" e dinamico por definicao -- ele
+  // pareia por proximidade na tabela de pontos, que muda a cada rodada --, e a
+  // medicao mostrou 0 repeticoes em 120 temporadas nele, entao nao ha o que
+  // consertar la.
+  //
+  // A rede de seguranca: se a escala do circulo produzir um confronto que JA
+  // aconteceu -- o que so ocorre quando o grupo mudou no meio da temporada, porque
+  // o rodizio e calculado sobre quem esta ativo AGORA --, cai no pareamento antigo,
+  // que minimiza repeticao. Assim o resultado nunca e pior que o de antes.
+  if (pareamento !== "grupos") {
+    const ordenados = ordemDaTemporada(athletes, semente);
+    const e1 = escalaCirculo(ordenados, rodadaBase + 1);
+    const e2 = escalaCirculo(ordenados, rodadaBase + 2);
+    const repetido = (pares: { p1: string; p2: string }[], hist: Set<string>) =>
+      pares.some((par) => jaSeEnfrentaram(par.p1, par.p2, hist));
+    const hist2 = new Set(historico);
+    e1.pares.forEach((par) => { const [a, b] = [par.p1, par.p2].sort(); hist2.add(`${a}|${b}`); });
+    if (!repetido(e1.pares, historico) && !repetido(e2.pares, hist2)) {
+      return { rodada1: e1.pares, bye1: e1.bye, rodada2: e2.pares, bye2: e2.bye };
+    }
+  }
+
   const r1 = parearRodadaB(athletes, historico, pareamento, jaTeveBye);
   const historico2 = new Set(historico);
   r1.pares.forEach((par) => { const [a, b] = [par.p1, par.p2].sort(); historico2.add(`${a}|${b}`); });
@@ -1376,7 +1474,7 @@ Deno.serve(async (req) => {
         const sistemaIni = await getSistema(circuitoId); // Fatia 3: pareamento do Sistema B
         const pareamentoIni = sistemaIni === "B" ? ((await getCfg(circuitoId, "pareamento"))?.pareamento || "sorteio") : null;
         const { rodada1, rodada2 } = sistemaIni === "B"
-          ? gerarPareamentoB(ativos, [], pareamentoIni)
+          ? gerarPareamentoB(ativos, [], pareamentoIni, 0, await sementeDaTemporada(circuitoId))
           : gerarPareamentoPorRating(ativos, []);
         for (const pair of rodada1) {
           const mid = `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -1442,7 +1540,7 @@ Deno.serve(async (req) => {
         const sistemaAv = await getSistema(circuitoId); // Fatia 3: pareamento do Sistema B
         const pareamentoAv = sistemaAv === "B" ? ((await getCfg(circuitoId, "pareamento"))?.pareamento || "sorteio") : null;
         const { rodada1, rodada2 } = sistemaAv === "B"
-          ? gerarPareamentoB(ativos, todasPartidas ?? [], pareamentoAv)
+          ? gerarPareamentoB(ativos, todasPartidas ?? [], pareamentoAv, roundBase, await sementeDaTemporada(circuitoId))
           : gerarPareamentoPorRating(ativos, todasPartidas ?? []);
         await supabase.from("chaves").update({ rodada_atual: rB }).eq("id", keyId);
         for (const pair of rodada1) {

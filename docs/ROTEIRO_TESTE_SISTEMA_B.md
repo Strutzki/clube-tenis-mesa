@@ -35,12 +35,16 @@
 ## 6. Avançar rodada
 - [ ] Gerar o próximo par (Avançar Rodada)
 - [ ] O **bye rotaciona** (não cai sempre no mesmo)
-- [ ] Segue **evitando repetir** confrontos — ⚠️ **não marque falha por uma repetição
-      única.** Medido em 29/09/2026: com **exatamente 8 atletas no modo sorteio** o motor
-      repete um confronto em **13 de cada 120** temporadas completas; com 9, 10 ou 12,
-      ou no modo grupos, foram **0 em 120**. É o comportamento documentado no Cap. 03
-      do `vB-01`. O que **é** falha: o mesmo par jogando **três** vezes, ou mais de uma
-      repetição na temporada.
+- [ ] **NENHUM confronto se repete** na temporada inteira. Qualquer repetição é falha.
+      ⚠️ Este item mudou em 29/09/2026 e o histórico importa: antes ele mandava **não**
+      marcar falha por uma repetição única, porque o motor repetia em **13 de cada 120**
+      temporadas com exatamente 8 atletas no modo sorteio (0 em 120 com 9, 10, 12 ou no
+      modo grupos). O Juliano decidiu que não pode haver repetição, o motor ganhou o
+      **rodízio pelo método do círculo**, e a medição foi refeita: **0 em 120 em todas as
+      configurações**. Com o texto antigo, este roteiro mandava aprovar exatamente o
+      defeito que o Cap. 03 hoje proíbe.
+      A ÚNICA exceção aceitável: se o número de atletas mudou no meio da temporada, o
+      rodízio é refeito com quem está ativo e pode repetir — é o que o Cap. 03 diz.
 
 ## 7. Excluir atleta (escopo)
 - [ ] Excluir um atleta **sem partidas** no circuito B

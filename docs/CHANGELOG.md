@@ -5,6 +5,38 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-09-29 (2ª subida) — NO AR: o torneio deixa de vazar para circuito que não tem
+
+**NO AR desde 29/09/2026** (de acordo do Juliano: *"podemos seguir então"*).
+**App-only:** push `fa8c6e6..a6d95f1`, bundle `index-uKwFVULg.js`, site HTTP 200.
+**Nenhuma Edge Function mudou** — `git diff` de `supabase/functions/` entre o commit
+do deploy anterior e este: **vazio**. `admin-action` segue v63, `athlete-action` v22,
+`login-atleta` v11, `comprovante-url` v3.
+
+**Dados antes e depois, idênticos** nas nove tabelas e nas três impressões digitais
+(`f76240cc…`, `43abc1de…`, `d33245dd…`).
+
+**Smoke, feito no pacote publicado e não no local:** baixei o bundle do ar e conferi
+que as quatro coisas que o BH precisa estão nele — *"Zona de classificação"*, a
+legenda do `C`, o desempate novo do Sistema B, e o capítulo do bye. É o jeito de
+provar que o corte do BH não regrediu sem depender de o admin abrir a tela.
+
+**O que este pacote leva:**
+- o **torneio** deixa de vazar para circuito que não tem, nas três superfícies —
+  ranking, cabeçalho do atleta e a **convocação**, que é mensagem enviada;
+- a **versão aceita é por circuito**, e agora com portão nos três elos;
+- o **corte do ranking do BH** ganhou trava: a "melhoria de resiliência" mais natural
+  do mundo o apagava em silêncio, e a bateria ficava verde;
+- a **linha "sou eu"** do ranking deixou de ser a menos legível da tela;
+- o **rodapé** voltou, com o critério de desempate no lugar da legenda do torneio;
+- e **dois textos meus que afirmavam o que não era** foram corrigidos: o rótulo que
+  creditava proteção ao cartão compartilhado (que nunca teve o defeito) e o aviso que
+  negava o certificado do Top 3 num circuito cujo regulamento o promete.
+
+**Bateria: 956 asserções, 0 falhas.** 12 mutações nesta rodada, 12 vermelhas.
+
+---
+
 ### 2026-09-29 — NO AR: o regulamento desvinculado, o bye com rotação, e o 80% fora do que o atleta lê
 
 **NO AR desde 29/09/2026** (de acordo do Juliano: *"publica e vamos em frente"*).

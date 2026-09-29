@@ -57,6 +57,51 @@ sandbox que não compilava, e hoje seria trabalho perdido.
 
 ## Vereditos já emitidos (histórico)
 
+### REGRA NOVA, 28/09/2026 — "vermelho" é falha impressa OU saída ≠ 0, nunca as duas exigidas juntas
+
+O aferidor de mutação usado até aqui só classificava uma sabotagem como **vermelha**
+quando havia falha impressa **e** saída diferente de zero. Sabotagem que **quebra o
+arquivo de teste** antes de imprimir qualquer falha — referência a símbolo
+inexistente, erro de sintaxe, exceção não capturada — era classificada como
+**verde**. Ou seja: o instrumento dava **falso conforto exatamente no caso pior**,
+que é a sabotagem mais destrutiva possível.
+
+Corrigido nos dois lados: o aferidor passou a tratar saída ≠ 0 como vermelho, e a
+asserção da data inválida passou a capturar a exceção, para a sabotagem virar **falha
+limpa** em vez de queda.
+
+**Isto é de um degrau acima das outras três lições da família.** As três anteriores
+dizem *"o teste não protegia"*:
+- **19/09** — a asserção era regex e ficava verde com a regra quebrada;
+- **27/09** — a asserção rodava a função de verdade, mas afirmava o valor errado;
+- **27/09** — quatro arquivos saíam com código 0 mesmo vermelhos, e o portão não via
+  395 asserções.
+
+Esta diz outra coisa: **o instrumento que mede se o teste protege não protegia.** Ela
+não invalida um teste — invalida **evidência já declarada**.
+
+**Consequência retroativa, e é a parte que custa.** Toda mutação declarada vermelha
+**antes de 28/09/2026** foi medida com a régua velha. As que falham por asserção
+continuam válidas; as que poderiam derrubar o arquivo podem ter sido falsos verdes.
+São 39 linhas na tabela de `testes/README.md`. Elas **não** foram refeitas — é
+decisão de custo do Juliano. A ressalva está escrita no cabeçalho da tabela, para
+ninguém citar aquelas linhas como prova sem saber com que régua foram medidas.
+
+**E a frase que resume as quatro:** *todo portão novo precisa ser testado contra si
+mesmo — sabote-o e exija que ele acuse.* Um portão que nunca foi sabotado é uma
+promessa, não uma proteção.
+
+**Corolário, achado na mesma rodada — comentário não é portão.** O `athlete-action`
+tinha seis linhas proibindo, em letras garrafais, uma reescrita perigosa
+(`idade !== null && idade < 18`, que transformaria idade desconhecida em liberação
+silenciosa por causa da coerção `null < 18`). O Guardião de Segurança aplicou
+exatamente a reescrita proibida e a **bateria ficou verde**, porque o comportamento
+era inalcançável por construção. Documentar a armadilha é o primeiro passo; o segundo
+é fazer a **bateria** obrigá-la — ou reescrever a regra para que não haja armadilha.
+Comentário sozinho é conselho; asserção é portão.
+
+---
+
 ### REGRA NOVA, 27/09/2026 — a asserção pode rodar a função de verdade e ainda assim não proteger nada
 
 Irmã da lição (a) de 19/09, e mais afiada — porque ali o problema era a regex, e

@@ -2098,14 +2098,71 @@ secao("A janela de renovação prioritária — EXECUTANDO a conta, não lendo o
     "e não o contrário — que é exatamente o significado invertido que tirava os 7 dias do atleta");
   ok(/const diasAteEnc = janLem\.diasAteFechar;/.test(fonte),
     "o lembrete conta os dias até o FECHAMENTO");
-  ok(/prazoStr = fmtDate\(janLem\.fechaISO\)/.test(fonte),
+  ok(/prazoStr = janLem\.fechaTxt;/.test(fonte),
     "e anuncia ao atleta a data de fechamento, não a de abertura");
+  // A forma antiga era `fmtDate(janLem.fechaISO)`, e `fechaISO` saía de
+  // `inicio.toISOString()` — `inicio` é meia-noite LOCAL, então a leste de
+  // Greenwich a data exibida vinha UM DIA ANTES (Asia/Tokyo: 01/11 virava
+  // "2026-10-31"). As fronteiras da janela estavam certas em qualquer fuso; só o
+  // texto que o atleta LÊ apodrecia. Esta asserção impede a volta.
+  // Tira os comentários antes de olhar: o próprio comentário que EXPLICA a
+  // armadilha cita `toISOString()`, e uma asserção que se afoga na própria
+  // explicação não protege nada.
+  const janelaSemComentario = codigoJanela.replace(/\/\/[^\n]*/g, "");
+  ok(!/toISOString/.test(janelaSemComentario),
+    "e a conta da janela não deriva NENHUM texto de toISOString — isso erra o dia a leste de Greenwich");
+  ok(!/fechaISO/.test(fonte),
+    "e o campo frágil não sobrou em lugar nenhum do app");
 
   // ── e a tela deixou de se contradizer ────────────────────────────────────
   ok(/A janela de renovação prioritária abre 7 dias antes da data/.test(fonte),
     "a frase que já estava CERTA continua lá");
-  ok(/a sua prioridade vale até/.test(fonte),
+  ok(/— ela vale até \*\$\{janRen\.fechaTxt\}\*/.test(fonte),
     "e a mensagem de renovação deixou de mandar confirmar até o dia em que a prioridade começa");
+
+  // ── A VAGA NÃO É GARANTIDA POR SINALIZAR (Cap. 13) ───────────────────────
+  // "A vaga só é garantida com o pagamento da temporada confirmado pelo
+  // administrador". As duas mensagens diziam "Garanta sua vaga: toque em Quero
+  // renovar" / "Pra garantir, é rapidinho" — prometendo o que o regulamento nega,
+  // e contradizendo o card do atleta e o próprio regulamento.
+  ok(!/Garanta sua vaga: abra o app/.test(fonte),
+    "nenhuma mensagem promete que tocar em 'Quero renovar' garante a vaga");
+  ok(!/Pra garantir, é rapidinho/.test(fonte),
+    "nem o lembrete promete isso");
+  igual((fonte.match(/que é o que garante a vaga/g) || []).length, 2,
+    "as duas mensagens dizem o que o Cap. 13 diz: quem garante a vaga é o pagamento confirmado");
+
+  // ── A FRASE DO CARD DO ADMIN — o rótulo ao lado do número ────────────────
+  // Cinco das oito duplas pegaram a mesma linha: a conta foi corrigida e a prosa
+  // em volta dela ficou apontando para o modelo velho. Eram DOIS defeitos:
+  //  (a) "(7 dias antes do início)" passou a glosar a data do PRÓPRIO início —
+  //      o card ensinava uma data que não existe, e discordava em 7 dias do card
+  //      do atleta logo abaixo;
+  //  (b) a frase só conhecia DOIS estados e a função entrega TRÊS, então tudo que
+  //      não estava encerrado virava "Janela aberta." — inclusive as semanas ANTES
+  //      de ela abrir, que é o estado mais longo e mais comum.
+  // As asserções acima provavam a CONTA e a LIGAÇÃO. Nenhuma olhava para a FRASE,
+  // e foi exatamente por aí que a meia-correção passou verde.
+  ok(!/\(7 dias antes do início\)/.test(fonte),
+    "o card não glosa mais a data do início como se ela fosse 7 dias antes dele");
+  ok(/Renovação prioritária: de <b[^>]*>\{jan\.abreTxt\}<\/b> a <b[^>]*>\{jan\.fechaTxt\}<\/b>/.test(fonte),
+    "ele mostra o INTERVALO — e aí 'os N dias antes do início' fica verdadeiro por construção");
+  ok(/: jan\.aberta\n/.test(fonte) || /: jan\.aberta$/m.test(fonte),
+    "e ramifica nos TRÊS estados que a função calcula, não em dois");
+  ok(/Ainda não abriu — começa em \$\{jan\.abreTxt\}/.test(fonte),
+    "antes de abrir, o card diz que ainda não abriu — e em que dia abre");
+  ok(!/"Janela aberta\." : /.test(fonte) && !/ : "Janela aberta\."/.test(fonte),
+    "e 'Janela aberta' deixou de ser o galho que abraça tudo que não está encerrado");
+  // ⚠️ Ancorada no RAMO do card, não na frase solta: a mesma frase existe no texto
+  // do regulamento (Cap. 13) e no comentário da função, então `/frase/.test(fonte)`
+  // ficava verde com o card sabotado — passava pelo motivo errado, que é o defeito
+  // que esta bateria já cometeu três vezes.
+  ok(/\? " Prazo encerrado: as vagas não confirmadas abrem para a fila de espera\."/.test(fonte),
+    "o ramo encerrado do card diz a CONSEQUÊNCIA do Cap. 13, não só que o tempo passou");
+  ok(!/o prazo de renovação está sendo conferido contra o regulamento/.test(fonte),
+    "e o texto do botão desabilitado não diz mais que o prazo está em revisão — ele foi corrigido nesta fatia");
+  ok(/Esta ação ainda não existe no servidor \(ROADMAP 0\.6\.11\)/.test(fonte),
+    "ele diz o impedimento de verdade: a ação não existe no motor");
 }
 
 secao("A PORTA DA FRENTE: o INSCREVER passa a exigir responsável de menor (0.6.24)");
@@ -2169,12 +2226,33 @@ secao("A PORTA DA FRENTE: o INSCREVER passa a exigir responsável de menor (0.6.
       "e no futuro também");
   }
 
+  // ── A SEGUNDA CAMADA DO FAIL-CLOSED — asserção de FONTE, e o porquê ──────
+  // Esta é a única asserção de texto desta seção, e ela existe porque o
+  // comportamento é INALCANÇÁVEL por construção: com a guarda da data ausente de
+  // pé, a linha do responsável nunca recebe nulo, então nenhuma asserção de
+  // comportamento distingue `idadeInsc < 18` de `idadeInsc !== null && idadeInsc < 18`.
+  // O Guardião de Segurança aplicou a reescrita que o comentário do motor proibia
+  // em letras garrafais e A BATERIA FICOU VERDE. Comentário não é portão.
+  // O conserto foi tornar a regra explícita (`=== null ||`, sem depender da coerção
+  // `null < 18`); esta asserção é o portão que impede a volta da forma frouxa.
+  {
+    const fonteMotor = await import("node:fs/promises")
+      .then(f => f.readFile("supabase/functions/athlete-action/index.ts", "utf-8"));
+    const semComentario = fonteMotor.replace(/\/\/[^\n]*/g, "");
+    ok(/if \(idadeInsc === null \|\| idadeInsc < 18\)/.test(semComentario),
+      "a guarda do responsável recusa idade DESCONHECIDA explicitamente, sem depender de coerção de tipo");
+    ok(!/idadeInsc !== null/.test(semComentario),
+      "e a reescrita que transforma idade desconhecida em liberação silenciosa não voltou");
+  }
+
   // ── menor sem responsável: recusa, e nada gravado ────────────────────────
   {
     const { banco, r } = await inscrever({ dataNascimento: anosAtras(15) });
     igual(r.status, 400, "menor de 15 sem responsável é recusado pelo SERVIDOR");
-    ok(/responsável legal são obrigatórios/.test(String(r.corpo?.erro || "")),
-      "com a frase que a tela mostra inteira");
+    ok(/a lei exige o consentimento de um responsável legal/.test(String(r.corpo?.erro || "")),
+      "com a frase que a tela mostra inteira — e que diz POR QUE, não só que é proibido");
+    ok(/Volte ao passo 1/.test(String(r.corpo?.erro || "")),
+      "e diz ONDE preencher: os campos ficam no passo 1 e o erro aparece no passo 3");
     igual(banco.tabelas.atletas.length, 0, "e o atleta NÃO é criado");
   }
   {

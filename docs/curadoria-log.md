@@ -13,6 +13,64 @@
 > a cópia original (mais abaixo, sob "2026-09-05 — Bootstrap da curadoria...")
 > é a que fica.
 
+## 2026-09-28 — 0.6.24 + 0.6.15: a porta da frente, a janela invertida, e duas lições de método
+
+**Fatia ainda NÃO publicada** quando esta entrada foi escrita. Commit congelado
+`9c7fbf6`, revisado pelas **8 duplas** (a mudança toca dado de menor de idade **e**
+regra de competição). Resultado: **8 GO, 7 com condições**, todas aplicadas.
+
+**O que a fatia fechou:** o `INSCREVER` — a porta da frente, por onde entra todo
+atleta novo e o único caminho para o BH — não tinha guarda de menor de idade
+**nenhuma**, enquanto a porta de serviço (`PARTICIPAR`) tinha acabado de ganhar a
+dela. E a janela de renovação estava **invertida**: o Cap. 13 dá 7 dias de prioridade
+ao atleta, de `início−7` até o início, e o app tratava `início−7` como o **fim** —
+em três contas separadas, que eram três justamente porque nada as obrigava a
+concordar. O atleta recebia **zero** desses 7 dias.
+
+**Duas coisas desta rodada só existem se forem escritas, e é por isso que esta
+entrada é própria:**
+
+**1. A bateria passou a EXECUTAR um pedaço do `App.jsx`, e isso tem contrato.**
+`janelaRenovacao` é uma função **pura**; a bateria a extrai do fonte e a executa com
+datas reais. É a primeira vez, e é **deliberadamente única**. O `CLAUDE.md` afirmava,
+em dois lugares, que nada do app é executado por teste — passou a trazer a ressalva
+**e o critério de quando repetir** (função pura, sem fechar sobre nada, âncoras que
+são declarações de topo, e *se precisar estubar um global, pare*). Sem o critério
+escrito, a próxima sessão copia a técnica pelo **precedente** em vez do **motivo** —
+e vira o harness antigo de `harnesses/`, que ficava verde com o motor quebrado.
+O que justifica a exceção não é "dá para executar": é que **conta de data não se
+protege de outro jeito**.
+
+**2. O meu aferidor de mutação estava errado, e isso invalida evidência, não código.**
+Ele só chamava de vermelho a sabotagem que imprimia falha **e** saía com código ≠ 0 —
+então classificava como **verde** a sabotagem que **quebra o arquivo** antes de
+imprimir qualquer coisa. Falso conforto no caso pior. Virou **REGRA NOVA** no
+`GOVERNANCA_AGENTES.md`, com a ressalva retroativa escrita no cabeçalho da tabela de
+mutações: as 39 linhas anteriores a 28/09 foram medidas com a régua velha e **não**
+foram refeitas. A frase que resume a família das quatro lições: *todo portão novo
+precisa ser testado contra si mesmo — sabote-o e exija que ele acuse.*
+
+**Números corrigidos no acervo** (achados pelo Curador, conferidos por mim contando
+as seções): a janela tem **29** asserções, não 26; a base da bateria era **707**, não
+728 — número que não existia em nenhum outro documento. E as duas linhas cujo
+propósito é dizer **quando** o número foi conferido ao vivo estavam datadas de 27/09
+carregando trabalho de 28/09.
+
+**Meia-correção, e é o padrão desta rodada.** Cinco das oito duplas pegaram a **mesma
+linha**: eu consertei a conta da janela e deixei a **prosa em volta dela** apontando
+para o modelo velho. O card glosava a data do início como "(7 dias antes do início)",
+e o ternário de dois galhos anunciava "Janela aberta" durante as semanas **antes** de
+ela abrir. As asserções provavam a conta e provavam a ligação; **nenhuma olhava para
+a frase**. Foi por aí que passou.
+
+**Segue aberto, e é decisão do Juliano:** os 16 arquivos `.claude/agents/*.md` dizem
+"82 asserções que carregam o `admin-action` real" — hoje são 776 e quatro Edge
+Functions mais uma função do app. É a linha que **todo guardião lê antes de emitir
+parecer**. Quarta rodada em que o Curador aponta; continua sendo configuração de
+agente, e o pedido vem de um agente, então é chamada do Juliano.
+
+---
+
 ## 2026-09-27 — 0.6.21: ciência do regulamento ao entrar num 2º circuito
 
 **Publicado?** Não. Commitado e **aguardando o de acordo do Juliano**. `login-atleta`

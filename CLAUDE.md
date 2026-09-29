@@ -54,7 +54,7 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **757 asserções** (conferido ao vivo em 27/09/2026, somando as 12
+Hoje são **776 asserções** (conferido ao vivo em 28/09/2026, somando as 12
 seções que a bateria imprime). **Não cite este número de memória** — ele mudou em
 sete ondas seguidas; rode `npm run teste` e leia. O `atualizar.sh` roda isso
 antes de publicar e se recusa a subir com teste vermelho. O `testes/README.md`
@@ -356,8 +356,8 @@ gravar rating num circuito que não tem rating.
 - **`atualizar.sh` publica tudo que estiver na pasta.** Desde 07/09/2026 ele
   lista os arquivos e espera você digitar `S` antes de mandar — leia a lista:
   arquivo temporário esquecido ali viaja junto.
-- **A bateria executa quatro das funções, e nenhum pedaço do app.**
-  Reconferido em 27/09/2026 rodando `grep` nos testes, não de memória. Quem
+- **A bateria executa quatro Edge Functions e uma única função do app.**
+  Reconferido em 28/09/2026 rodando `grep` nos testes, não de memória. Quem
   carrega e executa código de verdade é `carregarFuncao(nome, banco)`
   (`testes/carrega-motor.mjs`) — **é esse o nome**, não `carregarMotor`, que não
   existe. `montarMotor({ funcao: "..." })` escolhe qual carregar (padrão:
@@ -382,12 +382,38 @@ gravar rating num circuito que não tem rating.
     banco no cenário (`get_cpf_pepper` e `dedup_por_cpf_hash`), que o banco em
     memória serve pelo parâmetro `funcoes`.
 
-  **`src/App.jsx` não é executado por teste nenhum** (o `login-atleta` passou a
-  ser, em 27/09/2026, mas só no `PARTICIPAR` — o `LOGIN` e o `SESSAO` seguem sem
-  asserção). O que
-  existe para eles são checagens por regex no texto fonte (`fonte.indexOf(...)`),
-  que pegam ausência/presença de um trecho — **não** comportamento em runtime. O
-  portão dos dois continua sendo "compila?" mais leitura de texto.
+  **`src/App.jsx` não é executado por teste nenhum — com uma exceção, deliberada e
+  única** (e o `login-atleta` passou a ser executado em 27/09/2026, mas só no
+  `PARTICIPAR`; o `LOGIN` e o `SESSAO` seguem sem asserção).
+
+  A exceção é `janelaRenovacao`, a conta da janela de renovação: ela é uma função
+  **pura** — recebe uma data, devolve datas, e só depende de `Date`. A bateria a
+  **extrai do fonte e a executa** com datas reais, em
+  `testes/regulamento-por-circuito.mjs`, seção *"A janela de renovação prioritária —
+  EXECUTANDO a conta, não lendo o texto"* (29 asserções). Não é regex: são datas
+  entrando e saindo. Foi o único jeito de proteger uma **conta de data**, que é onde
+  o erro do 0.6.15 morava — três contas separadas e invertidas, que nenhuma regex
+  acusaria, porque cada uma delas, lida isolada, parecia certa.
+
+  **Quando repetir a técnica — as quatro condições, todas obrigatórias:**
+  (1) a função é **pura** (mesma entrada → mesma saída, sem estado, sem React, sem
+  rede, sem `window`); (2) ela **não fecha sobre nada** além de constantes incluídas
+  no mesmo recorte; (3) as âncoras do recorte são **declarações de topo**, nunca
+  contagem de caracteres, e há asserção provando que o recorte foi localizado;
+  (4) se precisar **estubar qualquer global** para rodar, **pare** — a função não é
+  pura, e o lugar dela é o motor, não o `App.jsx`.
+
+  **Quando NÃO repetir:** qualquer coisa que toque estado, componente ou servidor.
+  Aí a extração passa a testar um **recorte** do app em vez do app — que é
+  precisamente o defeito do harness antigo em `harnesses/`, verde com o motor
+  quebrado. O que justifica a exceção não é "dá para executar": é que **conta de
+  data não se protege de outro jeito**.
+
+  Para **todo o resto** do `App.jsx` a regra não mudou: o que existe são checagens
+  por regex no texto fonte (`fonte.indexOf(...)`), que pegam ausência/presença de um
+  trecho — **não** comportamento em runtime. O portão continua sendo "compila?" mais
+  leitura de texto, e **regex passa verde com a regra quebrada** (lição de 19/09,
+  três sabotagens verdes).
 
   ⚠️ **Janela de asserção de fonte se ancora em fronteira sintática, nunca em
   contagem de caracteres** — e mesmo ancorada, ela é cega para os pontos de chamada.

@@ -105,20 +105,6 @@ function scoreValido(n: unknown): boolean {
   return Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 99;
 }
 
-// Idade a partir de "AAAA-MM-DD". Devolve null quando NAO DA PARA SABER — e quem
-// chama tem de tratar null como desconhecido, nunca como maior de idade.
-function idadeDeISO(iso: string | null | undefined): number | null {
-  const t = String(iso ?? "").trim();
-  if (!t) return null;
-  const d = new Date(t + "T00:00:00Z");
-  if (isNaN(d.getTime())) return null;
-  const h = new Date();
-  let anos = h.getUTCFullYear() - d.getUTCFullYear();
-  const dm = h.getUTCMonth() - d.getUTCMonth();
-  if (dm < 0 || (dm === 0 && h.getUTCDate() < d.getUTCDate())) anos--;
-  return anos;
-}
-
 // ── CPF (identidade nacional) — helpers. Spec: ESPEC_CPF_SEGURANCA.md ─────────
 // O CPF cru NUNCA entra em SQL/log/URL: normaliza + valida DV em memória; só o HMAC
 // (hash) trafega pro banco. Pepper vem do Vault via RPC service-role-only.
@@ -216,44 +202,6 @@ Deno.serve(async (req) => {
         const temCpf = String(p.cpf ?? "").replace(/\D/g, "").length > 0;
         if (!temCpf) return jsonResponse({ sucesso: false, erro: "cpf_obrigatorio" }, 400);
         if (!p.cpfConsent) return jsonResponse({ sucesso: false, erro: "cpf_consentimento_obrigatorio" }, 400);
-        // ── MENOR DE IDADE — OBRIGATORIO NO SERVIDOR (27/09/2026) ──────────────
-        // Esta funcao e a PORTA DA FRENTE: por aqui entra todo atleta novo, e e o
-        // unico caminho para o BH. E ela nao tinha guarda de menor NENHUMA: a unica
-        // linha era `if (p.responsavelCpf)`, que validava o digito SE o campo viesse.
-        // A trava era so a tela.
-        // Achado por dois guardioes (Juridico e Seguranca) em 27/09/2026, e os dois
-        // o classificaram ACIMA do que eles mesmos tinham vindo cobrar, por uma razao
-        // que nomearam bem: o PARTICIPAR (a porta de servico, para quem ja tem
-        // cadastro) tinha acabado de ganhar a guarda, e a porta da frente ficou mais
-        // frouxa que ela. Para o menor que entra por aqui, a violacao do art. 14 da
-        // LGPD acontece no cadastro — antes de qualquer outra tela poder impedir.
-        //
-        // Fail-closed nas tres pontas, no mesmo desenho do PARTICIPAR: data ausente
-        // recusa, data absurda recusa, e menor sem responsavel recusa. Idade que nao
-        // da para calcular e RECUSA, nao liberacao.
-        const idadeInsc = idadeDeISO(p.dataNascimento);
-        if (idadeInsc === null) {
-          return jsonResponse({ sucesso: false, erro: "Informe a data de nascimento para concluir a inscrição." }, 400);
-        }
-        if (idadeInsc < 0 || idadeInsc > 120) {
-          return jsonResponse({ sucesso: false, erro: "Confira a data de nascimento: o ano informado não parece válido." }, 400);
-        }
-        // A segunda camada do fail-closed, agora EXPLICITA (28/09/2026).
-        // Ate aqui esta linha era so `if (idadeInsc < 18)`, e a protecao do caso nulo
-        // vinha da coercao de tipo do JavaScript (`null < 18` e `true`) mais um
-        // comentario de seis linhas proibindo a "limpeza" `idadeInsc !== null &&`.
-        // O Guardiao de Seguranca aplicou exatamente essa reescrita proibida e a
-        // BATERIA FICOU VERDE: com a guarda de cima de pe, esta linha nunca recebe
-        // nulo, entao nenhuma assercao de comportamento consegue distinguir as duas
-        // formas. Comentario nao e portao. Escrever `idadeInsc === null ||` faz a
-        // regra dizer o que quer dizer, sem depender de coercao e sem deixar nada
-        // para alguem "limpar" depois.
-        if (idadeInsc === null || idadeInsc < 18) {
-          if (!String(p.responsavelNome ?? "").trim() || !String(p.responsavelCpf ?? "").trim()) {
-            return jsonResponse({ sucesso: false, erro: "Para menor de 18 anos, a lei exige o consentimento de um responsável legal. Volte ao passo 1 e preencha o nome e o CPF do responsável." }, 400);
-          }
-        }
-
         let cpfHash: string | null = null;
         let respCpfHash: string | null = null;
         if (temCpf) {
@@ -271,10 +219,7 @@ Deno.serve(async (req) => {
           if (eDd) throw eDd;
           const existe = Array.isArray(dd) ? !!dd[0]?.existe : !!(dd as any)?.existe;
           if (existe) return jsonResponse({ sucesso: false, erro: "cpf_duplicado" }, 409);
-          // Menor de idade: hash do CPF do responsável. Nunca guarda o número.
-          // O "(se enviado)" que estava aqui deixou de valer em 27/09/2026: para menor
-          // de 18 o campo passou a ser OBRIGATÓRIO, exigido na guarda acima. O `if`
-          // continua porque maior de idade não manda responsável nenhum.
+          // Menor de idade: hash do CPF do responsável (se enviado). Nunca guarda o número.
           if (p.responsavelCpf) {
             const rc = cpfNormaliza(p.responsavelCpf);
             if (!rc || !cpfDVValido(rc)) return jsonResponse({ sucesso: false, erro: "cpf_responsavel_invalido" }, 400);

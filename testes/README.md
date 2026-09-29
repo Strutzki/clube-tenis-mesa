@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 757 asserções (27/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 776 asserções (28/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -58,7 +58,17 @@ Escreveu asserção nova? Sabote a linha do motor que ela protege e exija que a
 bateria **fique vermelha**. Se continuar verde, a asserção não está testando o
 que você acha que está.
 
-As mutações já verificadas nesta bateria:
+As mutações já verificadas nesta bateria.
+
+⚠️ **Com que régua cada linha foi medida.** As linhas **anteriores a 28/09/2026** foram
+aferidas por um instrumento defeituoso: ele só classificava como *vermelho* quando havia
+falha impressa **e** saída ≠ 0. Sabotagem que **quebra o arquivo de teste** antes de
+imprimir qualquer falha era classificada como **verde** — falso conforto exatamente no
+caso pior. As linhas que falham **por asserção** continuam válidas; as que poderiam
+**derrubar** o arquivo (referência a símbolo inexistente, erro de sintaxe, exceção não
+capturada) podem ter sido falsos verdes e não foram refeitas. Não cite uma linha antiga
+como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: **saída ≠ 0
+é vermelho, qualquer que seja a causa.**
 
 | Sabotagem na função | Resultado |
 |---|---|
@@ -106,6 +116,36 @@ As mutações já verificadas nesta bateria:
 | responsável: cai a exigência do nome | 1 vermelha |
 | responsável: cai a exigência do CPF | 1 vermelha |
 | uma asserção qualquer do `regulamento-por-circuito.mjs` | **prova do portão**: `npm run teste` agora sai com código **1**; antes saía **0** |
+| **0.6.24 + 0.6.15 — 28/09/2026 (14 sabotagens, 14 vermelhas)** | |
+| `INSCREVER`: data de nascimento volta a ser opcional | 1 vermelha |
+| `INSCREVER`: data absurda (ano 1850 / 3000) volta a passar | 2 vermelhas |
+| `INSCREVER`: menor sem responsável volta a passar | 2 vermelhas |
+| `INSCREVER`: a fronteira `< 18` vira `< 17` | 2 vermelhas |
+| `INSCREVER`: exige só o nome, perde o CPF do responsável | 1 vermelha |
+| `INSCREVER`: a recusa passa a gravar o atleta antes de recusar | 1 vermelha |
+| janela: volta a inverter (`fecha = início−7`) | 3 vermelhas |
+| janela: os 7 dias viram 10 | 2 vermelhas |
+| janela: `aberta` perde o limite superior | 2 vermelhas |
+| janela: `encerrada` volta a disparar em `início−7` | 2 vermelhas |
+| janela: `diasAteFechar` volta a contar da abertura | 2 vermelhas |
+| janela: a data inválida deixa de ser recusada | **ficava VERDE no aferidor velho**: a sabotagem *quebrava* o arquivo antes de imprimir falha. Corrigido nos dois lados — o aferidor passou a tratar saída ≠ 0 como vermelho, e a asserção passou a capturar a exceção |
+| card do admin: sabotagem que derruba o arquivo (`janelaRenovacaoQueNaoExiste`) | **ficava VERDE no aferidor velho**, pelo mesmo motivo. Hoje 1 vermelha |
+| **Revisão das 8 duplas — 28/09/2026 (15 sabotagens, 15 vermelhas)** | |
+| card: volta o parêntese "(7 dias antes do início)" ao lado da data do **início** | 1 vermelha |
+| card: volta a data solta, sem o intervalo | 1 vermelha |
+| card: volta aos DOIS estados ("Janela aberta" abraça tudo que não encerrou) | 3 vermelhas |
+| card: some a consequência do Cap. 13 no ramo encerrado | 1 vermelha — **ficava VERDE**: a asserção casava com a frase do **regulamento**, três mil linhas acima, e não com o card. Ancorada no ramo, passou a acusar |
+| botão desabilitado: volta a dizer que o prazo está em revisão | 2 vermelhas |
+| mensagem: volta a derivar a data de `toISOString` (erra o dia a leste de Greenwich) | 2 vermelhas |
+| mensagem: volta a prometer que sinalizar garante a vaga | 2 vermelhas |
+| lembrete: volta a prometer o mesmo | 2 vermelhas |
+| motor: a reescrita proibida `idadeInsc !== null && idadeInsc < 18` | 2 vermelhas — **ficava VERDE** enquanto a regra dependia da coerção `null < 18`; hoje a regra é explícita e há asserção de fonte |
+| motor: a frase do menor perde o POR QUÊ (art. 14) e o ONDE (passo 1) | 2 vermelhas |
+| `login-atleta`: volta o fail-open da ressalva vencida (`!== null`) | 2 vermelhas |
+| `login-atleta`: a recusa perde o código certo | 1 vermelha |
+| app: a recusa nova deixa de ser traduzida e cai no genérico | 2 vermelhas |
+| app: a tradução deixa de mandar falar com o organizador | 1 vermelha |
+| **[aferidor]** sabotagem que quebra o arquivo antes de imprimir falha | 1 vermelha — **é a prova de que o conserto da régua funciona** |
 
 ## O portão: todo arquivo termina em `process.exit(placar(...))`
 

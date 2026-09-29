@@ -54,3 +54,57 @@ Para reverter o `login-atleta`:
     npm run motor:conferir      # tem de dar 0 divergências
 
 Ou, se por algum motivo o git divergir do ar, republique **este** arquivo.
+
+---
+
+## `ar-athlete-action-v21.ts` — salvo em 28/09/2026, antes da v22
+
+Não existia backup do `athlete-action` **v21** em lugar nenhum: as pastas
+anteriores têm `ar-athlete-action.ts` (07/09), a `-pos-cors` (07/09) e
+`ar-athlete-action-v20.ts` (19/09). E v21 é o que está rodando — a função da
+**inscrição de todo atleta novo**, que é a porta da frente do BH. Apontado pelo
+Guardião de Confiabilidade.
+
+O arquivo está nesta pasta, e não numa `motor-no-ar-2026-09-28`, porque **a v21 foi
+publicada em 27/09** — esta pasta é o motor como ele estava no ar naquele dia.
+
+**Como este arquivo foi produzido, e o limite honesto disso.** Ele é
+`git show f1650d0:supabase/functions/athlete-action/index.ts`, e a evidência de que
+é o que está no ar é **convergente**, não um `diff` byte a byte:
+
+- o `entrypoint_path` da v21 é
+  `/Users/strutzki/clube-tenis-mesa-v2/supabase/functions/athlete-action/index.ts`
+  — publicada **deste** repositório;
+- publicada em 27/09 às 16:35:53 (BRT); o commit `4adc017`, que contém a mudança
+  daquele dia, é de 16:37:16 — **83 segundos depois**. O padrão da casa é publicar
+  e commitar em seguida;
+- `git log` mostra que o arquivo **não mudou** entre `4adc017` e `f1650d0` (o pai do
+  commit desta fatia);
+- baixei o fonte do ar pela API e li inteiro: as **9** ações estão lá, o
+  `atletaPorTokenAA` do `ACEITAR_REGULAMENTO`, o `versaoDoCircuito` fail-closed, as
+  origens de `localhost`, e o comentário antigo *"Menor de idade: hash do CPF do
+  responsável (se enviado)"* — que é justamente a linha que esta fatia reescreve. E
+  **zero** ocorrências de `idadeDeISO`, que o commit novo tem duas.
+
+Ou seja: coincide em tudo que dá para conferir. **Não** está afirmado como
+byte-idêntico, porque o `diff` não foi rodado contra o arquivo do ar — a resposta da
+API não foi para o disco nesta sessão. Mesma situação e mesma honestidade do v9.
+
+Para reverter o `athlete-action`:
+
+    git checkout f1650d0 -- supabase/functions/athlete-action/index.ts
+    npm run motor:publicar -- athlete-action    # sobe como v23 — o número sempre sobe
+    npm run motor:conferir                      # tem de dar 0 divergências
+
+Ou, se por algum motivo o git divergir do ar, republique **este** arquivo.
+
+---
+
+## `login-atleta` v10 → v11 nesta mesma subida
+
+O backup do **v10** é o próprio `git show f1650d0:supabase/functions/login-atleta/index.ts`
+(o arquivo não mudou entre a publicação da v10 e esta fatia). O rollback é:
+
+    git checkout f1650d0 -- supabase/functions/login-atleta/index.ts
+    npm run motor:publicar -- login-atleta
+    npm run motor:conferir

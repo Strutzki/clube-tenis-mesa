@@ -142,13 +142,23 @@ rating.
 
 ### 2026-09-28 — A porta da frente protege o menor, e a janela de renovação para de mentir
 
-**A SUBIR — ainda não publicado.** `athlete-action` **v21 → v22** e front por
-`git push`. Decisão do Juliano: *"arrumar esses dois pontos"*.
+**A SUBIR — ainda não publicado.** `athlete-action` **v21 → v22**, `login-atleta`
+**v10 → v11** e front por `git push`. Decisão do Juliano: *"arrumar esses dois
+pontos"*. Revisão das **8 duplas** sobre o commit `9c7fbf6`: 8 GO, 7 com condições —
+todas aplicadas antes desta linha ser escrita.
 
-**Ordem: APP PRIMEIRO, motor depois** — mesma razão da subida anterior e pela regra
-que está no `CLAUDE.md`: o motor novo **recusa** o que o app velho manda (inscrição
-sem data de nascimento), enquanto o app novo é compatível para frente. Publicar o
-motor antes quebraria a inscrição de qualquer atleta novo.
+**Ordem: APP PRIMEIRO, motor depois** — e a razão exata importa, porque eu a tinha
+escrito **mais grave do que ela é**. Eu havia registrado que "o motor novo recusa o
+que o app velho manda, então a inscrição quebraria". O Guardião de Confiabilidade foi
+ao bundle publicado e mediu: o formulário **já exige** data de nascimento e, para
+menor, nome e CPF do responsável (`f1650d0`, a linha do `faltando`) — e esta fatia
+**não tocou** nenhuma dessas linhas. Então a ordem invertida **não fecharia a porta**;
+o que se perderia é a **qualidade da mensagem** (o bundle velho não tem as frases
+novas na lista branca e mostraria o genérico "Não foi possível concluir").
+Continua sendo **app primeiro** — e o caso real que justifica é este: o campo de data
+não tem `min`/`max`, então dá para digitar 1850, a tela aceita e o motor novo recusa.
+É aí, e só aí, que o usuário encontra a guarda nova — e é por isso que ele precisa do
+app que sabe traduzir a recusa.
 
 **1. O `INSCREVER` não tinha guarda de menor de idade nenhuma.** É a **porta da
 frente** — por onde entra todo atleta novo, e o único caminho para o BH. A única
@@ -173,7 +183,7 @@ Virou **uma** função, `janelaRenovacao()`, com a constante num lugar só.
 nenhum — mas `janelaRenovacao` é **pura**, só depende de `Date`. Então a bateria
 **extrai a função do fonte e a executa** com datas reais. Não é regex: são datas
 entrando e saindo. Conta de data só se protege assim, e era exatamente onde o erro
-morava. **26 asserções, 8 mutações, 8 vermelhas.**
+morava. **29 asserções, 8 mutações, 8 vermelhas.**
 
 **E o meu aferidor de mutação estava errado, o que é a lição desta rodada.** Ele só
 chamava de "vermelho" quando havia falha **e** saída diferente de zero. Duas
@@ -184,7 +194,62 @@ lados: o aferidor passou a tratar saída ≠ 0 como vermelho, e a asserção da 
 inválida passou a capturar a exceção, para a sabotagem virar **falha limpa** em vez
 de queda.
 
-**Bateria: 728 → 757 asserções, 0 falhas.**
+**3. O que as 8 duplas acharam, e que só existe porque elas foram chamadas.**
+
+**(a) A meia-correção — cinco duplas na mesma linha.** Eu consertei a conta e deixei a
+prosa em volta dela apontando para o modelo velho. O card do admin dizia
+*"Prazo de renovação prioritária: **{data}** (7 dias antes do início)"* — só que
+`{data}` tinha acabado de virar o **próprio início**, então o parêntese passou a
+descrever a data **antiga**, e o card ensinava uma temporada começando 7 dias depois
+do que o card do atleta dizia logo abaixo. E havia um segundo defeito que eu **não**
+tinha visto: a frase conhecia **dois** estados e a função entrega **três**, então tudo
+que não estivesse encerrado virava *"Janela aberta."* — inclusive as semanas **antes**
+de ela abrir, que é o estado mais longo e mais comum. O erro trocou de sinal em vez de
+sumir. Agora o card mostra o **intervalo** (`abre` a `fecha`), o que torna "os 7 dias
+antes do início" verdadeiro por construção, e ramifica nos três estados.
+
+**(b) Comentário não é portão.** O motor tinha seis linhas proibindo, em letras
+garrafais, a "limpeza" `idadeInsc !== null && idadeInsc < 18` — porque `null < 18` é
+`true` em JavaScript e o `!== null` transformaria idade desconhecida em liberação
+silenciosa. O Guardião de Segurança aplicou **exatamente** a reescrita proibida e a
+**bateria ficou verde**: com a primeira camada de pé, aquela linha nunca recebe nulo,
+então nenhuma asserção de comportamento distingue as duas formas. Conserto: a regra
+passou a dizer o que quer dizer (`idadeInsc === null || idadeInsc < 18`), sem depender
+de coerção — mais a asserção de fonte que impede a volta.
+
+**(c) A ressalva que morreu no mesmo commit que a matou.** O `login-atleta` tinha um
+`idadeArquivo !== null` fail-open, com um comentário que terminava assim: *"quando o
+`INSCREVER` exigir a data, esta ressalva morre"*. O `INSCREVER` passou a exigir a data
+**neste commit** — e o texto ficou. Pior: era um `!== null` fail-open, a construção que
+o comentário irmão proíbe do outro lado. Jurídico e Segurança pegaram os dois. Fechado:
+idade desconhecida agora recusa, e a recusa **nomeia o remédio** (a tela não tem campo
+para corrigir a data, então um 409 seco deixaria o atleta preso).
+A asserção que **carimbava** a ressalva ficou vermelha sozinha — e o comentário dela,
+escrito ontem, já mandava o que fazer: *"não 'conserte' — apague, e troque pela
+recusa"*. Foi o que se fez.
+
+**(d) A vaga não é garantida por sinalizar.** O Cap. 13 diz que *"a vaga só é garantida
+com o pagamento da temporada confirmado pelo administrador"* — e as duas mensagens de
+WhatsApp diziam *"Garanta sua vaga: toque em Quero renovar"* e *"Pra garantir, é
+rapidinho"*, contradizendo o regulamento, o card do atleta e uma à outra. Corrigido nas
+duas.
+
+**(e) Uma data que apodrecia a leste de Greenwich.** `fechaISO` saía de
+`inicio.toISOString()`, e `inicio` é meia-noite **local** — em `Asia/Tokyo` um início
+em 01/11 virava `"2026-10-31"`. As fronteiras da janela estavam certas em qualquer
+fuso; só a data que o atleta **lê** saía um dia antes. O campo saiu; as mensagens usam
+o texto já formatado no fuso local. Hoje não mordia (admin no Brasil), mas a
+plataforma é vendida para organizadores em qualquer lugar.
+
+**(f) E o meu erro de sempre, pego pela minha própria mutação.** A asserção que
+protegia o ramo "prazo encerrado" do card casava com a frase **do regulamento**, três
+mil linhas acima — ficava verde com o card sabotado. Ancorada no ramo, ficou vermelha.
+É a quarta vez nesta sessão que uma asserção minha passa **pelo motivo errado**.
+
+**Números finais: 776 asserções, 0 falhas, saída 0. 15 mutações, 15 vermelhas** — todas
+medidas com o aferidor corrigido.
+
+**Bateria: 707 → 776 asserções, 0 falhas.**
 
 ---
 

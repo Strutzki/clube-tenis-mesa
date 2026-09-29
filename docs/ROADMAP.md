@@ -192,13 +192,20 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   abrem depois disso, como o Cap. 13 manda.
   O que mudou na prática: o card deixou de dizer "prazo encerrado" no dia em que a
   prioridade **começa**; a mensagem de renovação deixou de mandar *"confirme até
-  {início−7}"* e passou a dizer *"a sua prioridade vale até {início}"*; e o lembrete
+  {início−7}"* e passou a dizer *"ela vale até {início}"*; e o lembrete
   "dos últimos 3 dias", que disparava entre `início−10` e `início−7` — **antes de a
   janela abrir** —, passou a disparar nos 3 dias antes do fim.
-  **26 asserções, e são de um tipo que o projeto não tinha:** `App.jsx` não é executado
+  **29 asserções, e são de um tipo que o projeto não tinha:** `App.jsx` não é executado
   por teste nenhum, mas `janelaRenovacao` é função **pura**, então ela é extraída do
   fonte e **executada** com datas reais. Conta de data só se protege assim.
   **8 mutações, 8 vermelhas** — cada uma reintroduz uma metade do defeito original.
+  **A revisão das 8 duplas (28/09) achou a meia-correção que sobrou:** a conta estava
+  certa e a **frase em volta dela** continuava apontando para o modelo velho — o card
+  glosava a data do início como "(7 dias antes do início)", e o ternário de dois
+  galhos anunciava "Janela aberta" durante as semanas **antes** de ela abrir. Cinco das
+  oito duplas pegaram a mesma linha. Corrigido: o card mostra o **intervalo** e ramifica
+  nos três estados que a função já calculava (`jaAbriu`, `aberta`, `encerrada`), que até
+  então eram testados e **não consumidos**.
   *Descrição original, mantida como registro:*
   ⬅️ *achado de 27/09/2026, na revisão do 0.6.11* — **decisão do Juliano, não minha.**
   O Cap. 13 (v03-12 §prioridade de renovação, idem v03-13, e é o texto que o
@@ -358,6 +365,19 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   **21 asserções rodando o `athlete-action` de verdade**, incluindo a fronteira dos 18
   (véspera e dia seguinte) e a prova de que a recusa **não grava nada** — nem o atleta,
   nem o documento. **6 mutações, 6 vermelhas.**
+  **FECHA INTEIRO, e só depois da revisão das 8 duplas (28/09).** O Guardião Jurídico
+  avisou que o item **não** podia ser marcado fechado enquanto a ressalva do
+  `login-atleta` estivesse de pé — porque o próprio 0.6.24 amarrou a ressalva a ele
+  (*"a ressalva morre quando o `INSCREVER` exigir a data"*). O gatilho disparou no mesmo
+  commit e o texto tinha ficado. Agora morreu de verdade: `idadeArquivo === null` recusa
+  com `cadastro_sem_data_nascimento`, e a recusa **nomeia o remédio** (falar com o
+  organizador), porque aquela tela não tem campo para corrigir a data.
+  **E o comentário que proibia a reescrita `idade !== null && idade < 18` não bastava.**
+  O Guardião de Segurança aplicou a reescrita proibida e a bateria ficou **verde**: com
+  a guarda de cima de pé, a linha nunca recebe nulo, e nenhuma asserção de comportamento
+  consegue distinguir as duas formas. A regra passou a ser explícita
+  (`idadeInsc === null || idadeInsc < 18`), com asserção de fonte impedindo a volta.
+  **Comentário não é portão** — foi a lição da rodada.
   *Descrição original, mantida como registro:* Achado
   independente do Guardião Jurídico e do de Segurança em 27/09/2026, e os dois o
   classificaram acima do que eles mesmos vieram cobrar. A comparação é o que dói:
@@ -586,12 +606,37 @@ escrita falhada). É honesto dizer que a Onda 0.6 fechou 6 itens e abriu 6.
   carimbar a regra errada em cima de vaga vendida — e no BH, com `writeAtleta`
   escrevendo na tabela global, **12 de 12 atletas ativos** estavam no alvo do
   filtro, num clique, sem desfazer. O que precisa vir junto quando voltar:
-  (a) a decisão do 0.6.15; (b) gate do BH ou asserção provando o caminho do BH;
+  (a) ~~a decisão do 0.6.15~~ — **RESOLVIDA em 28/09/2026**: a janela vai de
+  `início−7` até o início, e `prazoPassou` passou a significar "a janela fechou";
+  (b) gate do BH ou asserção provando o caminho do BH;
   (c) confirmação-com-nome na tela (é escrita destrutiva em massa);
   (d) o retorno dizendo quantas vagas saíram, e quantas falharam — o laço não tem
-  transação; (e) gate na tela igual ao do motor, senão o botão acende num estado
-  que o servidor recusa com 409; (f) um único cálculo de prazo, num único fuso
-  (hoje o motor conta em UTC e a tela em hora local: 3h de diferença).
+  transação; (e) gate na tela igual ao do motor: a condição de habilitar é
+  `prazoPassou` **E** `state.proximaAberta`, porque o painel também renderiza com
+  `phase === "inscricoes"` e `proximaAberta === false`, estado em que o motor recusa
+  com 409 e o botão acenderia à toa *(precisado pelo Guardião do Regulamento e pelo
+  de Admin, 28/09)*; (f) um único cálculo de prazo, num único fuso — e a
+  recomendação concreta, que é melhor que "usar hora local no motor": **a regra tem
+  granularidade de DIA, não de instante.** O Cap. 13 fala de um prazo que é uma
+  **data**. Então o motor deve **comparar datas, não instantes** — derivar `hoje` no
+  fuso do circuito e comparar `AAAA-MM-DD` com `proxima_data_inicio` como string.
+  Isso elimina a costura de 3h **por construção**, em vez de tentar alinhar dois
+  relógios que nunca vão bater. *(Guardião do Regulamento, 28/09/2026.)*
+  **(g) — novo, 28/09:** a janela do **lembrete** deveria ser **7 dias, não 3**, para
+  o primeiro aviso coincidir com a **abertura** da prioridade e não com a véspera de
+  perdê-la — e porque o que garante a vaga é o admin registrar o pagamento, um passo
+  que não depende do atleta. Três dias atravessando um fim de semana é apertado.
+  *(Experiência do Atleta.)*
+  **(h) — novo, 28/09:** decidir se este card deve aparecer quando **não** há próxima
+  temporada aberta. Ele renderiza em dois modos, e no modo `phase === "inscricoes" &&
+  !proximaAberta` ele calcula a janela sobre a temporada **corrente** (cuja renovação
+  já passou) enquanto as duas mensagens devolvem `[]` — ninguém está sendo avisado de
+  nada. A leitura do Guardião de Admin, que eu subscrevo: o card só faz sentido com
+  `proximaAberta`. *(Experiência do Admin.)*
+  **E continua aberto, do 0.6.16:** não há aviso nenhum quando o atleta **perde** a
+  vaga. Hoje o único texto que menciona a consequência é o lembrete — enviado
+  **antes** do fato. Depois do fato, silêncio. Quando o 0.6.11 voltar, esse par
+  precisa nascer junto.
 - **0.6.12 —** Ovo e galinha: `NOMEAR_ORGANIZADOR` exige um atleta ativo, e
   circuito novo nasce vazio. A ordem obrigatória (abrir inscrições → o futuro
   organizador se inscreve → aprovar → nomear) não está escrita em lugar nenhum.
@@ -935,6 +980,37 @@ atleta inscrito."*
 
 ### Sem gatilho — higiene
 
+- **0.6.29 — O rate-limit do CPF é chaveado num cabeçalho que o cliente pode
+  escolher.** *(Segurança, 28/09/2026 — precisa de verificação AO VIVO, não de
+  código.)* `athlete-action` toma `ipReq` do **primeiro** elemento do
+  `X-Forwarded-For`. A convenção é que cada proxy **acrescenta** ao cabeçalho, então o
+  primeiro elemento tende a ser o que o próprio cliente mandou. Se for esse o caso na
+  borda do Supabase, um atacante escolhe a própria chave de cota e roda 12 tentativas
+  por valor inventado — e a segunda camada anti-oráculo do `cpf_duplicado` deixa de
+  valer. **Pré-existente, não desta fatia.** O passo é medir na borda (mandar dois
+  `X-Forwarded-For` diferentes e ver qual vira linha em `tentativas_busca_cpf`), não
+  mexer no código antes de saber.
+- **0.6.30 — O campo de data de nascimento não tem `min`/`max`.** *(Confiabilidade,
+  28/09/2026 — uma linha.)* `<input type="date">` sem limites aceita 1850 ou 2030; a
+  tela deixa passar e só o servidor recusa. É o **único** caminho em que o atleta
+  encontra a guarda nova de idade. Pôr os limites no input faz a tela recusar antes,
+  sem tirar o backstop do servidor.
+- **0.6.31 — O admin não tem como saber que um atleta é menor.** *(Experiência do
+  Admin, 28/09/2026.)* Ele conversa com os atletas por WhatsApp direto do painel e hoje
+  trataria um menor exatamente como um adulto. **Não** é para expor CPF nem nome do
+  responsável na tela — seria andar para trás na minimização que acabou de ser
+  acertada. O que resolve é um **sinal** derivado da data de nascimento (um selo
+  `🔞 menor` no card), sem trazer nenhum campo do responsável. Ninguém está sendo
+  prejudicado hoje; é preparação para quando houver menores de verdade.
+- **0.6.32 — O carimbo do responsável prova que alguém digitou, não que consentiu.**
+  *(Jurídico, 28/09/2026 — decisão de política do Juliano, não condição técnica.)*
+  A tela **já faz a parte difícil**: quando é menor, o texto do aceite muda para a
+  primeira pessoa do responsável (*"Na condição de responsável legal, consinto…"*).
+  Mas isso é carimbado em `cpf_consent_em` / `_versao` / `_ip` — campos cujo nome diz
+  que são o consentimento **do atleta**. O registro contradiz a tela. A versão barata é
+  gravar `responsavel_consent_em` + versão no mesmo clique: não é tela nova nem recurso
+  novo, é **registrar o que já acontece**. O conserto de verdade — confirmar com o
+  responsável pelo canal **dele**, o WhatsApp que o app já usa — é decisão maior.
 - **0.10.14 — `circuitos` tem RLS `USING (true)` e `pix_chave` legível pelo
   `anon`.** Pré-existente, não desta mudança. *(Segurança)*
 - **0.10.25 — A `RegulamentoView` vira porta de entrada e não está pronta pra

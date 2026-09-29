@@ -300,21 +300,32 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
   igual(soHash.status, 400, "e o inverso também: CPF sem nome não basta");
 
   // ── A RESSALVA DELIBERADA, fixada em asserção a pedido do Guardião Jurídico ──
-  // Documento com `data_nascimento` NULA passa. É intencional, não esquecimento, e
-  // o motivo é da TELA: o `ParticiparFlow` tem duas fases e só coleta a data se o
-  // servidor pedir CPF. Quem já tem documento nunca chega a essa fase — então não
-  // existe passo onde ele possa informar a data. Recusar ali produziria um 400 que
-  // o atleta não tem como resolver sozinho: beco sem saída, não incômodo.
-  // A única origem de documento sem data é o `INSCREVER`, que não tem guarda de
-  // menor nenhuma (ROADMAP 0.6.24) — e para o menor que passou por lá a violação
-  // já aconteceu na porta da frente; fechar aqui não o protege, só o impede de
-  // entrar no 2º circuito.
-  // QUANDO O 0.6.24 FECHAR, esta asserção fica vermelha de propósito: é o sinal de
-  // que a ressalva morreu. Não "conserte" — apague, e troque pela recusa.
+  // A RESSALVA MORREU EM 28/09/2026, E ESTA ASSERÇÃO É O RECIBO DISSO.
+  // Até 27/09 este bloco exigia 200: documento com `data_nascimento` nula PASSAVA,
+  // deliberadamente, porque a única origem de documento sem data era o `INSCREVER`
+  // — que não tinha guarda de menor nenhuma. Recusar aqui trancaria adulto de
+  // cadastro antigo por um defeito de OUTRA porta, e para o menor que passou por lá
+  // a violação já tinha acontecido na porta da frente.
+  // O comentário de então terminava assim, e ficou valendo ao pé da letra:
+  //   "QUANDO O 0.6.24 FECHAR, esta asserção fica vermelha de propósito: é o sinal
+  //    de que a ressalva morreu. Não 'conserte' — apague, e troque pela recusa."
+  // O 0.6.24 fechou no MESMO commit que criou esta linha. Ela ficou vermelha, e é
+  // a troca pela recusa. Hoje os dois únicos criadores de `atleta_documento` exigem
+  // a data, então documento sem data não pode mais nascer: o que sobrava era código
+  // morto que falhava ABERTO — o pior tipo, porque ninguém o exercita.
   const { motor: m3 } = await comDocumentoSemData();
   const semData = await m3.chamar(pedido());
-  igual(semData.status, 200,
-    "documento com data de nascimento NULA passa — deliberado, ver ROADMAP 0.6.24");
+  igual(semData.status, 409,
+    "documento com data de nascimento NULA agora RECUSA — a ressalva do 0.6.24 morreu");
+  igual(semData.corpo?.erro, "cadastro_sem_data_nascimento",
+    "e pelo motivo certo, não por um efeito colateral de outra guarda");
+  // A recusa tem de NOMEAR O REMÉDIO: esta tela não tem campo para corrigir a data,
+  // então um 409 seco deixaria o atleta preso (condição do Guardião Jurídico).
+  const fonteApp = await import("node:fs/promises").then(f => f.readFile("src/App.jsx", "utf-8"));
+  const linhaTraducao = fonteApp.split("\n").find(l => l.includes('includes("cadastro_sem_data_nascimento")'));
+  ok(!!linhaTraducao, "o app traduz o código novo — sem isso ele cai no genérico 'tente de novo', que aqui é mentira");
+  ok(/Fale com o organizador/.test(linhaTraducao || ""),
+    "e a frase manda falar com o organizador, que é o único que consegue resolver");
 }
 
 secao("E a tela do atleta oferece o regulamento antes do PIN");

@@ -405,17 +405,33 @@ Deno.serve(async (req) => {
         // Atleta que JÁ tem documento não passa pelo backfill — e por isso a idade
         // dele nunca era conferida aqui (2º buraco provado pelo Guardião Jurídico).
         // Lê do arquivo: se for menor, o responsável tem de JÁ estar registrado.
+        // A RESSALVA MORREU EM 28/09/2026, e com ela o `!== null` que estava aqui.
+        // Até ontem esta linha era `idadeArquivo !== null && idadeArquivo < 18`, e o
+        // comentário abaixo dela explicava por quê: documento sem data podia existir,
+        // porque o `INSCREVER` não tinha guarda de menor nenhuma, e recusar aqui
+        // trancaria adulto de cadastro antigo por um defeito de OUTRA porta. O
+        // comentário terminava com "quando o `INSCREVER` exigir a data, esta ressalva
+        // morre". O `INSCREVER` passou a exigir a data no MESMO commit, e o texto
+        // ficou para trás — dois guardiões (Jurídico e Segurança) pegaram.
+        //
+        // Hoje os DOIS únicos criadores de `atleta_documento` (`athlete-action` e esta
+        // função) exigem a data, e a tabela tem 0 linhas. Então documento sem data não
+        // pode mais ser criado, e a ressalva passou a proteger um estado inalcançável
+        // — código morto que falha ABERTO, que é o pior tipo, porque ninguém o
+        // exercita e ninguém percebe quando ele volta a ser alcançável.
+        //
+        // Fail-closed, como as outras três pontas: idade desconhecida RECUSA. E como
+        // esta tela não tem campo para corrigir a data, a recusa tem de NOMEAR O
+        // REMÉDIO — senão é beco sem saída (condição do Guardião Jurídico).
         const idadeArquivo = idadeDeISO(doc.data_nascimento);
-        if (idadeArquivo !== null && idadeArquivo < 18) {
+        if (idadeArquivo === null) {
+          return jsonResponse({ sucesso: false, erro: "cadastro_sem_data_nascimento" }, 409);
+        }
+        if (idadeArquivo < 18) {
           if (!String(doc.responsavel_nome ?? "").trim() || !String(doc.responsavel_cpf_hash ?? "").trim()) {
             return jsonResponse({ sucesso: false, erro: "responsavel_obrigatorio" }, 400);
           }
         }
-        // `data_nascimento` nula no arquivo = idade DESCONHECIDA, e aqui isto passa.
-        // É deliberado e está registrado no ROADMAP: a única origem de documento sem
-        // data é o `INSCREVER`, que não tem guarda de menor nenhuma (item próprio).
-        // Recusar aqui trancaria adulto de cadastro antigo por um defeito de outra
-        // porta. Quando o `INSCREVER` exigir a data, esta ressalva morre.
       }
 
       // 5) Cria o vínculo no circuito (pendente de inclusão pelo admin). NUNCA toca no rating nacional.

@@ -1669,9 +1669,14 @@ function janelaRenovacao(dataInicioISO) {
     aberta: agora >= abre && agora < inicio,  // dentro dos 7 dias de prioridade
     encerrada: agora >= inicio,               // só aqui as vagas abrem para a fila
     diasAteFechar: (inicio - agora) / DIA,    // quanto falta para o prazo
+    // Os dois textos saem de `toLocaleDateString`, que lê o Date no fuso LOCAL —
+    // o mesmo em que ele foi construído. NÃO volte a derivar isto de
+    // `toISOString()`: `inicio` é meia-noite local, e a conversão para UTC faz a
+    // data sair um dia ANTES em qualquer fuso a leste de Greenwich (em
+    // Asia/Tokyo, um início em 01/11 virava "2026-10-31"). As fronteiras da
+    // janela continuavam certas; só a data que o atleta LÊ é que apodrecia.
     fechaTxt: inicio.toLocaleDateString("pt-BR"),
     abreTxt: abre.toLocaleDateString("pt-BR"),
-    fechaISO: inicio.toISOString().slice(0, 10),
   };
 }
 
@@ -1885,7 +1890,8 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
     if (s.includes("aceite_regulamento_obrigatorio") || s.includes("versao_regulamento_obrigatoria")) return "Confirme que leu e aceita o regulamento deste circuito.";
     if (s.includes("versao_regulamento_divergente")) return "O regulamento deste circuito mudou enquanto você lia. Volte e abra de novo para ver a versão em vigor.";
     if (s.includes("versao_regulamento_indisponivel")) return "Este circuito ainda não tem o regulamento definido. Fale com o organizador.";
-    if (s.includes("responsavel_obrigatorio")) return "Para menor de 18 anos, o nome e o CPF do responsável legal são obrigatórios.";
+    if (s.includes("responsavel_obrigatorio")) return "Para menor de 18 anos, a lei exige o consentimento de um responsável legal. Preencha o nome e o CPF do responsável — se o seu cadastro é antigo e não tem esses dados, fale com o organizador.";
+    if (s.includes("cadastro_sem_data_nascimento")) return "Seu cadastro não tem a data de nascimento, e ela é obrigatória para entrar num circuito. Fale com o organizador para completar o cadastro.";
     if (s.includes("circuito")) return "Circuito indisponível.";
     return "Não foi possível concluir. Tente de novo.";
   }
@@ -2531,7 +2537,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
         )}
 
         {erroSubmit && (
-          <div style={{fontSize:12, color:"#f8c4b4", background:"rgba(220,90,48,0.12)", border:"1px solid rgba(220,90,48,0.35)", borderRadius:8, padding:"9px 11px", marginBottom:10, textAlign:"center", lineHeight:1.5}}>
+          <div style={{fontSize:12, color:"#f8c4b4", background:"rgba(220,90,48,0.12)", border:"1px solid rgba(220,90,48,0.35)", borderRadius:8, padding:"9px 11px", marginBottom:10, lineHeight:1.5}}>
             {erroSubmit}
           </div>
         )}
@@ -3866,7 +3872,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
       // prioridade ABRE em início−7 e vai ATÉ o início (Cap. 13). Antes esta linha
       // mandava o atleta confirmar até o dia em que a prioridade dele começava.
       const janRen = janelaRenovacao(state.proximaDataInicio);
-      const prazoTxt = janRen ? ` — a sua prioridade vale até *${fmtDate(janRen.fechaISO)}*` : "";
+      const prazoTxt = janRen ? ` — ela vale até *${janRen.fechaTxt}*` : "";
       const fmtR = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
       const cheioC = state.proximaValorCheio, finalC = state.proximaValorDesconto;
       const pctOff = (cheioC && finalC != null && cheioC > 0) ? Math.round((1 - finalC/cheioC)*100) : 0;
@@ -3880,7 +3886,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
       const elegiveis = state.athletes.filter(a => a.status === "ativo" && !a.pagamentoProximaConfirmado);
       return elegiveis.map(a => ({
         atleta: a,
-        msg: `🏓 *${state.proximaNome || nomeCircuito} — Inscrições abertas!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! A *${rotulo}* está chegando e as inscrições já abriram. 🎉\n\nComo você já é do circuito, tem *prioridade de renovação*${prazoTxt}.${valorLinha}${pixLinha}\n\nGaranta sua vaga: abra o app e toque em *Quero renovar*.\n\n*Vem pro Clube!* 🏓`,
+        msg: `🏓 *${state.proximaNome || nomeCircuito} — Inscrições abertas!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! A *${rotulo}* está chegando e as inscrições já abriram. 🎉\n\nComo você já é do circuito, tem *prioridade de renovação*${prazoTxt}.${valorLinha}${pixLinha}\n\nSinalize no app, em *Quero renovar* — e combine o pagamento com o admin, que é o que garante a vaga.\n\n*Vem pro Clube!* 🏓`,
       }));
     }
 
@@ -3896,7 +3902,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
       const diasAteEnc = janLem.diasAteFechar;
       if (diasAteEnc > 3 || diasAteEnc < 0) return [];
       const rotulo = state.proximaRotulo ? `Temporada ${state.proximaRotulo}` : "próxima temporada";
-      const prazoStr = fmtDate(janLem.fechaISO);
+      const prazoStr = janLem.fechaTxt;
       const fmtR = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
       const cheioC = state.proximaValorCheio, finalC = state.proximaValorDesconto;
       const pctOff = (cheioC && finalC != null && cheioC > 0) ? Math.round((1 - finalC/cheioC)*100) : 0;
@@ -3910,7 +3916,7 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
       const naoRenov = state.athletes.filter(a => a.status === "ativo" && !a.querRenovar && !a.pagamentoProximaConfirmado);
       return naoRenov.map(a => ({
         atleta: a,
-        msg: `⏰ *${state.proximaNome || nomeCircuito} — Renovação terminando*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! O prazo de prioridade pra renovar sua vaga na *${rotulo}* vai até *${prazoStr}*.\n\nDepois dele, as vagas não confirmadas abrem pra fila de espera — não quero te deixar de fora. 🏓${valorLinha}${pixLinha}\n\nPra garantir, é rapidinho: abre o app e toca em *Quero renovar*.\n\n*Vem pro Clube!* 🏓`,
+        msg: `⏰ *${state.proximaNome || nomeCircuito} — Renovação terminando*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! O prazo de prioridade pra renovar sua vaga na *${rotulo}* vai até *${prazoStr}*.\n\nDepois dele, as vagas não confirmadas abrem pra fila de espera — não quero te deixar de fora. 🏓${valorLinha}${pixLinha}\n\nAbre o app e toca em *Quero renovar* — depois é só combinar o pagamento com o admin, que é o que garante a vaga.\n\n*Vem pro Clube!* 🏓`,
       }));
     }
 
@@ -5115,7 +5121,7 @@ const MSGS_ATLETA = new Set([
   // de ler inteiras, porque cada uma diz o que ele precisa fazer.
   "Informe a data de nascimento para concluir a inscrição.",
   "Confira a data de nascimento: o ano informado não parece válido.",
-  "Para menor de 18 anos, o nome e o CPF do responsável legal são obrigatórios.",
+  "Para menor de 18 anos, a lei exige o consentimento de um responsável legal. Volte ao passo 1 e preencha o nome e o CPF do responsável.",
   "Partida não encontrada.",
   "Esta partida já foi encerrada.",
   "Você não participa desta partida.",
@@ -8719,8 +8725,10 @@ function NovaTemporadaPanel({ state, dispatch }) {
   );
 }
 
-// Painel de renovação do admin (fase de inscrições): quem sinalizou, prazo dos
-// 7 dias e o botão de liberar as vagas dos não-renovantes (só depois do prazo).
+// Painel de renovação do admin (fase de inscrições): quem sinalizou, a JANELA de
+// prioridade (de início−7 até o início) e o botão de liberar as vagas dos
+// não-renovantes — que só faz sentido DEPOIS que a janela fecha, e que hoje está
+// desabilitado porque a ação não existe no servidor (ROADMAP 0.6.11).
 function RenovacaoAdminPanel({ state, dispatch }) {
   // Na pré-abertura (temporada atual ainda rolando), o pagamento relevante é o da
   // PRÓXIMA; depois da virada (fase inscrições) é o pagamento normal da temporada.
@@ -8734,7 +8742,6 @@ function RenovacaoAdminPanel({ state, dispatch }) {
   // "a janela FECHOU" (início), e não "a janela abriu" (início−7), que era o
   // significado invertido que fazia o atleta perder os 7 dias de prioridade.
   const jan = janelaRenovacao(dataIni);
-  const prazoTxt = jan ? jan.fechaTxt : null;
   const prazoPassou = !!jan && jan.encerrada;
   return (
     <Card style={{marginTop:8,border:"1px solid rgba(167,139,250,0.28)"}}>
@@ -8744,7 +8751,12 @@ function RenovacaoAdminPanel({ state, dispatch }) {
       ) : (
         <>
           <div style={{fontSize:11,color:"#9db3a8",marginBottom:8,lineHeight:1.5}}>
-            Prazo de renovação prioritária: <b style={{color:"#F0EAE0"}}>{prazoTxt}</b> (7 dias antes do início). {prazoPassou ? "Prazo encerrado." : "Janela aberta."}
+            Renovação prioritária: de <b style={{color:"#F0EAE0"}}>{jan.abreTxt}</b> a <b style={{color:"#F0EAE0"}}>{jan.fechaTxt}</b> — os {DIAS_PRIORIDADE_RENOVACAO} dias antes do início da temporada.
+            {prazoPassou
+              ? " Prazo encerrado: as vagas não confirmadas abrem para a fila de espera."
+              : jan.aberta
+              ? ` Janela aberta — ${Math.ceil(jan.diasAteFechar)} dia(s) até o fim.`
+              : ` Ainda não abriu — começa em ${jan.abreTxt}.`}
           </div>
           <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:12,marginBottom:10}}>
             <span style={{color:"#6a9d7a"}}>✅ Renovaram: <b>{renovaram.length}</b></span>
@@ -8756,22 +8768,26 @@ function RenovacaoAdminPanel({ state, dispatch }) {
               Sem resposta: {naoRenov.map(a=>a.apelido||a.name).join(", ")}
             </div>
           )}
-          {/* EM REVISÃO (27/09/2026, ROADMAP 0.6.11 e 0.6.15). Este botão nunca
-              funcionou: o servidor não conhece a ação LIBERAR_NAO_RENOVANTES e
-              responde "Ação desconhecida", com o nome da ação em maiúsculas na
-              barra de aviso — e o confirm prometia "eles vão para o backlog
-              (mantêm o acesso)", que não acontecia. Ficou desabilitado em vez de
-              continuar prometendo: a revisão de 27/09 descobriu que a regra do
-              prazo está INVERTIDA em relação ao Cap. 13 (a prioridade vai de
-              início−7 ATÉ início; as vagas abrem depois disso, não antes), então a
-              ação não pode voltar antes de a regra ser decidida. Enquanto isso, a
-              vaga de quem não renovou é resolvida na virada de temporada, pelo
-              pagamento — que é o que o Cap. 13 manda. */}
+          {/* DESABILITADO (ROADMAP 0.6.11). Este botão nunca funcionou: o servidor
+              não conhece a ação LIBERAR_NAO_RENOVANTES e responde "Ação
+              desconhecida", com o nome da ação em maiúsculas na barra de aviso —
+              e o confirm prometia "eles vão para o backlog (mantêm o acesso)",
+              que não acontecia.
+              O motivo mudou em 28/09/2026, e o texto de apoio abaixo mudou junto:
+              até ontem o impedimento era a REGRA (o prazo estava invertido em
+              relação ao Cap. 13). A regra foi corrigida nesta fatia — a janela vai
+              de início−7 ATÉ o início, e as vagas abrem depois disso. O que falta
+              agora é só a AÇÃO NO SERVIDOR. Quem for reativar: a condição de
+              habilitar é `prazoPassou` E `state.proximaAberta` — este painel também
+              renderiza com `phase === "inscricoes"` e `proximaAberta === false`,
+              estado em que o motor recusava com 409 e o botão ficaria aceso à toa.
+              Enquanto isso, a vaga de quem não renovou é resolvida na virada de
+              temporada, pelo pagamento — que é o que o Cap. 13 manda. */}
           <Btn full color="#5E7569" disabled>
             Liberar vagas dos não-renovantes
           </Btn>
           <div style={{fontSize:10,color:"#9db3a8",marginTop:6,textAlign:"center",lineHeight:1.5}}>
-            Em revisão: o prazo de renovação está sendo conferido contra o regulamento.
+            Esta ação ainda não existe no servidor (ROADMAP 0.6.11).
             A vaga de quem não renovou continua sendo resolvida na virada de temporada.
           </div>
         </>

@@ -54,10 +54,19 @@ async function cenario(campos = {}) {
       circuito(CIRC, { slug: "sp", sistema: "B", regulamento_versao: VERSAO_B,
                        inscricoes_abertas: true, ativo: true, ...campos }),
     ],
-    atletas: [atleta(ATL, { nome: "Atleta do BH", telefone: TEL, pin_hash: hash, rating: 720 })],
+    // O atleta do BH JÁ TEM uma versão aceita — nas duas pontas, como em produção:
+    // `circuito_atletas` (a participação dele no BH) e `atletas` (o espelho legado).
+    // Sem isso o cenário não espelhava a produção, e a asserção que prova que o
+    // aceite no 2º circuito NÃO mexe no registro do BH comparava contra `undefined`
+    // — passando, ou falhando, pelo motivo errado. Mesma armadilha do fixture do
+    // `inscricoes_abertas` logo acima, e pela mesma razão: fixture que não espelha
+    // a produção mede outra coisa.
+    atletas: [atleta(ATL, { nome: "Atleta do BH", telefone: TEL, pin_hash: hash, rating: 720,
+                            versao_regulamento: "v03-12", aceite_regulamento: true })],
     circuito_atletas: [{
       id: "ca-bh", circuito_id: BH, atleta_id: ATL,
       status: "ativo", pendente_circuito: false, saldo_temp: 0, vitorias: 0, derrotas: 0,
+      versao_regulamento: "v03-12", aceite_regulamento: true,
     }],
     funcoes: FUNCOES_DO_BANCO,
     outras: { atleta_documento: [] },
@@ -134,6 +143,28 @@ secao("Com o aceite certo, entra — reusando o cadastro, sem tocar no rating");
   igual(banco.acha("atletas", (a) => a.id === ATL).rating, 720, "e o rating do BH fica intacto");
   igual(banco.linhas("circuito_atletas").filter(l => l.circuito_id === BH).length, 1,
     "a participação no BH continua lá");
+
+  // ── A VERSÃO ACEITA É POR CIRCUITO, e é isso que a tela tem de mostrar ────
+  // Pergunta do Juliano, 29/09/2026: "quando o atleta estiver em mais de um
+  // circuito, vai precisar mostrar em outro local, dentro do circuito que ele
+  // acessou naquele momento, certo?".
+  //
+  // Certo — e o mecanismo já existia, mas NÃO estava protegido. O risco concreto:
+  // se o aceite no circuito NOVO escrevesse por cima do registro do BH, o atleta
+  // pararia de ser chamado para re-aceitar no BH (ou seria chamado à toa), e o
+  // recibo de um circuito passaria a falar pelo outro. As duas pontas são
+  // independentes de propósito.
+  const vincBH = banco.acha("circuito_atletas", (l) => l.circuito_id === BH && l.atleta_id === ATL);
+  igual(vincBH.versao_regulamento, "v03-12",
+    "o aceite no circuito de PONTOS não mexe na versão registrada no BH — cada circuito guarda a sua");
+  ok(vinc.versao_regulamento !== vincBH.versao_regulamento,
+    "e o mesmo atleta fica com versões DIFERENTES nos dois circuitos, que é o estado normal");
+
+  // O caminho legado do BH também não é tocado: `atletas.versao_regulamento` é o
+  // espelho do BH, e escrever nele a partir de outro circuito seria vazamento
+  // cross-tenant — o defeito que a blindagem do `writeAtleta` existe para impedir.
+  igual(banco.acha("atletas", (a) => a.id === ATL).versao_regulamento, "v03-12",
+    "nem o espelho legado em `atletas`, que é do BH");
 }
 {
   const { motor } = await cenario();
@@ -344,6 +375,41 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
     ok(!/idadeArquivo !== null/.test(semComentario),
       "e a reescrita que transforma idade desconhecida em liberação silenciosa não voltou — a mesma que o athlete-action já barra");
   }
+}
+
+secao("A tela mostra a versão DO CIRCUITO ABERTO, não uma global");
+{
+  // Pergunta do Juliano, 29/09/2026. A resposta é sim, e o mecanismo já existia —
+  // mas não tinha portão, e o defeito possível é silencioso: o atleta veria a
+  // versão de um circuito enquanto lê o regulamento de outro, ou seria chamado a
+  // re-aceitar algo que já aceitou.
+  //
+  // COMO O APP GARANTE ISSO, em três elos que precisam continuar de pé:
+  //  (1) a leitura do roster é FILTRADA por circuito — `circuito_atletas` com
+  //      `circuito_id=eq.${CIRCUITO_ATIVO}` — e a versão vem da linha SAZONAL,
+  //      não da tabela global `atletas`;
+  //  (2) `currentAthlete` é restaurado DE DENTRO desse roster já filtrado, então
+  //      trocar de circuito troca o objeto do atleta inteiro, com a versão dele
+  //      naquele circuito;
+  //  (3) o card de re-aceite compara a versão do CIRCUITO com a versão daquele
+  //      objeto — as duas pontas do mesmo circuito.
+  const fonteApp = await import("node:fs/promises").then(f => f.readFile("src/App.jsx", "utf-8"));
+
+  ok(/circuito_atletas\?circuito_id=eq\.\$\{CIRCUITO_ATIVO\}/.test(fonteApp),
+    "(1) o roster é lido filtrado pelo circuito aberto");
+  ok(/select=[^`]*\bversao_regulamento\b/.test(fonteApp),
+    "e a versão aceita vem da linha SAZONAL, que é por circuito");
+  ok(/const atletaCompleto = athletesMapped\.find\(a => a\.id === sessAgora\.athleteId\);/.test(fonteApp),
+    "(2) o atleta logado é restaurado de dentro do roster já filtrado — trocar de circuito troca o objeto inteiro");
+  ok(/const versaoCircuito = String\(state\.regulamentoVersao \|\| ""\)\.trim\(\);/.test(fonteApp) &&
+     /const versaoAceita = String\(athlete\?\.versaoRegulamento \|\| ""\)\.trim\(\);/.test(fonteApp),
+    "(3) o card de re-aceite compara a versão do circuito com a do atleta NAQUELE circuito");
+
+  // ⚠️ O elo que quebraria sem ninguém ver: buscar o atleta por id na tabela
+  // GLOBAL em vez de no roster do circuito. Aí a versão viria do BH sempre, e o
+  // atleta de dois circuitos leria a versão errada no segundo.
+  ok(!/atletas\?id=eq\.\$\{[^}]*athleteId/.test(fonteApp),
+    "e o atleta logado NÃO é buscado na tabela global por id — seria a versão do BH em qualquer circuito");
 }
 
 secao("E a tela do atleta oferece o regulamento antes do PIN");

@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 836 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 855 asserções (29/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -167,6 +167,13 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | regulamento de RATING: some a frase do teto inteira | 1 vermelha |
 | regulamento de PONTOS: volta a prometer teto por circuito | 3 vermelhas |
 | regulamento: a cláusula da fila volta a dizer "até 20" | 1 vermelha |
+| **O mínimo de 8 nos dois sistemas — 29/09/2026 (6 sabotagens, 6 vermelhas)** | |
+| o motor deixa de exigir o mínimo de 8 no `INICIAR_ETAPA` | 10 vermelhas — **ficava VERDE**: a única asserção sobre o mínimo 8 era regex no TEXTO do regulamento, provando que o app PROMETE e não que ele CUMPRE |
+| o mínimo vira 4 | 10 vermelhas — idem |
+| a fronteira desliza: passa a exigir 9 | 6 vermelhas |
+| a recusa deixa de dizer o número prometido | 4 vermelhas |
+| a guarda migra para DEPOIS de o motor saber o sistema | 10 vermelhas — é a posição dela que a torna transversal aos dois sistemas |
+| `AVANCAR_RODADA` ganha guarda de 8 | 2 vermelhas — quebraria a promessa, nos dois regulamentos, de que a temporada CONTINUA se o número cair durante ela |
 | **O 2º circuito — 28/09/2026 (14 sabotagens, 14 vermelhas)** | |
 | motor: o teto volta a ser ignorado no `DEFINIR_CONFIG_CIRCUITO` | 1 vermelha |
 | motor: o mínimo de 8 cai (um teto de 3 passaria) | 1 vermelha |

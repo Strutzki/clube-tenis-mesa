@@ -152,9 +152,26 @@ com um deles sabotado. As duas passaram a ser ancoradas na **frase inteira do se
 próprio texto**. É a quarta vez nesta sessão que uma asserção minha passa pelo motivo
 errado, e a segunda por regex escrita a partir do texto vizinho.
 
-**Bateria: 776 → 836 asserções, 0 falhas, saída 0.** 34 mutações no total (14 da
-fatia, 12 das condições, 8 da inversão do teto), **34 vermelhas** — cinco delas só
-ficaram vermelhas **depois** de o instrumento ou a asserção serem consertados.
+**6. E uma pergunta do Juliano abriu o maior buraco do dia.** Ele perguntou se *"o
+mínimo de 8 está garantido nos dois modelos de circuito"*. Fui medir, e a resposta
+era **não** — não no sentido que importa. O motor **cumpria**; o que não existia era
+**portão**. A única asserção sobre o mínimo 8 era `/no mínimo 8 atletas/` — uma regex
+no **texto** do regulamento, que prova que o app **promete**, não que ele **cumpre**.
+Trocar `ativos.length < 8` por `< 2` ou `< 4` deixava a bateria **verde**. É a
+armadilha que o `CLAUDE.md` descreve com todas as letras, guardando uma promessa que
+está nos **dois** regulamentos.
+Fechado com **19 asserções que rodam o motor** em circuito A e em circuito B: com 7
+ativos a etapa é recusada e **nada** é escrito (nem chave, nem partida); com 8 — a
+fronteira exata — ela começa. Mais a asserção de que a guarda fica **antes** de o
+motor perguntar qual é o sistema, que é o que a torna transversal; e a que impede
+`AVANCAR_RODADA` de ganhar a mesma guarda, porque os dois regulamentos prometem que
+a temporada **continua** se o número cair no meio dela. **6 mutações, 6 vermelhas.**
+
+**Bateria: 776 → 855 asserções, 0 falhas, saída 0.** **40 mutações no total** (14 da
+fatia, 12 das condições, 8 da inversão do teto, 6 do mínimo de 8), **40 vermelhas** —
+e **sete** delas só ficaram vermelhas **depois** de o instrumento ou a asserção serem
+consertados. Esse número é a medida honesta do dia: a bateria não estava protegendo
+sete regras que ela parecia proteger.
 
 ---
 

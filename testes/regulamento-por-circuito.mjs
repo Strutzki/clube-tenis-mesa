@@ -322,6 +322,83 @@ secao("Teto do circuito: 20 para todos, e o regulamento diz isso");
     "e a redação antiga do texto de pontos também não volta");
 }
 
+secao("O mínimo de 8 para começar: os DOIS regulamentos prometem, o motor cumpre nos DOIS sistemas");
+{
+  // Pergunta do Juliano, 29/09/2026: "o mínimo de 8 está garantido nos dois modelos
+  // de circuito?". Fui medir antes de responder, e a resposta era NÃO — não no
+  // sentido que importa. O motor cumpria; o que não existia era **portão**.
+  //
+  // A única asserção sobre o mínimo 8 era `/no mínimo 8 atletas/.test(fonte)` — uma
+  // regex no TEXTO do regulamento. Ela prova que o app PROMETE, não que ele CUMPRE.
+  // Medido por mutação: trocar `ativos.length < 8` por `< 2` ou `< 4` no
+  // `INICIAR_ETAPA` deixava a bateria **VERDE**. É a armadilha que o CLAUDE.md
+  // descreve com todas as letras — "regex passa verde com a regra quebrada" — e
+  // aqui ela guardava uma promessa que está nos DOIS regulamentos.
+  //
+  // Onde a regra vive, e por que ela vale para os dois sistemas: a guarda está no
+  // `INICIAR_ETAPA`, **antes** de o motor chamar `getSistema`. Não é coincidência
+  // feliz; é o que torna a regra transversal. Estas asserções fixam isso rodando o
+  // motor de verdade em circuito A e em circuito B.
+  const AT = (n) => `aaaa000${n}-0000-4000-8000-0000000001${n}${n}`;
+  const CIRC_A = "44444444-4444-4444-4444-444444444444";
+  const CIRC_B = "55555555-5555-5555-5555-555555555555";
+
+  async function cenario(circuitoId, sistema, quantos) {
+    const atletas = [], membros = [];
+    for (let n = 0; n < quantos; n++) {
+      atletas.push(atleta(AT(n), { nome: `Atleta ${n}`, rating: 700 + n * 10 }));
+      membros.push({ id: `m8-${n}`, circuito_id: circuitoId, atleta_id: AT(n), status: "ativo", pendente_circuito: false, saldo_temp: 0, vitorias: 0, derrotas: 0 });
+    }
+    const { motor, banco } = await montarMotor({
+      circuitos: [circuito(BH), circuito(circuitoId, { slug: sistema === "B" ? "pontos" : "rating", sistema, pareamento: sistema === "B" ? "grupos" : null, fase: "inscricoes" })],
+      atletas, circuito_atletas: membros, chaves: [],
+      funcoes: { arquivar_partidas_temporada_circuito: () => null },
+    });
+    const r = await comoAdmin(motor, "INICIAR_ETAPA", { circuitoId });
+    return { r, banco };
+  }
+
+  for (const [sistema, circuitoId, rotulo] of [["A", CIRC_A, "rating"], ["B", CIRC_B, "pontos"]]) {
+    // 7 ativos: RECUSA, e nada é escrito.
+    const sete = await cenario(circuitoId, sistema, 7);
+    igual(sete.r.status, 400, `Sistema ${sistema} (${rotulo}): com 7 ativos a etapa NÃO começa`);
+    ok(/Mínimo de 8 atletas ativos/.test(String(sete.r.corpo?.erro || "")),
+      `Sistema ${sistema}: e a recusa diz o número que o regulamento promete`);
+    ok(/atual: 7/.test(String(sete.r.corpo?.erro || "")),
+      `Sistema ${sistema}: e diz quantos há, para o admin saber quantos faltam`);
+    igual(sete.banco.linhas("partidas").length, 0,
+      `Sistema ${sistema}: e NENHUMA partida é criada — a recusa não deixa meio-estado`);
+    igual(sete.banco.linhas("chaves").length, 0,
+      `Sistema ${sistema}: nem chave`);
+
+    // 8 ativos: a fronteira exata. Começa.
+    const oito = await cenario(circuitoId, sistema, 8);
+    igual(oito.r.status, 200, `Sistema ${sistema}: com 8 ativos — o número exato do Cap. 13 — a etapa COMEÇA`);
+    igual(oito.r.corpo?.dados?.atletas, 8, `Sistema ${sistema}: com os 8`);
+    ok(oito.banco.linhas("partidas").length > 0, `Sistema ${sistema}: e as partidas são geradas`);
+  }
+
+  // A guarda tem de ficar ANTES de o motor saber o sistema — é o que a torna
+  // transversal. Se ela migrar para dentro de um ramo por sistema, um dos dois
+  // circuitos fica sem ela, e nenhum teste de comportamento acusaria enquanto o
+  // outro ramo continuasse certo.
+  const motorFonte = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "admin-action", "index.ts"), "utf8");
+  const iniciar = motorFonte.slice(motorFonte.indexOf('case "INICIAR_ETAPA"'), motorFonte.indexOf('case "', motorFonte.indexOf('case "INICIAR_ETAPA"') + 10));
+  ok(iniciar.indexOf("ativos.length < 8") < iniciar.indexOf("getSistema"),
+    "a guarda do mínimo 8 roda ANTES de o motor perguntar qual é o sistema — por isso vale para os dois");
+
+  // E a OUTRA metade da regra, que é igual de importante: os dois regulamentos
+  // dizem que, se o número cair abaixo de 8 DURANTE a temporada, ela CONTINUA.
+  // Então o `AVANCAR_RODADA` NÃO pode ganhar uma guarda de 8 — e alguém "consertando"
+  // por simetria quebraria a promessa. O piso lá é 2, que é o mínimo para existir
+  // uma partida.
+  const avancar = motorFonte.slice(motorFonte.indexOf('case "AVANCAR_RODADA"'), motorFonte.indexOf('case "', motorFonte.indexOf('case "AVANCAR_RODADA"') + 10));
+  ok(!/ativos\.length < 8/.test(avancar),
+    "avançar rodada NÃO exige 8 — os dois regulamentos prometem que a temporada continua se o número cair");
+  ok(/ativos\.length < 2/.test(avancar),
+    "o piso de avançar é 2, que é o mínimo para existir uma partida");
+}
+
 secao("A frase de preço não é garantia absoluta");
 {
   // O Guardião Jurídico: quem escreve o regulamento é a plataforma, mas quem
@@ -1975,7 +2052,8 @@ secao("O regulamento de PONTOS diz a verdade sobre o que o motor faz");
 
   // ── os três silêncios: regras que o motor aplica e o texto calava ─────────
   ok(/O circuito tem um teto de 20 atletas por temporada[\s\S]{0,80}regra da plataforma/.test(fonte),
-    "o teto de atletas está escrito no regulamento de pontos — e como 20 fixo, que é o que o motor faz");  ok(/fila de espera[\s\S]{0,200}aprovação não é o mesmo que vaga garantida/.test(fonte),
+    "o teto de atletas está escrito no regulamento de pontos — e como 20 fixo, que é o que o motor faz");
+  ok(/fila de espera[\s\S]{0,200}aprovação não é o mesmo que vaga garantida/.test(fonte),
     "e a fila de espera, com o aviso de que aprovação não é vaga");
   ok(/Não há entrada nas duas últimas rodadas/.test(fonte),
     "o corte de entrada nas duas últimas rodadas está escrito");

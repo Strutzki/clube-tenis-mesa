@@ -805,6 +805,15 @@ secao("O app manda o PIN do super-admin ao porteiro — a linha de que tudo depe
   // ignorar o 2º deixa a tela mentindo o método de pareamento, com tudo verde.
   ok(/setSistemaAtivo\(config\?\.\[0\]\?\.sistema \|\| "A", config\?\.\[0\]\?\.pareamento\)/.test(fonteApp),
     "o `setSistemaAtivo` recebe o pareamento junto com o sistema — sem isso a tela do organizador anuncia o método errado");
+  // ⚠️ A asserção acima é sobre o PONTO DE CHAMADA, e o Guardião de Confiabilidade
+  // mostrou que ela fecha só METADE: sabotar o CORPO da função, que passa a
+  // ignorar o argumento que recebeu, continua verde. "Regex protege o texto que
+  // ela casa, nada mais." Esta segunda olha o corpo.
+  const iSet = fonteApp.indexOf("function setSistemaAtivo(");
+  ok(iSet > 0, "o corpo do `setSistemaAtivo` foi localizado");
+  const corpoSet = fonteApp.slice(iSet, fonteApp.indexOf("\n}", iSet));
+  ok(/PAREAMENTO_ATIVO\s*=\s*\(pareamento === "grupos"\)/.test(corpoSet),
+    "e o CORPO dele usa mesmo o argumento `pareamento` — ignorá-lo faria a tela anunciar o método errado com a bateria verde");
 }
 
 process.exit(placar("Participar de outro circuito"));

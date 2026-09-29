@@ -33,7 +33,20 @@ function comparar(campo, op, valor) {
     case "lte": return a <= b;
     case "gt": return a > b;
     case "lt": return a < b;
-    case "is": return b === "null" ? (campo === null || campo === undefined) : campo === (b === "true");
+    // ⚠️ `.is(coluna, null)` NUNCA CASAVA (achado em 29/09/2026, ao escrever o
+    // teste do `SOLICITAR_EXCLUSAO`). `b` já vem como o `null` de verdade, não a
+    // string "null", então a condição `b === "null"` era sempre falsa e o filtro
+    // caía no ramo booleano, comparando o campo com `false`.
+    // Efeito: qualquer `.is(x, null)` e qualquer `.not(x, "is", null)` devolviam a
+    // resposta errada. É a mesma família do NOT NULL: o instrumento discordando do
+    // banco em silêncio.
+    // O `undefined` conta como nulo de propósito — no Postgres, coluna sem valor
+    // É nula, e nos fixtures da bateria ela simplesmente não existe no objeto.
+    case "is":
+      if (valor === null || valor === undefined || b === "null") {
+        return campo === null || campo === undefined;
+      }
+      return campo === (b === "true");
     default: throw new Error(`banco-falso: filtro "${op}" ainda nao implementado`);
   }
 }
@@ -62,6 +75,17 @@ class Consulta {
   gt(coluna, valor) { this.filtros.push((l) => comparar(l[coluna], "gt", valor)); return this; }
   lt(coluna, valor) { this.filtros.push((l) => comparar(l[coluna], "lt", valor)); return this; }
   is(coluna, valor) { this.filtros.push((l) => comparar(l[coluna], "is", valor)); return this; }
+  // `.not(coluna, operador, valor)` — a negacao do PostgREST.
+  // ⚠️ NAO EXISTIA ate 29/09/2026, e a ausencia dele foi a PROVA de que o
+  // `CANCELAR_EXCLUSAO` nao era executado por teste nenhum: o Guardiao de
+  // Seguranca tentou ataca-lo e recebeu `.not is not a function` com a bateria
+  // 1320/0 verde. Uma acao nova de LGPD, numa onda sobre LGPD, sem um unico teste
+  // que a rodasse. Ele tambem e usado em dois pontos do `despachos-do-dia`, que
+  // pela mesma razao eram inalcancaveis pelo instrumento.
+  not(coluna, operador, valor) {
+    this.filtros.push((l) => !comparar(l[coluna], operador, valor));
+    return this;
+  }
   in(coluna, lista) {
     const conjunto = (lista || []).map(String);
     this.filtros.push((l) => conjunto.includes(String(l[coluna])));
@@ -231,11 +255,47 @@ class Consulta {
   executar() {
     this.banco.registro.push({ tabela: this.tabela, operacao: this.operacao });
 
-    // O Postgres recusa gravacao por NOT NULL, chave repetida, tipo errado.
-    // Sem poder simular isso, um teste nunca prova que o codigo TRATA o erro —
-    // so que ele funciona quando tudo da certo. `banco.recusar(...)` fecha essa
-    // lacuna: foi o que faltou quando o servidor respondia "sucesso" com a
-    // gravacao falhando (incidente das mensagens pendentes, 08/09/2026).
+    // ⚠️ NOT NULL — ESTA LACUNA JA CUSTOU UM NO-GO, em 29/09/2026.
+    //
+    // O comentario antigo daqui dizia "sem poder simular isso" e parava nisso. O
+    // Guardiao de Confiabilidade mostrou o preco: a `anonimizar-atleta` gravava
+    // `justificativa: null` numa coluna que a producao tem como NOT NULL. A
+    // bateria ficava 1320/0 VERDE, e havia ate uma assercao AFIRMANDO o valor
+    // proibido -- executando a funcao de verdade e certificando um estado que o
+    // banco nao pode guardar. Em producao a funcao quebraria DEPOIS de ja ter
+    // apagado as fotos, o CPF e as sessoes, respondendo "nada foi alterado", e a
+    // repeticao falharia sempre no mesmo ponto: o titular perderia o CPF e nao
+    // receberia a exclusao. 5 dos 15 atletas cairiam nisso.
+    //
+    // Agora o banco falso recusa `null` em coluna declarada NOT NULL, como o
+    // Postgres. A lista esta em `COLUNAS_NOT_NULL` (ferramentas.mjs) e cobre as
+    // colunas que o motor grava -- nao o esquema inteiro. QUAIS CAMINHOS FICARAM
+    // DE FORA, de propriedade: chave repetida (UNIQUE), tipo errado, CHECK e
+    // chave estrangeira continuam sem modelo. Enumerado aqui de proposito, pela
+    // regra de 28/09 -- conserto de instrumento e conserto de UM caminho, e
+    // declarar a classe resolvida e como esta lacuna nasceu.
+    //
+    // `banco.recusar(...)` continua existindo para o resto: ele injeta a recusa
+    // que o codigo TEM de tratar, e foi o que faltou quando o servidor respondia
+    // "sucesso" com a gravacao falhando (incidente das mensagens, 08/09/2026).
+    if (this.operacao === "insert" || this.operacao === "update" || this.operacao === "upsert") {
+      const obrigatorias = this.banco.naoNulas[this.tabela];
+      if (obrigatorias) {
+        for (const linha of (Array.isArray(this.dados) ? this.dados : [this.dados])) {
+          for (const col of obrigatorias) {
+            if (linha && Object.prototype.hasOwnProperty.call(linha, col) && linha[col] === null) {
+              return {
+                data: null,
+                error: {
+                  message: `null value in column "${col}" of relation "${this.tabela}" violates not-null constraint`,
+                  code: "23502",
+                },
+              };
+            }
+          }
+        }
+      }
+    }
     const recusa = this.banco.recusas.find((r) => r.tabela === this.tabela && r.operacao === this.operacao);
     if (recusa) {
       if (recusa.vezes !== undefined) {
@@ -333,11 +393,12 @@ class Consulta {
   }
 }
 
-export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {}, padroes = {}, arquivosIniciais = {}) {
+export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {}, padroes = {}, arquivosIniciais = {}, colunasNaoNulas = {}) {
   const banco = {
     relacoes,               // { "circuito_atletas.atletas": { coluna, chave } } — o padrao ja cobre o caso comum
     padroes,                // { tabela: { coluna: () => valor } } — o DEFAULT de coluna do Postgres
     recusas: [],            // gravacoes que o banco vai recusar de proposito (ver `recusar`)
+    naoNulas: colunasNaoNulas, // { tabela: [colunas NOT NULL] } — o Postgres recusa null nelas
     tabelas: clonar(tabelasIniciais),
     registro: [],           // toda operação feita, para os testes conferirem o que foi tocado
     funcoesChamadas: [],

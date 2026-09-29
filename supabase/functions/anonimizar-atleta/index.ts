@@ -14,6 +14,9 @@ const ADMIN_PIN = Deno.env.get("ADMIN_PIN")!;
 // Bucket PUBLICO das fotos de perfil. O mesmo nome esta no `App.jsx`
 // (`FOTOS_BUCKET`), onde o upload acontece.
 const FOTOS_BUCKET = "fotos-atletas";
+// Bucket PRIVADO dos comprovantes de W.O. (o atestado que acompanha a
+// justificativa). Privado nao e apagado -- ver o comentario do bloco de W.O.
+const COMPROVANTES_BUCKET = "comprovantes-wo";
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
@@ -109,7 +112,7 @@ Deno.serve(async (req) => {
     const doAtleta = (fotos ?? []).map((f: any) => f.name).filter((n: string) => n.startsWith(String(id) + "-"));
     if (doAtleta.length > 0) {
       const { error: eRm } = await supabase.storage.from(FOTOS_BUCKET).remove(doAtleta);
-      if (eRm) return jsonResponse({ sucesso: false, erro: "Não consegui apagar a foto. Nada foi alterado — tente de novo." }, 500);
+      if (eRm) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
     }
   }
 
@@ -131,12 +134,12 @@ Deno.serve(async (req) => {
   //     e um custo REAL da decisao, e fica registrado aqui para nao ser descoberto
   //     por acidente depois. O controlador escolheu o direito do titular.
   const { error: eDoc } = await supabase.from("atleta_documento").delete().eq("atleta_id", id);
-  if (eDoc) return jsonResponse({ sucesso: false, erro: "Não consegui apagar o documento. Nada foi alterado — tente de novo." }, 500);
+  if (eDoc) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
 
   // ── AS SESSOES ABERTAS ────────────────────────────────────────────────────
   // Sem isto o aparelho dele continuava entrando no app depois da exclusao.
   const { error: eSes } = await supabase.from("atleta_sessao").delete().eq("atleta_id", id);
-  if (eSes) return jsonResponse({ sucesso: false, erro: "Não consegui encerrar as sessões. Nada foi alterado — tente de novo." }, 500);
+  if (eSes) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
 
   // ⚠️ ESTES DOIS BLOCOS FICAVAM DEPOIS DO `update` QUE ANONIMIZA, e a bateria
   // pegou: com a anonimizacao das mensagens falhando, a identidade ja tinha sido
@@ -156,27 +159,83 @@ Deno.serve(async (req) => {
   // nao sobrevive a um pedido de exclusao. Ele e APAGADO, nao anonimizado.
   const ANON = "Atleta removido";
   {
+    // ⚠️ AS MENSAGENS DE TERCEIROS TAMBEM CITAM O NOME DELE. O Guardiao de
+    // Seguranca contou em producao: das 288 linhas de `mensagens_enviadas`, 117
+    // citam o nome de um atleta DIFERENTE do destinatario ("Maria, voce joga
+    // contra Joao Silva"). A troca so alcancava `.eq("atleta_id", id)`, entao o
+    // nome do titular sobrevivia em ate 117 linhas endereçadas a outras pessoas --
+    // e a tela promete a ele que "as partidas continuam registradas SEM O SEU
+    // NOME". Agora varre TODAS e troca o nome onde ele aparecer.
+    const { data: eu } = await supabase.from("atletas").select("nome").eq("id", id).maybeSingle();
+    const nomeReal = String((eu as any)?.nome || "").trim();
     const { data: msgs, error: eMsgSel } = await supabase.from("mensagens_enviadas")
-      .select("id,atleta_nome,texto").eq("atleta_id", id);
-    if (eMsgSel) return jsonResponse({ sucesso: false, erro: "Não consegui ler as mensagens para anonimizar. Nada foi alterado — tente de novo." }, 500);
+      .select("id,atleta_id,atleta_nome,texto");
+    if (eMsgSel) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
     for (const m of msgs ?? []) {
-      const nomeAntigo = String((m as any).atleta_nome || "");
-      const texto = nomeAntigo
-        ? String((m as any).texto || "").split(nomeAntigo).join(ANON)
-        : (m as any).texto;
+      const ehDele = String((m as any).atleta_id) === String(id);
+      const textoOriginal = String((m as any).texto || "");
+      const citaONome = !!nomeReal && textoOriginal.includes(nomeReal);
+      if (!ehDele && !citaONome) continue; // mensagem de terceiro que nao o cita
+      const upd: Record<string, unknown> = {};
+      if (ehDele) upd.atleta_nome = ANON;
+      if (citaONome) upd.texto = textoOriginal.split(nomeReal).join(ANON);
+      if (ehDele && !citaONome) {
+        const nomeAntigo = String((m as any).atleta_nome || "");
+        if (nomeAntigo) upd.texto = textoOriginal.split(nomeAntigo).join(ANON);
+      }
       const { error: eMsg } = await supabase.from("mensagens_enviadas")
-        .update({ atleta_nome: ANON, texto }).eq("id", (m as any).id);
-      if (eMsg) return jsonResponse({ sucesso: false, erro: "Não consegui anonimizar as mensagens. Nada foi alterado — tente de novo." }, 500);
+        .update(upd).eq("id", (m as any).id);
+      if (eMsg) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
     }
   }
   {
+    // ⚠️ O ARQUIVO DO COMPROVANTE SAI DO BUCKET ANTES DE A URL SER ANULADA, e a
+    // ordem e a correcao. O Guardiao Juridico mostrou que anular a coluna sem
+    // apagar o arquivo era ESTRITAMENTE PIOR que deixar os dois: o nome do arquivo
+    // carrega o id DA PARTIDA (`wo-m_...-....jpg`, conferido em producao), nao o do
+    // atleta, entao `solicitacoes_wo.comprovante_url` era o UNICO vinculo entre a
+    // pessoa e aquele arquivo. Apagar o ponteiro deixaria o atestado medico no
+    // bucket sem ninguem conseguir dizer de quem e -- nem uma limpeza futura.
+    // E a assimetria estava invertida: a funcao apagava a FOTO (bucket publico,
+    // menos sensivel) e guardava o ATESTADO (bucket privado, DADO DE SAUDE,
+    // art. 5o II). Privado quer dizer "nao indexavel", nao "apagado".
+    const { data: wos, error: eWoSel } = await supabase.from("solicitacoes_wo")
+      .select("comprovante_url").eq("atleta_id", id);
+    if (eWoSel) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
+    const arquivosWo = (wos ?? [])
+      .map((w: any) => String(w.comprovante_url || ""))
+      .filter(Boolean)
+      .map((u: string) => u.split("/").pop() as string);
+    if (arquivosWo.length > 0) {
+      const { error: eRmWo } = await supabase.storage.from(COMPROVANTES_BUCKET).remove(arquivosWo);
+      if (eRmWo) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
+    }
+
+    // ⚠️ `justificativa: ""` E NAO `null` — e a diferenca entre funcionar e
+    // DESTRUIR DADO. `solicitacoes_wo.justificativa` e NOT NULL na producao
+    // (conferido em `information_schema`, `pg_attribute.attnotnull`, e sem gatilho
+    // nenhum que pudesse interceptar). Gravar `null` faz o Postgres recusar com
+    // 23502 -- e aqui, nesta altura da funcao, as FOTOS ja foram apagadas do
+    // bucket, o CPF ja foi apagado, as sessoes ja foram encerradas e o nome ja foi
+    // sobrescrito dentro das mensagens. O titular perderia o CPF e as fotos e NAO
+    // receberia a exclusao, porque a repeticao falha sempre no mesmo ponto.
+    // Alcance medido: 5 dos 15 atletas tem linha em `solicitacoes_wo`.
+    //
+    // A string vazia satisfaz o NOT NULL e apaga o dado sensivel igualmente, sem
+    // precisar de migracao subindo junto.
+    //
+    // Achado pelo Guardiao de Confiabilidade em 29/09/2026, que nao deduziu: ele
+    // ENSINOU a restricao ao banco falso numa copia isolada e rodou -- 1320 verdes
+    // viraram 20 falhas. Eu ainda tinha escrito uma assercao afirmando o valor
+    // proibido, que executava a funcao de verdade e certificava um estado que o
+    // banco nao pode guardar.
     const { error: eWo1 } = await supabase.from("solicitacoes_wo")
-      .update({ atleta_nome: ANON, justificativa: null, comprovante_url: null }).eq("atleta_id", id);
-    if (eWo1) return jsonResponse({ sucesso: false, erro: "Não consegui anonimizar os pedidos de W.O. Nada foi alterado — tente de novo." }, 500);
+      .update({ atleta_nome: ANON, justificativa: "", comprovante_url: null }).eq("atleta_id", id);
+    if (eWo1) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
     // Ele tambem aparece como ADVERSARIO no pedido de outra pessoa.
     const { error: eWo2 } = await supabase.from("solicitacoes_wo")
       .update({ adversario_nome: ANON }).eq("adversario_id", id);
-    if (eWo2) return jsonResponse({ sucesso: false, erro: "Não consegui anonimizar os pedidos de W.O. Nada foi alterado — tente de novo." }, 500);
+    if (eWo2) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
   }
 
   // ── O VINCULO COM CADA CIRCUITO ───────────────────────────────────────────
@@ -201,7 +260,7 @@ Deno.serve(async (req) => {
     quer_renovar: false,
     renovacao_em: null,
   }).eq("atleta_id", id);
-  if (eVinc) return jsonResponse({ sucesso: false, erro: "Não consegui arquivar o vínculo com o circuito. Nada foi alterado — tente de novo." }, 500);
+  if (eVinc) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
 
   // Anonimização: apaga o dado PESSOAL, mantém a linha e as estatísticas.
   // telefone é NOT NULL e único, então vira um token não-identificável por id.

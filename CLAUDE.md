@@ -77,10 +77,12 @@ velha **duas** vezes (27/09, e de novo em 29/09, quando `segundo-circuito.mjs`
 parágrafo afirmava que ela estava completa). Era a dívida antiga registrada em
 `docs/curadoria-indice-app-tenis-de-mesa.md`.
 
-Ela carrega **quatro Edge Functions de verdade** — `admin-action`,
-`athlete-action`, `comprovante-url` e `login-atleta`, os mesmos arquivos que vão
-para o ar — e
-roda contra um banco em memória. Detalhe em `testes/README.md`.
+Ela carrega **SEIS Edge Functions de verdade** — `admin-action`, `athlete-action`,
+`login-atleta`, `comprovante-url`, `circuito-dados` e `anonimizar-atleta`, os
+mesmos arquivos que vão para o ar — e roda contra um banco em memória.
+*(Dizia "quatro" em três lugares até 29/09/2026; o Guardião de Confiabilidade
+contou e corrigiu. Um guardião que lê o número errado subestima a cobertura —
+conte com `grep -n 'carregarFuncao(' testes/*.mjs`, não daqui.)* Detalhe em `testes/README.md`.
 
 O banco em memória **projeta colunas** desde 27/09/2026: se o código pede
 `select("id, telefone")`, o teste recebe só essas duas. Sem isso, trocar por
@@ -399,7 +401,7 @@ gravar rating num circuito que não tem rating.
 - **`atualizar.sh` publica tudo que estiver na pasta.** Desde 07/09/2026 ele
   lista os arquivos e espera você digitar `S` antes de mandar — leia a lista:
   arquivo temporário esquecido ali viaja junto.
-- **A bateria executa quatro Edge Functions e DUAS funções puras do app.**
+- **A bateria executa SEIS Edge Functions e DUAS funções puras do app.**
   Reconferido em 29/09/2026 rodando `grep` nos testes, não de memória. *(Esta
   linha dizia "uma única função do app" até 29/09: a segunda —
   `circuitoTemTorneio` — passou a ser extraída e executada em
@@ -408,7 +410,7 @@ gravar rating num circuito que não tem rating.
   carrega e executa código de verdade é `carregarFuncao(nome, banco)`
   (`testes/carrega-motor.mjs`) — **é esse o nome**, não `carregarMotor`, que não
   existe. `montarMotor({ funcao: "..." })` escolhe qual carregar (padrão:
-  `admin-action`). Ela é chamada para quatro funções:
+  `admin-action`). Ela é chamada para seis funções:
   - **`admin-action`** — é o grosso da bateria, e a razão de a frase antiga
     dizer "a bateria cobre o motor";
   - **`athlete-action`** — e isto **cresceu** em 19/09: já não é só a guarda de

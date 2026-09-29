@@ -638,12 +638,49 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true });
       }
 
+      // ⚠️ AS DUAS ACOES DE LGPD EXIGEM TOKEN DE SESSAO, e as duas foram
+      // consertadas NA MESMA EDICAO. Guardiao Juridico e Guardiao de Seguranca
+      // acharam isto separados, em 29/09/2026, e o segundo foi explicito: consertar
+      // so o CANCELAR seria a licao da guarda irma pela TERCEIRA vez na serie.
+      //
+      // O problema: `athleteId` vinha do payload, e os ids sao PUBLICOS no ranking
+      // (o anon e o porteiro devolvem `atletas.id` a qualquer visitante).
+      //
+      // Por que o CANCELAR e pior que o SOLICITAR, e por que a direcao importa:
+      //   · forjar o SOLICITAR CRIA um pedido, que um humano revisa antes de
+      //     executar e que agora pode ser cancelado. E recuperavel.
+      //   · forjar o CANCELAR DESTROI um pedido, EM SILENCIO. O campo e anulado,
+      //     nao arquivado: nao fica registro de que houve pedido. Some da fila do
+      //     admin, o titular so descobre se recarregar a tela, e o prazo do
+      //     art. 18 Par. 3o para de correr sem ninguem saber.
+      //
+      // E as duas portas juntas sao piores que a soma (achado do Guardiao de
+      // Seguranca): um estranho LIGA E DESLIGA o estado de LGPD de outra pessoa a
+      // vontade -- inclusive para travar a `promoverIdentidadeGlobal`, que recusa
+      // promover quem tem `exclusao_solicitada_em`. Atacante marca a vitima, e ela
+      // nunca mais e aprovada em circuito nenhum. Uma guarda de protecao virava
+      // instrumento de bloqueio permanente por causa de uma porta aberta ao lado.
+      //
+      // O argumento ja estava escrito neste arquivo, no ACEITAR_REGULAMENTO: "os
+      // ids sao publicos no ranking: para renovar isso passa, para um RECIBO DE
+      // CONSENTIMENTO nao". Exercer (ou revogar) direito do art. 18 pesa no minimo
+      // o mesmo.
       case "SOLICITAR_EXCLUSAO": {
         const { athleteId } = payload || {};
         if (!athleteId) return jsonResponse({ sucesso: false, erro: "athleteId é obrigatório" }, 400);
+        const donoSol = await atletaPorTokenAA((payload || {}).token);
+        if (!donoSol || donoSol !== String(athleteId)) {
+          return jsonResponse({ sucesso: false, erro: "Sua sessão expirou. Entre de novo para confirmar o aceite." }, 401);
+        }
+        // `.is("exclusao_solicitada_em", null)`: so grava se NAO houver pedido em
+        // aberto. Sem isto, um segundo clique (ou um redespacho do front)
+        // sobrescreve a data do primeiro pedido e EMPURRA O VENCIMENTO do prazo do
+        // art. 18 Par. 3o para frente -- o titular pede, e o relogio reinicia sem
+        // ele saber. E o ROADMAP 0.7.3, e o Guardiao Juridico se corrigiu ao dizer
+        // que o botao de cancelar resolvia os dois: resolvia METADE.
         const { error } = await supabase.from("atletas")
           .update({ exclusao_solicitada_em: new Date().toISOString() })
-          .eq("id", athleteId).neq("status", "arquivado");
+          .eq("id", athleteId).neq("status", "arquivado").is("exclusao_solicitada_em", null);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
       }
@@ -665,6 +702,12 @@ Deno.serve(async (req) => {
       case "CANCELAR_EXCLUSAO": {
         const { athleteId } = payload || {};
         if (!athleteId) return jsonResponse({ sucesso: false, erro: "athleteId é obrigatório" }, 400);
+        // Ver o comentario longo do SOLICITAR_EXCLUSAO: as duas exigem token, e a
+        // razao de o CANCELAR pesar MAIS esta escrita la.
+        const donoCanc = await atletaPorTokenAA((payload || {}).token);
+        if (!donoCanc || donoCanc !== String(athleteId)) {
+          return jsonResponse({ sucesso: false, erro: "Sua sessão expirou. Entre de novo para confirmar o aceite." }, 401);
+        }
         // `neq("status","arquivado")` pelo mesmo motivo do SOLICITAR: quem ja foi
         // anonimizado nao volta a vida por aqui. E o `not is null` garante que so
         // cancela pedido que existe -- cancelar o que nao foi pedido nao e erro do

@@ -1162,10 +1162,20 @@ secao("O motor de pareamento do Sistema B — RODANDO a temporada inteira");
   {
     const { partidas } = await temporadaB(8, "grupos");
     const confrontos = partidas.map(m => [m.atleta1_id, m.atleta2_id].sort().join("|"));
-    // No modo grupos a ordem é determinística (tabela de pontos, todos em 0), e o
-    // motor acerta as 120 temporadas medidas. Aqui ZERO é exigível.
-    igual(new Set(confrontos).size, confrontos.length,
-      "no modo grupos por faixa NENHUM confronto se repete com 8 atletas");
+    // ⚠️ ESTA ASSERÇÃO EXIGIA ZERO E CONTRADIZIA O CAP. 03. O comentário antigo
+    // dizia "a ordem é determinística (tabela de pontos, todos em 0), e o motor
+    // acerta as 120 temporadas medidas" — e "todos em 0" não é uma configuração do
+    // circuito: é a ÚNICA em que o modo grupos nunca é exercitado, porque ele
+    // pareia POR POSIÇÃO NA TABELA e a tabela não se move se ninguém processa
+    // rodada. Com as rodadas processadas, esta asserção ficaria vermelha em ~9%
+    // das execuções — e o próximo a topar com ela trataria como teste instável,
+    // que foi o que quase aconteceu com a asserção irmã do sorteio nesta auditoria.
+    //
+    // O TETO é a regra, e é o que o Cap. 03 promete: com o grupo completo, no
+    // máximo UM confronto repetido (medido pelo Guardião de Regulamento em 6.700
+    // temporadas — a distribuição só tem 0 e 1, nunca 2).
+    ok(confrontos.length - new Set(confrontos).size <= 1,
+      "no modo grupos por faixa, com o grupo completo, no máximo UM confronto se repete — é o teto que o Cap. 03 promete");
     igual(partidas.length, 24, "e as 24 partidas da temporada foram geradas");
   }
 
@@ -1741,11 +1751,16 @@ secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado 
     // O bucket das fotos é PÚBLICO. O alvo tem DUAS fotos (quem troca a de perfil
     // deixa a antiga para trás, e ela continua servindo) e há uma foto de outro
     // atleta, que não pode ser tocada.
-    arquivos: { "fotos-atletas": [
-      `${"dddd0000-0000-0000-0000-0000000000a1"}-111.jpg`,
-      `${"dddd0000-0000-0000-0000-0000000000a1"}-222.jpg`,
-      `${"dddd0000-0000-0000-0000-0000000000a2"}-333.jpg`,
-    ] },
+    arquivos: {
+      "fotos-atletas": [
+        `${"dddd0000-0000-0000-0000-0000000000a1"}-111.jpg`,
+        `${"dddd0000-0000-0000-0000-0000000000a1"}-222.jpg`,
+        `${"dddd0000-0000-0000-0000-0000000000a2"}-333.jpg`,
+      ],
+      // O comprovante de W.O. — o atestado. O nome do arquivo é pelo id DA
+      // PARTIDA, não do atleta: por isso a URL na tabela era o único vínculo.
+      "comprovantes-wo": ["wo-m_111-222.jpg", "wo-m_999-888.jpg"],
+    },
     circuitos: [circuito(BH), circuito(CIRC, { slug: "lgpd", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01" })],
     atletas: [
       atleta(ALVO, { nome: "Fulano de Tal", telefone: "31988887777", apelido: "Fu", foto_url: "http://x/f.jpg", exclusao_solicitada_em: "2026-09-20T10:00:00Z" }),
@@ -1760,10 +1775,13 @@ secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado 
       mensagens_enviadas: [
         { id: "m1", atleta_id: ALVO, atleta_nome: "Fulano de Tal", texto: "Olá Fulano de Tal, seu jogo é dia 15." },
         { id: "m2", atleta_id: OUTRO, atleta_nome: "Sicrano", texto: "Olá Sicrano, seu jogo é dia 15." },
+        // ⚠️ A mensagem de TERCEIRO que cita o nome do titular. Em produção são
+        // 117 das 288 linhas. A troca antiga não alcançava nenhuma delas.
+        { id: "m3", atleta_id: OUTRO, atleta_nome: "Sicrano", texto: "Sicrano, você joga contra Fulano de Tal na rodada 3." },
       ],
       solicitacoes_wo: [
         { id: "w1", atleta_id: ALVO, adversario_id: OUTRO, atleta_nome: "Fulano de Tal", adversario_nome: "Sicrano",
-          justificativa: "Estava internado com pneumonia", comprovante_url: "comprovantes-wo/w1.jpg", status: "pendente" },
+          justificativa: "Estava internado com pneumonia", comprovante_url: "comprovantes-wo/wo-m_111-222.jpg", status: "pendente" },
         { id: "w2", atleta_id: OUTRO, adversario_id: ALVO, atleta_nome: "Sicrano", adversario_nome: "Fulano de Tal",
           justificativa: "Viagem de trabalho", status: "pendente" },
       ],
@@ -1829,7 +1847,15 @@ secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado 
   {
     const w1 = banco.acha("solicitacoes_wo", w => w.id === "w1");
     igual(w1?.atleta_nome, "Atleta removido", "o nome sai do pedido de W.O. dele");
-    igual(w1?.justificativa, null,
+    // ⚠️ `""` E NÃO `null`, e esta asserção é a prova do NO-GO de 29/09/2026.
+    // Ela dizia `null`, executava a função de verdade, e CERTIFICAVA UM ESTADO QUE
+    // O BANCO NÃO PODE GUARDAR — `solicitacoes_wo.justificativa` é NOT NULL em
+    // produção. O banco falso não modelava restrição de coluna, então a asserção
+    // ficava verde afirmando a intenção certa sobre um valor impossível.
+    // Em produção a função quebraria aqui, DEPOIS de já ter apagado as fotos, o
+    // CPF e as sessões. O banco falso aprendeu a recusar, e foi ele que pegou esta
+    // linha quando eu consertei o motor.
+    igual(w1?.justificativa, "",
       "e a JUSTIFICATIVA é APAGADA — é texto livre onde cabe motivo de saúde, e dado sensível não sobrevive a um pedido de exclusão");
     igual(w1?.comprovante_url, null, "o comprovante também");
     const w2 = banco.acha("solicitacoes_wo", w => w.id === "w2");
@@ -1837,6 +1863,25 @@ secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado 
       "e ele também some como ADVERSÁRIO no pedido de outra pessoa");
     igual(w2?.justificativa, "Viagem de trabalho",
       "mas a justificativa do OUTRO atleta fica — ela é dado dele, não do titular");
+  }
+
+  // ── O ARQUIVO DO COMPROVANTE (o atestado) ────────────────────────────────
+  // Anular a URL sem apagar o arquivo era ESTRITAMENTE PIOR que deixar os dois: o
+  // nome do arquivo é pelo id DA PARTIDA, então a coluna era o único vínculo
+  // entre a pessoa e o atestado. Apagar o ponteiro deixaria o dado de saúde no
+  // bucket sem ninguém conseguir atribuí-lo.
+  igual(banco.arquivosDe("comprovantes-wo"), ["wo-m_999-888.jpg"],
+    "o comprovante de W.O. do titular SOME do bucket, e o de outra pessoa fica");
+
+  // ── O NOME NAS MENSAGENS DE TERCEIROS ────────────────────────────────────
+  {
+    const m3 = banco.acha("mensagens_enviadas", m => m.id === "m3");
+    ok(!String(m3?.texto || "").includes("Fulano"),
+      `o nome do titular sai até da mensagem endereçada a OUTRA pessoa (veio: ${JSON.stringify(m3?.texto)}) — são 117 das 288 linhas em produção`);
+    ok(String(m3?.texto || "").includes("Sicrano"),
+      "e o nome do destinatário, que é dado dele, fica");
+    igual(m3?.atleta_nome, "Sicrano",
+      "e o registro continua dizendo de quem é a mensagem");
   }
 
   // ── O SEGREDO DE ACESSO ───────────────────────────────────────────────────
@@ -2019,8 +2064,16 @@ secao("O modo GRUPOS pareia por faixa de pontos — e isso não tinha portão ne
   const CIRC_G = "ffff0000-1111-2222-3333-444444444444";
   const lista = ["g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7"];
 
-  // Saldos MUITO espaçados: com a tabela assim, parear por faixa significa
-  // 1º×2º, 3º×4º, 5º×6º, 7º×8º. Qualquer outro pareamento é visível.
+  // ⚠️ OS SALDOS SÃO DESCORRELACIONADOS DA ORDEM DE CRIAÇÃO, e isso é a
+  // correção. A 1ª versão desta seção criava `g0…g7` com saldo decrescente na
+  // ordem de criação — então "parear por faixa de pontos" e "parear na ordem em
+  // que o banco devolveu" davam O MESMO RESULTADO, e a asserção não conseguia
+  // distinguir os dois. O Guardião de Regulamento sabotou o motor para PARAR DE
+  // ORDENAR pela tabela e a bateria ficou VERDE — exatamente a regra que a seção
+  // existe para provar.
+  // Com os saldos embaralhados, a ordem por pontos é g1,g5,g3,g7,g6,g0,g4,g2 e
+  // parear por faixa é g1×g5, g3×g7, g6×g0, g4×g2 — nada a ver com a ordem do
+  // fixture.
   const { banco, motor } = await montarMotor({
     circuitos: [circuito(BH), circuito(CIRC_G, {
       slug: "faixas", sistema: "B", pareamento: "grupos",
@@ -2029,7 +2082,7 @@ secao("O modo GRUPOS pareia por faixa de pontos — e isso não tinha portão ne
     atletas: lista.map(id => atleta(id)),
     circuito_atletas: lista.map((id, i) => ({
       circuito_id: CIRC_G, atleta_id: id, status: "ativo", pendente_circuito: false,
-      saldo_temp: (lista.length - i) * 100, // g0=800, g1=700, … g7=100
+      saldo_temp: [300, 800, 100, 600, 200, 700, 400, 500][i],
     })),
     chaves: [], partidas: [],
   });
@@ -2037,7 +2090,10 @@ secao("O modo GRUPOS pareia por faixa de pontos — e isso não tinha portão ne
   const r = await comoAdmin(motor, "INICIAR_ETAPA", { circuitoId: CIRC_G });
   ok(r.corpo?.sucesso === true, `a etapa do circuito de grupos inicia (erro: ${JSON.stringify(r.corpo?.erro)})`);
 
-  const pos = Object.fromEntries(lista.map((id, i) => [id, i])); // 0 = topo da tabela
+  // A posição na TABELA DE PONTOS, não no array — é a diferença entre as duas.
+  const SALDOS = { "g0": 300, "g1": 800, "g2": 100, "g3": 600, "g4": 200, "g5": 700, "g6": 400, "g7": 500 };
+  const ordemTabela = [...lista].sort((a, b) => SALDOS[b] - SALDOS[a]);
+  const pos = Object.fromEntries(ordemTabela.map((id, i) => [id, i])); // 0 = líder
   const daRodada1 = banco.tabelas.partidas.filter(m => m.circuito_id === CIRC_G && m.rodada === 1);
   igual(daRodada1.length, 4, "a rodada 1 tem 4 partidas");
 
@@ -2051,6 +2107,50 @@ secao("O modo GRUPOS pareia por faixa de pontos — e isso não tinha portão ne
   ok(distancias.every(d => d === 1),
     "e nenhum par salta faixa: é 1º×2º, 3º×4º, 5º×6º, 7º×8º");
 
+  // ⚠️ O QUE ESTA SEÇÃO **NÃO** PROTEGE, declarado de propósito: inverter a ordem
+  // do modo grupos (pior primeiro em vez de melhor primeiro) deixa a bateria
+  // VERDE, e está certo que deixe — com número PAR, ordenar crescente ou
+  // decrescente produz o MESMO conjunto de pares vizinhos. A inversão só muda
+  // quem leva o BYE com número ímpar, e o Cap. 03 não fixa quem folga no modo
+  // grupos (só exige rotação, que a seção do bye já protege).
+  // Registrado para ninguém confundir esta sabotagem benigna com P1 (parar de
+  // ordenar) e P2 (virar rodízio no meio), que agora acusam. (Guardião de
+  // Regulamento, 29/09/2026.)
+
+  // ── E NA RODADA 3, com a tabela JÁ MEXIDA pelo processamento ──────────────
+  // Sem isto o modo grupos podia honrar a faixa no 1º par mensal e virar outra
+  // coisa nos rodadas 3-6 sem ninguém ver (a 2ª sabotagem do guardião ficava
+  // verde). E isto prova o que o Cap. 03 promete de verdade: que a faixa acompanha
+  // a tabela ATUAL, não a do início.
+  {
+    // Processa a rodada 1 com resultados que MEXEM a tabela, e avança o par.
+    const daR1 = banco.tabelas.partidas.filter(m => m.circuito_id === CIRC_G && m.rodada === 1);
+    for (const m of daR1) {
+      Object.assign(m, { placar1: 3, placar2: 0, validado: true, calculado: false });
+    }
+    await comoAdmin(motor, "PROCESSAR_RODADA", { circuitoId: CIRC_G, round: 1 });
+    const rAv = await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC_G });
+    ok(rAv.corpo?.sucesso === true, `o par mensal avança (erro: ${JSON.stringify(rAv.corpo?.erro)})`);
+
+    // A tabela AGORA, lida do banco — não a do fixture.
+    const agora = banco.tabelas.circuito_atletas
+      .filter(c => c.circuito_id === CIRC_G)
+      .sort((a, b) => (b.saldo_temp || 0) - (a.saldo_temp || 0));
+    const posAgora = Object.fromEntries(agora.map((c, i) => [c.atleta_id, i]));
+    const daR3 = banco.tabelas.partidas.filter(m => m.circuito_id === CIRC_G && m.rodada === 3);
+    igual(daR3.length, 4, "a rodada 3 tem 4 partidas");
+    const distR3 = daR3.map(m => Math.abs(posAgora[m.atleta1_id] - posAgora[m.atleta2_id]));
+    const somaR3 = distR3.reduce((a, b) => a + b, 0);
+    // ⚠️ O NÚMERO É MEDIDO, não chutado. Eu tinha escrito `<= 6` de palpite e a
+    // asserção ficou vermelha na hora. Medido em 30 execuções de cada modo, neste
+    // cenário: grupos dá 8 SEMPRE, sorteio dá 16 SEMPRE — determinístico nos dois.
+    // A rodada 3 não pode parear só vizinhos porque precisa evitar os confrontos
+    // das rodadas 1 e 2; o que importa é que ela pareia o MAIS PRÓXIMO DISPONÍVEL
+    // na tabela atual, e é isso que o 8 contra 16 mostra.
+    igual(somaR3, 8,
+      `na rodada 3 o pareamento continua acompanhando a TABELA ATUAL — soma das distâncias ${somaR3} (pares: ${distR3.join(",")}); o rodízio, que ignora a tabela, dá 16 no mesmo cenário`);
+  }
+
   // E o mesmo cenário no modo SORTEIO NÃO pode dar isso — senão a asserção acima
   // estaria medindo coincidência em vez de regra.
   {
@@ -2062,7 +2162,7 @@ secao("O modo GRUPOS pareia por faixa de pontos — e isso não tinha portão ne
       atletas: lista.map(id => atleta(id)),
       circuito_atletas: lista.map((id, i) => ({
         circuito_id: CIRC_G, atleta_id: id, status: "ativo", pendente_circuito: false,
-        saldo_temp: (lista.length - i) * 100,
+        saldo_temp: [300, 800, 100, 600, 200, 700, 400, 500][i],
       })),
       chaves: [], partidas: [],
     });
@@ -2225,6 +2325,95 @@ secao("Três guardas que a bateria NÃO alcança — declaradas, para ninguém a
   ok(iEsc > 0, "o bloco de escopo por recurso foi localizado");
   ok(motorFonte.indexOf("  try {", iEsc) > motorFonte.indexOf("await bhId()", iEsc),
     "o `await bhId()` do escopo roda ANTES do try — dívida conhecida e declarada (Guardião de Segurança, C6), não protegida por comportamento");
+}
+
+secao("Exclusão de dados: só o titular liga e desliga — RODANDO as duas ações");
+{
+  // ⚠️ ESTA SEÇÃO EXISTE PORQUE A AÇÃO NÃO RODAVA EM TESTE NENHUM. O Guardião de
+  // Segurança tentou atacar o `CANCELAR_EXCLUSAO` e o teste QUEBROU — o banco
+  // falso não implementava `.not()`. Com a bateria 1320/0 verde, isso PROVOU por
+  // eliminação que nenhum teste a executava: uma ação nova de LGPD, numa onda
+  // sobre LGPD, sem portão nenhum.
+  //
+  // O buraco: `athleteId` vinha do payload, e os ids são PÚBLICOS no ranking.
+  // Qualquer um cancelava o pedido de exclusão de qualquer um — em silêncio,
+  // porque o campo é anulado e não fica registro de que houve pedido.
+  //
+  // E as duas portas juntas eram piores que a soma: um estranho liga e desliga o
+  // estado de LGPD de outra pessoa, inclusive para TRAVAR a
+  // `promoverIdentidadeGlobal` (que recusa promover quem tem pedido em aberto).
+  // Marca a vítima e ela nunca mais é aprovada em circuito nenhum.
+  const EU = "1111aaaa-0000-0000-0000-000000000001";
+  const OUTRO_ATL = "1111aaaa-0000-0000-0000-000000000002";
+  const MEU_TOKEN = "token-do-titular";
+  const TOKEN_DO_OUTRO = "token-do-estranho";
+  const sha = (t) => createHash("sha256").update(t).digest("hex");
+  const daquiAUmaHora = () => new Date(Date.now() + 3600e3).toISOString();
+
+  const cenarioLGPD = async (campos = {}) => {
+    const { banco } = await montarMotor({
+      circuitos: [circuito(BH)],
+      atletas: [atleta(EU, { nome: "Titular", ...campos }), atleta(OUTRO_ATL, { nome: "Estranho" })],
+      outras: { atleta_sessao: [
+        { id: "s1", atleta_id: EU, token_hash: sha(MEU_TOKEN), expira_em: daquiAUmaHora() },
+        { id: "s2", atleta_id: OUTRO_ATL, token_hash: sha(TOKEN_DO_OUTRO), expira_em: daquiAUmaHora() },
+      ] },
+    });
+    const fn = await carregarFuncao("athlete-action", banco);
+    const pedir = (p) => fn.chamar({ acao: "SOLICITAR_EXCLUSAO", payload: p });
+    const cancelar = (p) => fn.chamar({ acao: "CANCELAR_EXCLUSAO", payload: p });
+    const marca = () => banco.acha("atletas", a => a.id === EU)?.exclusao_solicitada_em;
+    return { banco, pedir, cancelar, marca };
+  };
+
+  // ── O titular pede e cancela o próprio pedido ────────────────────────────
+  {
+    const { pedir, cancelar, marca } = await cenarioLGPD();
+    const r1 = await pedir({ athleteId: EU, token: MEU_TOKEN });
+    ok(r1.corpo?.sucesso === true, `o titular pede a exclusão dos próprios dados (erro: ${JSON.stringify(r1.corpo?.erro)})`);
+    ok(!!marca(), "e o pedido fica registrado");
+    const r2 = await cancelar({ athleteId: EU, token: MEU_TOKEN });
+    ok(r2.corpo?.sucesso === true, `e pode cancelar enquanto está pendente (erro: ${JSON.stringify(r2.corpo?.erro)})`);
+    igual(marca(), null, "e o pedido sai do registro");
+  }
+
+  // ── SEM token, nenhuma das duas passa ────────────────────────────────────
+  for (const [acao, oQue] of [["pedir", "pedir a exclusão"], ["cancelar", "cancelar o pedido"]]) {
+    const c = await cenarioLGPD({ exclusao_solicitada_em: "2026-09-20T10:00:00Z" });
+    const r = await c[acao]({ athleteId: EU });
+    igual(r.status, 401, `sem token de sessão, ${oQue} é recusado`);
+    igual(c.marca(), "2026-09-20T10:00:00Z", `e o estado do titular não se mexe (${oQue})`);
+  }
+
+  // ── Com o token de OUTRO atleta, também não ──────────────────────────────
+  // Este é o ataque: os ids são públicos, então o estranho tem o id da vítima. O
+  // que ele não tem é a sessão dela.
+  for (const [acao, oQue] of [["pedir", "pedir a exclusão de outra pessoa"], ["cancelar", "cancelar o pedido de outra pessoa"]]) {
+    const c = await cenarioLGPD({ exclusao_solicitada_em: "2026-09-20T10:00:00Z" });
+    const r = await c[acao]({ athleteId: EU, token: TOKEN_DO_OUTRO });
+    igual(r.status, 401, `com o token de OUTRO atleta, ${oQue} é recusado`);
+    igual(c.marca(), "2026-09-20T10:00:00Z", `e o estado da vítima fica intacto (${oQue})`);
+  }
+
+  // ── O segundo clique NÃO reinicia o prazo do art. 18 ─────────────────────
+  // ROADMAP 0.7.3: o `SOLICITAR` gravava a data incondicionalmente, então clicar
+  // de novo empurrava o vencimento para frente e o titular perdia prazo sem saber.
+  {
+    const { pedir, marca } = await cenarioLGPD({ exclusao_solicitada_em: "2026-09-01T08:00:00Z" });
+    await pedir({ athleteId: EU, token: MEU_TOKEN });
+    igual(marca(), "2026-09-01T08:00:00Z",
+      "pedir de novo NÃO sobrescreve a data do primeiro pedido — o prazo do art. 18 §3º não reinicia");
+  }
+
+  // ── Cancelar sem pedido pendente é recusado, e não limpa campo de ninguém ─
+  {
+    const { cancelar, banco } = await cenarioLGPD();
+    const r = await cancelar({ athleteId: EU, token: MEU_TOKEN });
+    igual(r.status, 409, "cancelar sem pedido pendente é recusado");
+    ok(/Não há pedido/.test(String(r.corpo?.erro || "")), "com a frase que explica");
+    igual(banco.acha("atletas", a => a.id === OUTRO_ATL)?.exclusao_solicitada_em, undefined,
+      "e nenhum outro atleta é tocado");
+  }
 }
 
 process.exit(placar("O segundo circuito"));

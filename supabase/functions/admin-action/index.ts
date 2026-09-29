@@ -854,8 +854,36 @@ function gerarPareamentoB(
   //                                              SEM a rede 3, em TODAS as 40
   //     10 atletas (2 ou 4 saem), 9 (2 saem), 8 (1 sai): identico com e sem
   // Ou seja: ela faz diferenca, e so em elenco que encolhe MUITO depois de ja ter
-  // gasto rodadas. E o cenario que o guardiao procurou e nao achou. Tem asserção
-  // agora ("A rede de seguranca do rodizio faz diferenca"), e a mutacao acusa.
+  // gasto rodadas. E o cenario que o guardiao procurou e nao achou -- e ele
+  // reproduziu depois, achando mais tres casos (12->9, 14->9, alem do 12->8).
+  // ⚠️ E ela REDUZ SEM ZERAR quando a queda e muito grande: em 12->7 ele mediu
+  // 7/40 temporadas ainda com um confronto repetido. Dizer "ela faz diferenca" e
+  // verdade; deixar implicito "ela salva sempre" nao e -- e o Cap. 03 ja cobre
+  // esse caso, porque la a repeticao so existe quando o elenco muda.
+  // Tem asserção ("A rede de seguranca do rodizio faz diferenca"), e a mutacao
+  // acusa.
+  //
+  // ── A TAXA DE REPETICAO DO MODO GRUPOS, medida ────────────────────────────
+  // Ela NAO esta no regulamento de proposito (decisao do Guardiao de Regulamento
+  // em 29/09/2026, depois de objecao do Juridico), e mora aqui pelo motivo que ele
+  // deu: a taxa e propriedade dos RESULTADOS da temporada, nao do motor --
+  //     8 atletas, elenco estavel, vencedor sorteado 50/50 .... 279/3000 (9,3%)
+  //     8 atletas, elenco estavel, favorito vencendo mais ..... 93/1500 (6,2%)
+  // Mesmo codigo, taxas diferentes. E o numero TAXA A MELHORIA: fica falso no dia
+  // em que o pareamento do grupos melhorar, e pela regra 7 isso custaria versao
+  // nova do regulamento + re-aceite de todo mundo. Texto com aceite tem de ser
+  // escrito de modo que melhorar o produto nunca crie obrigacao de re-aceite.
+  //
+  // O que FOI para o regulamento e o TETO, invariante: 6.700 temporadas com elenco
+  // estavel, distribuicao so com 0 e 1 -- nunca dois reencontros, e ninguem
+  // enfrentou o mesmo adversario mais de duas vezes. Vale nos dois cenarios acima.
+  //
+  // ⚠️ METODO, sem o qual o numero apodrece: medicao de pareamento do modo grupos
+  // SO VALE com vencedor sorteado e `PROCESSAR_RODADA` rodando entre os pares
+  // mensais. Sem isso `saldo_temp` empata todo mundo, a tabela nao se move, e o
+  // modo grupos -- que pareia POR POSICAO NA TABELA -- nunca e exercitado. Foi
+  // assim que os primeiros "0 em 120" nasceram errados, na minha medicao E na do
+  // guardiao.
   if (pareamento !== "grupos") {
     const ordenados = ordemDaTemporada(athletes, semente);
     const e1 = escalaCirculo(ordenados, rodadaBase + 1);

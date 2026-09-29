@@ -412,6 +412,18 @@ async function fetchCircuitoPorteiro(circuitoId, cred) {
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
+    // ⚠️ AUTO-DoS: o PIN em cache é mandado a CADA carga de circuito. Com um PIN
+    // velho, cinco recargas trancam a plataforma inteira — e o freio de tentativas
+    // é compartilhado com o `admin-action` e o `anonimizar-atleta`, então o
+    // super-admin fica de fora das TRÊS funções por 15 minutos, sem atacante
+    // nenhum envolvido. (Guardião de Segurança, 29/09/2026.)
+    // A minha 1ª ideia — "parar de mandar depois da 1ª recusa da sessão" — NÃO
+    // bastava: um F5 relê o `sessionStorage` e queima mais uma tentativa. O
+    // conserto é limpar o cache, para o ciclo se fechar sozinho: o admin redigita
+    // uma vez e acabou.
+    if (body.pin && !body.telefone && (res.status === 401 || res.status === 403 || res.status === 429)) {
+      try { clearPinCache(); } catch (e) { /* cache é conveniência, não pode quebrar a carga */ }
+    }
     if (!res.ok || !data.sucesso) return null;
     return data.dados; // { circuito, ranking, partidas }
   } catch (e) { return null; }
@@ -3420,6 +3432,24 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
             (3) O Juliano decidiu: "Não pode ter repetição de atleta." O motor
                 ganhou o rodízio pelo método do círculo (`escalaCirculo`) e eu
                 devolvi o "sem repetir" ao texto — PARA OS DOIS MODOS. Errado.
+            (5) O número SAIU do regulamento, por decisão do Guardião de
+                Regulamento depois de o Jurídico objetar. O argumento decisivo é de
+                engenharia, não de direito: a TAXA é propriedade dos RESULTADOS da
+                temporada, não do motor — ele mediu 9,3% com vencedor sorteado 50/50
+                e 6,2% com um favorito vencendo mais, mesmo código. Pior: o número
+                TAXA A MELHORIA, porque fica falso no dia em que o pareamento do
+                grupos melhorar, e pela regra 7 isso custaria versão nova + re-aceite
+                de todo mundo. Texto com aceite tem de ser escrito de modo que
+                melhorar o produto nunca crie obrigação de re-aceite.
+                O que ficou no lugar é o TETO, que é invariante: ele mediu 6.700
+                temporadas com elenco estável e a distribuição só tem 0 e 1 — nunca
+                houve dois reencontros, e ninguém jogou contra o mesmo adversário
+                mais de duas vezes. Vale no cenário de 9,3% e no de 6,2%.
+                ⚠️ E a frase é FALSA sem o escopo "com o grupo completo": com o
+                elenco encolhendo ele mediu máximo 2, em 80 de 80 temporadas. Por
+                isso a última oração existe.
+                O número vive no comentário do motor e no `testes/README.md`, onde
+                pode ser atualizado sem tocar em recibo de ninguém.
             (4) NO-GO do Guardião de Regulamento. O rodízio vale SÓ para o sorteio
                 (`if (pareamento !== "grupos")`); o modo grupos continua no
                 otimizador guloso, com a mesma miopia. Ele mediu 37 repetições em
@@ -3440,7 +3470,7 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
                 ESTATÍSTICA (o guloso só tenta).
             O vB-01 seguia com ZERO aceites nas duas tabelas em cada uma das três
             edições (conferido no banco antes de cada uma, regra 7). */}
-        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>No <span style={s.dest}>sorteio</span>, a única situação em que um confronto pode se repetir é se o número de atletas mudar no meio da temporada, porque aí o rodízio precisa ser refeito com quem está ativo. Nos <span style={s.dest}>grupos por faixa</span> é diferente: como o pareamento acompanha a tabela de pontos, ele é montado rodada a rodada e não consegue olhar as seguintes — a repetição é rara, mas possível mesmo com o grupo completo (medido em 8 atletas: cerca de 1 temporada em 11, com um confronto repetido).</p>
+        <p style={{...s.p, fontSize:11, color:"#7d9188"}}>No <span style={s.dest}>sorteio</span>, a única situação em que um confronto pode se repetir é se o número de atletas mudar no meio da temporada, porque aí o rodízio precisa ser refeito com quem está ativo. Nos <span style={s.dest}>grupos por faixa</span> é diferente: como o pareamento acompanha a tabela de pontos, ele é montado rodada a rodada e não consegue olhar as seguintes — então a repetição é possível mesmo com o grupo completo. Ela é rara, e <span style={s.dest}>com o grupo completo é sempre de um único confronto na temporada</span>: ninguém joga contra o mesmo adversário mais de duas vezes. Se o número de atletas mudar no meio da temporada, pode haver mais de um reencontro.</p>
         <Box cor="#6a9d7a" titulo="🎟️ Bye (número ímpar de atletas)">
           <p style={s.p}>Quando o número de atletas é ímpar, um atleta fica de fora na rodada (bye) e ganha <span style={s.dest}>1 ponto de participação</span>. O bye tem <span style={s.dest}>rotação</span>: ninguém recebe um segundo bye antes de todos terem recebido um. Quem entra com a temporada já em andamento é o último da fila do bye.</p>
         </Box>
@@ -6202,12 +6232,16 @@ export default function App() {
       const { id } = action.payload;
       await chamarAtletaAction("CANCELAR_WO", { id });
     }
+    // As duas ações de LGPD passaram a exigir TOKEN DE SESSÃO (29/09/2026): os ids
+    // dos atletas são públicos no ranking, e sem o token qualquer um ligava e
+    // desligava o estado de exclusão de qualquer pessoa. Ver o comentário longo no
+    // `athlete-action`.
     else if (action.type === "CANCELAR_EXCLUSAO") {
-      await chamarAtletaAction("CANCELAR_EXCLUSAO", { athleteId: action.payload.athleteId });
+      await chamarAtletaAction("CANCELAR_EXCLUSAO", { athleteId: action.payload.athleteId, token: getAtletaCred()?.token });
       await loadFromSupabase();
     }
     else if (action.type === "SOLICITAR_EXCLUSAO") {
-      await chamarAtletaAction("SOLICITAR_EXCLUSAO", { athleteId: action.payload.athleteId });
+      await chamarAtletaAction("SOLICITAR_EXCLUSAO", { athleteId: action.payload.athleteId, token: getAtletaCred()?.token });
       // Recarrega como o RENOVAR já fazia. Sem isto, `exclusaoSolicitadaEm`
       // nunca chega ao state e a confirmação na tela do atleta não teria de
       // onde vir — o direito da LGPD ficaria sem recibo mesmo quando o pedido
@@ -7992,7 +8026,7 @@ function CriarCircuitoCard({ chamarAdminAction, recarregarCircuitos }) {
                         <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>{o.d}</div>
                       </div>
                     ))}
-                    <div style={{fontSize:11,color:T.madeira,marginTop:8}}>O Sistema B já funciona: pontos fixos (vitória 2, derrota 1), pareamento por {pareamento === "grupos" ? "faixa de posição" : "sorteio"} a cada rodada e W.O. tratado pelo organizador. O sistema trava na criação e não muda depois.</div>
+                    <div style={{fontSize:11,color:T.madeira,marginTop:8}}>O Sistema B já funciona: pontos fixos (vitória 2, derrota 1), pareamento por {pareamento === "grupos" ? "faixa de posição, refeito a cada rodada" : "sorteio da ordem do rodízio no início da temporada"} e W.O. tratado pelo organizador. O sistema trava na criação e não muda depois.</div>
                   </div>
                 )}
 

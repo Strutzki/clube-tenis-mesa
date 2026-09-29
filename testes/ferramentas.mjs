@@ -75,6 +75,20 @@ export const PADROES_DO_BANCO = {
   circuito_organizadores: { criado_em: agora },
 };
 
+// Colunas NOT NULL das tabelas que o motor grava, copiadas do esquema de
+// PRODUCAO (`information_schema.columns`, conferido em 29/09/2026). Serve para o
+// banco falso recusar `null` como o Postgres recusa.
+//
+// ⚠️ Esta lista nasceu de um NO-GO: a `anonimizar-atleta` gravava
+// `justificativa: null` e a bateria ficava verde, com uma assercao afirmando o
+// valor proibido. Ver o comentario longo em `banco-falso.mjs`.
+// AO ACRESCENTAR COLUNA AQUI, confira no banco de verdade -- lista inventada e
+// pior que lista vazia, porque recusa gravacao legitima.
+export const COLUNAS_NAO_NULAS = {
+  solicitacoes_wo: ["justificativa"],
+  atletas: ["telefone"],
+};
+
 export function atleta(id, campos = {}) {
   return {
     id, nome: id, telefone: "31" + String(id).padStart(9, "0"),
@@ -135,7 +149,7 @@ export async function montarMotor({
     tentativas_login_admin: [], circuito_organizadores: [], mensagens_enviadas: [],
     pagamentos: [], partidas_historico: [], atleta_sessao: [], circuito_cobranca: [],
     ...outras,
-  }, funcoes, {}, PADROES_DO_BANCO, arquivos);
+  }, funcoes, {}, PADROES_DO_BANCO, arquivos, COLUNAS_NAO_NULAS);
   const motor = await carregarFuncao(funcao, banco);
   return { banco, motor };
 }

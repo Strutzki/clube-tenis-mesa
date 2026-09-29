@@ -2,6 +2,47 @@
 
 Regra permanente: **nenhuma fase do desenvolvimento do multi-circuito vai a produção sem a revisão supervisionada do(s) agente(s) relevante(s), com veredito documentado, ANTES do OK do Juliano e do deploy.** Esta é a disciplina que o Juliano cobrou; vale daqui pra frente.
 
+## REGRA NOVA, 29/09/2026 — a MEDIÇÃO também pode rodar o motor de verdade e medir a coisa errada
+
+*(Redação do Guardião de Regulamento, adotada.)*
+
+Irmã das lições de 19/09 (a asserção era regex) e 27/09 (a asserção executava o
+motor e afirmava o valor errado), e o degrau seguinte: aqui não foi a asserção que
+falhou — foi a **medição** usada para decidir o texto do regulamento.
+
+**O caso.** Ao trocar o pareamento do Sistema B pelo rodízio do círculo,
+coordenador e Guardião mediram, independentemente, 120 temporadas completas pelo
+motor de verdade, em cinco configurações, e acharam **0 repetições** — inclusive
+no modo *grupos*. Com esse número o Cap. 03 voltou a prometer "sem repetir
+adversário" para os **dois** modos. Só que o harness fazia o **atleta 1 vencer
+sempre** e **nunca chamava `PROCESSAR_RODADA`**: `saldo_temp` ficava empatado em
+todo mundo, a ordenação do modo grupos era praticamente constante, e o modo grupos
+**nunca foi exercitado**. Com vencedor sorteado e as rodadas processadas, o mesmo
+motor repete um confronto em **198 de 2000 temporadas (9,9%)** com 8 atletas e o
+elenco completo.
+
+**A regra:** *medição de regra que depende de ESTADO ACUMULADO só vale se o estado
+acumular.* Antes de citar um número, pergunte **qual variável a regra lê** — aqui,
+a tabela de pontos — e prove que ela **se moveu** durante a medição. Harness que
+gera partidas sem processá-las mede o pareamento da rodada 1 seis vezes, não uma
+temporada.
+
+**Corolário 1, do mesmo dia:** número de medição carrega incerteza. Os primeiros
+400 ensaios deram 9,25% e viraram "1 em 11" no texto que o atleta assina; 2000
+ensaios deram 9,9%, e o intervalo dos 400 ia de 6,6% a 12,5%. **Número de promessa
+arredonda contra quem promete**, e amostra pequena não vira frase de regulamento.
+
+**Corolário 2 — por que o número saiu do regulamento.** A taxa é propriedade dos
+RESULTADOS da temporada, não do motor: 9,3% com vencedor sorteado 50/50, 6,2% com
+um favorito vencendo mais, mesmo código. E o número **taxa a melhoria** — fica
+falso no dia em que o pareamento melhorar, e pela regra 7 isso custaria versão
+nova + re-aceite de todo mundo. **Texto com aceite tem de ser escrito de modo que
+melhorar o produto nunca crie obrigação de re-aceite.** O que vai para o
+regulamento é o **teto** (invariante, medido em 6.700 temporadas); o **número**
+vive no comentário do motor e no `testes/README.md`, onde se atualiza sem tocar em
+recibo de ninguém.
+
+
 ## Quem revisa o quê (obrigatório, sempre supervisionado)
 | Tipo de mudança | Agente que revisa (antes de executar) |
 |---|---|

@@ -1656,7 +1656,14 @@ Deno.serve(async (req) => {
           regulamento_versao: sistema === "A" ? "vA-nc-01" : "vB-01",
           inscricoes_abertas: false,
         };
-        const { data: ins, error } = await supabase.from("circuitos").insert(novo).select("id, slug, nome_circuito, sistema, pareamento").single();
+        // `regulamento_versao` e `max_atletas` entraram no select em 28/09/2026
+        // (ROADMAP 0.10.7): o admin criava um circuito e nao ficava sabendo sob qual
+        // regulamento ele nasceu. Nao e detalhe -- e o texto que TODO atleta daquele
+        // circuito vai aceitar, e um circuito de rating NOVO nasce sem o Torneio de
+        // Encerramento, diferenca que so aparece no documento. A tela de confirmacao
+        // passa a mostrar o que o SERVIDOR gravou, nao o que ela mandou.
+        const { data: ins, error } = await supabase.from("circuitos").insert(novo)
+          .select("id, slug, nome_circuito, sistema, pareamento, regulamento_versao, max_atletas").single();
         if (error) {
           const msg = String(error.message || "");
           if (msg.includes("duplicate") || msg.includes("unique") || msg.includes("circuitos_slug_key")) {

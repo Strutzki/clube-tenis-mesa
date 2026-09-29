@@ -4,7 +4,7 @@
 npm run teste
 ```
 
-Hoje são 776 asserções (28/09/2026). O `atualizar.sh` roda isso antes de publicar e se
+Hoje são 813 asserções (28/09/2026). O `atualizar.sh` roda isso antes de publicar e se
 recusa a subir com teste vermelho. Confira rodando; não cite de memória.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
@@ -146,6 +146,21 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | app: a recusa nova deixa de ser traduzida e cai no genérico | 2 vermelhas |
 | app: a tradução deixa de mandar falar com o organizador | 1 vermelha |
 | **[aferidor]** sabotagem que quebra o arquivo antes de imprimir falha | 1 vermelha — **é a prova de que o conserto da régua funciona** |
+| **O 2º circuito — 28/09/2026 (14 sabotagens, 14 vermelhas)** | |
+| motor: o teto volta a ser ignorado no `DEFINIR_CONFIG_CIRCUITO` | 1 vermelha |
+| motor: o mínimo de 8 cai (um teto de 3 passaria) | 1 vermelha |
+| motor: `CRIAR_CIRCUITO` deixa de devolver `regulamento_versao` (o recibo) | 2 vermelhas — **ficava VERDE antes**: o banco falso não recortava colunas no retorno de `insert(...).select(...)`, então a asserção do recibo não tinha como enxergar a diferença. Mesmo furo do `select("*")` de `LISTAR_TELEFONES`, cujo conserto de 27/09 só cobriu metade do caminho |
+| motor: circuito de pontos volta a nascer com o regulamento do BH (`v03-12`) | 2 vermelhas |
+| motor: a configuração passa a reescrever `regulamento_versao` | 1 vermelha — é a regra 7: o recibo do atleta não se reescreve por um salvamento de configuração |
+| **[instrumento]** o banco falso volta a NÃO projetar colunas na escrita | 2 vermelhas — **ficava VERDE antes** das 4 asserções que dão portão ao próprio instrumento |
+| tela: a frase falsa "o teto é fixo em 20 atletas por circuito" volta | 1 vermelha |
+| tela: o campo do teto deixa de mandar o valor | 1 vermelha |
+| tela: o bloqueio fora da faixa 8–20 cai (o motor apararia em silêncio) | 1 vermelha |
+| tela: o aviso "não tira ninguém" some | 1 vermelha |
+| tela: a versão do regulamento deixa de aparecer na configuração | 2 vermelhas |
+| tela: o aviso do regulamento na CRIAÇÃO some | 1 vermelha |
+| tela: o aviso perde a parte do torneio (a diferença que só o documento mostra) | 1 vermelha |
+| tela: a confirmação deixa de mostrar o que o servidor gravou e volta a adivinhar | 1 vermelha |
 
 ## O portão: todo arquivo termina em `process.exit(placar(...))`
 

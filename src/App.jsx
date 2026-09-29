@@ -7516,6 +7516,11 @@ function CriarCircuitoCard({ chamarAdminAction }) {
               <div>
                 <div style={{fontSize:16,fontWeight:800,color:T.verde2,marginBottom:8}}>✓ Circuito criado!</div>
                 <div style={{fontSize:14,color:T.offwhite,marginBottom:6}}><strong>{criado.nome_circuito}</strong> — sistema {criado.sistema}{criado.pareamento?` · ${criado.pareamento}`:""}</div>
+                {/* A versão e o teto vêm do que o SERVIDOR gravou, não do que a tela
+    mandou — é o recibo, não a intenção (ROADMAP 0.10.7). */}
+                {criado.regulamento_versao && (
+                  <div style={{fontSize:12.5,color:T.cinza,marginBottom:6}}>Regulamento: <strong style={{color:T.offwhite}}>{criado.regulamento_versao}</strong>{criado.max_atletas ? <> · teto de <strong style={{color:T.offwhite}}>{criado.max_atletas}</strong> atletas</> : null}</div>
+                )}
                 {/* Dizia "pronto para inscrições" — e o circuito nasce com `inscricoes_abertas:
     false`. O atleta não recebia erro: o circuito simplesmente não aparecia na
     vitrine (a leitura filtra por inscrições abertas), então não havia o que
@@ -7561,6 +7566,19 @@ function CriarCircuitoCard({ chamarAdminAction }) {
                     </div>
                   ))}
                 </div>
+
+                {sistema && (
+                  <div style={{marginTop:12, background:"rgba(216,90,48,0.08)", border:`1px solid ${T.bordaSuave}`, borderRadius:10, padding:"10px 12px"}}>
+                    <div style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Regulamento que este circuito vai usar</div>
+                    <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{sistema === "A" ? "vA-nc-01" : "vB-01"}</div>
+                    <div style={{fontSize:11.5,color:T.cinza,marginTop:4,lineHeight:1.55}}>
+                      {sistema === "A"
+                        ? <>É o regulamento de rating para circuitos <strong style={{color:T.offwhite}}>novos</strong> — não é o do BH. A diferença que importa: <strong style={{color:T.offwhite}}>não tem Torneio Presencial de Encerramento</strong>. Esse capítulo é do BH, e o circuito novo nasce sem ele.</>
+                        : <>É o regulamento de pontos fixos. <strong style={{color:T.offwhite}}>Também não tem torneio de encerramento</strong>: a temporada termina na tabela de pontos.</>}
+                      {" "}Este é o texto que <strong style={{color:T.offwhite}}>todo atleta vai aceitar</strong> ao se inscrever, e ele <strong style={{color:T.offwhite}}>não muda depois</strong> — trocar um regulamento já aceito invalidaria os aceites.
+                    </div>
+                  </div>
+                )}
 
                 {sistema==="B" && (
                   <div style={{marginTop:16}}>
@@ -8231,12 +8249,22 @@ function RegulamentoDoCircuitoCard({ versaoAtual, nomeCircuito, athletes, chamar
 
 function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg, msgsStatus }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
+  // ROADMAP 0.10.9: o motor sempre aceitou `maxAtletas` no DEFINIR_CONFIG_CIRCUITO;
+  // a tela e que nao oferecia -- e ainda afirmava "o teto e fixo em 20", que deixou
+  // de ser verdade quando a criacao passou a perguntar (8 a 20).
+  const [tetoEdit, setTetoEdit] = useState(String(state.maxAtletas || 20));
   // Ressincroniza quando o nome muda no banco (recarga, troca de circuito, ou
   // correção feita por fora). Sem isto, o campo guardava o valor da montagem e
   // o botão Salvar o regravava por cima — desfazendo em silêncio uma alteração
   // feita enquanto esta aba estava aberta.
   useEffect(() => { setNomeEdit(state.nomeCircuito || ""); }, [state.nomeCircuito]);
   const ativos = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
+  // Teto (ROADMAP 0.10.9). A mesma faixa do motor: 8 a 20. A tela BLOQUEIA fora
+  // dela em vez de deixar o motor aparar em silencio -- aparar sem dizer faria o
+  // admin digitar 50, ver "salvo" e ficar com 20 sem saber.
+  const tetoValido = Number(tetoEdit) >= 8 && Number(tetoEdit) <= 20;
+  const ativosNoCircuito = ativos.length;
+  const tetoAbaixoDoAtual = tetoValido && Number(tetoEdit) < ativosNoCircuito;
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
   const pendentes = state.athletes.filter(a => a.status === "pendente");
   const roundMatches = state.matches.filter(m => !m.validated && !m.rejeitado);
@@ -8577,11 +8605,35 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
 
       <Card style={{marginTop:8}}>
         <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>⚙️ Configuração do circuito</div>
-        <div style={{fontSize:11,color:"#7d9188",marginBottom:8}}>O nome aparece no cabeçalho e nos títulos das mensagens. O teto é fixo em 20 atletas por circuito.</div>
+        <div style={{fontSize:11,color:"#7d9188",marginBottom:8}}>O nome aparece no cabeçalho e nos títulos das mensagens.</div>
         <label style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>Nome do circuito</label>
         <input value={nomeEdit} onChange={e=>setNomeEdit(e.target.value)}
-          style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:8,outline:"none",boxSizing:"border-box"}}/>
-        <Btn small color="#D85A30" onClick={()=>dispatch({type:"DEFINIR_CONFIG_CIRCUITO",payload:{nome:nomeEdit.trim()||"Clube do Tênis de Mesa"}})}>💾 Salvar</Btn>
+          style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,width:"100%",marginBottom:10,outline:"none",boxSizing:"border-box"}}/>
+
+        <label style={{fontSize:10,fontWeight:700,color:"#9db3a8",textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>Máximo de atletas no circuito</label>
+        <input value={tetoEdit} onChange={e=>setTetoEdit(e.target.value.replace(/[^0-9]/g,""))} inputMode="numeric"
+          style={{background:"#1C2B27",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,color:"#F0EAE0",padding:"9px 11px",fontSize:14,maxWidth:110,marginBottom:4,outline:"none",boxSizing:"border-box"}}/>
+        <div style={{fontSize:11,color: tetoValido ? "#7d9188" : "#c25a45", marginBottom: tetoAbaixoDoAtual ? 4 : 10, lineHeight:1.5}}>
+          De 8 a 20. Abaixo de 8, o pareamento repetiria confrontos na mesma temporada.
+        </div>
+        {/* Baixar o teto NAO tira ninguem de dentro: ele e conferido so na ENTRADA
+    (`INCLUIR_NO_CIRCUITO` e a promocao do backlog). Dizer isso na tela em vez de
+    bloquear -- e uma decisao legitima fechar a entrada com o circuito cheio. */}
+        {tetoAbaixoDoAtual && (
+          <div style={{fontSize:11,color:"#9C6F3E",marginBottom:10,lineHeight:1.5}}>
+            Hoje há <strong style={{color:"#F0EAE0"}}>{ativosNoCircuito}</strong> atletas no circuito. Um teto de {Number(tetoEdit)} <strong style={{color:"#F0EAE0"}}>não tira ninguém</strong> — só fecha a entrada de novos até alguém sair.
+          </div>
+        )}
+
+        <div style={{fontSize:11,color:"#7d9188",marginBottom:10,lineHeight:1.5,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+          {/* ROADMAP 0.10.7: o admin nao via a versao do regulamento em tela nenhuma.
+      So leitura, de proposito: trocar uma versao ja aceita invalidaria os
+      recibos dos atletas (regra 7 do CLAUDE.md). */}
+          Regulamento em vigor neste circuito: <strong style={{color:"#F0EAE0"}}>{state.regulamentoVersao || "não definido"}</strong>. É o texto que os atletas aceitaram ao se inscrever, e por isso <strong style={{color:"#F0EAE0"}}>não se troca aqui</strong>.
+        </div>
+
+        <Btn small color="#D85A30" disabled={!tetoValido}
+          onClick={()=>dispatch({type:"DEFINIR_CONFIG_CIRCUITO",payload:{nome:nomeEdit.trim()||"Clube do Tênis de Mesa", maxAtletas:Number(tetoEdit)}})}>💾 Salvar</Btn>
       </Card>
     </div>
   );

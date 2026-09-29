@@ -5,6 +5,69 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-09-28 — O caminho do 2º circuito: o admin passa a ver e a poder mudar (0.10.7, 0.10.9)
+
+**A SUBIR — ainda não publicado.** `admin-action` **v62 → v63** e front por
+`git push`. Decisão do Juliano: *"comece pelo 2º circuito"*.
+
+**Ordem: motor primeiro, app depois — e a ordem aqui é de QUALIDADE, não de risco.**
+Verifiquei em vez de afirmar: o `git diff` de `supabase/functions/` tem **uma única
+mudança**, a lista do `select` do `CRIAR_CIRCUITO` (6 linhas, 5 delas comentário).
+`DEFINIR_CONFIG_CIRCUITO` **já aceitava** `maxAtletas` na v62 que está no ar — então
+o campo novo do teto funciona **mesmo sem subir o motor**.
+As duas ordens são seguras: com o motor velho, o app novo lê
+`criado.regulamento_versao` como `undefined` e a linha simplesmente **não aparece**
+(há guarda); com o app velho, o motor novo devolve dois campos a mais que ninguém lê.
+Motor primeiro só garante que o admin nunca veja a tela nova sem o dado.
+
+**O contexto.** Decisão do Juliano em 27/09 (item 0.6.22): o 2º circuito será de
+**pontos** e será um **circuito novo** — não é o BH mudando de sistema. O
+`CRIAR_CIRCUITO` já criava circuito de pontos desde a Fatia A1. O que faltava era o
+admin conseguir **operá-lo depois**, e eram dois buracos do gatilho "antes de abrir
+o 2º circuito".
+
+**1. A tela afirmava que o teto era fixo em 20 — e não era (0.10.9).** O motor
+sempre aceitou `maxAtletas` no `DEFINIR_CONFIG_CIRCUITO`; a tela não oferecia o
+campo, e ainda dizia *"O teto é fixo em 20 atletas por circuito"*, frase que deixou
+de ser verdade quando a criação passou a perguntar (8 a 20). Quem criasse um
+circuito com o teto errado **não tinha como corrigir pela tela**.
+Agora o card de configuração tem o campo, e **a tela bloqueia fora da faixa** em vez
+de deixar o motor aparar em silêncio — aparar sem dizer faria o admin digitar 50,
+ver "salvo" e ficar com 20 sem saber.
+E a tela diz o que acontece de verdade ao **baixar** o teto. Conferi **executando o
+motor**: o teto é lido só na **entrada**, então baixá-lo **não remove ninguém** — só
+fecha a porta até alguém sair. Com o circuito mais cheio que o teto novo, a tela
+avisa isso em vez de bloquear: fechar a entrada com o circuito cheio é decisão
+legítima.
+
+**2. O admin era cego para o regulamento do próprio circuito (0.10.7).** Eram três
+coisas — *não é avisado, não vê, não muda* — e **duas** foram fechadas. O formulário
+de criação passou a dizer, **antes** de criar, qual versão o circuito vai usar, que
+é o texto que **todo atleta daquele circuito vai aceitar**, e a diferença que só
+aparece no documento: **circuito de rating novo nasce sem o Torneio Presencial de
+Encerramento**, porque aquele capítulo é do BH. E o card de configuração mostra a
+versão em vigor.
+**A terceira ponta — "não muda" — NÃO foi feita, e é deliberado.** Trocar a versão
+de um regulamento já aceito muda retroativamente o que o recibo do atleta prova: é o
+que a **regra 7** proíbe. A tela **explica isso ao admin** em vez de oferecer o
+botão, e há asserção provando que o `DEFINIR_CONFIG_CIRCUITO` não toca o campo.
+
+**3. E o instrumento estava mentindo de novo — achado por mutação.** O banco falso
+projetava colunas só no caminho do `select`; no retorno de `insert(...).select(...)`
+ele devolvia a **linha inteira**, qualquer que fosse a lista pedida. Consequência
+medida: tirar `regulamento_versao` do select do `CRIAR_CIRCUITO` deixava a bateria
+**verde**, porque a asserção do recibo não tinha como enxergar a diferença. É a
+**mesma família** do furo do `select("*")` em `LISTAR_TELEFONES`, que ficava verde
+devolvendo `pin_hash` de todo mundo — e aquele conserto, de 27/09, só cobriu metade
+do caminho. Corrigido, **e desta vez o instrumento ganhou portão contra si mesmo**:
+4 asserções que provam que a escrita com `select` recorta colunas, porque a lição de
+ontem foi que *todo portão novo precisa ser testado contra si mesmo*.
+
+**Bateria: 776 → 813 asserções, 0 falhas, saída 0.** 14 mutações, 14 vermelhas —
+duas delas só ficaram vermelhas **depois** do conserto do banco falso.
+
+---
+
 ### 2026-09-27 — Ciência do regulamento ao entrar num 2º circuito (0.6.21)
 
 **NO AR desde 27/09/2026, 22:4x (de acordo do Juliano: "Publique os dois")**:

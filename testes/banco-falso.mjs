@@ -217,23 +217,34 @@ class Consulta {
       return { data: this.somenteContagem ? null : clonar(achadas), error: null, count: contagem };
     }
 
+    // ⚠️ `insert/update/delete/upsert` + `.select(...)` TAMBEM projetam colunas.
+    // Faltava aqui (28/09/2026): a projecao estava so no caminho do `select`, e o
+    // retorno de escrita devolvia a linha inteira, qualquer que fosse a lista
+    // pedida. Consequencia medida por mutacao: trocar
+    // `.select("id, slug, nome_circuito, sistema, pareamento, regulamento_versao, max_atletas")`
+    // por uma lista SEM a versao deixava a bateria VERDE -- a assercao que conferia
+    // o recibo devolvido pelo CRIAR_CIRCUITO nao tinha como enxergar a diferenca.
+    // E a familia do defeito e conhecida: e o mesmo furo do `select("*")` em
+    // LISTAR_TELEFONES, que ficou verde devolvendo `pin_hash`. Um banco falso que
+    // devolve mais do que o real e mais generoso que producao, e generosidade em
+    // instrumento de medicao se chama falso verde.
     if (this.operacao === "insert") {
       const novas = clonar(this.dados).map((l) => this.comPadroes(l));
       linhas.push(...novas);
-      return { data: this.devolverLinhas ? clonar(novas) : null, error: null, count: null };
+      return { data: this.devolverLinhas ? this.projetar(clonar(novas)) : null, error: null, count: null };
     }
 
     if (this.operacao === "update") {
       const alvo = this.filtrar(linhas);
       for (const linha of alvo) Object.assign(linha, clonar(this.dados));
-      return { data: this.devolverLinhas ? clonar(alvo) : null, error: null, count: null };
+      return { data: this.devolverLinhas ? this.projetar(clonar(alvo)) : null, error: null, count: null };
     }
 
     if (this.operacao === "delete") {
       const alvo = this.filtrar(linhas);
       const sobrando = linhas.filter((l) => !alvo.includes(l));
       this.banco.tabelas[this.tabela] = sobrando;
-      return { data: this.devolverLinhas ? clonar(alvo) : null, error: null, count: null };
+      return { data: this.devolverLinhas ? this.projetar(clonar(alvo)) : null, error: null, count: null };
     }
 
     if (this.operacao === "upsert") {

@@ -932,17 +932,45 @@ atleta inscrito."*
   *Nota de método, do Guardião de Segurança:* `supabase functions download`
   devolve o código **transpilado** — para comparar fonte com o que está no ar,
   só pela MCP.
-- **0.10.7 — O admin é cego para o regulamento do próprio circuito.** Não é
-  avisado na criação de que um circuito de rating novo nasce **sem torneio**; não
-  vê `regulamento_versao` em tela nenhuma do painel; e não tem como mudá-la.
-  Some as três: *não é avisado, não vê, não muda.* O `CRIAR_CIRCUITO` nem
-  devolve o campo no `select`. *(Admin)*
+- **0.10.7 — ⚠️ RESOLVIDO EM DUAS DAS TRÊS PONTAS em 28/09/2026 (no fonte).** *O
+  admin é cego para o regulamento do próprio circuito.* Eram três coisas — *não é
+  avisado, não vê, não muda* — e duas foram fechadas:
+  - **não é avisado → resolvido.** O formulário de criação passou a dizer, **antes**
+    de criar, qual versão o circuito vai usar (`vA-nc-01` ou `vB-01`), que é o texto
+    que **todo atleta daquele circuito vai aceitar**, e a diferença que só aparece no
+    documento: **circuito de rating NOVO nasce sem o Torneio Presencial de
+    Encerramento**, porque aquele capítulo é do BH.
+  - **não vê → resolvido.** O card "⚙️ Configuração do circuito" mostra a versão em
+    vigor, lida do circuito carregado. E o `CRIAR_CIRCUITO` passou a **devolver** o
+    campo no `select`, então a tela de confirmação mostra o que o **servidor gravou**,
+    não o que a tela mandou.
+  - **não muda → NÃO FEITO, e de propósito.** Trocar a versão de um regulamento já
+    aceito muda retroativamente o que o recibo do atleta prova — é exatamente o que a
+    **regra 7** do `CLAUDE.md` proíbe. A tela diz isso ao admin, em vez de oferecer o
+    botão. Se um dia precisar existir, é com aviso prévio e re-aceite, como a v03-13
+    fez, não como um salvamento de configuração. Há asserção provando que o
+    `DEFINIR_CONFIG_CIRCUITO` **não toca** `regulamento_versao`.
+  **11 asserções** — 1 rodando o motor (o recibo que ele devolve) e 10 de fonte —
+  dentro das 37 de `testes/segundo-circuito.mjs`. *(Admin)*
 - **0.10.8 — O torneio virou decisão de ninguém.** O
   `REGULAMENTOS_NOVOS_CIRCUITOS.md` promete que ele é "a critério do admin do
   circuito"; o código entrega "sempre não", travado na criação. Um organizador
   que queira fazer torneio não tem caminho. *(Admin)*
-- **0.10.9 — Não há campo para editar o teto de um circuito existente.** O motor
-  aceita (`DEFINIR_CONFIG_CIRCUITO`), a tela não oferece. *(Admin)*
+- **0.10.9 — ✅ RESOLVIDO em 28/09/2026 (no fonte).** *Não havia campo para editar o
+  teto de um circuito existente.* O motor sempre aceitou
+  (`DEFINIR_CONFIG_CIRCUITO`); a tela não oferecia — e, pior, **afirmava** "o teto é
+  fixo em 20 atletas por circuito", frase que deixou de ser verdade quando a criação
+  passou a perguntar (8 a 20). Criar com o teto errado era irreversível pela tela.
+  O card de configuração ganhou o campo, e **a tela bloqueia fora da faixa 8–20** em
+  vez de deixar o motor aparar em silêncio — aparar sem dizer faria o admin digitar
+  50, ver "salvo" e ficar com 20 sem saber.
+  **E a tela diz o que acontece de verdade ao baixar o teto:** conferi executando o
+  motor que o teto é lido **só na entrada** (`INCLUIR_NO_CIRCUITO` e a promoção do
+  backlog), então baixá-lo **não remove ninguém** — só fecha a entrada até alguém
+  sair. Com o circuito mais cheio que o teto novo, a tela avisa isso em vez de
+  bloquear: fechar a entrada com o circuito cheio é decisão legítima do admin.
+  **16 asserções**, 8 delas rodando o motor de verdade — inclusive a que prova, pela
+  execução, que baixar o teto não mexe em quem já está dentro. *(Admin)*
 
 ### Gatilho: antes do 1º circuito de terceiro (e pede advogado)
 

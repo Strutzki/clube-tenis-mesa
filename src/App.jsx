@@ -285,6 +285,31 @@ function resizeImageFile(file, maxSize = 480, quality = 0.82) {
 
 // Envia o blob já redimensionado pro bucket público e devolve a URL pública.
 async function uploadFotoAtleta(athleteId, blob) {
+  // ⚠️ APAGA A ANTERIOR. Até 29/09/2026 cada troca de foto deixava a antiga no
+  // bucket — que é PÚBLICO. O Guardião Jurídico contou: 23 arquivos para 13
+  // atletas, ou seja 10 rostos publicamente acessíveis que nenhuma linha do banco
+  // aponta. Não é defeito de exclusão (o apagamento por prefixo pega todas); é de
+  // MINIMIZAÇÃO (art. 6º, III): só a foto atual tem finalidade, e a pessoa que
+  // trocou a foto tomou uma decisão sobre a própria imagem que o app não respeitou.
+  // Best-effort de propósito: falhar aqui não pode impedir o atleta de trocar a
+  // foto — o pior caso é sobrar um órfão, que é o estado de hoje.
+  try {
+    const lista = await fetch(`${SUPA_URL}/storage/v1/object/list/${FOTOS_BUCKET}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+      body: JSON.stringify({ prefix: "", limit: 1000, search: String(athleteId) }),
+    });
+    const arquivos = await lista.json().catch(() => []);
+    const antigas = (Array.isArray(arquivos) ? arquivos : [])
+      .map(a => a?.name).filter(n => typeof n === "string" && n.startsWith(String(athleteId) + "-"));
+    if (antigas.length > 0) {
+      await fetch(`${SUPA_URL}/storage/v1/object/${FOTOS_BUCKET}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPA_KEY}`, "apikey": SUPA_KEY },
+        body: JSON.stringify({ prefixes: antigas }),
+      });
+    }
+  } catch (e) { /* sobrar órfão é o estado de hoje; travar a troca da foto seria pior */ }
   const path = `${athleteId}-${Date.now()}.jpg`;
   const res = await fetch(`${SUPA_URL}/storage/v1/object/${FOTOS_BUCKET}/${path}`, {
     method: "POST",
@@ -1267,7 +1292,13 @@ function reducer(state, action) {
       if (aprovado) {
         matches = state.matches.map(m =>
           m.id === matchId
-            ? { ...m, rejeitado: true, motivoRejeicao: `W.O. Justificado — ${justificativa || ""}`.trim() }
+            // ⚠️ SEM A JUSTIFICATIVA. Eu consertei o SERVIDOR (que parou de copiar o
+            // texto de saúde para `partidas.motivo_rejeicao`, coluna legível pelo
+            // visitante) e deixei este reducer otimista fabricando o mesmo texto na
+            // memória da tela. É local e some no F5 — mas o app passaria a mostrar
+            // uma coisa que o servidor deliberadamente não guarda, e é a mesma
+            // família de "consertei um lado só" que me pegou o dia inteiro.
+            ? { ...m, rejeitado: true, motivoRejeicao: "W.O. Justificado" }
             : m
         );
       }
@@ -2489,6 +2520,17 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
         <div style={{...s.box("#c25a45"), marginTop:8}}>
           <strong style={{color:"#c25a45", fontSize:12}}>Retenção de dados</strong><br/>
           Seus dados são mantidos enquanto você estiver ativo no Circuito e por até 2 anos após o encerramento da sua participação, para fins de histórico e auditoria de resultados.
+          {/* ⚠️ A FRASE DOS BACKUPS, e ela existe porque a exclusão NÃO os alcança.
+              Redação do Guardião Jurídico, e o prazo (6 meses) é decisão do Juliano
+              de 29/09/2026.
+              ATENÇÃO: este número só é verdade porque a função de backup passou a
+              APAGAR o que vence — ela não tinha regra de retenção nenhuma até hoje
+              (109 arquivos, 80 dias, crescendo sem limite). Se alguém tirar a
+              retenção da `backup-clube-tenis-mesa`, esta frase volta a ser falsa.
+              Os dois andam juntos. */}
+          <br/><br/>
+          <strong style={{color:"#c25a45", fontSize:12}}>Cópias de segurança</strong><br/>
+          Mantemos cópias de segurança do banco de dados por até <strong style={{color:"#F0EAE0"}}>6 meses</strong>, para conseguir restaurar o sistema em caso de falha. Quando você pede a exclusão dos seus dados, nós os apagamos do sistema em uso imediatamente; as cópias de segurança feitas antes do seu pedido ainda contêm esses dados até serem substituídas pelo ciclo normal, e <strong style={{color:"#F0EAE0"}}>não são usadas para restaurar cadastros individuais</strong>.
         </div>
 
         <div style={s.checkRow} onClick={()=>setAceiteLGPD(v=>!v)}>

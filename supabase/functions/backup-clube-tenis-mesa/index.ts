@@ -56,11 +56,43 @@ Deno.serve(async (req: Request) => {
       const m = NAME_RE.exec(n);
       return m ? m[1] > dateStr : false;
     });
+
+    // ── RETENCAO: 6 MESES ─────────────────────────────────────────────────────
+    // DECISAO DO JULIANO, 29/09/2026. E ela existe porque a politica de privacidade
+    // vai PROMETER esse prazo ao titular, e ate hoje esta funcao NAO TINHA REGRA DE
+    // RETENCAO NENHUMA -- o unico apagamento era o de data futura acima, que e
+    // protecao contra relogio errado. Medido antes de escrever: 109 arquivos, o mais
+    // antigo de 11/07/2026, 80 dias de cobertura e CRESCENDO SEM LIMITE.
+    //
+    // Sem isto, escrever "6 meses" na politica seria promessa falsa no dia 1 -- e o
+    // Guardiao Juridico foi explicito: "escrever um prazo que nao se cumpre e pior
+    // que nao ter a frase". O prazo e a unica coisa que liga o texto ao sistema.
+    //
+    // Por que 6 meses cobre o proposito: o backup existe para restaurar o sistema
+    // depois de uma falha, e uma falha que so se descobre 6 meses depois nao se
+    // restaura a partir de backup -- se restaura a partir do que o clube tem
+    // registrado fora do app.
+    //
+    // ⚠️ A CONTA E POR DATA NO NOME, nao por `created_at`: o nome e a fonte de
+    // verdade deste bucket (o arquivo do dia e sobrescrito, entao o `created_at`
+    // pode ser mais novo que o conteudo). Arquivo com nome fora do padrao NAO e
+    // apagado -- na duvida, guardar.
+    const RETENCAO_MESES = 6;
+    const corte = new Date(now);
+    corte.setMonth(corte.getMonth() - RETENCAO_MESES);
+    const corteStr = localDateStr(corte);
+    const vencidos = files.map((f) => f.name).filter((n) => {
+      const m = NAME_RE.exec(n);
+      return m ? m[1] < corteStr : false; // nome fora do padrao: nao mexe
+    });
+
+    const aApagar = [...new Set([...futuros, ...vencidos])];
     let removidos: string[] = [];
-    if (futuros.length > 0) {
-      const { error: rmErr } = await supabase.storage.from(BUCKET).remove(futuros);
+    if (aApagar.length > 0) {
+      const { error: rmErr } = await supabase.storage.from(BUCKET).remove(aApagar);
       if (rmErr) throw new Error("remove: " + rmErr.message);
-      removidos = futuros;
+      removidos = aApagar;
+      console.log(`retencao ${RETENCAO_MESES} meses (corte ${corteStr}): ${vencidos.length} vencido(s), ${futuros.length} com data futura`);
     }
 
     const jaExiste = files.some((f) => f.name === filename);

@@ -5416,6 +5416,9 @@ const MSGS_ATLETA = new Set([
   "Não conseguimos concluir nem desfazer sua inscrição. Fale com o organizador antes de tentar de novo.",
   // O titular cancelando um pedido que já foi finalizado (ou que nunca existiu).
   "Não há pedido de exclusão pendente para cancelar.",
+  // Frase própria das ações de exclusão: reusar a do re-aceite mandava o titular
+  // logar de novo "para confirmar o aceite" no caminho de um direito dele.
+  "Sua sessão expirou. Entre de novo para pedir ou cancelar a exclusão dos seus dados.",
   "Placar inválido.",
   // Guarda de menor de idade no INSCREVER (27/09/2026). A porta da frente nao tinha
   // nenhuma, e a tela era a unica trava — o servidor aceitava menor sem responsavel se
@@ -10344,7 +10347,7 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
               <span style={{fontFamily:T.mono,fontSize:10,color:"#7d9188",letterSpacing:0.5,textTransform:"uppercase"}}>Rodada {s.round}</span>
             </div>
             {s.adversarioNome && <div style={{fontSize:11,color:"#7d9188",marginBottom:8}}>Adversário: {s.adversarioNome}</div>}
-            <div style={{fontSize:12,color:"#F0EAE0",background:"rgba(0,0,0,0.15)",borderRadius:8,padding:"8px 10px",marginBottom:8,lineHeight:1.5}}>"{s.justificativa}"</div>
+            <div style={{fontSize:12,color:"#F0EAE0",background:"rgba(0,0,0,0.15)",borderRadius:8,padding:"8px 10px",marginBottom:8,lineHeight:1.5}}>"{s.justificativa || "—"}"</div>
             {s.comprovanteUrl && (
               <ComprovanteBotao path={s.comprovanteUrl} urlComprovante={urlComprovante} />
             )}

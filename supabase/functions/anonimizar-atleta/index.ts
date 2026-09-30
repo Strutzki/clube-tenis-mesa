@@ -168,21 +168,61 @@ Deno.serve(async (req) => {
     // NOME". Agora varre TODAS e troca o nome onde ele aparecer.
     const { data: eu } = await supabase.from("atletas").select("nome").eq("id", id).maybeSingle();
     const nomeReal = String((eu as any)?.nome || "").trim();
-    const { data: msgs, error: eMsgSel } = await supabase.from("mensagens_enviadas")
-      .select("id,atleta_id,atleta_nome,texto");
+    // ⚠️ DUAS CORRECOES DO GUARDIAO JURIDICO, 29/09/2026:
+    // (1) FILTRO NO SERVIDOR. A versao anterior lia a tabela INTEIRA sem paginacao.
+    //     Sao 288 linhas hoje e a tabela SO CRESCE; no dia em que cruzar o teto de
+    //     linhas do PostgREST, a varredura passaria a perder o resto EM SILENCIO e
+    //     a promessa ficaria falsa sem ninguem saber. Duas consultas estreitas em
+    //     vez de uma larga: as dele, e as que citam o nome dele.
+    // (2) FRONTEIRA DE PALAVRA na troca. A substituicao era por pedaco de texto, e
+    //     um atleta esta cadastrado como "Juliano" -- nome unico. No dia em que
+    //     entrar um "Juliano Silva", excluir um CORROMPERIA as mensagens do outro.
+    //     Danificar o registro de um terceiro enquanto se atende o pedido de outra
+    //     pessoa e problema por si.
+    const msgsDele = await supabase.from("mensagens_enviadas")
+      .select("id,atleta_id,atleta_nome,texto").eq("atleta_id", id);
+    if (msgsDele.error) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
+    const msgsQueCitam = nomeReal
+      ? await supabase.from("mensagens_enviadas")
+          .select("id,atleta_id,atleta_nome,texto").ilike("texto", `%${nomeReal}%`)
+      : { data: [], error: null };
+    if (msgsQueCitam.error) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
+    const porId = new Map<string, any>();
+    for (const m of [...(msgsDele.data ?? []), ...(msgsQueCitam.data ?? [])]) porId.set(String((m as any).id), m);
+    const msgs = [...porId.values()];
+    const eMsgSel = null;
     if (eMsgSel) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
     for (const m of msgs ?? []) {
       const ehDele = String((m as any).atleta_id) === String(id);
       const textoOriginal = String((m as any).texto || "");
-      const citaONome = !!nomeReal && textoOriginal.includes(nomeReal);
-      if (!ehDele && !citaONome) continue; // mensagem de terceiro que nao o cita
+      // ⚠️ UMA CONTA SO, e isto e correcao de 29/09/2026. Eu tinha DUAS verificacoes
+      // de fronteira de palavra independentes -- uma para decidir se a mensagem
+      // interessa, outra para trocar -- e o teste de mutacao mostrou que cada uma
+      // era MASCARADA PELA OUTRA: sabotar so a deteccao deixava a troca intacta, e
+      // vice-versa, e a bateria ficava verde nos dois casos.
+      // E a mesma licao da `janelaRenovacao` (tres contas da mesma regra) e da
+      // `idsNoRankingFinal`: regra duplicada nao e defesa em profundidade, e ponto
+      // cego. Agora a troca e feita UMA vez e o "interessa?" e derivado dela.
+      //
+      // A fronteira existe porque a substituicao era por pedaco de texto, e ha um
+      // atleta cadastrado como "Juliano" -- nome unico. Com "Juliano Silva" no
+      // circuito, excluir um CORROMPERIA as mensagens do outro.
+      const trocarNome = (txt: string, nome: string) => {
+        if (!nome) return txt;
+        const escapado = nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return txt.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escapado}(?![\\p{L}\\p{N}])`, "gu"), ANON);
+      };
+      const nomeAntigo = String((m as any).atleta_nome || "");
+      let textoNovo = trocarNome(textoOriginal, nomeReal);
+      // A mensagem DELE cujo `atleta_nome` difere do nome atual (apelido, grafia).
+      if (ehDele && textoNovo === textoOriginal && nomeAntigo && nomeAntigo !== nomeReal) {
+        textoNovo = trocarNome(textoOriginal, nomeAntigo);
+      }
+      const mudouOTexto = textoNovo !== textoOriginal;
+      if (!ehDele && !mudouOTexto) continue; // mensagem de terceiro que nao o cita
       const upd: Record<string, unknown> = {};
       if (ehDele) upd.atleta_nome = ANON;
-      if (citaONome) upd.texto = textoOriginal.split(nomeReal).join(ANON);
-      if (ehDele && !citaONome) {
-        const nomeAntigo = String((m as any).atleta_nome || "");
-        if (nomeAntigo) upd.texto = textoOriginal.split(nomeAntigo).join(ANON);
-      }
+      if (mudouOTexto) upd.texto = textoNovo;
       const { error: eMsg } = await supabase.from("mensagens_enviadas")
         .update(upd).eq("id", (m as any).id);
       if (eMsg) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
@@ -207,8 +247,19 @@ Deno.serve(async (req) => {
       .filter(Boolean)
       .map((u: string) => u.split("/").pop() as string);
     if (arquivosWo.length > 0) {
-      const { error: eRmWo } = await supabase.storage.from(COMPROVANTES_BUCKET).remove(arquivosWo);
+      // ⚠️ CONFERE QUE REMOVEU, nao so que nao deu erro. O `remove` do Supabase NAO
+      // devolve erro para caminho inexistente -- e o `comprovante_url` e gravado CRU
+      // do payload pelo `SOLICITAR_WO`, que nao exige token (divida 0.6.17). Se o
+      // valor guardado nao tiver a forma que o app gera, o nome derivado nao existe
+      // no bucket, o `remove` responde sucesso, e o atestado FICA com a coluna ja
+      // anulada -- o estado "pior que os dois". (Guardiao de Seguranca, 29/09/2026,
+      // achado a partir de um fixture errado dele.)
+      const { data: removidos, error: eRmWo } = await supabase.storage.from(COMPROVANTES_BUCKET).remove(arquivosWo);
       if (eRmWo) return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
+      if ((removidos ?? []).length !== arquivosWo.length) {
+        console.error("comprovante nao removido do bucket:", arquivosWo, "removidos:", (removidos ?? []).length);
+        return jsonResponse({ sucesso: false, erro: "A exclusão não foi concluída. Parte dos dados já pode ter sido apagada — tente de novo; é seguro repetir." }, 500);
+      }
     }
 
     // ⚠️ `justificativa: ""` E NAO `null` — e a diferenca entre funcionar e

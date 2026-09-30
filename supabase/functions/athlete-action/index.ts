@@ -670,7 +670,11 @@ Deno.serve(async (req) => {
         if (!athleteId) return jsonResponse({ sucesso: false, erro: "athleteId é obrigatório" }, 400);
         const donoSol = await atletaPorTokenAA((payload || {}).token);
         if (!donoSol || donoSol !== String(athleteId)) {
-          return jsonResponse({ sucesso: false, erro: "Sua sessão expirou. Entre de novo para confirmar o aceite." }, 401);
+          // Frase PROPRIA. Ate 29/09/2026 as duas reusavam a do re-aceite, e o
+          // titular clicava em "solicitar exclusao dos meus dados" e era mandado
+          // logar de novo "para confirmar o ACEITE" -- no caminho de um direito
+          // dele, a mensagem nao pode falar de outra coisa. (Guardiao Juridico.)
+          return jsonResponse({ sucesso: false, erro: "Sua sessão expirou. Entre de novo para pedir ou cancelar a exclusão dos seus dados." }, 401);
         }
         // `.is("exclusao_solicitada_em", null)`: so grava se NAO houver pedido em
         // aberto. Sem isto, um segundo clique (ou um redespacho do front)
@@ -706,7 +710,11 @@ Deno.serve(async (req) => {
         // razao de o CANCELAR pesar MAIS esta escrita la.
         const donoCanc = await atletaPorTokenAA((payload || {}).token);
         if (!donoCanc || donoCanc !== String(athleteId)) {
-          return jsonResponse({ sucesso: false, erro: "Sua sessão expirou. Entre de novo para confirmar o aceite." }, 401);
+          // Frase PROPRIA. Ate 29/09/2026 as duas reusavam a do re-aceite, e o
+          // titular clicava em "solicitar exclusao dos meus dados" e era mandado
+          // logar de novo "para confirmar o ACEITE" -- no caminho de um direito
+          // dele, a mensagem nao pode falar de outra coisa. (Guardiao Juridico.)
+          return jsonResponse({ sucesso: false, erro: "Sua sessão expirou. Entre de novo para pedir ou cancelar a exclusão dos seus dados." }, 401);
         }
         // `neq("status","arquivado")` pelo mesmo motivo do SOLICITAR: quem ja foi
         // anonimizado nao volta a vida por aqui. E o `not is null` garante que so

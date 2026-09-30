@@ -21,6 +21,19 @@ function condicaoDeTexto(texto) {
   return (linha) => comparar(linha[coluna], op, valor);
 }
 
+// ⚠️ REGISTRO DE VIOLACAO DE INSTRUMENTO, e ele existe porque marcar a excecao
+// NAO BASTOU. Eu tentei `throw Object.assign(new Error(...), {instrumento:true})` e
+// medi: um `try/catch` comum da funcao sob teste pega isso igual -- exatamente o
+// que o `mirrorSazonal` antigo fazia. Uma recusa que a funcao pode engolir nao e
+// portao.
+// Agora a violacao tambem fica GRAVADA aqui, e o `placar()` derruba o arquivo no
+// fim, engolida ou nao. E o unico jeito de a recusa ser fail-closed de verdade.
+export const violacoesDeInstrumento = [];
+export function registrarViolacao(mensagem) {
+  violacoesDeInstrumento.push(mensagem);
+  return Object.assign(new Error(mensagem), { instrumento: true });
+}
+
 function comparar(campo, op, valor) {
   // Tudo que chega de texto é comparado como texto — é o que o PostgREST faz
   // com os filtros da URL.
@@ -75,6 +88,18 @@ class Consulta {
   gt(coluna, valor) { this.filtros.push((l) => comparar(l[coluna], "gt", valor)); return this; }
   lt(coluna, valor) { this.filtros.push((l) => comparar(l[coluna], "lt", valor)); return this; }
   is(coluna, valor) { this.filtros.push((l) => comparar(l[coluna], "is", valor)); return this; }
+  // `.ilike(coluna, padrao)` — busca por texto, sem distinguir maiuscula.
+  // ⚠️ Nao existia ate 29/09/2026, e o arquivo de teste CAIU quando a
+  // `anonimizar-atleta` passou a usa-lo -- que e o comportamento certo do
+  // instrumento: barulho alto, nao verde silencioso. O `%` do PostgREST vira `.*`.
+  ilike(coluna, padrao) {
+    const re = new RegExp("^" + String(padrao)
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/%/g, ".*")
+      .replace(/_/g, ".") + "$", "i");
+    this.filtros.push((l) => re.test(String(l[coluna] ?? "")));
+    return this;
+  }
   // `.not(coluna, operador, valor)` — a negacao do PostgREST.
   // ⚠️ NAO EXISTIA ate 29/09/2026, e a ausencia dele foi a PROVA de que o
   // `CANCELAR_EXCLUSAO` nao era executado por teste nenhum: o Guardiao de
@@ -146,9 +171,63 @@ class Consulta {
     // improvada -- inclusive as que protegem `desconto_pct`, `isento` e o
     // `pin_hash`, que sao a Regra 2 do projeto.
     //
+    // ⚠️ O QUE CONTINUA FORA DO MODELO, e a distincao importa (o Guardiao de
+    // Seguranca pediu que fosse explicita, porque a lista antiga os misturava):
+    //
+    // VAZAM -- instrumento MAIS GENEROSO que a producao, e uma regressao passa
+    // VERDE. Sao os perigosos:
+    //   · `upsert(...).select(...)` NAO projeta: devolve a linha inteira.
+    //     (apelido e embed aninhado saiam desta lista em 29/09 -- agora o `projetar`
+    //      LANCA ERRO neles, ver acima.)
+    //
+    // SO DAO FALSO VERMELHO -- instrumento MAIS POBRE que a producao. Dao trabalho,
+    // nao carimbam regressao:
+    //   · `!left` (o `aplicarJuncao` so conhece `!inner`)
+    //   · `single()`/`maybeSingle()` trocam o erro injetado por PGRST116, o que faz
+    //     o ramo `telefone_duplicado` do INSCREVER ser intestavel
+    //
+    // RESTRICOES DE COLUNA: NOT NULL agora e modelado (ver `executar`). UNIQUE e
+    // PARCIALMENTE tratado -- o `REGISTRAR_MENSAGEM_ENVIADA` trata o 23505 e tem
+    // teste, via `banco.recusar`. Tipo errado, CHECK e chave estrangeira continuam
+    // sem modelo.
+    //
     // O PostgREST projeta o recurso embutido de forma independente do topo:
     // `*` no topo devolve todas as colunas DA TABELA, e o embed continua
     // limitado ao que foi pedido dentro dos parenteses. E o que se imita aqui.
+    // ⚠️ INSTRUMENTO À PROVA DE FALHA. Proposta do Guardiao de Seguranca em
+    // 29/09/2026, e ela e melhor do que o que eu ia fazer (suportar apelido):
+    // em vez de modelar o proximo caminho, RECUSAR o desconhecido.
+    //
+    // O problema que isto resolve e o meu, e ele tem nome nesta auditoria: "eu
+    // sempre conserto o caminho que apareceu". Cinco vezes a projecao do banco
+    // falso foi mais generosa que a producao, e cada conserto fechou um caminho.
+    // Um portao que recusa o que nao conhece nao precisa que alguem adivinhe o
+    // proximo -- inclusive as formas que nem eu nem ele pensamos.
+    //
+    // FORMAS RECUSADAS (erro alto de teste, nao generosidade silenciosa):
+    //   · apelido do PostgREST (`apelido:coluna` ou `alias:tabela(...)`) -- era a
+    //     unica das cinco que VAZAVA: devolvia a linha inteira, com `pin_hash`
+    //   · embed aninhado em dois niveis (`atletas(id, perfis(x))`)
+    //   · qualquer coisa que nao case com "coluna" nem com "tabela(colunas)"
+    for (const n of nomes) {
+      if (n === "*") continue;
+      if (n.includes(":")) {
+        throw registrarViolacao(
+          `banco-falso: select com APELIDO ("${n}") nao e modelado. ` +
+          `Ele VAZARIA a linha inteira em vez de projetar -- use a forma sem apelido, ` +
+          `ou ensine a projecao a entende-lo. Recusar e melhor que passar verde.`);
+      }
+      const emb = n.match(/^([A-Za-z0-9_]+)(?:![a-z]+)?\s*\(([\s\S]*)\)$/);
+      if (emb && /\(/.test(emb[2])) {
+        throw registrarViolacao(
+          `banco-falso: embed ANINHADO ("${n}") nao e modelado -- o split por virgula ` +
+          `nao respeita parentese e descartaria o nivel de dentro em silencio.`);
+      }
+      if (!emb && /[()]/.test(n)) {
+        throw registrarViolacao(`banco-falso: forma de select nao reconhecida ("${n}").`);
+      }
+    }
+
     const embeds = new Map(); // chave do embed -> Set de colunas, ou null p/ "*"
     let topoTudo = false;
     const manter = new Set();
@@ -389,7 +468,18 @@ class Consulta {
 
   // `await consulta` sem .single() cai aqui.
   then(resolve, rejeitar) {
-    try { resolve(this.executar()); } catch (e) { (rejeitar || resolve)({ data: null, error: { message: String(e.message || e) } }); }
+    try {
+      resolve(this.executar());
+    } catch (e) {
+      // ⚠️ ERRO DO INSTRUMENTO ESCAPA; erro de BANCO virá como `{ error }`.
+      // A distinção existe desde 29/09/2026 e é o que faz a recusa de forma
+      // desconhecida ser um portão de verdade. Convertendo tudo em `{ error }`, uma
+      // função com `try/catch` que engole erro engoliria também a recusa do
+      // instrumento — e o teste passaria VERDE usando uma forma de select que a
+      // projeção não modela. Era exatamente o defeito que a recusa veio impedir.
+      if (e && e.instrumento) throw e;
+      (rejeitar || resolve)({ data: null, error: { message: String(e.message || e) } });
+    }
   }
 }
 

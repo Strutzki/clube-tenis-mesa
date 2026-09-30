@@ -1778,6 +1778,12 @@ secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado 
         // ⚠️ A mensagem de TERCEIRO que cita o nome do titular. Em produção são
         // 117 das 288 linhas. A troca antiga não alcançava nenhuma delas.
         { id: "m3", atleta_id: OUTRO, atleta_nome: "Sicrano", texto: "Sicrano, você joga contra Fulano de Tal na rodada 3." },
+        // ⚠️ O caso do "Juliano": o nome do titular é PREFIXO do nome de outra
+        // pessoa. Sem fronteira de palavra, excluir um CORROMPERIA o registro do
+        // outro — danificar o dado de um terceiro enquanto se atende o pedido de
+        // outra pessoa é problema por si. (Guardião Jurídico, 29/09/2026: há um
+        // atleta cadastrado como "Juliano", nome único, em produção.)
+        { id: "m4", atleta_id: OUTRO, atleta_nome: "Sicrano", texto: "Sicrano, você joga contra Fulano de Talento na rodada 4." },
       ],
       solicitacoes_wo: [
         { id: "w1", atleta_id: ALVO, adversario_id: OUTRO, atleta_nome: "Fulano de Tal", adversario_nome: "Sicrano",
@@ -1882,6 +1888,11 @@ secao("A exclusão de dados alcança TUDO — RODANDO a função que apaga dado 
       "e o nome do destinatário, que é dado dele, fica");
     igual(m3?.atleta_nome, "Sicrano",
       "e o registro continua dizendo de quem é a mensagem");
+    // A FRONTEIRA DE PALAVRA: "Fulano de Tal" não pode casar dentro de
+    // "Fulano de Talento".
+    const m4 = banco.acha("mensagens_enviadas", m => m.id === "m4");
+    igual(m4?.texto, "Sicrano, você joga contra Fulano de Talento na rodada 4.",
+      "e o nome de OUTRA pessoa que só CONTÉM o nome do titular fica intacto — sem fronteira de palavra, excluir um corromperia o registro do outro");
   }
 
   // ── O SEGREDO DE ACESSO ───────────────────────────────────────────────────
@@ -2107,15 +2118,30 @@ secao("O modo GRUPOS pareia por faixa de pontos — e isso não tinha portão ne
   ok(distancias.every(d => d === 1),
     "e nenhum par salta faixa: é 1º×2º, 3º×4º, 5º×6º, 7º×8º");
 
-  // ⚠️ O QUE ESTA SEÇÃO **NÃO** PROTEGE, declarado de propósito: inverter a ordem
-  // do modo grupos (pior primeiro em vez de melhor primeiro) deixa a bateria
-  // VERDE, e está certo que deixe — com número PAR, ordenar crescente ou
-  // decrescente produz o MESMO conjunto de pares vizinhos. A inversão só muda
-  // quem leva o BYE com número ímpar, e o Cap. 03 não fixa quem folga no modo
-  // grupos (só exige rotação, que a seção do bye já protege).
-  // Registrado para ninguém confundir esta sabotagem benigna com P1 (parar de
-  // ordenar) e P2 (virar rodízio no meio), que agora acusam. (Guardião de
-  // Regulamento, 29/09/2026.)
+  // ⚠️ ESTA DECLARAÇÃO ESTAVA FALSA, e o Guardião de Regulamento a derrubou
+  // MEDINDO. Eu havia escrito que inverter a ordem do modo grupos "só muda quem
+  // leva o bye com número ímpar" — e usei isso para não criar portão.
+  //
+  // Com número PAR ela está certa: ordenar crescente ou decrescente produz o mesmo
+  // conjunto de pares vizinhos, a sabotagem fica verde, e está certo que fique.
+  //
+  // Com número ÍMPAR é outra história, e ele mostrou lado a lado com 9 atletas:
+  // NENHUM par da rodada 1 sobrevive, os pares mudam em TODAS as rodadas, e o bye
+  // passa a rodar pelo TOPO da tabela em vez da cauda. A razão é simples em
+  // retrospecto: tirar uma PESSOA DIFERENTE da lista desloca a posição de todo
+  // mundo, e o meu raciocínio ("crescente ou decrescente dá os mesmos vizinhos")
+  // vale para a lista INTEIRA — com ímpar, a lista pareada não é a inteira.
+  //
+  // E o efeito é de competição, não cosmético: o bye vale 1 ponto e a vitória vale
+  // 2 (vB-01 Cap. 05), então benchar sistematicamente os primeiros colocados NEGA
+  // AO TOPO a chance de somar 2, mês após mês, enquanto a cauda joga. São duas
+  // competições diferentes.
+  //
+  // ⚠️ E este repositório já tem escrito, no `promoverIdentidadeGlobal`, que
+  // "comentário errado é pior que comentário nenhum, porque alguém lê para
+  // decidir". Uma declaração dizendo "esta sabotagem é benigna" quando ela não é
+  // autorizaria justamente a mudança que pretendia dispensar.
+  // Por isso a asserção abaixo existe.
 
   // ── E NA RODADA 3, com a tabela JÁ MEXIDA pelo processamento ──────────────
   // Sem isto o modo grupos podia honrar a faixa no 1º par mensal e virar outra
@@ -2287,7 +2313,7 @@ secao("No BH, o super-admin não age sobre atleta de OUTRO circuito — o caminh
   }
 }
 
-secao("Três guardas que a bateria NÃO alcança — declaradas, para ninguém as citar como protegidas");
+secao("Guardas que a bateria NÃO alcança — declaradas, para ninguém as citar como protegidas");
 {
   // Regra da casa: guarda inalcançável pelo instrumento ou ganha asserção de
   // FONTE com o motivo declarado, ou alguém a cita um dia como se estivesse
@@ -2315,7 +2341,23 @@ secao("Três guardas que a bateria NÃO alcança — declaradas, para ninguém a
   ok(/const ordenados = \(pareamento === "grupos"\)[\s\S]{0,120}embaralhar\(athletes\)/.test(motorFonte),
     "e continua sendo o caminho do sorteio dentro do `parearRodadaB` — se ele sumir daqui, a rede de segurança deixa de sortear");
 
-  // 3. `await bhId()` no bloco de escopo roda FORA do try/catch (Guardião de
+  // 3. A lista `COLUNAS_NAO_NULAS` tem 28 colunas, e só UMA é portão provado.
+  //    Sabotar `solicitacoes_wo.justificativa` deixa a bateria vermelha com 20
+  //    falhas (foi o NO-GO). Tirar `atletas.telefone` — ou qualquer outra das 27 —
+  //    deixa VERDE, porque nenhuma função grava `null` nelas hoje: o Guardião de
+  //    Confiabilidade cruzou as 57 colunas NOT NULL reais contra toda ocorrência de
+  //    `coluna: null` nas 9 Edge Functions e a interseção é VAZIA.
+  //    Ou seja: as outras 27 são rede para o futuro, não portão de hoje. Declarado
+  //    para ninguém as citar como protegidas — e para ninguém as apagar achando que
+  //    são inúteis, que é o erro oposto.
+  //    ⚠️ E a `!!ADMIN_PIN` do `circuito-dados` entra na mesma categoria: ela é
+  //    fail-closed de verdade (li o código), mas o `carrega-motor.mjs` FIXA
+  //    `ADMIN_PIN: "1234"`, então o caso "variável ausente" nunca acontece no teste
+  //    e sabotá-la fica verde. (Guardião de Segurança, C6/E8.)
+  ok(/COLUNAS_NAO_NULAS/.test(readFileSync("testes/ferramentas.mjs", "utf-8")),
+    "a lista de colunas NOT NULL continua existindo — só `justificativa` é portão provado; as outras 27 são rede para o futuro, declaradas aqui");
+
+  // 4. `await bhId()` no bloco de escopo roda FORA do try/catch (Guardião de
   //    Segurança, C6). É memoizado, mas na primeira chamada de uma instância fria
   //    uma falha transitória vira 500 sem cabeçalho de CORS — que na tela do
   //    organizador aparece como "erro de conexão" em vez de mensagem.
@@ -2414,6 +2456,91 @@ secao("Exclusão de dados: só o titular liga e desliga — RODANDO as duas aç�
     igual(banco.acha("atletas", a => a.id === OUTRO_ATL)?.exclusao_solicitada_em, undefined,
       "e nenhum outro atleta é tocado");
   }
+}
+
+secao("A justificativa de saúde NÃO é copiada para a partida");
+{
+  // ⚠️ O ACHADO MAIS GRAVE DA 4ª RODADA (Guardião Jurídico). O `RESPONDER_WO`
+  // gravava o TEXTO INTEIRO da justificativa em `partidas.motivo_rejeicao` — uma
+  // coluna que a anonimização NUNCA toca, numa tabela que sobrevive por projeto.
+  //
+  // E eu conferi no banco, os três fatos juntos: `motivo_rejeicao` tem SELECT para
+  // `anon`, a política `leitura_publica_partidas` libera qualquer partida de
+  // circuito público, o BH é público, e 5 das 34 partidas JÁ carregam
+  // `W.O. Justificado — <texto>`. O texto de saúde de cinco pessoas reais estava
+  // legível por qualquer visitante do site.
+  //
+  // Esta onda apagava o atestado do bucket e zerava a `justificativa` — e deixava
+  // uma cópia literal a uma tabela de distância.
+  const F2 = "9999aaaa-0000-0000-0000-00000000000f";
+  const V2 = "9999aaaa-0000-0000-0000-00000000000v";
+  const SEGREDO = "Estava internado com pneumonia e tomando antibiótico";
+
+  for (const sistema of ["A", "B"]) {
+    const CIRC = sistema === "B" ? "9999bbbb-1111-1111-1111-111111111111" : BH;
+    const { banco, motor } = await montarMotor({
+      circuitos: [
+        circuito(BH, { regulamento_versao: "v03-13" }),
+        circuito("9999bbbb-1111-1111-1111-111111111111", { slug: "wo-b", sistema: "B", pareamento: "sorteio", regulamento_versao: "vB-01" }),
+      ],
+      atletas: [atleta(F2), atleta(V2)],
+      circuito_atletas: [
+        { circuito_id: CIRC, atleta_id: F2, status: "ativo" },
+        { circuito_id: CIRC, atleta_id: V2, status: "ativo" },
+      ],
+      partidas: [partida("jw", { circuito_id: CIRC, atleta1_id: F2, atleta2_id: V2 })],
+      solicitacoes_wo: [{ id: "sw", circuito_id: CIRC, atleta_id: F2, adversario_id: V2, partida_id: "jw", status: "pendente", justificativa: SEGREDO }],
+    });
+    const r = await comoAdmin(motor, "RESPONDER_WO", { circuitoId: CIRC, id: "sw", matchId: "jw", aprovado: true, justificativa: SEGREDO });
+    ok(r.corpo?.sucesso === true, `[${sistema}] o organizador aprova a justificativa (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    const m = banco.acha("partidas", x => x.id === "jw");
+    ok(!String(m?.motivo_rejeicao || "").includes("pneumonia"),
+      `[${sistema}] e o texto da justificativa NÃO vai para a partida (veio: ${JSON.stringify(m?.motivo_rejeicao)}) — essa coluna é legível pelo visitante anônimo`);
+    // E a justificativa continua onde é o lugar dela, para o organizador julgar.
+    igual(banco.acha("solicitacoes_wo", w => w.id === "sw")?.justificativa, SEGREDO,
+      `[${sistema}] ela continua em solicitacoes_wo, que é onde o organizador a lê`);
+  }
+}
+
+secao("No modo grupos, quem folga é o FIM da tabela — e isso não tinha portão");
+{
+  // Sabotagem nova do Guardião de Regulamento (P4): mandar o bye do modo grupos
+  // direto para o TOPO da tabela deixava a bateria VERDE. Qual ponta folga é regra
+  // de competição — o bye vale 1 ponto, a vitória vale 2 — e nada protegia.
+  //
+  // MEDIDO POR MIM em `f458e48` antes de escrever a asserção, com 9 atletas e
+  // saldos descorrelacionados: o bye desce pela CAUDA, nas posições 9, 8, 7 e 6 de
+  // 9. É o comportamento certo — folga quem está no fim, para quem o 1 ponto do
+  // bye é próximo do resultado esperado.
+  const CIRC_BY = "8888cccc-1111-2222-3333-444444444444";
+  const lista = ["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8"];
+  const SALDOS = [300, 800, 100, 600, 200, 700, 400, 500, 250];
+
+  const { banco, motor } = await montarMotor({
+    circuitos: [circuito(BH), circuito(CIRC_BY, {
+      slug: "bye-faixa", sistema: "B", pareamento: "grupos",
+      regulamento_versao: "vB-01", rodadas_por_temporada: 6, fase: "temporada",
+    })],
+    atletas: lista.map(id => atleta(id)),
+    circuito_atletas: lista.map((id, i) => ({ circuito_id: CIRC_BY, atleta_id: id, status: "ativo", pendente_circuito: false, saldo_temp: SALDOS[i] })),
+    chaves: [], partidas: [],
+  });
+  const r = await comoAdmin(motor, "INICIAR_ETAPA", { circuitoId: CIRC_BY });
+  ok(r.corpo?.sucesso === true, `a etapa inicia com 9 atletas no modo grupos (erro: ${JSON.stringify(r.corpo?.erro)})`);
+
+  const tabela = [...lista].sort((a, b) => SALDOS[lista.indexOf(b)] - SALDOS[lista.indexOf(a)]);
+  const byeDa = (rodada) => {
+    const da = banco.tabelas.partidas.filter(m => m.circuito_id === CIRC_BY && m.rodada === rodada);
+    const jogaram = new Set(da.flatMap(m => [m.atleta1_id, m.atleta2_id]));
+    return lista.filter(id => !jogaram.has(id))[0];
+  };
+
+  igual(byeDa(1), tabela[tabela.length - 1],
+    `na rodada 1 folga o ÚLTIMO da tabela de pontos (${byeDa(1)}), não o líder — mandar o bye para o topo negaria aos primeiros a chance de somar 2`);
+  igual(byeDa(2), tabela[tabela.length - 2],
+    `na rodada 2 folga o penúltimo (${byeDa(2)}) — a folga desce pela cauda, sem repetir`);
+  ok(byeDa(1) !== tabela[0] && byeDa(2) !== tabela[0],
+    "e o líder da tabela não folga nas duas primeiras rodadas");
 }
 
 process.exit(placar("O segundo circuito"));

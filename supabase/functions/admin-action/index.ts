@@ -1696,7 +1696,29 @@ Deno.serve(async (req) => {
             if (eMb) throw eMb;
           } else {
             const { error: errMatch } = await supabase.from("partidas").update({
-              rejeitado: true, motivo_rejeicao: `W.O. Justificado — ${justificativa || ""}`.trim(),
+              // ⚠️ A JUSTIFICATIVA NAO E COPIADA PARA CA. Achado do Guardiao Juridico
+              // em 29/09/2026, e e o achado mais grave da rodada: esta linha gravava o
+              // TEXTO INTEIRO da justificativa em `partidas.motivo_rejeicao` -- uma
+              // coluna que a anonimizacao NUNCA TOCA, numa tabela que sobrevive por
+              // projeto, e que entra no `select *` do visitante.
+              //
+              // A justificativa e texto livre onde o atleta explica por que faltou:
+              // dado de saude (art. 5o, II). Eu passei esta onda apagando o atestado do
+              // bucket e zerando a `justificativa` em `solicitacoes_wo` -- e havia uma
+              // COPIA LITERAL do mesmo texto a uma tabela de distancia.
+              //
+              // Conferido por mim no banco, os tres fatos juntos:
+              //   · `partidas.motivo_rejeicao` tem SELECT para `anon`
+              //   · a politica `leitura_publica_partidas` libera qualquer partida de
+              //     circuito publico, e o BH e publico
+              //   · 5 das 34 partidas JA carregam `W.O. Justificado — <texto>`
+              // Ou seja: nao era hipotese. O texto de cinco pessoas reais estava
+              // legivel por qualquer visitante do site.
+              //
+              // O motivo nao precisa do texto: a justificativa vive em
+              // `solicitacoes_wo`, que e o lugar dela, e o organizador tem o pedido a
+              // mao. Aqui basta o rotulo.
+              rejeitado: true, motivo_rejeicao: "W.O. Justificado",
             }).eq("id", matchId);
             if (errMatch) throw errMatch;
           }

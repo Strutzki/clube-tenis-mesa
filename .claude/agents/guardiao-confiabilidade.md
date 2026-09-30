@@ -11,7 +11,7 @@ não mais num sandbox sem ferramentas. Na prática, para você:
 
 - **Dá para compilar**: `npm run build`. Erro de sintaxe é pego de verdade,
   não por prova substituta.
-- **Existe bateria de testes**: `npm run teste`. Ela carrega **quatro Edge Functions
+- **Existe bateria de testes**: `npm run teste`. Ela carrega **SEIS Edge Functions
   de verdade** (`admin-action`, `athlete-action`, `login-atleta`, `comprovante-url`)
   contra um banco em memória, mais uma função pura extraída do `App.jsx`.
   **NÃO cite o número de asserções de memória — rode e leia.** Ele mudou em dez

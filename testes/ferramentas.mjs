@@ -1,7 +1,7 @@
 // Ferramentas da bateria: as asserções e o cenário de partida.
 // Sem biblioteca de fora — a bateria roda com `node`, e só.
 
-import { criarBancoFalso } from "./banco-falso.mjs";
+import { criarBancoFalso, violacoesDeInstrumento } from "./banco-falso.mjs";
 import { carregarFuncao, PIN_DE_TESTE } from "./carrega-motor.mjs";
 
 export const BH = "272dd67c-ea33-41a3-8fb9-1fd909d7f3fa";
@@ -33,6 +33,17 @@ export function secao(titulo) {
 }
 
 export function placar(nomeDaBateria) {
+  // ⚠️ VIOLACAO DE INSTRUMENTO DERRUBA O ARQUIVO, engolida ou nao. Se algum teste
+  // usou uma forma de select que a projecao do banco falso nao modela, o `placar`
+  // acusa aqui -- mesmo que a funcao sob teste tenha capturado a excecao num
+  // `try/catch` e seguido adiante. Sem isto, a recusa nao era portao: eu medi que
+  // um `catch` comum a engolia. (29/09/2026, proposta do Guardiao de Seguranca.)
+  if (violacoesDeInstrumento.length > 0) {
+    console.log(`\n⛔ ${violacoesDeInstrumento.length} VIOLACAO(OES) DE INSTRUMENTO em ${nomeDaBateria}:`);
+    for (const v of violacoesDeInstrumento) console.log(`   · ${v}`);
+    console.log("   O teste pode ter passado VERDE sobre uma projecao que nao foi aplicada.");
+    return 1;
+  }
   console.log(`\n${nomeDaBateria}: ${passou} asserções OK, ${falhou} falharam`);
   if (falhou > 0) {
     console.log("\nFalhas:");
@@ -85,8 +96,24 @@ export const PADROES_DO_BANCO = {
 // AO ACRESCENTAR COLUNA AQUI, confira no banco de verdade -- lista inventada e
 // pior que lista vazia, porque recusa gravacao legitima.
 export const COLUNAS_NAO_NULAS = {
-  solicitacoes_wo: ["justificativa"],
-  atletas: ["telefone"],
+  // ⚠️ A 1ª VERSAO DESTA LISTA TINHA 2 DE 16, e os dois guardioes cobraram pelo
+  // mesmo motivo: eu a fiz para a coluna QUE QUEBROU, nao para as colunas que as
+  // funcoes TOCAM. `anonimizar-atleta` grava `bio_cred_ids` e `cpf_verificado`, e
+  // as duas sao NOT NULL -- ficaram de fora. E `EDITAR_ATLETA` grava `nome` e
+  // `telefone` na MESMA linha: `telefone` estava na lista, `nome` nao.
+  // E a assinatura da familia que me persegue: consertar o caminho que apareceu.
+  //
+  // Abaixo, TODAS as colunas NOT NULL das tabelas que o motor escreve, lidas do
+  // `information_schema` de producao em 29/09/2026. Nada inventado -- lista
+  // inventada recusa gravacao legitima, e o Guardiao de Confiabilidade conferiu que
+  // as duas primeiras entradas nao tinham default e eram NOT NULL de verdade.
+  atletas: ["bio_cred_ids", "cpf_verificado", "id", "isento", "nome",
+            "pagamento_confirmado", "pagamento_proxima_confirmado",
+            "pin_tentativas", "quer_renovar", "telefone"],
+  solicitacoes_wo: ["circuito_id", "criado_em", "id", "justificativa", "match_id", "status"],
+  circuito_atletas: ["atleta_id", "circuito_id", "id"],
+  mensagens_enviadas: ["categoria", "circuito_id", "enviado_em", "id", "texto"],
+  partidas: ["circuito_id", "id", "rodada", "validado_automatico"],
 };
 
 export function atleta(id, campos = {}) {

@@ -840,6 +840,56 @@ secao("O app manda o PIN do super-admin ao porteiro — a linha de que tudo depe
   ok(/setDbStatus\("error"\)[\s\S]{0,200}porteiro/.test(fonteApp) || /\[porteiro\][\s\S]{0,120}vazia/.test(fonteApp),
     "e a falha do porteiro com leitura vazia AVISA em vez de degradar em silêncio");
 
+  // A CADEIA DOS DOIS TRADUTORES, RODADA DE VERDADE.
+  //
+  // Não é regex: extrai `mapAtletaFromDb` e `mapAtletaFromCircuito` do fonte e
+  // EXECUTA com uma linha na forma exata que o `db.getAtletas()` devolve.
+  //
+  // Por que precisa rodar: eu tentei responder "o botão Mudei de ideia volta a
+  // aparecer?" LENDO o código e errei duas vezes em um minuto — primeiro achando
+  // que o campo era descartado (o `grep` não o viu porque ele passa pelo
+  // `{...a}`), depois achando que passava. Ler a cadeia não responde; rodar
+  // responde. É a mesma lição do `p_circuito`: leitura vazia e leitura por
+  // inspeção não são medição.
+  //
+  // O que isto prende: o pedido de exclusão de dados (LGPD) tem de chegar à tela
+  // em circuito não-BH, senão o recibo e o botão "↩️ Mudei de ideia" somem a cada
+  // recarregamento enquanto o pedido segue de pé rumo à anonimização irreversível.
+  {
+    const iDb = fonteApp.indexOf("function mapAtletaFromDb(");
+    const fimDb = fonteApp.indexOf("\n}", iDb) + 2;
+    const iCa = fonteApp.indexOf("function mapAtletaFromCircuito(");
+    const fimCa = fonteApp.indexOf("\n}", iCa) + 2;
+    ok(iDb > 0 && fimDb > iDb && iCa > 0 && fimCa > iCa,
+      "os dois tradutores de atleta foram localizados no fonte");
+
+    const mapear = new Function(
+      `${fonteApp.slice(iDb, fimDb)}\n${fonteApp.slice(iCa, fimCa)}\nreturn mapAtletaFromCircuito;`
+    )();
+
+    // A forma EXATA que `db.getAtletas()` devolve: sazonal na raiz, identidade
+    // dentro de `atletas`. Se o `select` da linha 211 mudar, este fixture mente —
+    // por isso a asserção seguinte confere que o campo está no select de verdade.
+    ok(/atletas\([^)]*exclusao_solicitada_em/.test(fonteApp),
+      "o `select` da leitura normal pede `exclusao_solicitada_em` dentro de atletas(...)");
+
+    const linha = {
+      status: "ativo", saldo_temp: 4, wo_culposos_temporada: 2,
+      pagamento_confirmado: true, aceite_regulamento: true,
+      atletas: {
+        id: "a1", nome: "Teste", rating: 1000,
+        aceite_lgpd: true, exclusao_solicitada_em: "2026-09-29T12:00:00Z",
+      },
+    };
+    const saiu = mapear(linha);
+    igual(saiu.exclusaoSolicitadaEm, "2026-09-29T12:00:00Z",
+      "o pedido de exclusão ATRAVESSA os dois tradutores — é o que faz o recibo e o botão «Mudei de ideia» sobreviverem ao F5 em circuito não-BH");
+    igual(saiu.woCulposos ?? saiu.wo_culposos_temporada ?? saiu.woCulpososTemporada, 2,
+      "e o contador de W.O. sazonal também atravessa");
+    igual(saiu.pagamentoConfirmado, true,
+      "e o pagamento — o campo que o painel do organizador mostrava como «Sem pgto» para todos");
+  }
+
   // ⚠️ E o `setSistemaAtivo` com DOIS argumentos (achado MI do mesmo guardião):
   // ignorar o 2º deixa a tela mentindo o método de pareamento, com tudo verde.
   ok(/setSistemaAtivo\(config\?\.\[0\]\?\.sistema \|\| "A", config\?\.\[0\]\?\.pareamento\)/.test(fonteApp),

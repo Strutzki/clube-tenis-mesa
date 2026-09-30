@@ -10146,7 +10146,9 @@ function RegistrarWoInline({ m, p1, p2, dispatch }) {
         <>
           <div style={{ fontSize: 11, color: "#9db3a8", marginBottom: 8 }}>Tipo de W.O.:</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <Btn small color="#6a9d7a" onClick={() => setTipo("justificado")}>Justificado (anula)</Btn>
+            {/* O rótulo era "Justificado (anula)" e ficava três linhas acima de um
+                comentário dizendo que NO SISTEMA B O JUSTIFICADO NÃO ANULA. */}
+            <Btn small color="#6a9d7a" onClick={() => setTipo("justificado")}>{SISTEMA_ATIVO === "B" ? "Justificado (1 × 2)" : "Justificado (anula)"}</Btn>
             <Btn small color="#c25a45" onClick={() => setTipo("culposo")}>Culposo</Btn>
             <Btn small color="#9C6F3E" onClick={() => setTipo("a_favor")}>A Favor</Btn>
           </div>
@@ -10380,7 +10382,9 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
         <div id="pend-wo"/>
         <SecTitle>📨 Solicitações de W.O. ({pendentesWo.length})</SecTitle>
         <div style={{fontSize:11,color:"#7d9188",marginBottom:10}}>
-          O atleta sinalizou que não vai conseguir jogar (W.O. Justificado — Cap. 07). Aprovar anula a rodada pra ambos, sem perda de pontos.
+          O atleta sinalizou que não vai conseguir jogar (W.O. Justificado — Cap. 07). {SISTEMA_ATIVO === "B"
+            ? "Aprovar NÃO anula: o confronto conta como W.O. justificado — quem faltou fica com 1 ponto e uma derrota, e o adversário com 2 pontos e uma vitória (vB-01, Cap. 05)."
+            : "Aprovar anula a rodada pra ambos, sem perda de pontos."}
         </div>
         {pendentesWo.map(s => (
           <Card key={s.id} style={{border:"1px solid rgba(156,111,62,0.35)"}}>
@@ -10417,10 +10421,24 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
         <SecTitle>📋 W.O. Decididos Recentemente</SecTitle>
         {respondidasWoRecentes.map(s => {
           const aprovado = s.status === "aprovado";
+          // ⚠️ ESTAS DUAS MENSAGENS VÃO PARA DOIS ATLETAS REAIS, e até 30/09/2026
+          // as duas afirmavam "foi anulado — ninguém perde pontos" em TODO circuito.
+          // No Sistema B isso é falso: `RESPONDER_WO` aprovado NÃO anula (grava
+          // `wo_tipo: "justificado"` com faltoso e beneficiário, admin-action:1738) e
+          // o `PROCESSAR_RODADA` pontua ausente +1 com DERROTA e adversário +2 com
+          // vitória (admin-action:1313-1321). A tela do ATLETA já estava ramificada;
+          // a do admin, que é justamente a que DISPARA a mensagem, não estava.
+          // Achado do Supervisor do Admin. Os números abaixo foram lidos no motor,
+          // não supostos — e incluem a derrota, que "perde pontos" nem menciona.
+          const anulaNoSistema = SISTEMA_ATIVO !== "B";
           const msgSolicitante = aprovado
-            ? `Oi ${s.athleteName?.split(" ")[0]}! Sua solicitação de W.O. Justificado pra rodada ${s.round} foi aprovada. O confronto contra ${s.adversarioNome||"seu adversário"} foi anulado — ninguém perde pontos. 🏓`
+            ? (anulaNoSistema
+              ? `Oi ${s.athleteName?.split(" ")[0]}! Sua solicitação de W.O. Justificado pra rodada ${s.round} foi aprovada. O confronto contra ${s.adversarioNome||"seu adversário"} foi anulado — ninguém perde pontos. 🏓`
+              : `Oi ${s.athleteName?.split(" ")[0]}! Sua solicitação de W.O. Justificado pra rodada ${s.round} foi aprovada. O confronto contra ${s.adversarioNome||"seu adversário"} conta como W.O. justificado: você fica com 1 ponto e uma derrota, e ele com 2 pontos. Sem punição além disso — o justificado não conta pra suspensão. 🏓`)
             : `Oi ${s.athleteName?.split(" ")[0]}, sua solicitação de W.O. pra rodada ${s.round} não foi aprovada. Motivo: ${s.motivoRecusa||"—"}. Você ainda precisa jogar e registrar o placar dentro do prazo normal.`;
-          const msgAdversario = `Oi ${s.adversarioNome?.split(" ")[0]||""}! O confronto de vocês na rodada ${s.round} foi anulado (W.O. Justificado de ${s.athleteName}) — ninguém perde pontos. Você já pode seguir pro próximo confronto normalmente.`;
+          const msgAdversario = anulaNoSistema
+            ? `Oi ${s.adversarioNome?.split(" ")[0]||""}! O confronto de vocês na rodada ${s.round} foi anulado (W.O. Justificado de ${s.athleteName}) — ninguém perde pontos. Você já pode seguir pro próximo confronto normalmente.`
+            : `Oi ${s.adversarioNome?.split(" ")[0]||""}! O confronto de vocês na rodada ${s.round} não vai acontecer (W.O. Justificado de ${s.athleteName}). Você recebe os 2 pontos da vitória normalmente. Já pode seguir pro próximo confronto.`;
           const linkSolicitante = wppLinkWo(s.athleteId, msgSolicitante);
           const linkAdversario = aprovado ? wppLinkWo(s.adversarioId, msgAdversario) : null;
           return (

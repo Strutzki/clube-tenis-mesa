@@ -2598,4 +2598,78 @@ secao("No modo grupos, quem folga é o FIM da tabela — e isso não tinha port�
     "e o líder da tabela não folga nas duas primeiras rodadas");
 }
 
+secao("Nenhum texto promete anulação num circuito de pontos");
+{
+  // POR QUE ISTO É UMA VARREDURA E NÃO TRÊS ASSERÇÕES.
+  //
+  // No Sistema B o `RESPONDER_WO` aprovado NÃO anula: grava `wo_tipo:
+  // "justificado"` (admin-action:1738) e o `PROCESSAR_RODADA` pontua o ausente
+  // +1 COM DERROTA e o adversário +2 com vitória (admin-action:1313-1321).
+  //
+  // Mesmo assim a tela do organizador e as DUAS mensagens de WhatsApp que ela
+  // dispara afirmavam "foi anulado — ninguém perde pontos" em todo circuito. A
+  // tela do ATLETA já estava ramificada; a do admin, que é a que MANDA a
+  // mensagem para as duas pessoas, não. Achado do Supervisor do Admin.
+  //
+  // Consertar as três linhas e parar aí seria repetir o defeito que esta onda
+  // catalogou cinco vezes: "conserto do caminho que eu estava olhando". O que
+  // deixou as três passarem foi não existir nada contando os IRMÃOS. Então a
+  // asserção conta TODA promessa de anulação do arquivo e exige que cada uma
+  // esteja dentro de uma ramificação por sistema — a próxima que alguém
+  // escrever já nasce coberta, ou nasce vermelha.
+  const { readFileSync } = await import("node:fs");
+  const bruto = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+
+  // COMENTÁRIO NÃO É TEXTO DE TELA. Trocado por espaço (não removido) para os
+  // índices continuarem apontando para a linha certa. Isto não é conveniência:
+  // a primeira versão desta varredura acusou o comentário que documenta o
+  // próprio defeito, o que a tornaria impossível de deixar verde sem apagar a
+  // documentação.
+  const fonteApp = bruto
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => " ".repeat(m.length))
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length))
+    .replace(/^([ \t]*)\/\/.*$/gm, (m) => " ".repeat(m.length));
+
+  // EXCLUSÃO DECLARADA: o `RegulamentoView` mostra o regulamento DO CIRCUITO e
+  // recebe `sistema` como propriedade — lá o texto do Sistema A dizer "rodada
+  // anulada" é correto, é o regulamento dele. A exclusão é por região de arquivo
+  // e vem com portão próprio duas asserções abaixo, para não virar buraco cego.
+  const iReg = fonteApp.indexOf("function RegulamentoView(");
+  ok(iReg > 0, "o RegulamentoView existe (se o nome mudar, a exclusão abaixo precisa ser revista)");
+  const fimReg = fonteApp.indexOf("\nfunction ", iReg + 10);
+  ok(fimReg > iReg, "e tem fim localizável — a exclusão é de uma região, não do arquivo");
+
+  const promessas = [...fonteApp.matchAll(/ninguém perde pontos|foi anulad[oa]|é anulad[oa]|anula a rodada/g)];
+  ok(promessas.length > 0,
+    `o app tem texto que promete anulação (${promessas.length} lugar(es)) — se der zero, a busca quebrou e as asserções abaixo são vazias`);
+
+  const foraDoRegulamento = promessas.filter((m) => !(m.index > iReg && m.index < fimReg));
+  ok(foraDoRegulamento.length > 0,
+    `e ${foraDoRegulamento.length} delas estão FORA do regulamento — se der zero, a exclusão engoliu a varredura inteira`);
+
+  const semRamificacao = foraDoRegulamento.filter((m) => {
+    const antes = fonteApp.slice(Math.max(0, m.index - 700), m.index);
+    return !/SISTEMA_ATIVO\s*[!=]==\s*"B"|anulaNoSistema/.test(antes);
+  });
+  igual(semRamificacao.length, 0,
+    "TODA promessa de anulação fora do regulamento está dentro de uma ramificação por sistema — no circuito de pontos o W.O. justificado pontua 1 × 2, não anula");
+
+  // O PORTÃO DA EXCLUSÃO. Sem isto, "está no RegulamentoView" seria licença para
+  // qualquer texto: o que torna a região segura é ela receber o sistema de fora.
+  const corpoReg = fonteApp.slice(iReg, fimReg);
+  ok(/function RegulamentoView\(\{[^}]*\bsistema\b/.test(corpoReg),
+    "o RegulamentoView recebe `sistema` como propriedade — é isso que faz a exclusão acima ser legítima e não um buraco");
+  ok(/<RegulamentoView[\s\S]{0,400}?sistema=/.test(fonteApp),
+    "e quem o chama passa o `sistema` de verdade");
+
+  // E o número, que é o que o atleta lê na mensagem, tem de bater com o motor.
+  // Sem isto, trocar o "1 ponto" por "0 pontos" no texto passaria verde.
+  ok(/1 ponto e uma derrota/.test(fonteApp),
+    "a mensagem do Sistema B diz o que o ausente REALMENTE recebe: 1 ponto e uma derrota");
+  ok(/2 pontos/.test(fonteApp),
+    "e o que o adversário recebe: 2 pontos");
+  ok(!/Justificado \(anula\)<\/Btn>/.test(fonteApp),
+    'o botão não rotula "Justificado (anula)" sem ramificar — o rótulo ficava três linhas acima de um comentário dizendo que no B não anula');
+}
+
 process.exit(placar("O segundo circuito"));

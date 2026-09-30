@@ -13,6 +13,99 @@
 > a cópia original (mais abaixo, sob "2026-09-05 — Bootstrap da curadoria...")
 > é a que fica.
 
+## 2026-09-29 (noite) — SUPERVISÃO da curadoria de `707c40f`: boa, e vencida em horas
+
+**Quem escreve:** `supervisor-curador`, não o curador. Esta entrada **julga** a de baixo e
+**corrige** o que ela deixou envelhecer, usando o mandato do curador que ela supervisiona.
+
+**Árvore: `60ccc86`.** A curadoria de baixo foi feita em `707c40f`, que hoje está **oito
+commits atrás** — não seis, como chegou a ser dito na abertura desta revisão; `git rev-list
+--count 707c40f..HEAD` = **8**.
+
+### VEREDITO sobre o trabalho do Curador: **bom, e o método foi o certo**
+
+O que ele fez bem, e merece ficar escrito porque é o comportamento a repetir:
+- **mediu em vez de citar.** 1149 somado das 13 seções ao vivo, `switch` recontado por `grep`,
+  versões do ar por `npm run motor:listar`. Nada de memória;
+- **congelou a árvore e reconferiu no fim** (não andou);
+- **não inventou.** A linha de mutações da auditoria multi-circuito ficou registrada como
+  **débito explícito** — *"eu não vou inventar o número de vermelhas de cada uma"* — em vez de
+  uma tabela plausível. É o oposto do erro que este projeto mais pune;
+- e **achou o achado de processo da rodada**: a frase do `CLAUDE.md` que garantia a completude
+  da tabela do `testes/README.md` **citando a si mesma como prova**, e que já tinha nascido
+  velha uma vez.
+
+### O QUE JÁ ESTAVA VELHO DE NOVO — e o padrão vale mais que a lista
+
+**O número envelheceu antes de a tinta secar.** 1149 quando ele mediu; **1357** agora. As
+quatro rodadas de guardiões que rodaram na mesma noite acrescentaram **208** asserções em sete
+levas (1192 → 1196 → 1220 → 1240 → 1320 → 1345 → 1357), e as três linhas que ele acabara de
+corrigir (`CLAUDE.md`, `testes/README.md`, `README.md`) voltaram a mentir.
+
+⚠️ **E aqui está o achado desta passagem, que é irmão do dele:** o parágrafo do `CLAUDE.md`
+sobre o `testes/README.md` **nasceu velho uma TERCEIRA vez** — mas por um motivo **diferente**
+das duas primeiras, e é isso que importa. Nas duas primeiras a **tabela** estava incompleta.
+Nesta, a tabela estava **completa e certa**, e o que apodreceu foram os **números dentro
+dela**: a linha do `segundo-circuito.mjs` seguia dizendo "231 asserções" depois de o arquivo
+chegar a **426**. Ou seja: o Curador conferiu exatamente o que a frase mandava conferir
+(*"confira com `ls testes/*.mjs`, não pelo número"*) e **a frase estava mandando conferir
+metade do problema**. Conferir a tabela e conferir os números dentro dela são **duas
+verificações, não uma** — está escrito nos dois arquivos agora.
+
+**A contagem de Edge Functions ficou meio corrigida.** O Juliano corrigiu "quatro" → **SEIS**
+no `CLAUDE.md` e no mandato do `guardiao-confiabilidade`. Mas o `testes/README.md` — o arquivo
+que o próprio `CLAUDE.md` aponta como o detalhe — **continuava dizendo "quatro"**, e o
+`README.md` também. Verificado por contagem, não por leitura: `admin-action` (default do
+`montarMotor`), `athlete-action`, `login-atleta`, `comprovante-url`, `circuito-dados` e
+`anonimizar-atleta` — **seis**, mais **duas** funções puras extraídas do `App.jsx`
+(`janelaRenovacao` e `circuitoTemTorneio`, as únicas duas ocorrências de `new Function(` na
+bateria).
+
+**O `CHANGELOG.md` não cobria nenhum dos oito commits**, e a falha não era só de ausência: a
+entrada de `707c40f` deixava no ar uma **ordem de subida SUPERSEDIDA** (*"app primeiro, motor
+depois"*, duas funções) quando a ordem em vigor tem **cinco** peças e o app em **último**.
+Documento que registra a ordem errada de publicar é pior que documento silencioso — foi
+marcado como superseado no lugar, com ponteiro para a ordem nova.
+
+**A tabela de vereditos das 8 duplas tinha SETE linhas "(a preencher)"** — e o aviso ⚠️ no fim
+dela, escrito pelo próprio Curador, diz que *"enquanto esta tabela tiver linha '(a preencher)'
+o resumo do de acordo não pode ser levado ao Juliano"*. Ficou aberto por **quatro rodadas
+inteiras**, com dois NO-GO e uma condição bloqueante por cima. **Os vereditos existiam** — nas
+mensagens de commit, com nome de guardião e medição; o que não aconteceu foi a transcrição
+para o único registro que sobrevive à conversa. **Um portão que ninguém lê não protege nada, e
+este estava escrito no próprio arquivo que o define.**
+
+### O QUE ESTA PASSAGEM CORRIGIU
+
+| Arquivo | O quê |
+|---|---|
+| `CLAUDE.md` | 1149 → **1357**; commit `707c40f` → `60ccc86`; histórico das sete levas; a **terceira** vez que a frase da tabela nasceu velha, com o motivo novo; o `switch` reconferido em **46** |
+| `testes/README.md` | 1149 → **1357**; *"quatro Edge Functions"* → **SEIS**, com o comando de contagem; a linha do `segundo-circuito.mjs` de 231 → **426**; o que ele passou a cobrir nas quatro rodadas; `circuito-dados` e `anonimizar-atleta` saindo de "o que ainda não é testado" (com as dívidas que ficaram); bloco novo na tabela de mutações, como **débito declarado** e não como números inventados |
+| `README.md` | 1149 → **1357** em dois lugares; 4 → **6** funções |
+| `docs/CHANGELOG.md` | entrada nova das quatro rodadas, marcada **⛔ não no ar**, com os dois NO-GO, a condição bloqueante, as quatro decisões do Juliano e a ordem de subida confirmada; e a **ordem superseada** marcada na entrada anterior |
+| `docs/ROADMAP.md` | bateria; **duas** decisões pendentes marcadas **resolvidas** (o desempate do Cap. 09, pelo porteiro; o pareamento do Sistema B, pelo rodízio) com o texto antigo preservado em `<details>`; **oito** pendências novas; o item **0.3** ligado ao freio sem escopo por IP |
+| `docs/GOVERNANCA_AGENTES.md` | seção nova fechando a rodada; as **sete** linhas "(a preencher)" preenchidas a partir dos commits; **duas REGRAS NOVAS** (sabotagem "benigna" pede medição; portão de instrumento é fail-closed) |
+| `docs/ESTADO-DEV` | "quatro defeitos" → o retrato real; a linha do 13/120 que virou 0/120 **e** a ressalva do modo grupos; as cinco peças e a ordem; pendências novas |
+| `docs/ESPEC_CPF_SEGURANCA.md` | **nunca havia sido olhado** por curadoria nenhuma. Seção nova de topo: o `cpf_hash` passou a ser **apagado** e o preço disso (dedup e banimento por fraude); a §5 atualizada com a retenção de 6 meses e com o **dado sensível que esta spec não cobre**; o "Participar" que já existe |
+| `docs/curadoria-indice-*` | estado e ponteiros |
+
+### O QUE FICA ABERTO, e não é meu para fechar
+
+1. **A dupla Marca/Visual não tem veredito atribuído em registro nenhum.** Não inventei um. A
+   mudança tocou motor, banco e dado pessoal ⇒ exige **as 8 completas**. **Se ela não rodou, o
+   passo 3 do rito não está cumprido**, e o aviso da tabela continua valendo para ela.
+2. **As versões do ar não foram reconferidas ao vivo nesta passagem** — o que há é a declaração
+   *"nada no ar"* nos oito commits. Quem for agir: `npm run motor:listar` primeiro.
+3. **`.claude/agents/`: QUINZE dos DEZESSEIS mandatos ainda dizem "quatro Edge Functions"**
+   (contado: só o `guardiao-confiabilidade.md`, que o Juliano corrigiu, está certo), e um dos
+   quinze é o do
+   **supervisor de curadoria** que escreve esta entrada. Estão **fora** do escopo editável
+   desta passagem (o mandato do curador cobre `CLAUDE.md`, `docs/*.md`, `README.md` e
+   `testes/README.md`). É a dívida **0.5** do ROADMAP com cara nova: mandato é documento, e
+   este é o documento cuja função é justamente **não** subestimar a cobertura.
+4. **O débito de tabulação das mutações** das quatro rodadas continua débito, agora declarado
+   no `testes/README.md`. Quem for citar uma como prova: leia o `git log`, não a tabela.
+
 ## 2026-09-29 (tarde) — A auditoria multi-circuito: o acervo depois de 4 commits, e a dívida que a onda contraiu
 
 **Árvore congelada em `707c40f`** (conferido no início e no fim da curadoria; não

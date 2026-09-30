@@ -1,6 +1,10 @@
 # Roadmap — a fonte de verdade sobre o que fazer a seguir
 
-Estado: **07/09/2026**. Este arquivo manda. Se outro documento discordar dele,
+Estado: **07/09/2026** no corpo, com revisões datadas depois — a última pelo
+**Supervisor de Curadoria em 29/09/2026 (noite), commit `60ccc86`**, que atualizou a
+contagem da bateria, marcou **duas** decisões pendentes como **resolvidas** (o desempate
+do Cap. 09 e o pareamento do Sistema B) e acrescentou **oito** pendências novas em
+"Decisões ainda em aberto". Este arquivo manda. Se outro documento discordar dele,
 este está certo — ou este precisa ser corrigido. Consulte antes de propor
 qualquer coisa, inclusive a seção **Fora do escopo** no fim, que registra o que
 já foi decidido *não* fazer, e por quê.
@@ -27,25 +31,41 @@ Não estavam em plano nenhum; apareceram ao mapear o banco e o repositório em
 07/09/2026. Nenhuma é urgente hoje; todas cobram juros.
 
 - **0.1 — A bateria cobre o motor e começou a cobrir o front.** ⚠️ **O número
-  desta linha é histórico, de 07/09/2026: eram 154 asserções. Hoje são 1149**
-  (conferido em 29/09/2026 — rode `npm run teste`, não cite daqui).
+  desta linha é histórico, de 07/09/2026: eram 154 asserções. Hoje são 1357**
+  (conferido em 29/09/2026, noite, no commit `60ccc86` — rode `npm run teste` e some
+  as seções, não cite daqui; esta linha dizia 1149 por algumas horas).
   Ligadas ao `atualizar.sh`. O `src/App.jsx` saiu do zero: `pacote.mjs` e
   `erros-na-tela.mjs` leem o fonte e travam decisões.
   **Do "falta cobrir" original, já foi coberto:** o `athlete-action` (executado),
   o `login-atleta` (`PARTICIPAR` e `SESSAO`), o **pareamento do Sistema B**
   rodando temporada completa, e os desempates do **Sistema B**.
+  **Acrescentado em 29/09/2026 (noite), nas quatro rodadas de guardiões:** o
+  `circuito-dados` **em execução** (PIN, freio, público × privado) e a
+  `anonimizar-atleta` **em execução** — esta última era a função que apaga dado
+  pessoal a pedido do titular e **nunca tinha sido executada por teste nenhum**.
   **Continua faltando:** o resto do front, o pareamento **por rating** em
   temporada completa, os desempates do **Sistema A** (`cmpRankingDB`), o
-  `circuito-dados` em execução, o `LOGIN`/`RENOVAR` do `login-atleta`, e o
-  financeiro. O carregador já serve para todas — faltam as asserções.
+  `LOGIN`/`RENOVAR` do `login-atleta`, e o financeiro. O carregador já serve para
+  todas — faltam as asserções.
   Ver `testes/README.md`.
 - **0.2 — O Instagram não tem dono.** `instagram_config` guarda credenciais da
   Meta, `instagram_publicacoes` tem 42 publicações registradas, e nada disso
   aparece em plano, roadmap ou changelog. O token da Meta **expira a cada ~60
   dias** e nada avisa quando. Decidir: documentar e manter, ou desligar.
-- **0.3 — Tabelas de tentativa só crescem.** `tentativas_login_admin` passou de
+- **0.3 — Tabelas de tentativa só crescem (TTL).** `tentativas_login_admin` passou de
   mil linhas; `tentativas_busca_telefone` e `tentativas_busca_cpf` também não
   têm limpeza. Falta uma rotina que apague registro velho.
+  ⚠️ **Subiu de prioridade em 29/09/2026, por dois motivos.** (1) A
+  `tentativas_login_admin` deixou de ser lida por uma função só: o `circuito-dados`
+  passou a usar **a mesma tabela e a mesma contagem** para o PIN do super-admin, então
+  a tabela que ninguém limpa agora está no caminho de **duas** funções. (2) Ela é a
+  mesma tabela do item *"o freio anti-força-bruta não tem escopo por IP"* em "Decisões
+  ainda em aberto" — e **os dois consertos mexem nas mesmas linhas**: quem for
+  acrescentar a coluna de IP faz o TTL na mesma migração, ou paga a migração duas
+  vezes. Tratar juntos. E há **precedente de política**: o Juliano decidiu retenção de
+  **6 meses** para os backups em 29/09/2026 — o prazo destas tabelas é bem menor (a
+  janela do freio é de minutos), então aqui não há decisão dele a pedir, só a rotina a
+  escrever.
 - **0.4 — `partidas_historico` sem chave primária.** Nada impede a mesma partida
   ser arquivada duas vezes numa virada de temporada repetida.
 - **0.5 — Os mandatos dos agentes estão em dois lugares.** `.claude/agents/` (o
@@ -2053,7 +2073,22 @@ geral antes de abrir cadastro para terceiros.
 
 ## Decisões ainda em aberto
 
-- **⚠️ O 2º desempate do Cap. 09 continua MORTO em circuito PÚBLICO.** *(29/09/2026,
+- **✅ RESOLVIDA em 29/09/2026 (noite) — o 2º desempate do Cap. 09 em circuito PÚBLICO.**
+  O Juliano decidiu que *"pode nascer de qualquer uma das formas, o admin decide quando
+  abrir"* — ou seja, **público e privado têm de funcionar igual**, o que derrubou a solução
+  anterior (só cobria o privado). Foi pelo **caminho 2** da lista abaixo: a leitura de
+  circuito não-BH passa pelo **porteiro** (`circuito-dados`), que roda com service role e já
+  pedia e devolvia `wo_culposos_temporada`; para circuito público ele serve qualquer um sem
+  credencial, então o caminho anônimo deixou de ser necessário. **A decisão da fase 4C não
+  foi revertida** — a coluna continua sem grant ao `anon`. O BH segue no caminho de sempre.
+  O porteiro ganhou também o caminho do **PIN do super-admin**, que faltava (num circuito
+  privado ele levava 403, o app caía em silêncio na leitura anônima e lia zero — a correção
+  do Bloco 2 era inerte justamente para o dono da plataforma), com o **mesmo freio de
+  tentativas** do `admin-action`. ⛔ **No fonte, não no ar** — `circuito-dados` é a **1ª**
+  peça da ordem de subida. O texto original fica abaixo como registro do porquê.
+  <details><summary>o registro</summary>
+
+- **~~⚠️ O 2º desempate do Cap. 09 continua MORTO em circuito PÚBLICO.~~** *(29/09/2026,
   registrado pelo Curador; achado declarado pelo autor no commit `6266f11`.)*
   O item 0.10.34 consertou o **caminho do porteiro** (circuito privado, via
   `circuito-dados`): o campo `wo_culposos_temporada` agora atravessa os dois adaptadores
@@ -2079,8 +2114,32 @@ geral antes de abrir cadastro para terceiros.
      desempate que só vale em circuito privado, o que é pior.
   **Enquanto não for decidido, o Cap. 09 promete o que o app não cumpre em circuito
   público** — é a regra 6 do `CLAUDE.md` em aberto, com data.
+  </details>
 
-- **⚠️ O pareamento do Sistema B REPETE adversário com exatamente 8 atletas no sorteio.**
+- **✅ RESOLVIDA em 29/09/2026 (noite) — o pareamento do Sistema B no sorteio.** O Juliano
+  decidiu: *"não pode ter repetição de atleta"*. Entrou o **rodízio pelo método do círculo**
+  (`escalaCirculo`), que fixa um atleta e gira os demais montando a temporada **inteira de
+  uma vez** — para n atletas dá n-1 rodadas sem nenhuma repetição. Medição refeita nas
+  mesmas 120 temporadas completas por configuração: **8/sorteio foi de 13/120 para 0/120**;
+  as outras já eram 0/120. A ordem do rodízio é sorteada **uma vez por temporada**, derivada
+  de um hash de (atleta + temporada/ano) — estável entre o `INICIAR` (rodadas 1-2) e os
+  `AVANCAR` (3-4, 5-6), e muda sozinha na virada, **sem coluna nova**. Rede de segurança: se
+  o rodízio produzir um confronto já jogado (só acontece quando o grupo muda no meio da
+  temporada), cai no pareamento antigo — e há medição de que ela importa (12 atletas com 4
+  saindo: **com** a rede 0 repetições, **sem** a rede 3 em todas as 40).
+  ⚠️ **O modo GRUPOS fica de propósito no pareamento dinâmico**, e aqui está a parte que
+  custou um **NO-GO**: aplicar o círculo ao grupos zeraria a repetição (medido 0/400) mas
+  **destruiria a regra que o próprio Cap. 03 promete na mesma frase** — ele pareia por
+  proximidade na tabela de pontos. Então a garantia do **sorteio é ESTRUTURAL** e a do
+  **grupos é ESTATÍSTICA**, e o texto passou a dizer as duas separadas. A taxa medida do
+  grupos com o método certo (vencedor sorteado e rodadas processadas) é de **198 em 2000
+  temporadas, 9,9%**, com 8 atletas e elenco completo — e o **número não vai para o
+  regulamento**, só o teto invariante: ver a REGRA NOVA de 29/09 em
+  `docs/GOVERNANCA_AGENTES.md`, corolário 2.
+  ⛔ **No fonte, não no ar.** O texto original fica abaixo como registro.
+  <details><summary>o registro</summary>
+
+- **~~⚠️ O pareamento do Sistema B REPETE adversário com exatamente 8 atletas no sorteio.~~**
   *(29/09/2026, medido, não estimado.)* Em **120 temporadas completas** por configuração:
   **8 atletas / sorteio → 13 em 120** temporadas com **uma** repetição de confronto;
   8/grupos → 0 em 120; 9, 10 e 12 / sorteio → 0 em 120.
@@ -2096,6 +2155,125 @@ geral antes de abrir cadastro para terceiros.
   **Não é decisão de agente.** A asserção da bateria afirma hoje o limite medido
   (no máximo 1 repetição, ninguém enfrenta o mesmo três vezes): se alguém melhorar o
   pareamento ela continua verde; se alguém piorar, fica vermelha.
+  </details>
+
+- **⚠️ DADO DE SAÚDE LEGÍVEL PELO VISITANTE ANÔNIMO — e 5 linhas de produção a sanear.**
+  *(29/09/2026, condição BLOQUEANTE da 4ª rodada de guardiões. Achado do Guardião Jurídico,
+  medido e ampliado pelo autor em `434b16d`.)* A parte de código **está feita**: o
+  `RESPONDER_WO` copiava o **texto inteiro** da justificativa de W.O. — campo livre onde cabe
+  atestado médico — para `partidas.motivo_rejeicao`, e hoje grava só o rótulo. **O que fica
+  aberto é a permissão e o passivo:**
+  - `partidas.motivo_rejeicao` tem `SELECT` para `anon`, a política
+    `leitura_publica_partidas` libera qualquer partida de circuito **público**, e **o BH é
+    público**;
+  - **5 das 34 partidas já carregam `W.O. Justificado — <texto>`** — dado de saúde de cinco
+    pessoas reais, publicamente legível **hoje**;
+  - `solicitacoes_wo` expõe ao `anon` a `justificativa`, o `comprovante_url` e os **dois
+    nomes**, pela política gêmea;
+  - a anonimização nunca tocava `partidas`, e essa tabela sobrevive ao projeto.
+  **Não foi introduzido por esta onda** — mas é ela que promete o contrário ao titular.
+  **Por que não foi consertado junto:** o app lê a tabela com `select *`, e tirar o grant de
+  uma coluna **quebraria a leitura inteira** — é exatamente a **armadilha que já derrubou o
+  app** em 07/09 (regra 4 do `CLAUDE.md`). O conserto certo é **passar pelo porteiro**, com
+  **migração**, em rodada própria. Passa pelo Guardião de Segurança **e** pelo Jurídico.
+  **Ação separada e imediata:** sanear as 5 linhas em produção não depende da migração.
+
+- **⚠️ As 10 fotos órfãs num bucket PÚBLICO — o conserto está no fonte, a limpeza não.**
+  *(29/09/2026, `60ccc86`.)* Medido: **23 arquivos para 13 atletas**, um deles com **seis**
+  fotos antigas. Cada troca de foto deixava a anterior servindo o rosto, e o bucket é
+  público — são **10 rostos publicamente acessíveis que nenhuma linha do banco aponta**. Não
+  é defeito de exclusão (o apagamento por prefixo pega todas): é de **minimização** (art. 6º,
+  III) — só a foto atual tem finalidade, e quem trocou a foto tomou uma decisão sobre a
+  própria imagem que o app não respeitou. O `uploadFotoAtleta` **já** apaga as anteriores
+  (best-effort de propósito: falhar ali não pode impedir o atleta de trocar a foto). **A
+  limpeza dos 10 que já existem precisa da chave de serviço e vai por comando, autorizada
+  por ele.**
+
+- **⚠️ O freio anti-força-bruta do PIN de admin NÃO TEM ESCOPO POR IP — é um contador
+  global.** *(29/09/2026, dívida que a onda tornou mais larga.)* O `pinValido` do
+  `admin-action` conta **todas** as tentativas falhas da janela sem filtro nenhum:
+  `.gte("tentativa_em", desde).eq("sucesso", false)`, e o `insert` não grava IP nem
+  identifica quem tentou. Consequência: **5 erros de qualquer pessoa, de qualquer lugar,
+  trancam o painel para todo mundo, inclusive para o Juliano** — é uma negação de serviço de
+  custo zero para quem ataca. E o `circuito-dados` **reusa a mesma tabela e a mesma
+  contagem** (comentário próprio: *"é o MESMO freio do `admin-action`"*), então a onda de
+  29/09 **duplicou a superfície** desse efeito ao dar ao porteiro o caminho do PIN do
+  super-admin. O `login-atleta` não sofre disto — o freio dele é **por atleta**
+  (`pin_tentativas`/`pin_bloqueado_ate` na linha). Conserto pede coluna de IP (ou de
+  identificador de origem) e decisão de qual janela vale por IP e qual vale global — **as
+  duas juntas**, porque só por IP um atacante distribuído passa. Liga-se à dívida **0.3**
+  (essas tabelas de tentativa não têm limpeza e só crescem).
+
+- **⚠️ O `APLICAR_WO` NÃO VALIDA que o faltoso e o beneficiário são os atletas DA PARTIDA.**
+  *(29/09/2026.)* `faltosoId` e `beneficiarioId` vêm do **payload** e o motor nunca confere
+  contra `partidas.atleta1_id`/`atleta2_id`. O único momento em que ele lê os dois atletas da
+  partida é para **derivar** o faltoso no `tipo: "a_favor"` — nunca para **validar**. Ou seja:
+  o organizador (ou o super-admin) pode lançar um W.O. injustificado contra um atleta **que
+  não jogou aquela partida**, e o contador do Cap. 07 conta — o `recontarWoCulposos` é
+  derivado das partidas, então o número **fica** errado de forma consistente. O escopo por
+  recurso de 29/09 fechou "a partida é deste circuito?"; **não** fechou "essas pessoas são
+  desta partida?". Os ids de atleta são **públicos no ranking**, e o Cap. 07 suspende com
+  duas faltas. Conserto barato (uma comparação, a partida já é lida ali) + asserção.
+
+- **⚠️ O organizador NÃO-SUPER no BH cairia na guarda de membro e levaria 403.**
+  *(29/09/2026, dívida inerte hoje, declarada.)* O fallback que o Guardião de Segurança
+  propôs — *no BH, quem tem vínculo com algum circuito e não tem com o BH não é do BH; quem
+  não tem vínculo nenhum é roster legado puro e passa* — está escrito
+  `if (!mm && ehSuper && circuitoId === bhIdEscopo)`. **Só vale para o super-admin.** Um
+  organizador não-super do BH cai no `recusar = !mm` e recebe 403 ao tentar arquivar,
+  desarquivar, validar inscrição ou registrar pagamento de **qualquer** atleta do roster
+  legado sem linha em `circuito_atletas`. **Inerte hoje** porque ninguém ocupa esse papel no
+  BH — e o BH era de teste e encerrou. **Morde no dia em que alguém for nomeado**, e é o
+  caso em que a pessoa nova não vai saber que o erro é da guarda e não dela. Decidir:
+  estender o fallback ao organizador, ou registrar que o papel não existe no BH por decisão.
+
+- **⚠️ A asserção da exclusão de dados só vê UM circuito — a de dois está improvada.**
+  *(29/09/2026, dívida da própria onda.)* A `anonimizar-atleta` arquiva o vínculo com
+  `.eq("atleta_id", id)` **sem filtro de circuito**, que é o comportamento certo (a exclusão
+  é global). Mas o cenário do teste dá ao titular vínculo com **um** circuito só, então
+  acrescentar um `.eq("circuito_id", ...)` — a regressão exata que deixaria o titular
+  excluído num circuito e ativo no outro — **ficaria verde**. É a mesma família do
+  `select("id, telefone")`: a asserção existe, o instrumento não a exercita. Conserto: dar ao
+  alvo vínculo em dois circuitos no cenário e afirmar os dois. Barato.
+
+- **⚠️ Três caminhos da projeção do banco falso continuam abertos — e UM deles VAZA.**
+  *(29/09/2026, enumerados no próprio `testes/banco-falso.mjs` por exigência do Guardião de
+  Segurança, que pediu que "vaza" e "só dá falso vermelho" parassem de ser misturados.)*
+  - **VAZA** (instrumento mais generoso que a produção ⇒ regressão passa **verde**):
+    `upsert(...).select(...)` **não projeta** — devolve a linha inteira. É o mesmo furo do
+    `select("*")` de `LISTAR_TELEFONES` e do `insert(...).select(...)` do `CRIAR_CIRCUITO`,
+    no **terceiro** caminho, que o conserto de cada vez não cobriu. Perigoso, e é o que
+    sobrou.
+  - **Só dão falso vermelho** (instrumento mais pobre: dão trabalho, não carimbam
+    regressão): `!left` (o `aplicarJuncao` só conhece `!inner`); e
+    `single()`/`maybeSingle()`, que trocam o erro injetado por `PGRST116` e por isso deixam
+    o ramo `telefone_duplicado` do `INSCREVER` **intestável**.
+  **Contexto que dá o tamanho:** em 29/09 o `projetar` passou a **lançar erro** em forma de
+  select que não modela (proposta do Guardião de Segurança, e melhor que a do autor:
+  fail-closed fecha a **classe**, não o caminho). Isso resolveu o apelido do PostgREST — que
+  era o único dos cinco que **vazava a linha inteira com `pin_hash`** — e o embed aninhado.
+  Os três acima ficaram **fora** do portão. Restrições de coluna: `NOT NULL` é modelado (28
+  colunas), `UNIQUE` é parcial, e **tipo errado, `CHECK` e chave estrangeira continuam sem
+  modelo**.
+
+- **⚠️ Quatro guardas do motor continuam INALCANÇÁVEIS pela bateria, e estão declaradas.**
+  *(29/09/2026, `testes/segundo-circuito.mjs`, seção "Guardas que a bateria NÃO alcança".)*
+  Não são dívida de asserção — são dívida de **instrumento**, e a regra da casa é que guarda
+  inalcançável ou ganha asserção de **fonte** com o motivo declarado, ou alguém a cita um dia
+  como se estivesse protegida. São: (1) o `if (eChave) throw eChave` do `INICIAR_ETAPA` (o
+  banco em memória nunca faz esse `insert` falhar); (2) o `embaralhar`, que o Guardião de
+  Confiabilidade instrumentou e mediu **zero chamadas** em toda a bateria — não é código
+  morto, é a rede de segurança do rodízio, o único ramo não-determinístico que sobrou;
+  (3) **27 das 28** colunas de `COLUNAS_NAO_NULAS` (só `solicitacoes_wo.justificativa` é
+  portão provado — as outras são rede para o futuro, e a interseção entre as 57 colunas NOT
+  NULL reais e toda ocorrência de `coluna: null` nas 9 Edge Functions é **vazia**); e a
+  `!!ADMIN_PIN` do `circuito-dados`, que é fail-closed de verdade mas o `carrega-motor.mjs`
+  **fixa** `ADMIN_PIN: "1234"`, então sabotá-la fica verde; (4) o `await bhId()` do bloco de
+  escopo, que roda **fora** do `try/catch` — memoizado, mas numa instância fria uma falha
+  transitória vira 500 **sem cabeçalho de CORS**, e na tela do organizador isso aparece como
+  "erro de conexão" em vez de mensagem. A (4) está **registrada e não consertada** de
+  propósito: mover o bloco para dentro do `try` muda a ordem das guardas de autorização, e
+  isso pede rodada própria.
 
 - **⚠️ O `vA-nc-01` continua SEM documento gerado, e o gerador tem um campo sem
   proteção.** *(29/09/2026, dívida nova, apontada pelo Curador.)* Duas coisas, e as duas

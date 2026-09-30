@@ -99,12 +99,162 @@ sandbox que não compilava, e hoje seria trabalho perdido.
 
 ## Vereditos já emitidos (histórico)
 
-### RODADA ABERTA, 29/09/2026 (tarde) — auditoria multi-circuito, commit congelado `707c40f`
+### 29/09/2026 (noite) — QUATRO RODADAS de guardiões sobre a auditoria multi-circuito, **os dois NO-GO caíram**, commit `60ccc86`
+
+⚠️ **Esta seção FECHA a rodada aberta que está abaixo, e a razão de ela existir é um achado
+de processo.** A tabela da seção de baixo ficou com **sete linhas "(a preencher)"** enquanto
+**quatro rodadas inteiras de guardiões aconteceram** — com dois NO-GO, uma condição
+bloqueante e 208 asserções novas. Os vereditos **existem**: estão nas mensagens de commit,
+com nome de guardião e medição. O que não aconteceu foi a **transcrição** para este arquivo,
+que é o único registro que sobrevive à conversa (regra 3 e passo 3 do rito). Pelo próprio
+aviso escrito no fim daquela tabela, **o resumo do de acordo não podia ser levado ao
+Juliano** com uma linha em aberto — e foram sete, por quatro rodadas. Registrado pelo
+Supervisor de Curadoria em 29/09/2026, noite.
+
+**Árvore final: `60ccc86`.** Oito commits depois do `707c40f` auditado:
+`7965020` → `0bdc380` → `e8dc069` → `5bc6703` → `5dfd7b6` → `f458e48` → `434b16d` →
+`60ccc86`. **Bateria: 1357 asserções, 0 falhas**, 13 seções, saída 0 — medido pelo
+Supervisor de Curadoria, não citado de memória (era 1149 em `707c40f`). Build OK declarado
+nos commits. **Nada está no ar.**
+
+#### As quatro rodadas
+
+| # | Árvore congelada | Duplas | Resultado |
+|---|---|---|---|
+| 1ª | `707c40f` | **as 8 completas** | 7 GO-com-condições, **1 GO limpo**, nenhum NO-GO. Condições fechadas em `7965020` (motor e textos) e `0bdc380` (tela + a condição irreversível) |
+| 2ª | `5bc6703` | 4 (Confiabilidade, Regulamento, Segurança, Jurídico) | 3 GO-com-condições e **1 NO-GO** (Regulamento). 15 condições, fechadas em `5dfd7b6` |
+| 3ª | `5dfd7b6` | 4 | 3 GO-com-condições e **1 NO-GO novo** (Confiabilidade) — *"o defeito mais grave do dia"*. Fechadas em `f458e48` |
+| 4ª | `f458e48` | 4 | **1 GO limpo** (Segurança — o primeiro do dia em que ele ataca e não derruba nada do motor) e 3 GO-com-condições, **1 bloqueante** (Jurídico). Fechadas em `434b16d`. **Os dois NO-GO caíram, verificados nos dois sentidos pelos próprios guardiões que os deram** |
+
+#### O NO-GO nº 1 — Guardião de Regulamento, 2ª rodada: texto de regulamento que virou falso
+
+O rodízio novo foi aplicado só ao modo *sorteio* (`if (pareamento !== "grupos")`) e o Cap. 03
+do `vB-01` ficou prometendo *"sem repetir adversário"* para **os dois** modos. Ele derrubou
+**medindo**: **37 repetições em 400 temporadas** de 8 atletas no modo grupos, **com o roster
+estável** — e o texto do autor dizia que só a mudança de elenco fazia repetir. Era
+**regressão de veracidade** em relação ao `707c40f`, onde o texto dizia "evitando repetir" e
+era verdade nos dois modos.
+
+**A lição, e ela é do supervisor para o autor:** a correção certa era de **texto, não de
+algoritmo**. Aplicar o círculo ao grupos zeraria a repetição (medido 0/400) e **destruiria a
+regra que o próprio Cap. 03 promete na mesma frase**, porque o grupos pareia por proximidade
+na tabela de pontos. Garantia **estrutural** (sorteio) e garantia **estatística** (grupos)
+não se escrevem na mesma frase.
+
+#### O NO-GO nº 2 — Guardião de Confiabilidade, 3ª rodada: a exclusão quebrava em produção **depois** de destruir dado
+
+`solicitacoes_wo.justificativa` é **NOT NULL** em produção (conferido por ele no
+`information_schema`) e o código gravava `null`. O Postgres recusa com **23502** — e nesse
+ponto **já** tinham sido apagados, sem volta: as fotos do bucket, o CPF, as sessões, e o nome
+sobrescrito dentro das mensagens. A resposta dizia *"Nada foi alterado"*. Repetir falhava
+sempre no mesmo ponto: **o titular perdia o CPF e as fotos e não recebia a exclusão.**
+
+**Por que este é o mais grave da série:** ele não é um caminho que a bateria não alcançava —
+é um caminho que a bateria **percorria verde** porque o instrumento era mais permissivo que a
+produção. `COLUNAS_NAO_NULAS` foi de 2 para **28 colunas reais**, e o autor registrou o
+porquê: a lista dele cobria *a coluna que quebrou*, não *as que as funções tocam*.
+
+#### A condição BLOQUEANTE da 4ª rodada — Guardião Jurídico: dado de saúde legível pelo anônimo
+
+Ele pediu ao autor que fechasse o laço que o ambiente dele bloqueava, e o resultado foi
+**pior do que ele conseguiu provar**: `partidas.motivo_rejeicao` tem `SELECT` para `anon`, a
+`leitura_publica_partidas` libera qualquer partida de circuito público, **o BH é público**,
+**5 das 34 partidas já carregam o texto**, e `solicitacoes_wo` expõe ao `anon` a
+justificativa, o comprovante e os dois nomes pela política gêmea. **Feito:** o motivo grava
+só o rótulo. **Em aberto:** a permissão (pede **migração**, e é a armadilha que já derrubou o
+app) e o saneamento das 5 linhas — ver `docs/ROADMAP.md`.
+
+Frase do autor que vale como lição de escopo: *"eu passei o dia apagando o atestado do bucket
+e zerando a justificativa, e o mesmo texto de saúde de cinco pessoas reais estava
+publicamente legível por dois caminhos."*
+
+#### REGRA NOVA — sabotagem declarada "benigna" não dispensa portão; ela pede medição
+
+*(4ª rodada, achado do Guardião de Regulamento. Adotada.)*
+
+O autor declarou que inverter a ordem do modo grupos *"só muda quem leva o bye com ímpar"* e
+**usou essa declaração para não criar portão**. O guardião mediu com 9 atletas: **nenhum par
+da rodada 1 sobrevive**, os pares mudam em **todas** as rodadas, e o bye passa a rodar pelo
+**topo** da tabela. O raciocínio do autor valia para a lista inteira — **com número ímpar, a
+lista pareada não é a lista inteira**.
+
+E o efeito é de **competição**, não cosmético: o bye vale 1 ponto e a vitória 2, então
+benchar o topo **nega aos líderes a chance de somar 2**.
+
+> **A regra:** "esta mutação é benigna" é uma **afirmação sobre comportamento**, e neste
+> projeto afirmação sobre comportamento se **mede** ou não se escreve. Declarar benignidade
+> para dispensar portão é a mesma troca que a asserção por regex: economiza o portão e
+> compra a crença. E quando a declaração vira **comentário**, é pior — este repositório já
+> tem escrito que *"comentário errado é pior que comentário nenhum, porque alguém lê para
+> decidir"*, e foi exatamente esse comentário que o autor escreveu.
+
+#### REGRA NOVA — portão de instrumento: RECUSAR o desconhecido em vez de modelar o próximo caminho
+
+*(4ª rodada, proposta do Guardião de Segurança, adotada — e ela substitui o remendo que o
+autor ia fazer.)*
+
+Era a **quarta** falha de projeção do banco falso em 72 horas, e o autor ia implementar
+suporte a apelido do PostgREST — ou seja, modelar o caminho que apareceu, pela quinta vez. O
+guardião propôs o oposto: **`projetar` LANÇA ERRO em forma de select que não modela.**
+
+> **A regra:** instrumento de teste é **fail-closed**. Generosidade silenciosa em instrumento
+> é regressão que passa verde. Um portão que recusa o que não conhece **não precisa que
+> alguém adivinhe o próximo caminho** — fecha a classe, inclusive as formas que nenhum dos
+> dois pensou.
+
+**E marcar a exceção NÃO BASTOU** — mediu-se que um `try/catch` comum da função sob teste a
+engole igual, como o `mirrorSazonal` antigo fazia. A violação passou a ficar **registrada**, e
+o `placar()` derruba o arquivo no fim, **engolida ou não**. Provado: a asserção passa verde, o
+teste engole a recusa, e o arquivo cai.
+
+**Corolário do mesmo dia (Segurança):** a enumeração do que ficou de fora tem de **separar
+"vaza"** (instrumento mais generoso ⇒ regressão passa verde) **de "só dá falso vermelho"**
+(instrumento mais pobre ⇒ dá trabalho, não carimba regressão). Estavam misturados, e
+misturá-los faz procurar vazamento onde o sintoma é trabalho perdido.
+
+#### O padrão do autor, nomeado por ele mesmo, e o que o fecha
+
+Sete vezes nesta série o conserto cobriu **um** caminho e não a classe: o `select` sem a
+escrita (27/09); a guarda do `athlete-action` sem a irmã do `login-atleta` (28/09); o W.O.
+justificado no Sistema A sem o do Sistema B; a derivação idempotente por atleta e não por
+partida; o `semIntrusosDeOutroCircuito` na leitura e não na escrita; o servidor parando de
+copiar o dado de saúde e o reducer do app continuando a fabricá-lo; e a projeção do banco
+falso, cinco vezes. **A resposta estrutural não é mais disciplina — é portão fail-closed**
+(regra acima) **e enumeração escrita dos caminhos** (regra de 28/09). As duas juntas são o
+que este projeto tem contra esse padrão.
+
+#### Curador do Projeto — veredito do Supervisor, 29/09/2026 (noite): **REVISAR → corrigido nesta passagem**
+
+O trabalho do Curador em `707c40f` estava **fiel e bem medido** (contagem somada ao vivo,
+`switch` reconferido, o achado de processo da frase que nasceu velha duas vezes). Mas
+**envelheceu em horas**, e o supervisor corrigiu agora: `CLAUDE.md` (1149 → **1357**, commit
+`707c40f` → `60ccc86`, e a frase sobre o `testes/README.md` que nasceu velha uma **terceira**
+vez), `testes/README.md` (contagem; *"quatro Edge Functions"* → **SEIS**; a linha do
+`segundo-circuito.mjs` que dizia 231 asserções quando são **426**; `circuito-dados` e
+`anonimizar-atleta` saindo de "o que ainda não é testado"), `README.md` (1149 → 1357 em dois
+lugares; 4 → 6 funções), `docs/CHANGELOG.md` (entrada das quatro rodadas, marcada **⛔ não no
+ar**, mais a **ordem de subida superseada** na entrada anterior), `docs/ROADMAP.md` (duas
+decisões pendentes marcadas **resolvidas** e **oito** pendências novas), `docs/ESTADO-DEV`,
+`docs/ESPEC_CPF_SEGURANCA.md` e este arquivo. **Sem veto de código** — é curadoria.
+
+**O achado de processo desta passagem:** a tabela de "(a preencher)" abaixo. Ela não é
+esquecimento de preenchimento — é o **portão do passo 3 do rito ficando aberto por quatro
+rodadas**. Um portão que ninguém lê não protege nada, e este estava escrito no próprio
+arquivo que o define.
+
+---
+### RODADA FECHADA, 29/09/2026 (tarde→noite) — auditoria multi-circuito, congelada em `707c40f`, fechada em `60ccc86`
 
 **Os vereditos desta rodada entram AQUI, nesta seção, um parágrafo por dupla** — é o
 lugar onde o `CLAUDE.md` (regra 3 e passo 3 do rito) manda registrar, e é o único
 registro que sobrevive à conversa. O Curador abre a entrada para que os guardiões a
 completem em vez de cada um devolver parecer só no chat.
+
+⚠️ **PREENCHIDA PELO SUPERVISOR DE CURADORIA em 29/09/2026 (noite), a partir das mensagens
+de commit — não do chat, que não sobrevive.** As sete linhas ficaram "(a preencher)"
+enquanto **quatro rodadas inteiras** aconteciam por cima. A fonte de cada veredito abaixo é
+o commit que fechou as condições dele; onde o commit não nomeia a dupla, está escrito
+**"não nomeado no registro"** em vez de um veredito inventado. Ver a seção de cima.
 
 **Escopo da rodada: as 8 duplas completas.** A mudança toca **motor** (`admin-action`,
 `athlete-action`), **regra de competição** (Cap. 03, 07 e 09 do `vB-01`) e **dado pessoal**
@@ -121,13 +271,13 @@ das quatro coisas que o `CLAUDE.md` diz não terem conserto depois.
 
 | Dupla | Por que está no escopo | Veredito |
 |---|---|---|
-| Confiabilidade + supervisor | sempre; e aqui há ordem de subida de duas funções, sem rollback de Edge Function | *(a preencher)* |
-| Regulamento/Motor + supervisor | Cap. 03 mudou de "sem repetir" para "evitando repetir"; `idsNoRankingFinal`, `recontarWoCulposos`, `byesDaTemporada`, `entradaPermitida` | *(a preencher)* |
-| Segurança + supervisor | `promoverIdentidadeGlobal` escreve em `atletas`; escopo por recurso estendido ao super-admin, **com exceção deliberada no BH** | *(a preencher)* |
-| Jurídico/LGPD + supervisor | o recibo de consentimento que respondia sucesso sem gravar; o `vB-01` editado no lugar sob a regra 7 | *(a preencher)* |
-| Admin + supervisor | Despachos do Dia abortando; agenda de telefones; guarda do telefone vazio | *(a preencher)* |
-| Atleta + supervisor | o atleta aprovado que não conseguia entrar; a mensagem de inscrição não concluída | *(a preencher)* |
-| Marca/Visual + supervisor | o aviso novo no modal de edição e o texto do Cap. 03 na tela | *(a preencher)* |
+| Confiabilidade + supervisor | sempre; e aqui há ordem de subida de duas funções, sem rollback de Edge Function | **GO-com-condições** (`7965020`/`0bdc380`). Condições fechadas: a **irreversível** — fonte do ar em `docs/backups/motor-no-ar-2026-09-29/`, baixado pela API, `admin-action` v64 e `athlete-action` v22 **byte-idênticos** ao `16cdf58` por `diff`, mais LEIA-ME com os comandos de reversão; e o portão do `state.X` não declarado no `INIT`. **Nas rodadas seguintes ele deu o NO-GO nº 2** (a exclusão quebrando em produção por NOT NULL) e **corrigiu a ordem de subida do autor**, que estava invertida |
+| Regulamento/Motor + supervisor | Cap. 03 mudou de "sem repetir" para "evitando repetir"; `idsNoRankingFinal`, `recontarWoCulposos`, `byesDaTemporada`, `entradaPermitida` | **GO-com-condições** (`7965020`). Achado que vale a rodada: a seção "RODANDO os dois sistemas" **rodava o Sistema A duas vezes** — provado pondo um `throw` no ramo B do `APLICAR_WO` e vendo a bateria **verde**. O ramo do W.O. no modelo de pontos era **código morto** para a bateria, e quatro sabotagens passavam verdes. **Nas rodadas seguintes deu o NO-GO nº 1** (o Cap. 03 prometendo o que o grupos não cumpre, medido em 37/400) e derrubou a "sabotagem benigna" |
+| Segurança + supervisor | `promoverIdentidadeGlobal` escreve em `atletas`; escopo por recurso estendido ao super-admin, **com exceção deliberada no BH** | **GO-com-condições** (`5dfd7b6`) → **GO limpo na 4ª rodada** (`434b16d`) — o primeiro do dia em que ele ataca e não derruba nada do motor. Mediu o **caminho de ESCRITA** que a exceção do BH deixava aberto: `EXCLUIR_ATLETA` com o BH selecionado e id de atleta de outro circuito respondia **200** e apagava o atleta, levando os vínculos por cascade — **irreversível**. O pulo cego virou **fallback**, recusando zero operações de hoje. Também: sabotou o porteiro para devolver `telefone` e `pin_hash` de todos e a bateria ficou **verde** (o `*` desligava a projeção), e propôs o portão **fail-closed** do `projetar` |
+| Jurídico/LGPD + supervisor | o recibo de consentimento que respondia sucesso sem gravar; o `vB-01` editado no lugar sob a regra 7 | **GO-com-condições** (`7965020`), e foi ele quem levantou **a condição bloqueante da 4ª rodada** (`434b16d`): o dado de saúde legível pelo visitante anônimo. Provou **rodando** que a `anonimizar-atleta` era um único `update` em `atletas` — o vínculo seguia ativo, o `INICIAR_ETAPA` ainda pareava o atleta, e o banco **continuava provando** um consentimento que o titular havia revogado. Provou também que a `promoverIdentidadeGlobal` punha o atleta do circuito novo **dentro do roster do BH**, rodando o `INICIAR_ETAPA` do BH e vendo os intrusos pareados contra atletas do BH. E foi dele a redação da retenção de 6 meses, com a exigência de que a frase **não** entrasse antes de o sistema cumpri-la |
+| Admin + supervisor | Despachos do Dia abortando; agenda de telefones; guarda do telefone vazio | **GO-com-condições** (`7965020`/`0bdc380`). Achou que o banco em memória **não modelava o `DEFAULT false`** de `rejeitado`/`validado`/`calculado`: qualquer cenário que gerasse partidas pelo motor e chamasse `PROCESSAR_RODADA` recebia `{processadas: 0}` e passava **verde sem processar nada**. E levantou a tela do organizador num circuito de **pontos**: a aba "Config" que não existe, o circuito que não aparecia no seletor sem F5, o botão "Justificado" que devolvia **400**, o painel de W.O. com números de rating, e a 5ª superfície do "Rating inicial" — a que dispara **na hora de aprovar**. Também achou que a correção do Bloco 2 era **inerte para o dono da plataforma**, porque o porteiro não tinha caminho para o PIN do super |
+| Atleta + supervisor | o atleta aprovado que não conseguia entrar; a mensagem de inscrição não concluída | **GO-com-condições** (`0bdc380`). A condição que valia a rodada: o Bloco 3 fez o atleta aprovado **conseguir** entrar, e ele caía no BH — com **um** circuito o `onAthleteLogin` não apontava o app para ele, então via ranking do BH, "Meus Jogos" vazio, um card pedindo que aceitasse o **regulamento do BH**, e no primeiro refresh levava **logout silencioso**, sem botão de trocar (o hub só aparece com 2+). Ou seja: *"não consegue entrar"* tinha virado *"entra e não chega a lugar nenhum"*. E o **aviso do 1º W.O. injustificado** que o Cap. 07 do `vB-01` promete e **não existia** — o atleta podia ser suspenso no 2º sem nunca ter sido avisado do 1º, em texto que ele assina |
+| Marca/Visual + supervisor | o aviso novo no modal de edição e o texto do Cap. 03 na tela | **Não nomeado no registro.** Os commits desta série não atribuem veredito a esta dupla, e o Supervisor de Curadoria **não o inventa**. O que há de rastreável no escopo dela foi feito: os textos de tela do Cap. 03 alinhados nas três superfícies, o rodapé do ranking ("culposos" → "injustificados", 6 critérios), o banner do ranking vazio, e a cor semântica saindo do texto pequeno (asserção de contraste na rodada de 28/09). ⚠️ **Se esta dupla não rodou, o passo 3 do rito não está cumprido para ela** — e a mudança tocou motor, banco e dado pessoal, o que exige **as 8 completas**. Confirmar antes do de acordo |
 | Curador + supervisor | acervo e drift | **GO-com-condições** — ver abaixo |
 
 **Curador do Projeto — GO-com-condições (29/09/2026).** Documentação auditada e
@@ -146,6 +296,11 @@ gerador sem proteção. As três estão em `docs/ROADMAP.md`, "Decisões ainda e
 
 ⚠️ **Enquanto esta tabela tiver linha "(a preencher)", o resumo do de acordo não pode
 ser levado ao Juliano** — é o passo 3 do rito, e ele antecede o passo 4.
+✅ **As sete linhas foram preenchidas em 29/09/2026 (noite)** pelo Supervisor de Curadoria,
+a partir das mensagens de commit. **Uma ressalva fica aberta, e ela é do tipo que o passo 3
+existe para pegar:** a dupla **Marca/Visual** não tem veredito atribuído em registro nenhum.
+Este aviso, portanto, **continua valendo** para ela — e o registro de que ele ficou aberto
+por quatro rodadas está na seção acima.
 
 ### REGRA NOVA, 28/09/2026 (tarde) — conserto de instrumento é conserto de UM CAMINHO
 

@@ -64,18 +64,27 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
 npm run teste
 ```
 
-Hoje são **1149 asserções** (conferido ao vivo pelo Curador em 29/09/2026, tarde,
-somando as **13 seções** que a bateria imprime, no commit `707c40f`; saída 0).
-**Não cite este número de memória** — ele mudou em dez ondas seguidas, e esta
-linha dizia **1011** até a auditoria multi-circuito de 29/09 acrescentar 138;
-rode `npm run teste` e leia. O `atualizar.sh` roda isso
-antes de publicar e se recusa a subir com teste vermelho. O `testes/README.md`
-traz o mesmo número, e a tabela de arquivos dele tem de listar **todos** os que
-existem — confira com `ls testes/*.mjs`, não pelo número: esta frase já nasceu
-velha **duas** vezes (27/09, e de novo em 29/09, quando `segundo-circuito.mjs`
-— hoje o 2º maior arquivo da bateria — passou dias fora da tabela enquanto este
-parágrafo afirmava que ela estava completa). Era a dívida antiga registrada em
-`docs/curadoria-indice-app-tenis-de-mesa.md`.
+Hoje são **1357 asserções** (conferido ao vivo pelo Supervisor de Curadoria em
+29/09/2026, noite, somando as **13 seções** que a bateria imprime, no commit
+`60ccc86`; saída 0).
+**Não cite este número de memória.** Ele mudou em **quatorze** ondas seguidas, e o
+histórico desta linha é o argumento: dizia **1011**, virou **1149** na auditoria
+multi-circuito de 29/09 — e **envelheceu de novo em poucas horas**, porque as
+quatro rodadas de guardiões que vieram depois acrescentaram 208 asserções
+(1149 → 1192 → 1196 → 1220 → 1240 → 1320 → 1345 → 1357). Rode `npm run teste` e
+**some as seções**; não copie daqui.
+O `atualizar.sh` roda isso antes de publicar e se recusa a subir com teste
+vermelho. O `testes/README.md` traz o mesmo número, e a tabela de arquivos dele
+tem de listar **todos** os que existem — confira com `ls testes/*.mjs`, não pelo
+número: esta frase já nasceu velha **duas** vezes (27/09, e de novo em 29/09,
+quando `segundo-circuito.mjs` — hoje o 2º maior arquivo da bateria — passou dias
+fora da tabela enquanto este parágrafo afirmava que ela estava completa). Era a
+dívida antiga registrada em `docs/curadoria-indice-app-tenis-de-mesa.md`.
+⚠️ **E a frase acima sobre o `testes/README.md` também nasceu velha uma terceira
+vez:** entre `707c40f` e `60ccc86` o número dele ficou em 1149 e a contagem do
+`segundo-circuito.mjs` em 231 (hoje **426**) — a **tabela** estava completa, o
+**número** não. Conferir a tabela e conferir o número são duas verificações, não
+uma.
 
 Ela carrega **SEIS Edge Functions de verdade** — `admin-action`, `athlete-action`,
 `login-atleta`, `comprovante-url`, `circuito-dados` e `anonimizar-atleta`, os
@@ -318,8 +327,11 @@ ar** — não presuma que é a do arquivo.
 - `supabase/functions/admin-action/index.ts` — **o motor**, ~1.700 linhas. As
   ações do organizador (INICIAR_ETAPA, AVANCAR_RODADA, PROCESSAR_RODADA,
   APLICAR_WO, NOVA_TEMPORADA, financeiro, papéis) saem de um `switch (acao)`.
-  São **46** hoje — **reconferido pelo Curador em 29/09/2026** no commit
-  `707c40f`, rodando o `grep` abaixo: a auditoria multi-circuito acrescentou
+  São **46** hoje — **reconferido pelo Supervisor de Curadoria em 29/09/2026** no
+  commit `60ccc86`, rodando o `grep` abaixo (o Curador havia medido o mesmo 46 em
+  `707c40f`; as quatro rodadas de guardiões que vieram depois acrescentaram
+  guardas, `escalaCirculo` e o alcance da exclusão, e **nenhuma ação nova**): a
+  auditoria multi-circuito acrescentou
   guardas e funções auxiliares (`idsNoRankingFinal`, `recontarWoCulposos`,
   `promoverIdentidadeGlobal`, `byesDaTemporada`, `entradaPermitida`), mas
   **nenhuma ação nova** ao `switch`. Conte em vez de citar de memória, porque

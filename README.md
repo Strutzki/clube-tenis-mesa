@@ -12,7 +12,7 @@ Este arquivo é o **mapa do que existe**. Como mexer sem quebrar está no
 ```bash
 npm install          # só na primeira vez
 npm run dev          # abre o app na sua máquina, em localhost
-npm run teste        # a bateria: 1149 asserções sobre 4 Edge Functions de verdade
+npm run teste        # a bateria: 1357 asserções sobre 6 Edge Functions de verdade
 npm run build        # verifica se o app compila
 npm run lint         # confere o estilo do código
 ```
@@ -173,12 +173,15 @@ Levantadas ao mapear o banco em 07/09/2026, sem decisão tomada:
 - **`partidas_historico` sem chave primária** — nada impede a mesma partida
   arquivada duas vezes.
 - **A bateria cobre o servidor, não o front.** `npm run teste` carrega e executa
-  **quatro Edge Functions de verdade** — `admin-action` (o grosso),
-  `athlete-action`, `comprovante-url` e `login-atleta` (este no
+  **SEIS Edge Functions de verdade** — `admin-action` (o grosso),
+  `athlete-action`, `comprovante-url`, `login-atleta` (este no
   `PARTICIPAR` e, desde 29/09/2026, no `SESSAO`; `LOGIN` e `RENOVAR` seguem
-  descobertos). São **1149 asserções** em 29/09/2026 — **confira rodando, não cite
-  de memória**: este número mudou em dez ondas seguidas, e ficou errado por 8 vezes
-  aqui (esta linha dizia **627** enquanto a bateria já passava de mil). Ver
+  descobertos), `circuito-dados` e `anonimizar-atleta` (as duas passaram a rodar
+  de verdade em 29/09/2026, nas rodadas de guardiões). São **1357 asserções** em
+  29/09/2026, noite — **confira rodando, não cite
+  de memória**: este número mudou em **quatorze** ondas seguidas, e ficou errado por
+  9 vezes aqui (esta linha dizia **627** enquanto a bateria já passava de mil, e
+  dizia **1149** algumas horas depois de a bateria chegar a 1357). Ver
   `testes/README.md`.
   **O front (`src/App.jsx`) quase não é executado por teste**: o que existe são
   checagens por regex no texto fonte, que registram que um trecho está lá e **não**

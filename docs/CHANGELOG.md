@@ -5,6 +5,258 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-09-29 (noite) — ⛔ NO FONTE, **NÃO NO AR**: as quatro rodadas de guardiões, os dois NO-GO e as decisões do Juliano
+
+⛔ **NADA DISTO ESTÁ NO AR.** Declarado em todos os oito commits ("Nada no ar") e
+inalterado desde a entrada anterior: o que os atletas usam agora é **`admin-action` v64**,
+**`athlete-action` v22**, `login-atleta` v11, `comprovante-url` v3, **`circuito-dados` v4**,
+**`anonimizar-atleta` v2**, `despachos-do-dia` v6. O front também está só no fonte (sem push).
+*(As versões não foram reconferidas ao vivo nesta entrada — o que há é a declaração dos
+commits. Rode `npm run motor:listar` antes de agir.)*
+
+**Oito commits, não seis.** `707c40f` → `7965020` → `0bdc380` → `e8dc069` → `5bc6703` →
+`5dfd7b6` → `f458e48` → `434b16d` → `60ccc86`. **Bateria: 1357 asserções, 0 falhas**, 13
+seções, saída 0 — medido pelo Supervisor de Curadoria em `60ccc86` (era 1149 em `707c40f`:
+**+208 em uma noite**). Build OK declarado nos commits.
+
+⚠️ **A LISTA DO QUE PRECISA SUBIR CRESCEU DE DUAS PARA CINCO PEÇAS, E A ORDEM MUDOU.**
+A entrada anterior (de `707c40f`) diz *"app primeiro, motor depois"* com duas funções.
+**Isso está superado** — corrigido abaixo, no lugar certo. A ordem final, **confirmada por
+dois guardiões sem conflito** em `434b16d`:
+
+> **1º `circuito-dados` · 2º `anonimizar-atleta` · 3º `admin-action` · 4º `athlete-action` ·
+> 5º APP** — e os passos **4 e 5 seguidos, sem intervalo**.
+
+O que mudou o raciocínio: a `anonimizar-atleta` tem dependência do app **na direção
+contrária** (a tela nova promete o que a v2 do ar não faz), e publicar a
+`anonimizar-atleta` **leva junto a liberação de CORS do localhost** — carga extra
+declarada. Erro de ordem meu, corrigido pelo Guardião de Confiabilidade em `5dfd7b6`.
+**Nenhuma das cinco foi publicada deste repositório para `circuito-dados` e
+`anonimizar-atleta` ⇒ `git checkout` NÃO é rollback delas**; os fontes do ar estão em
+`docs/backups/motor-no-ar-2026-09-29/`.
+
+#### As quatro rodadas de guardiões — e os DOIS NO-GO
+
+| Rodada | Árvore | Vereditos |
+|---|---|---|
+| 1ª (`7965020` + `0bdc380`) | `707c40f` | **8 duplas**: 7 GO-com-condições, 1 GO limpo, **nenhum NO-GO** |
+| 2ª (`5dfd7b6`) | `5bc6703` | 4 guardiões: 3 GO-com-condições e **1 NO-GO** |
+| 3ª (`f458e48`) | `5dfd7b6` | 4 guardiões: 3 GO-com-condições e **1 NO-GO novo** |
+| 4ª (`434b16d`) | `f458e48` | 4 guardiões: **1 GO limpo** (Segurança) e 3 GO-com-condições, 1 bloqueante. **Os dois NO-GO caíram**, verificados nos dois sentidos pelos próprios guardiões que os deram |
+
+**NO-GO nº 1 (Guardião de Regulamento, 2ª rodada) — texto de regulamento que virou
+falso.** O rodízio novo foi aplicado só ao modo *sorteio* (`if (pareamento !== "grupos")`)
+e o Cap. 03 do `vB-01` ficou prometendo *"sem repetir adversário"* para **os dois** modos.
+Ele mediu **37 repetições em 400 temporadas** de 8 atletas no modo grupos **com o roster
+estável** — e o texto culpava a mudança de elenco. Era **regressão de veracidade** em
+relação ao `707c40f`, onde o texto dizia "evitando repetir" e era verdade nos dois modos.
+Conserto de **texto, não de algoritmo**: a garantia do sorteio é **estrutural**, a do
+grupos é **estatística**, e as duas passaram a ser ditas separadas — mais as 3 telas que
+repetiam a promessa, incluindo a que o organizador lê **ao escolher o método**.
+
+**NO-GO nº 2 (Guardião de Confiabilidade, 3ª rodada) — a exclusão de dados QUEBRAVA em
+produção, depois de destruir dado.** `solicitacoes_wo.justificativa` é **NOT NULL** em
+produção (conferido no `information_schema`) e o código gravava `null`. O Postgres recusa
+com **23502** — e nesse ponto **já** tinham sido apagadas, sem volta: as fotos do bucket,
+o CPF, as sessões, e o nome sobrescrito dentro das mensagens. A resposta dizia *"Nada foi
+alterado"*. Repetir falhava sempre no mesmo ponto: **o titular perdia o CPF e as fotos e
+não recebia a exclusão.** Conserto: grava o rótulo, e `COLUNAS_NAO_NULAS` no banco em
+memória foi de 2 para **28 colunas reais** — a lista antiga cobria a coluna *que quebrou*,
+não as que as funções *tocam*.
+
+**A CONDIÇÃO BLOQUEANTE da 4ª rodada — dado de saúde legível pelo visitante anônimo.**
+Achado do Guardião Jurídico, fechado pelo autor e **pior do que ele conseguiu provar**: o
+`RESPONDER_WO` copiava o **texto inteiro** da justificativa de W.O. (texto livre onde cabe
+atestado médico) para `partidas.motivo_rejeicao` — coluna com `SELECT` para `anon`, em
+tabela que sobrevive ao projeto e que a anonimização nunca tocava. A política
+`leitura_publica_partidas` libera qualquer partida de circuito público, **o BH é público**,
+e **5 das 34 partidas já carregam `W.O. Justificado — <texto>`**. A tabela
+`solicitacoes_wo` expõe ao `anon` a `justificativa`, o `comprovante_url` e os dois nomes,
+pela política gêmea. **FEITO:** o motivo grava só o rótulo. **FICA PARA DECISÃO:** fechar a
+leitura pública dessas colunas e sanear as 5 linhas de produção — ver ROADMAP, "Decisões
+ainda em aberto".
+
+#### As decisões do Juliano desta noite (quatro)
+
+1. **"Não pode ter repetição de adversário"** (`e8dc069`). Entrou o **rodízio pelo método
+   do círculo** (`escalaCirculo`): fixa um atleta e gira os demais, montando a temporada
+   inteira de uma vez — para n atletas dá n-1 rodadas sem nenhuma repetição. Medição
+   refeita, 120 temporadas completas por configuração: **8/sorteio foi de 13/120 para
+   0/120**. A ordem é sorteada **uma vez por temporada**, derivada de um hash de
+   (atleta + temporada/ano): estável entre o `INICIAR` e os `AVANCAR`, e muda sozinha na
+   virada, **sem coluna nova**. O modo **grupos** fica no pareamento dinâmico de propósito
+   (ele pareia por proximidade na tabela de pontos — um rodízio fixo contradiria o próprio
+   Cap. 03). Rede de segurança: confronto já jogado cai no pareamento antigo, e há medição
+   de que ela importa (12 atletas com 4 saindo: **com** a rede 0 repetições, **sem** a rede
+   3 em todas as 40).
+2. **"Excluir quando o cliente pedir, mas deixar claro os impactos"** (`5bc6703`), fechando
+   a pendência 0.7.2. A `anonimizar-atleta` era **um único `update` em `atletas`**; hoje
+   alcança `circuito_atletas` (arquiva o vínculo, tira da chave e **revoga o recibo de
+   consentimento**), `atleta_sessao` (encerra as sessões) e `atleta_documento` (apaga o
+   código do CPF, a data de nascimento e os dados do responsável legal). **O preço, escrito
+   na tela ANTES de o titular confirmar:** sem o código do CPF a trava de duplicata deixa
+   de reconhecê-lo — ele volta como **cadastro novo**, e um banimento por fraude (que o
+   regulamento declarava permanente) deixa de ser aplicável automaticamente. O Cap. de
+   Fraude parou de prometer banimento permanente **automático**. E o titular **pode
+   cancelar** o pedido enquanto pendente (art. 18, IX) — resolve junto o ROADMAP 0.7.3.
+3. **"Pode nascer de qualquer uma das formas, o admin decide quando abrir"** (`e8dc069`) —
+   ou seja, **público e privado têm de funcionar igual**. Isso derrubou a solução anterior,
+   que só cobria o privado, e **resolveu por caminho 2** a decisão que a entrada anterior
+   deixou em aberto: a leitura de circuito não-BH passa pelo **porteiro**
+   (`circuito-dados`), que roda com service role e já devolvia `wo_culposos_temporada`.
+   **Sem reverter a decisão da fase 4C** (a coluna continua sem grant ao `anon`). O
+   porteiro ganhou caminho para o **PIN do super-admin**, que faltava — num circuito
+   privado ele levava 403, o app caía em silêncio na leitura anônima e lia zero, então a
+   correção do Bloco 2 era inerte justamente para o dono da plataforma —, com o **mesmo
+   freio de tentativas** do `admin-action`.
+4. **Retenção dos backups: 6 meses** (`60ccc86`). A `backup-clube-tenis-mesa` **não tinha
+   regra de retenção nenhuma**: medido antes de escrever, 109 arquivos, o mais antigo de
+   11/07/2026, crescendo sem limite. A conta é **pela data no nome**, não por `created_at`
+   (o arquivo do dia é sobrescrito), e nome fora do padrão **não** é apagado. A frase
+   entrou na política de privacidade com a redação do Jurídico — os dois andam juntos,
+   porque *"escrever um prazo que não se cumpre é pior que não ter a frase"*.
+   ⚠️ **Inerte hoje:** o corte cai em 29/03, só começa a morder em janeiro de 2027.
+
+#### O que mais foi corrigido, por família
+
+**Dado pessoal e LGPD.** As **fotos órfãs**: cada troca de foto deixava a antiga num bucket
+**público** — 23 arquivos para 13 atletas, **10 rostos publicamente acessíveis que nenhuma
+linha do banco aponta**, um atleta com seis. Não é defeito de exclusão, é de **minimização**
+(art. 6º, III). O `uploadFotoAtleta` passou a apagar as anteriores; **a limpeza dos 10 que
+já existem precisa da chave de serviço e vai por comando, autorizada por ele**. A exclusão
+**mentia quando falhava**: os `delete` não checavam erro e rodavam **depois** do update que
+anonimiza, então uma falha deixava o CPF, destruía a identidade, respondia `sucesso: true`
+e — pior — `exclusao_solicitada_em` já tinha sido zerado, **o pedido sumia da fila do
+admin**. Hoje tudo o que pode falhar roda antes, cada falha aborta inteira e o pedido
+**fica** na fila (6 caminhos vermelhos testados). Mais: o nome sai de `mensagens_enviadas`
+(288 linhas, **117 delas mensagens de terceiros que citam o titular**) e de
+`solicitacoes_wo`, a **justificativa** do W.O. é apagada, e `pin_hash`/`bio_cred_ids`/
+`cpf_verificado` saem junto. A varredura de nomes ganhou **fronteira de palavra** — há um
+atleta "Juliano" em produção, e sem isso excluir um "Juliano" corromperia o registro de um
+"Juliano Silva".
+
+**Isolamento do BH — os dois lados.** A `promoverIdentidadeGlobal` que o `707c40f`
+introduziu punha o atleta do circuito novo **dentro do roster do BH**, e o Guardião
+Jurídico provou rodando o `INICIAR_ETAPA` do BH, que pareou os intrusos contra atletas do
+BH. O remédio de uma linha não bastava; a correção é no **leitor** —
+`semIntrusosDeOutroCircuito` no roster, no teto e na fila. Depois o Guardião de Segurança
+mediu o lado da **escrita**: `EXCLUIR_ATLETA` com o BH selecionado e id de atleta de outro
+circuito respondia **200** e apagava o atleta, levando os vínculos por cascade —
+**irreversível**. O pulo cego virou **fallback**: tem vínculo com outro e não com o BH ⇒
+não é do BH. As duas correções recusam **zero** operações de hoje (15 atletas, 15 vínculos).
+E a promoção **não tinha guarda de LGPD**: quem pediu exclusão era reativado por uma
+aprovação de rotina.
+
+**O que o autor declarou consertado e não estava.** No Sistema A, trocar um W.O. de culposo
+para justificado **não devolvia o ponto** (o ramo dava `return` antes de recontar) — o
+atleta ficava a uma falta da suspensão do Cap. 07 por uma falta que o organizador
+perdoou. E corrigir **quem** faltou deixava a falta lançada para as **duas** pessoas: a
+derivação era idempotente por atleta, não **por partida**.
+
+**A tela do organizador num circuito de PONTOS** (`0bdc380`). A aba "Config" que o painel
+pós-criação mandava abrir **não existe**; o circuito criado não aparecia no seletor sem
+F5; a tela de aprovação pedia **rating** e a mensagem de WhatsApp anunciava "Rating
+inicial: X" (**5ª superfície** da família, e a que dispara na hora de aprovar); o botão
+"Justificado" mandava `aplicar(null, null)` e o motor devolvia **400**; o painel de W.O.
+dizia "−15/+8" e "o ausente não perde pontos" (no B é 0/2, e o `a_favor` **conta** para a
+suspensão); "Pareamento por Rating", "Processar rating", "Fase: Inscrições abertas" com as
+inscrições fechadas. Mais o **bloqueio que faltava para o 1º atleta**: com **um** circuito
+o `onAthleteLogin` não apontava o app para ele — o atleta aprovado entrava, caía no BH, via
+ranking do BH, "Meus Jogos" vazio, um card pedindo que aceitasse o **regulamento do BH**, e
+no primeiro refresh levava logout silencioso. Ou seja: *"não consegue entrar"* tinha virado
+*"entra e não chega a lugar nenhum"*. E o **aviso do 1º W.O. injustificado**, que o Cap. 07
+do `vB-01` promete e **não existia** — o atleta podia ser suspenso no 2º sem nunca ter sido
+avisado do 1º, e é texto que ele assina.
+
+**O instrumento — quatro falhas, e a resposta deixou de ser remendo.** (a) O cenário
+"RODANDO os dois sistemas" **rodava o Sistema A duas vezes**: usava `circuito(BH, …)` e o
+`getSistema()` devolve "A" para o BH por cravação. Os rótulos `[B]` eram falsos e o ramo do
+W.O. no modelo de **pontos** era código morto para a bateria — quatro sabotagens passavam
+verdes. (b) O banco em memória não modelava o `DEFAULT false` de
+`rejeitado`/`validado`/`calculado`: qualquer cenário que gerasse partidas **pelo motor** e
+chamasse `PROCESSAR_RODADA` recebia `{processadas: 0}` e passava verde **sem processar
+nada**. (c) O `*` no topo do `projetar()` **desligava a projeção inteira**, e o embed nunca
+era projetado por dentro — o Guardião de Segurança sabotou o porteiro para devolver
+`telefone` e `pin_hash` de todos os atletas e a bateria ficou **VERDE**; toda asserção "esta
+ação devolve só X" que passasse por um JOIN estava improvada, **inclusive as que protegem
+a Regra 2**. (d) A resposta, proposta pelo Guardião de Segurança e melhor que a do autor:
+**`projetar` LANÇA ERRO em forma de select que não modela** — fail-closed em vez de
+generosidade silenciosa, o que fecha a **classe**, não o caminho. E marcar a exceção **não
+bastou**: um `try/catch` comum da função sob teste a engole igual, então a violação também
+fica **registrada** e o `placar()` derruba o arquivo no fim, engolida ou não.
+
+**Portões que nasceram faltando.** O `circuito-dados` era a **única das cinco peças sem
+asserção comportamental** — e está no ar com `verify_jwt = false`: dois guardiões,
+separados, sabotaram o PIN dele para aceitar qualquer valor e tiraram o freio
+anti-força-bruta, e a bateria ficou **verde** nas duas. Hoje ele roda na bateria. O
+`SOLICITAR_EXCLUSAO`/`CANCELAR_EXCLUSAO` também não rodava em teste nenhum — e o buraco era
+grave: `athleteId` vinha do payload e **os ids são públicos no ranking**, então qualquer um
+ligava e desligava o estado de LGPD de qualquer um, em silêncio, inclusive para **travar** a
+`promoverIdentidadeGlobal` e fazer com que a vítima nunca mais fosse aprovada em circuito
+nenhum. E a **fronteira de palavra** da varredura de nomes estava em **dois lugares
+independentes**: sabotar um deixava o outro intacto e a bateria ficava verde nos dois
+casos — mesma lição da `janelaRenovacao` e da `idsNoRankingFinal`, e virou **uma** conta.
+
+**Erros do autor, declarados por ele.** (1) Ao consertar a auto-validação, transformou
+`payload.circuitoId` — decorativo no `ENVIAR_PLACAR` — em **parâmetro de decisão sem
+validar a origem**: o atleta declarava `circuitoId: <BH>` e a partida do circuito dele se
+auto-validava, passando por cima do botão do organizador. Hoje o circuito vem **da
+partida**. (2) Escreveu `state.pareamento` em duas telas, e **o campo não existe no
+`INIT`**: não quebraria nada (`undefined` cai no ramo do sorteio), mas a tela diria
+"sorteio aleatório" num circuito de **grupos**, calada — o build passa, o `no-undef` passa,
+e a bateria não executa o `App.jsx`. Mesma **família** do `sistemaAtivo={sistemaAtivo}` de
+13/09 que deu tela branca, *"só que aquele explodia e este MENTE, que é pior"*. Virou
+`PAREAMENTO_ATIVO` mais uma asserção nova: **nenhum campo lido como `state.X` sem estar
+declarado no `INIT`** (medido: 29 declarados, 27 lidos, zero fora). (3) Declarou uma
+sabotagem "benigna" — inverter a ordem do modo grupos *"só muda quem leva o bye com
+ímpar"* — e usou isso para **não criar portão**. O Guardião de Regulamento mediu com 9
+atletas: **nenhum par da rodada 1 sobrevive**, os pares mudam em todas as rodadas, e o bye
+passa a rodar pelo **topo** da tabela — o que é efeito de competição, porque o bye vale 1
+ponto e a vitória 2, e benchar o topo nega aos líderes a chance de somar 2. (4) Corrigiu um
+comentário próprio que afirmava preservar a decisão da fase 4C: preservou o **mecanismo**,
+não o **resultado**. (5) Consertou o **servidor** (que parou de copiar o texto de saúde para
+`partidas.motivo_rejeicao`) e deixou o **reducer otimista do app fabricando o mesmo texto
+na tela** — local, some no F5, mas o app mostrava o que o servidor deliberadamente não
+guarda. (6) Das quatro decisões que levou ao Juliano, **duas não eram decisão** — eram
+trabalho dele mal rotulado.
+
+**Texto e regulamento (regra 7 cumprida em todas).** O `vB-01` foi conferido no banco e
+tem **zero aceites** em cada uma das edições, então elas são no lugar, sem versão nova. O
+Cap. 03 teve **três redações no mesmo dia**, e as três estão registradas no comentário do
+motor: (1) prometia sem condição e era falso; (2) culpava a queda de roster e também estava
+errado — acontecia com o grupo completo; (3) o motor mudou e a promessa passou a ser
+verdade no sorteio. Alinhados junto: o resumo do portão do aceite (que ainda prometia
+*"→ sorteio"*, removido do Cap. 09 em 27/09 — a correção de então pegou o regulamento e o
+`.md` e esqueceu o texto do **consentimento**), a tela de criação, a tela de iniciar etapa,
+e o **roteiro de teste manual**, que mandava **não** marcar falha numa repetição — ou seja,
+mandava aprovar o defeito que o Cap. 03 hoje proíbe. Mais: o rodapé do ranking trocou
+"culposos" (palavra do banco) por "injustificados" (palavra do regulamento) e passou a
+listar os 6 critérios em vez de 4; o banner do ranking vazio trocou "validada/confirmado"
+por "processada"; a rotação do bye parou de prometer em absoluto (o entrante tardio
+escapa); *"Nada foi salvo"* era **parcialmente falso** (o IP do rate-limit fica); e as ações
+de exclusão ganharam frase de sessão própria, porque reusavam a do re-aceite e o titular
+era mandado logar *"para confirmar o aceite"* ao **pedir exclusão**.
+
+**A condição irreversível, fechada** (`0bdc380` e `5dfd7b6`).
+`docs/backups/motor-no-ar-2026-09-29/` com o fonte **do ar**, baixado pela API do Supabase
+— não copiado do repositório: `admin-action` v64 (md5 `2fefff57e8a2f78cbb5d85e3509d7ac4`),
+`athlete-action` v22 (md5 `099b94a294dfd8ef97f18b02ae8f2517`), os dois **byte-idênticos** ao
+commit `16cdf58` por `diff`, mais `circuito-dados` v4 e `anonimizar-atleta` v2 (nenhuma das
+duas publicada deste repositório) e um LEIA-ME com os comandos exatos de reversão.
+
+**Funções novas no motor:** `escalaCirculo` (o rodízio), `semIntrusosDeOutroCircuito`, e o
+`recontarEnvolvidos` dentro do `APLICAR_WO`. **Nenhuma ação nova no `switch`** — seguem
+**46** (reconferido em `60ccc86`).
+
+**Pendências que esta onda abriu** — todas em `docs/ROADMAP.md`, "Decisões ainda em aberto"
+e "Dívidas declaradas": fechar a leitura pública do dado de saúde (pede **migração**, e é a
+armadilha que já derrubou o app); sanear as 5 linhas de `partidas.motivo_rejeicao` em
+produção; apagar as 10 fotos órfãs (pede chave de serviço); o freio de tentativas **sem
+escopo por IP**; o `APLICAR_WO` que **não valida** se o faltoso é da partida; o organizador
+**não-super** no BH; a asserção da exclusão que só vê **um** circuito; os **três caminhos**
+da projeção do banco falso ainda abertos; e o `vA-nc-01` ainda sem documento gerado.
+
+---
 ### 2026-09-29 (tarde) — ⛔ NO FONTE, **NÃO NO AR**: a auditoria multi-circuito, em quatro blocos
 
 ⛔ **NADA DISTO ESTÁ NO AR.** Conferido ao vivo pelo Curador em 29/09/2026 com
@@ -87,7 +339,13 @@ só `src/App.jsx`):
 `recontarWoCulposos`, `promoverIdentidadeGlobal`, `byesDaTemporada`, `entradaPermitida`.
 Nenhuma ação nova no `switch` — seguem **46**.
 
-**Ordem de subida, quando o Juliano autorizar** (pela regra de bolso do `CLAUDE.md`): o
+**Ordem de subida, quando o Juliano autorizar** ⛔ **— SUPERSEDIDA, NÃO SIGA ESTE
+PARÁGRAFO.** Ele valia para as duas funções desta onda. A onda seguinte (29/09, noite)
+acrescentou `circuito-dados` e `anonimizar-atleta` e **invertiu a posição do app**, porque a
+`anonimizar-atleta` tem dependência do app na direção contrária. A ordem em vigor é a da
+entrada de 29/09 (noite): **1º `circuito-dados` · 2º `anonimizar-atleta` · 3º `admin-action`
+· 4º `athlete-action` · 5º APP**, com os passos 4 e 5 seguidos. O raciocínio de então, para
+registro: o
 servidor passou a **exigir mais** (recusa 409 sem chave, escopo por recurso, inscrição
 desfeita quando o vínculo falha) **e** o app passou a traduzir recusas novas → **app
 primeiro, motor depois**. As duas funções sobem uma por vez
@@ -99,6 +357,10 @@ não há rollback de Edge Function.
 em aberto"): o grant de leitura de `wo_culposos_temporada` para o visitante anônimo
 (sem ele o 2º desempate do Cap. 09 continua morto em circuito **público**); o algoritmo
 de pareamento do Sistema B; e o `vA-nc-01` ainda sem documento gerado.
+✅ **As duas primeiras foram DECIDIDAS na mesma noite** — ver a entrada de 29/09 (noite):
+o desempate foi resolvido pelo **porteiro** (`circuito-dados`), sem liberar a coluna ao
+`anon`, e o pareamento passou ao **rodízio pelo método do círculo**. Só o `vA-nc-01`
+continua aberto.
 
 ---
 

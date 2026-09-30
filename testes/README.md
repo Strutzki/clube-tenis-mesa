@@ -4,22 +4,36 @@
 npm run teste
 ```
 
-Hoje são **1149 asserções, 0 falhas** — conferido pelo Curador em 29/09/2026 (tarde),
-somando as **13 seções** que a bateria imprime, no commit `707c40f`. O `atualizar.sh`
+Hoje são **1357 asserções, 0 falhas** — conferido pelo Supervisor de Curadoria em
+29/09/2026 (noite), somando as **13 seções** que a bateria imprime, no commit
+`60ccc86`. O `atualizar.sh`
 roda isso antes de publicar e se recusa a subir com teste vermelho. Confira rodando;
 não cite de memória.
 
+⚠️ **E este número envelheceu em HORAS.** Ele dizia 1149 (`707c40f`) e as quatro
+rodadas de guardiões que vieram depois o levaram a 1192 → 1196 → 1220 → 1240 → 1320
+→ 1345 → 1357, sem que esta linha andasse. Não existe "recém-conferido": some as
+seções da saída de hoje.
+
 ⚠️ **A tabela abaixo tem de listar TODOS os arquivos** — confira com `ls testes/*.mjs`,
-nunca pela contagem. Em 29/09/2026 o `segundo-circuito.mjs` (231 asserções, o 2º maior
-da bateria) estava fora dela **enquanto o `CLAUDE.md` afirmava que a tabela estava
-completa**. Arquivo novo entra aqui na mesma mudança que o cria.
+nunca pela contagem. Em 29/09/2026 o `segundo-circuito.mjs` (o 2º maior da bateria)
+estava fora dela **enquanto o `CLAUDE.md` afirmava que a tabela estava
+completa**. Arquivo novo entra aqui na mesma mudança que o cria. **E conferir a
+tabela não é conferir os números dentro dela:** a linha do `segundo-circuito.mjs`
+ficou dizendo "231 asserções" depois de o arquivo chegar a **426**.
 
 ## O que ela testa — e por que isso é diferente do que havia antes
 
 A bateria **carrega e executa as Edge Functions de verdade**: os mesmos arquivos
-que o `npm run motor:publicar` sobe. Hoje são quatro — `admin-action` (o grosso),
-`athlete-action`, `comprovante-url` e `login-atleta` — e `montarMotor({ funcao: "..." })` escolhe
+que o `npm run motor:publicar` sobe. Hoje são **SEIS** — `admin-action` (o grosso),
+`athlete-action`, `comprovante-url`, `login-atleta`, `circuito-dados` e
+`anonimizar-atleta` — e `montarMotor({ funcao: "..." })` escolhe
 qual. Não há cópia da lógica dentro do teste.
+*(Esta linha dizia "quatro" até 29/09/2026 à noite. Conte com
+`grep -rhoE 'funcao: *"[a-z-]+"' testes/*.mjs | sort -u` mais o padrão
+`admin-action`, que é o default do `montarMotor`, em vez de citar daqui — um
+guardião que lê "quatro" subestima a cobertura e pode dispensar asserção que o
+projeto exigiria.)*
 
 Isso importa porque o harness anterior
 (`harnesses/desfazer-processamento.harness.mjs`) faz o contrário: ele reescreve
@@ -34,7 +48,7 @@ que é útil; não prova nada sobre o código que está no ar.
 | `sistema-b.mjs` | Sistema B: pontos V=2/D=1, W.O. que não anula, bye do ímpar, e a garantia de que um circuito de pontos **nunca** escreve rating |
 | `isolamento.mjs` | Operar um circuito não toca em outro; escopo do organizador; exclusão global × por circuito; virada de temporada; freio do PIN |
 | `permissoes.mjs` | A allowlist do organizador, o portão do financeiro, e o escopo por circuito do `LISTAR_TELEFONES` (inclusive: a ação devolve só `id` e `telefone`) |
-| `segundo-circuito.mjs` | O 2º circuito de ponta a ponta (231 asserções): criação e recibo do servidor, teto fixo, slug `bh` reservado, gravação que falha não responde "sucesso", fila de espera, troca de circuito, auto-validação do placar **por circuito**, recibo de consentimento, a virada de temporada não apagando quem jogou W.O., o contador de W.O. injustificados **derivado**, o **motor de pareamento do Sistema B rodando 6 rodadas completas**, o atleta aprovado conseguindo entrar no app (`SESSAO`), e o circuito de pontos não encostando no rating global |
+| `segundo-circuito.mjs` | O 2º circuito de ponta a ponta (**426 asserções**, a 2ª maior seção): criação e recibo do servidor, teto fixo, slug `bh` reservado, gravação que falha não responde "sucesso", fila de espera, troca de circuito, auto-validação do placar **por circuito**, recibo de consentimento, a virada de temporada não apagando quem jogou W.O., o contador de W.O. injustificados **derivado**, o **motor de pareamento do Sistema B rodando 6 rodadas completas**, o atleta aprovado conseguindo entrar no app (`SESSAO`), e o circuito de pontos não encostando no rating global. **Acrescentado nas quatro rodadas de guardiões de 29/09/2026:** o **rodízio pelo método do círculo** (`escalaCirculo`) e a rede de segurança dele, o bye descendo pela cauda da tabela no modo grupos, o **porteiro `circuito-dados` rodando de verdade** (PIN, freio, público × privado), a **exclusão de dados** rodando a `anonimizar-atleta` de ponta a ponta, o `SOLICITAR_EXCLUSAO`/`CANCELAR_EXCLUSAO` com sessão do titular, e a seção "**Guardas que a bateria NÃO alcança**", que declara o que NÃO está protegido para ninguém citar como se estivesse |
 | `participar-outro-circuito.mjs` | Atleta existente entrando num 2º circuito (`PARTICIPAR` do `login-atleta`, rodando de verdade): aceite do regulamento declarado, versão conferida contra a do circuito, e responsável legal obrigatório para menor de 18 |
 | `onda-06.mjs` | Onda 0.6: desarquivar (e a prova de que o desarquivado volta a ser pareado), as duas guardas de LGPD, a recusa do BH na leitura da cobrança, e o comprovante de W.O. do organizador — este roda a função `comprovante-url` |
 | `mensagens.mjs` | Registro de mensagens enviadas: o motor não pode responder "sucesso" com a gravação falhando |
@@ -238,6 +252,10 @@ como prova sem saber disto. Da linha de **28/09/2026** em diante, a régua é: *
 | tela: o aviso do regulamento na CRIAÇÃO some | 1 vermelha |
 | tela: o aviso perde a parte do torneio (a diferença que só o documento mostra) | 1 vermelha |
 | tela: a confirmação deixa de mostrar o que o servidor gravou e volta a adivinhar | 1 vermelha |
+| **As QUATRO rodadas de guardiões — 29/09/2026 (commits `7965020`, `0bdc380`, `e8dc069`, `5bc6703`, `5dfd7b6`, `f458e48`, `434b16d`, `60ccc86`)** | |
+| ⚠️ **Mesmo débito da linha de baixo, e maior.** Estas sete levas levaram a bateria de 1149 a **1357** e as mutações foram rodadas e declaradas, sabotagem a sabotagem, **nas mensagens de commit** — inclusive as que derrubaram **dois NO-GO**. Não estão tabuladas aqui uma a uma, e o Supervisor de Curadoria **não vai inventar o número de vermelhas de cada uma**. Quem for citar uma como prova: leia `git log` do commit, não esta tabela | — |
+| o que ESTÁ tabulável, porque o commit dá o número: o rodízio (3 mutações vermelhas — o rodízio sumir, a ordem deixar de ser estável, a semente parar de mudar na virada); a exclusão de dados (4 vermelhas, inclusive a que apagaria o vínculo de TODOS em vez do alvo); `solicitacoes_wo.justificativa` NOT NULL (**20 vermelhas** — foi o NO-GO); o `state.X` não declarado no `INIT` (1 vermelha) | |
+| ⚠️ **E três sabotagens ficaram VERDES até a 4ª rodada**, todas do mesmo padrão "consertei o caminho que apareceu": o PIN do porteiro aceitando qualquer valor, o freio anti-força-bruta removido, e a projeção do banco falso desligada pelo `*` no topo (que improvava TODA asserção "esta ação devolve só X" passando por JOIN) | |
 | **Auditoria multi-circuito — 29/09/2026 (commits `16cdf58`, `f1cd61c`, `6266f11`, `707c40f`)** | |
 | ⚠️ **Linha do Curador, e ela é um débito, não um registro.** As mutações desta onda foram rodadas e declaradas nas mensagens de commit — 7 vermelhas para a fatia 0.10.32 (o estado de tela que atravessava a troca de circuito), e as demais descritas em prosa, sabotagem a sabotagem, nos três blocos. **Não foram tabuladas aqui uma a uma, e eu não vou inventar o número de vermelhas de cada uma.** Quem rodar a próxima onda: transcreva desta tabela o padrão, não a prosa do commit | — |
 | bloco 3 — mutação **campo a campo** da guarda de rating do Sistema B | `rating` e `rating_inicial` **vermelhos**; `rating_pico` e `rating_historico` **verdes, e corretamente** — nenhuma ação os escreve. Está escrito no teste para ninguém ler a lista e achar que ela protege os quatro. A 1ª asserção do autor testou só `rating` (que **já** estava protegido) e a mutação ficou verde: passou pelo motivo errado |
@@ -265,10 +283,24 @@ regulamento. Corrigido, e provado sabotando uma asserção do regulamento: o
   registra que um trecho de texto está lá — **não** prova comportamento. Para
   **texto de tela** isso é o certo, porque a afirmação é literalmente "esta frase
   está aqui"; para regra, não serve.
-- `circuito-dados` — o carregador já serve para ela; **faltam as asserções de
-  comportamento**. O que existe hoje é leitura de fonte (`segundo-circuito.mjs`
-  confere que ela pede e devolve `wo_culposos_temporada`), que registra texto,
-  não prova execução.
+- ~~`circuito-dados`~~ — **coberta em 29/09/2026** (2ª rodada de guardiões): ela
+  RODA na bateria — público sem credencial, privado recusando anônimo, PIN
+  certo/errado, o freio anti-força-bruta trancando até o PIN certo, `pin` com
+  `telefone` não entrando pelo caminho do super, e o que ela devolve. Era a única
+  das cinco peças sem asserção comportamental, e estava no ar com
+  `verify_jwt = false`. ⚠️ **A `!!ADMIN_PIN` dela continua sem portão**: o
+  `carrega-motor.mjs` FIXA `ADMIN_PIN: "1234"`, então o caso "variável ausente"
+  nunca acontece no teste e sabotá-la fica verde (declarado em
+  `segundo-circuito.mjs`, seção "Guardas que a bateria NÃO alcança").
+- ~~`anonimizar-atleta`~~ — **coberta em 29/09/2026**: a função que apaga dado
+  pessoal a pedido do titular **nunca tinha sido executada por teste nenhum**.
+  Hoje roda de verdade (identidade, vínculo, recibo revogado, documento e CPF
+  apagados, sessão encerrada, fotos do bucket, nome dentro de
+  `mensagens_enviadas` e `solicitacoes_wo`, o atleta VIZINHO intocado, a recusa
+  sem PIN, e os 6 caminhos em que uma falha aborta a exclusão inteira).
+  ⚠️ **Dívida declarada:** o cenário dá ao titular vínculo com **um** circuito só,
+  então a asserção **não prova** que o `update` de `circuito_atletas` alcança os
+  DOIS — acrescentar um `.eq("circuito_id", ...)` ficaria verde.
 - `login-atleta` — cobertos o `PARTICIPAR` (desde 27/09/2026) e o `SESSAO`
   (desde 29/09/2026, em `segundo-circuito.mjs`). O `LOGIN` e o `RENOVAR` seguem
   sem asserção nenhuma.

@@ -2662,12 +2662,39 @@ secao("Nenhum texto promete anulação num circuito de pontos");
   ok(/<RegulamentoView[\s\S]{0,400}?sistema=/.test(fonteApp),
     "e quem o chama passa o `sistema` de verdade");
 
-  // E o número, que é o que o atleta lê na mensagem, tem de bater com o motor.
-  // Sem isto, trocar o "1 ponto" por "0 pontos" no texto passaria verde.
-  ok(/1 ponto e uma derrota/.test(fonteApp),
-    "a mensagem do Sistema B diz o que o ausente REALMENTE recebe: 1 ponto e uma derrota");
-  ok(/2 pontos/.test(fonteApp),
-    "e o que o adversário recebe: 2 pontos");
+  // O NÚMERO, QUE É O QUE O ATLETA LÊ, TEM DE BATER COM O MOTOR — e a asserção
+  // tem de ser POR MENSAGEM, não pelo arquivo.
+  //
+  // A primeira versão disto era `ok(/1 ponto e uma derrota/.test(fonteApp))`. A
+  // mutação "troca 1 ponto por 0 pontos na mensagem do solicitante" passou
+  // VERDE, porque a mesma frase também existe na tela do admin e o teste só
+  // perguntava se ela estava em ALGUM lugar do arquivo. É exatamente o que o
+  // CLAUDE.md diz sobre regex: "se a asserção é regex, ela não protege a regra
+  // — só registra que um trecho de texto está lá". Cada destino é conferido no
+  // seu próprio pedaço agora.
+  const recorte = (de, ate) => {
+    const i = fonteApp.indexOf(de);
+    if (i < 0) return "";
+    const f = fonteApp.indexOf(ate, i);
+    return f > i ? fonteApp.slice(i, f) : "";
+  };
+
+  const trechoSolicitante = recorte("const msgSolicitante", "const msgAdversario");
+  ok(trechoSolicitante.length > 0, "a mensagem do solicitante foi localizada no fonte");
+  ok(/1 ponto e uma derrota/.test(trechoSolicitante),
+    "a mensagem que vai para QUEM FALTOU diz o que ele realmente recebe: 1 ponto e uma derrota");
+  ok(/2 pontos/.test(trechoSolicitante),
+    "e diz que o adversário recebe 2 pontos");
+
+  const trechoAdversario = recorte("const msgAdversario", "const linkSolicitante");
+  ok(trechoAdversario.length > 0, "a mensagem do adversário foi localizada no fonte");
+  ok(/2 pontos/.test(trechoAdversario),
+    "a mensagem que vai para O ADVERSÁRIO diz que ele recebe os 2 pontos — não que o confronto foi anulado");
+
+  const trechoTela = recorte("W.O. Justificado — Cap. 07", "{pendentesWo.map");
+  ok(trechoTela.length > 0, "o aviso da tela do organizador foi localizado no fonte");
+  ok(/1 ponto e uma derrota/.test(trechoTela) && /2 pontos/.test(trechoTela),
+    "e o aviso da TELA do organizador traz os dois números antes de ele aprovar");
   ok(!/Justificado \(anula\)<\/Btn>/.test(fonteApp),
     'o botão não rotula "Justificado (anula)" sem ramificar — o rótulo ficava três linhas acima de um comentário dizendo que no B não anula');
 }

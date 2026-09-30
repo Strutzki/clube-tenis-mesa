@@ -33,7 +33,18 @@ const BLOQUEIO_MINUTOS = 15;
 const ITERACOES = 100000;
 
 // Colunas devolvidas ao app no sucesso — NUNCA inclui pin_hash.
-const COLS = "id,nome,telefone,apelido,federado,rating,rating_inicial,saldo_temp,status,chave,vitorias,derrotas,vitorias_total,derrotas_total,inscrito_em,pendente_circuito,ultima_recusa_circuito_em,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,wo_culposos_temporada,exclusao_solicitada_em";
+// `motivo_reprovacao` entrou em 30/09/2026. Sem ele o app nao tinha como dizer ao
+// atleta POR QUE foi recusado: a tela mostrava "ainda esta em analise pelo
+// organizador, ele avisa assim que aprovar" para reprovado, suspenso E arquivado,
+// porque a guarda era `status !== "ativo"`. O reprovado esperava para sempre por
+// uma aprovacao ja negada, com o motivo existindo no banco e nunca chegando nele;
+// o suspenso por 2 W.O. levava explicacao errada para uma suspensao que o proprio
+// app anunciou. Conferido em producao: HA 1 ATLETA SUSPENSO HOJE, entao nao era
+// hipotese. Achado do Supervisor do Atleta.
+// ⚠️ ORDEM DE SUBIDA: o servidor passou a DEVOLVER mais, entao ele vai primeiro
+// (regra da casa no CLAUDE.md). O app tolera a ausencia do campo -- se ele vier
+// vazio a frase cai no texto sem motivo, nunca em "undefined".
+const COLS = "id,nome,telefone,apelido,federado,rating,rating_inicial,saldo_temp,status,chave,vitorias,derrotas,vitorias_total,derrotas_total,inscrito_em,pendente_circuito,ultima_recusa_circuito_em,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,wo_culposos_temporada,exclusao_solicitada_em,motivo_reprovacao";
 
 function normTel(t: unknown): string {
   return String(t ?? "").replace(/\D/g, "");

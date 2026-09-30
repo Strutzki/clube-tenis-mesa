@@ -5311,8 +5311,37 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
       // A frase antiga ("não foi aprovado pelo admin") não dizia o que fazer, nem
       // quanto esperar, nem que o PIN que ele acabou de criar ficou valendo — e
       // ficou. (Guardião do Atleta, 29/09/2026.)
+      // ⚠️ UMA FRASE PARA QUATRO SITUAÇÕES DIFERENTES, até 30/09/2026.
+      //
+      // A guarda é `status !== "ativo"` e engloba pendente, reprovado, suspenso e
+      // arquivado. Todos liam "ainda está em análise… ele avisa assim que aprovar".
+      // Para o pendente estava certo. Para os outros três era falso:
+      //   · o REPROVADO esperava para sempre por uma aprovação já negada, com o
+      //     motivo existindo no banco e nunca chegando nele;
+      //   · o SUSPENSO por 2 W.O. levava explicação errada para uma suspensão que
+      //     o próprio app anunciou a ele;
+      //   · o ARQUIVADO não sabia que precisava se reinscrever.
+      // Conferido em produção antes de consertar: HÁ 1 ATLETA SUSPENSO HOJE. Não
+      // era hipótese — era a frase que ele leria ao tentar entrar.
+      // Achado do Supervisor do Atleta.
+      //
+      // O `|| ""` e o `motivo ?` não são defensividade decorativa: o servidor
+      // passou a devolver `motivo_reprovacao` na mesma leva, e a regra da casa manda
+      // subir o motor primeiro. Se por qualquer razão o campo não vier, a frase cai
+      // na versão sem motivo — nunca em "undefined".
       if (found.status !== "ativo") {
-        setErr("Seu cadastro ainda está em análise pelo organizador. Ele avisa assim que aprovar — o PIN que você criou já fica salvo.");
+        const motivo = String(found.motivo || "").trim(); // `mapAtletaFromDb` chama de `motivo`
+        if (found.status === "reprovado") {
+          setErr(motivo
+            ? `Sua inscrição não foi aprovada pelo organizador. Motivo: ${motivo}. Se quiser conversar sobre isso, fale com ele direto — o PIN que você criou continua salvo.`
+            : "Sua inscrição não foi aprovada pelo organizador. Fale com ele para entender o motivo — o PIN que você criou continua salvo.");
+        } else if (found.status === "suspenso") {
+          setErr("Sua participação está suspensa nesta temporada. Fale com o organizador para saber o que fazer — o PIN que você criou continua salvo.");
+        } else if (found.status === "arquivado") {
+          setErr("Seu cadastro está arquivado. Para voltar a jogar você precisa se inscrever de novo — o PIN que você criou continua salvo.");
+        } else {
+          setErr("Seu cadastro ainda está em análise pelo organizador. Ele avisa assim que aprovar — o PIN que você criou já fica salvo.");
+        }
         return;
       }
       // "Continuar conectado": guarda telefone + TOKEN de sessão + lista de circuitos (localStorage).

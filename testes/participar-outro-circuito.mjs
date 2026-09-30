@@ -849,6 +849,50 @@ secao("O app manda o PIN do super-admin ao porteiro — a linha de que tudo depe
   ok(/setDbStatus\("error"\)[\s\S]{0,200}porteiro/.test(fonteApp) || /\[porteiro\][\s\S]{0,120}vazia/.test(fonteApp),
     "e a falha do porteiro com leitura vazia AVISA em vez de degradar em silêncio");
 
+  // CADA STATUS RECEBE A SUA FRASE — quatro situações, quatro respostas.
+  //
+  // A guarda do login é `status !== "ativo"` e engloba pendente, reprovado,
+  // suspenso e arquivado. Até 30/09/2026 os quatro liam "ainda está em análise…
+  // ele avisa assim que aprovar". Certo só para o pendente. O reprovado esperava
+  // para sempre por uma aprovação já negada, com o motivo no banco e nunca
+  // chegando nele; o suspenso levava explicação errada para uma suspensão que o
+  // próprio app anunciou; o arquivado não sabia que tinha de se reinscrever.
+  // Conferido em produção antes do conserto: HÁ 1 ATLETA SUSPENSO, então a frase
+  // errada estava viva. Achado do Supervisor do Atleta.
+  //
+  // A asserção cobre os QUATRO de propósito. Consertar um e deixar os outros é
+  // literalmente como este defeito nasceu — eu tinha consertado o caso pendente
+  // nesta mesma onda e regredido os outros três.
+  {
+    const iG = fonteApp.indexOf('if (found.status !== "ativo")');
+    const fimG = fonteApp.indexOf("\n      }", iG) + 8;
+    ok(iG > 0 && fimG > iG, "a guarda de status do login foi localizada");
+    const guarda = semComentarios(fonteApp.slice(iG, fimG));
+
+    for (const st of ["reprovado", "suspenso", "arquivado"]) {
+      ok(new RegExp(`found\\.status === "${st}"`).test(guarda),
+        `o status «${st}» tem ramo próprio na guarda do login`);
+    }
+    ok(/não foi aprovada/.test(guarda),
+      "o reprovado lê que NÃO foi aprovado — não «está em análise»");
+    ok(/Motivo: \$\{motivo\}/.test(guarda),
+      "e recebe o MOTIVO que o organizador escreveu, quando existe");
+    ok(/String\(found\.motivo \|\| ""\)/.test(guarda),
+      "com tolerância à ausência do campo — o motor sobe primeiro, mas a frase nunca mostra «undefined»");
+    ok(/suspensa nesta temporada/.test(guarda),
+      "o suspenso lê que está suspenso");
+    ok(/arquivado[\s\S]{0,120}inscrever de novo/.test(guarda),
+      "e o arquivado lê que precisa se inscrever de novo");
+    ok(/ainda está em análise/.test(guarda),
+      "e o pendente continua com a frase dele, que estava certa");
+
+    // O motor tem de DEVOLVER o motivo, senão o ramo do reprovado é decorativo.
+    const fonteLogin = await import("node:fs/promises")
+      .then(f => f.readFile("supabase/functions/login-atleta/index.ts", "utf-8"));
+    ok(/const COLS = "[^"]*\bmotivo_reprovacao\b/.test(fonteLogin),
+      "e o login-atleta devolve `motivo_reprovacao` — sem isso o ramo do reprovado nunca teria o que mostrar");
+  }
+
   // O LOGIN POR BIOMETRIA PERGUNTA "ONDE ESSA PESSOA JOGA?", NÃO "ESTÁ AQUI?".
   //
   // Até 30/09/2026 ele fazia `athletes.find(...)` — o elenco do circuito ABERTO

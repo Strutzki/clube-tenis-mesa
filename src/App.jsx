@@ -5724,15 +5724,62 @@ export default function App() {
       // anon que já foi feita continua valendo — exatamente o comportamento de hoje.
       let atletasEf = atletas, partidasEf = partidas;
       if (CIRCUITO_ATIVO !== CIRCUITO_BH_ID) {
-        // Ordem: atleta (token) → organizador (telefone+PIN) → super-admin (PIN
-        // global em cache). Sem credencial nenhuma, circuito público ainda passa
-        // (o porteiro libera) e privado cai na leitura anônima, como antes.
+        // ORDEM DA CREDENCIAL: organizador → super-admin → atleta.
+        //
+        // Era atleta PRIMEIRO até 30/09/2026, e a bateria chamava isso de "ordem
+        // certa". Está errado: `ctm_atleta_sessao` é gravado em TODO login de
+        // atleta e a função que o apaga (`clearAtletaCred`) existe e nunca é
+        // chamada. Numa máquina que é atleta E super-admin — a do Juliano —, o
+        // token velho vencia o PIN, o porteiro respondia `nao_membro` para um
+        // circuito de que aquele atleta não é membro, e o painel degradava em
+        // silêncio para a leitura anônima. Achado do Supervisor do Admin.
+        // Credencial mais forte primeiro; o atleta comum não tem as outras duas.
         const pinSuper = getPinCache();
-        const credPorteiro = getAtletaCred() || getOrgCred() || (pinSuper ? { pinSuper } : null);
+        const credPorteiro = getOrgCred() || (pinSuper ? { pinSuper } : null) || getAtletaCred();
         const dadosPort = await fetchCircuitoPorteiro(CIRCUITO_ATIVO, credPorteiro);
         if (dadosPort) {
-          atletasEf = (dadosPort.ranking || []).map(porteiroRankingToCa);
-          partidasEf = dadosPort.partidas || [];
+          const doPorteiro = (dadosPort.ranking || []).map(porteiroRankingToCa);
+          // SOMA, NÃO SUBSTITUI. Isto é o conserto do defeito mais grave que eu
+          // mesmo criei nesta onda.
+          //
+          // Eu alarguei a leitura pelo porteiro para TODO circuito não-BH (antes
+          // era só privado) e ela SUBSTITUÍA a leitura normal. O porteiro serve
+          // qualquer visitante de circuito público, então por design correto ele
+          // não devolve dado privado — e a bateria proíbe que devolva. Resultado
+          // no painel do organizador, em todo circuito novo: todos "Sem pgto",
+          // todos "Sem consentimento", inclusão bloqueada para quem já pagou, e
+          // — o pior — a lista de PEDIDOS DE EXCLUSÃO DE DADOS sempre vazia.
+          // Obrigação legal com prazo, invisível.
+          //
+          // Medido no banco antes de escolher o conserto: existem permissões POR
+          // COLUNA, e o `anon` já lê `pagamento_confirmado`, `aceite_regulamento`,
+          // `aceite_lgpd` e `exclusao_solicitada_em`. Ou seja o caminho normal
+          // sempre alcançou o que o painel precisa. O ÚNICO campo que ele não
+          // alcança é `wo_culposos_temporada` (coluna sem grant para `anon`) —
+          // que era a razão de eu ter mexido aqui.
+          //
+          // Então as duas leituras não competem, se completam: a normal é a base,
+          // e o porteiro entra só com o que ela não pode ler.
+          if ((atletas || []).length > 0) {
+            const woPorId = new Map(doPorteiro.map((p) => [p.atletas?.id, p.wo_culposos_temporada]));
+            atletasEf = (atletas || []).map((r) => {
+              const wo = woPorId.get(r.atletas?.id);
+              return wo == null ? r : { ...r, wo_culposos_temporada: wo };
+            });
+          } else {
+            // Circuito PRIVADO: a leitura anônima não vê linha nenhuma, então o
+            // porteiro é a única fonte. O painel fica sem os campos privados —
+            // limite conhecido e registrado, que pede uma leitura própria de
+            // admin. Não se resolve alargando o porteiro.
+            atletasEf = doPorteiro;
+            partidasEf = dadosPort.partidas || [];
+          }
+        } else if ((atletas || []).length === 0) {
+          // O porteiro falhou E a leitura anônima está vazia: a tela não tem
+          // dado nenhum. Antes isto degradava em SILÊNCIO — sem aviso, sem log —
+          // e o organizador via um circuito vazio sem saber por quê.
+          setDbStatus("error");
+          console.warn("[porteiro] sem resposta e leitura anônima vazia em", CIRCUITO_ATIVO);
         }
       }
       const athletesMapped = (atletasEf||[]).map(mapAtletaFromCircuito).sort((a,b)=>(b.rating||0)-(a.rating||0));

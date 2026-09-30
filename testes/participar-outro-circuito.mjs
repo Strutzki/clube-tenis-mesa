@@ -798,8 +798,47 @@ secao("O app manda o PIN do super-admin ao porteiro — a linha de que tudo depe
   // para isso — lição de 27/09: a janela ancorada na função não vê quem a invoca.
   ok(/const pinSuper = getPinCache\(\);[\s\S]{0,300}pinSuper \? \{ pinSuper \}/.test(fonteApp),
     "e a carga do circuito monta a credencial do super-admin a partir do PIN em cache");
-  ok(/getAtletaCred\(\) \|\| getOrgCred\(\) \|\| \(pinSuper/.test(fonteApp),
-    "na ordem certa: atleta (token) → organizador (telefone+PIN) → super-admin (PIN global)");
+  // ⚠️ ESTA ASSERÇÃO JÁ DEFENDEU A ORDEM ERRADA, e chamava-a de "certa".
+  //
+  // Até 30/09/2026 ela exigia `getAtletaCred() || getOrgCred() || (pinSuper` e
+  // dizia "na ordem certa: atleta → organizador → super-admin". Não era: o
+  // `ctm_atleta_sessao` é gravado em TODO login de atleta e a função que o apaga
+  // (`clearAtletaCred`) existe no arquivo e NUNCA é chamada — nem no logout.
+  // Numa máquina que é atleta e super-admin (a do Juliano), o token velho vencia
+  // o PIN, o porteiro respondia `nao_membro`, e o painel degradava em silêncio.
+  // Consertar o app deixaria a bateria vermelha SEM defeito nenhum: a asserção
+  // congelava o estado de hoje em vez de defender a regra. Achado do Supervisor
+  // do Admin. A regra é: credencial MAIS FORTE primeiro.
+  ok(/getOrgCred\(\) \|\| \(pinSuper \? \{ pinSuper \} : null\) \|\| getAtletaCred\(\)/.test(fonteApp),
+    "na ordem certa: organizador → super-admin (PIN) → atleta (token) — credencial mais forte primeiro, porque o token de atleta nunca é apagado");
+  ok(!/getAtletaCred\(\) \|\| getOrgCred\(\)/.test(fonteApp),
+    "e o token de atleta NÃO vem primeiro — era o que fazia o PIN do super-admin perder para uma sessão velha");
+
+  // A LEITURA DO PORTEIRO SOMA COM A NORMAL, NÃO SUBSTITUI.
+  //
+  // O defeito que isto prende foi criado por mim nesta onda: eu alarguei o
+  // porteiro para todo circuito não-BH e ele SUBSTITUÍA a leitura normal. O
+  // porteiro serve qualquer visitante de circuito público, então não devolve dado
+  // privado — e esta bateria proíbe que devolva (asserções da Regra 2, acima).
+  // Substituir cegava o painel do organizador: todos "Sem pgto", todos "Sem
+  // consentimento", inclusão bloqueada para quem já pagou, e a lista de PEDIDOS
+  // DE EXCLUSÃO DE DADOS sempre vazia — obrigação legal com prazo, invisível.
+  //
+  // Medido no banco antes do conserto: há permissões por COLUNA, e o `anon` já lê
+  // `pagamento_confirmado`, `aceite_regulamento`, `aceite_lgpd` e
+  // `exclusao_solicitada_em`. O único campo que ele não alcança é
+  // `wo_culposos_temporada`. Então a leitura normal é a base e o porteiro entra
+  // só com o que falta.
+  ok(/const woPorId = new Map\(doPorteiro\.map/.test(fonteApp),
+    "a carga monta o índice do contador de W.O. vindo do porteiro");
+  ok(/atletasEf = \(atletas \|\| \[\]\)\.map\(/.test(fonteApp),
+    "e a base de `atletasEf` é a leitura NORMAL — o porteiro não substitui a lista");
+  ok(!/atletasEf = \(dadosPort\.ranking \|\| \[\]\)\.map\(porteiroRankingToCa\);\s*\n\s*partidasEf/.test(fonteApp),
+    "o caminho antigo, que trocava a lista inteira pela do porteiro em circuito público, não existe mais");
+  ok(/if \(\(atletas \|\| \[\]\)\.length > 0\)/.test(fonteApp),
+    "a soma só vale quando a leitura normal trouxe linha — circuito privado cai no porteiro puro, que é limite conhecido");
+  ok(/setDbStatus\("error"\)[\s\S]{0,200}porteiro/.test(fonteApp) || /\[porteiro\][\s\S]{0,120}vazia/.test(fonteApp),
+    "e a falha do porteiro com leitura vazia AVISA em vez de degradar em silêncio");
 
   // ⚠️ E o `setSistemaAtivo` com DOIS argumentos (achado MI do mesmo guardião):
   // ignorar o 2º deixa a tela mentindo o método de pareamento, com tudo verde.

@@ -190,6 +190,12 @@ function mergeAtletaCircuito(ca: any): any {
     desconto_pct: ca.desconto_pct, isento: ca.isento,
     quer_renovar: ca.quer_renovar, renovacao_em: ca.renovacao_em,
     historico: ca.historico, posicao_historico: ca.posicao_historico,
+    // `inscrito_em` entrou em 30/09/2026 e e SAZONAL: e a data em que a pessoa entrou
+    // NESTE circuito. Sem ele o bye nao tinha como separar "folgou nesta rodada" de
+    // "entrou depois que a rodada foi escalada" -- e este tradutor o descartava, que
+    // e a terceira vez nesta onda que um adaptador perde um campo que a consulta ja
+    // trazia (os outros dois foram `wo_culposos_temporada` e `exclusao_solicitada_em`).
+    inscrito_em: ca.inscrito_em,
   };
 }
 // Atletas ATIVOS e no circuito (pendente_circuito=false), no formato de `atletas`.
@@ -1368,11 +1374,25 @@ Deno.serve(async (req) => {
         if (sistema === "B") idsWoB.forEach(id => idsComPartida.add(id));
 
         // Fatia 4: bye +1 (ponto de participação) no Sistema B — idempotente por rodada.
-        // Trava dupla p/ não premiar entrante tardio: só quando nº de ativos é ímpar E há exatamente 1 fora da rodada.
         // Idempotência: só na 1ª passada (nenhuma partida da rodada ainda calculada).
+        //
+        // ⚠️ ESTE COMENTÁRIO DIZIA, ATÉ 30/09/2026: "Trava dupla p/ não premiar
+        // entrante tardio: só quando nº de ativos é ímpar E há exatamente 1 fora da
+        // rodada". A trava existia; a proteção que ela anunciava, NÃO. Nenhuma das
+        // duas condições olha QUANDO a pessoa entrou, então o entrante tardio
+        // ganhava o ponto mesmo — e, quando havia um bye de verdade junto com ele,
+        // as duas condições REPROVAVAM e ninguém recebia. O Supervisor de
+        // Regulamento mediu os dois casos rodando o motor.
+        //
+        // Comentário que afirma proteção inexistente é pior que comentário nenhum,
+        // porque alguém lê para decidir se precisa olhar. Esta onda teve três
+        // ocorrências disso, e esta é a terceira. O critério de verdade está escrito
+        // dentro do bloco, ao lado da linha que o aplica.
         if (sistema === "B") {
           const { data: partidasDaRodada } = await supabase
-            .from("partidas").select("atleta1_id,atleta2_id,calculado,rejeitado")
+            // `criado_em` entrou em 30/09/2026: e o que separa "folgou nesta rodada"
+            // de "entrou depois que a rodada foi escalada". Ver o bloco do bye abaixo.
+            .from("partidas").select("atleta1_id,atleta2_id,calculado,rejeitado,criado_em")
             .eq("circuito_id", circuitoId).eq("rodada", round);
           const jaProcessadaAntes = (partidasDaRodada ?? []).some((p: any) => p.calculado);
           if (!jaProcessadaAntes) {
@@ -1380,10 +1400,46 @@ Deno.serve(async (req) => {
             (partidasDaRodada ?? []).forEach((p: any) => { if (!p.rejeitado) { jogou.add(p.atleta1_id); jogou.add(p.atleta2_id); } });
             const cfgBye = await getCfg(circuitoId, "financeiro_ativo");
             const ativosBye = await getAtivosNoCircuito(circuitoId, !!cfgBye?.financeiro_ativo);
-            const foraDaRodada = (ativosBye || []).filter((a: any) => !jogou.has(a.id));
-            if ((ativosBye || []).length % 2 === 1 && foraDaRodada.length === 1) {
-              const byeId = foraDaRodada[0].id;
-              const b = athletesMap[byeId] || { ...foraDaRodada[0] };
+            // O BYE E DE QUEM ESTAVA NA ESCALA DA RODADA E NAO FOI PAREADO -- nao de
+            // "qualquer ativo sem partida". Achado do Supervisor de Regulamento,
+            // medido rodando o motor, e ele quebrava a invariante nos DOIS sentidos:
+            //
+            //  · ENTRANTE TARDIO GANHAVA PONTO. Tres ativos, so a partida A×B existe,
+            //    "L" entrou depois e nunca foi escalado -> A=2 B=1 L=1. O Cap. 05 paga
+            //    1 ponto de PARTICIPACAO a quem participou da rodada; quem chegou
+            //    depois nao participou. Ponto criado do nada.
+            //  · E COM BYE DE VERDADE + ENTRANTE TARDIO JUNTOS, `foraDaRodada.length`
+            //    virava 2, a guarda recusava, e NINGUEM recebia -- quem realmente
+            //    folgou PERDIA o ponto a que tem direito.
+            //
+            // O criterio: so e candidato ao bye quem ja era membro QUANDO A RODADA FOI
+            // ESCALADA. `inscrito_em` do vinculo contra o `criado_em` mais antigo das
+            // partidas da rodada. Os dois defeitos caem com o mesmo filtro, porque o
+            // entrante tardio deixa de contar dos dois lados.
+            //
+            // Rodada SEM partida nenhuma nao paga bye: nao ha escala, logo nao ha
+            // folga. Fail-closed -- criar ponto e pior que deixar de pagar um, e a
+            // situacao nao existe em uso normal.
+            const criacoes = (partidasDaRodada ?? []).map((p: any) => p.criado_em).filter(Boolean).sort();
+            const escaladaEm = criacoes[0] || null;
+            const candidatosBye = (ativosBye || []).filter((a: any) => {
+              if (jogou.has(a.id)) return false;
+              if (!escaladaEm) return false;
+              const entrou = a.inscrito_em || null;
+              // Sem `inscrito_em` gravado (linha antiga do BH) o atleta e tratado como
+              // membro de sempre: a auditoria conferiu 0 atletas sem vinculo, e recusar
+              // aqui tiraria o bye de quem tem direito no circuito que ja roda.
+              return !entrou || String(entrou) <= String(escaladaEm);
+            });
+            // A PARIDADE E DA ESCALA, NAO DO ELENCO. Era `ativosBye.length % 2 === 1`,
+            // e isso anularia o conserto acima: com 4 ativos onde 3 foram escalados
+            // (2 jogaram, 1 folgou) e 1 entrou depois, o elenco da par, a guarda
+            // recusa, e quem folgou perde o ponto -- o mesmo defeito por outra porta.
+            // A escala e quem jogou mais quem legitimamente sobrou.
+            const escalados = jogou.size + candidatosBye.length;
+            if (escalados % 2 === 1 && candidatosBye.length === 1) {
+              const byeId = candidatosBye[0].id;
+              const b = athletesMap[byeId] || { ...candidatosBye[0] };
               athletesMap[byeId] = { ...b, saldo_temp: (b.saldo_temp || 0) + 1 };
               idsComPartida.add(byeId); // ganhou ponto → entra no ranking desta rodada
             }

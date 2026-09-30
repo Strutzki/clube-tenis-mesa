@@ -165,6 +165,15 @@ export function partida(id, campos = {}) {
     atleta1_id: null, atleta2_id: null, placar1: null, placar2: null,
     validado: false, calculado: false, rejeitado: false,
     validado_por_admin: false, admin_aprovado_em: "2026-01-01T10:00:00Z",
+    // `criado_em` entrou em 30/09/2026. Em producao TODAS as 34 partidas o tem
+    // (medido antes de mexer); o fixture nao punha, e quando o motor passou a usa-lo
+    // para separar "folgou" de "entrou depois", TODOS os cenarios de bye da bateria
+    // ficaram vermelhos -- inclusive os que ja passavam. Fixture que omite coluna que
+    // a producao sempre traz e fixture que mente: ele nao estava testando o motor
+    // real, estava testando um motor que recebe menos do que o de verdade.
+    // Valor fixo e antigo de proposito: o bye compara `inscrito_em` do atleta com
+    // este campo, e uma data movel deixaria o cenario instavel.
+    criado_em: "2026-01-01T09:00:00Z",
     wo_tipo: null, wo_faltoso_id: null, wo_beneficiario_id: null,
     ...campos,
   };

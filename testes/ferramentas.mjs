@@ -61,8 +61,8 @@ export function totais() { return { passou, falhou }; }
 // COMENTÁRIO que documenta o defeito removido. O jeito de deixá-la verde seria
 // apagar a explicação — ou seja, a asserção estava punindo a documentação.
 //
-// Troca cada comentário por espaços em vez de removê-lo, para os índices e os
-// números de linha continuarem valendo. Cobre `//`, `/* */` e `{/* */}` do JSX.
+// Troca cada comentário por espaços em vez de removê-lo, e PRESERVA as quebras
+// de linha, para índices E números de linha continuarem valendo. Cobre `//`, `/* */` e `{/* */}` do JSX.
 // LIMITE DELIBERADO: apaga comentário de LINHA (`//` no começo da linha) e de
 // bloco, mas NÃO comentário no fim de uma linha de código. Isso é escolha, não
 // esquecimento: `//` aparece dentro de `https://` em dezenas de strings do app
@@ -72,10 +72,17 @@ export function totais() { return { passou, falhou }; }
 // Se um dia um comentário no fim da linha disparar uma asserção, o sinal será uma
 // vermelha sem defeito, e o conserto é aqui, num lugar só.
 export function semComentarios(texto) {
+  // Apaga preservando TAMANHO **e QUEBRAS DE LINHA**. O `\n` fica; todo o resto
+  // vira espaco. A primeira versao usava `" ".repeat(m.length)`, que preserva o
+  // total de caracteres mas COME as quebras de linha de um comentario de bloco --
+  // entao os indices continuavam valendo e os NUMEROS DE LINHA deslocavam, o
+  // oposto do que este comentario prometia. Achei ao medir uma varredura e
+  // encontrar codigo do canvas no numero de linha que a medicao apontava.
+  const apagar = (m) => m.replace(/[^\n]/g, " ");
   return String(texto)
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => " ".repeat(m.length))
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length))
-    .replace(/^([ \t]*)\/\/.*$/gm, (m) => " ".repeat(m.length));
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, apagar)
+    .replace(/\/\*[\s\S]*?\*\//g, apagar)
+    .replace(/^([ \t]*)\/\/.*$/gm, apagar);
 }
 
 // ---------------------------------------------------------------------------

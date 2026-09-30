@@ -849,6 +849,76 @@ secao("O app manda o PIN do super-admin ao porteiro — a linha de que tudo depe
   ok(/setDbStatus\("error"\)[\s\S]{0,200}porteiro/.test(fonteApp) || /\[porteiro\][\s\S]{0,120}vazia/.test(fonteApp),
     "e a falha do porteiro com leitura vazia AVISA em vez de degradar em silêncio");
 
+  // NENHUM LUGAR MOSTRA O NÚMERO DO RATING SEM OLHAR O SISTEMA.
+  //
+  // O `vB-01` diz QUATRO vezes que num circuito de pontos "não há rating", e o app
+  // mostrava "Rating: <número do outro circuito>" em OITO lugares que exibem o
+  // valor. Eu já tinha consertado cinco nesta onda e reportado "cinco superfícies";
+  // o Supervisor do Admin mediu ~20 menções, oito delas exibindo o número. O erro
+  // não foi a contagem: foi consertar com ternário copiado, que obriga a achar os
+  // irmãos na mão.
+  //
+  // A VARREDURA PROCURA O NÚMERO, NÃO A PALAVRA. Essa é a definição que a torna
+  // útil: o regulamento do Sistema A e a tela de criação de circuito DEVEM falar
+  // "rating" (uma explica a regra, a outra oferece a escolha entre os dois
+  // sistemas) e nenhuma delas interpola valor. A primeira versão desta varredura
+  // procurava a palavra e acusou 26 lugares, a maioria correta — varredura que
+  // acusa o certo é varredura que alguém vai desligar.
+  {
+    const fonteLimpa = semComentarios(fonteApp);
+    // Exibições do NÚMERO: interpolação de `.rating` como conteúdo de JSX, e o
+    // desenho no canvas. Atributo (`prop={...}`) fica de fora — ver o portão logo
+    // abaixo, que é o que torna essa exclusão legítima.
+    const exibicoes = [
+      ...fonteLimpa.matchAll(/(^|[^=\w])\{\s*[a-zA-Z0-9_?.]*\.rating\s*\}/g),
+      ...fonteLimpa.matchAll(/fillText\(\s*String\(\s*rating/g),
+      ...fonteLimpa.matchAll(/fillText\(\s*"RATING"/g),
+    ];
+    const semRamo = exibicoes.filter((m) => {
+      const antes = fonteLimpa.slice(Math.max(0, m.index - 800), m.index);
+      return !/SISTEMA_ATIVO\s*[!=]==\s*"B"/.test(antes) && !/pontuacaoDoAtleta\(/.test(antes);
+    });
+    igual(semRamo.length, 0,
+      "nenhum lugar exibe o NÚMERO do rating sem ramificar por sistema ou usar o `pontuacaoDoAtleta`");
+
+    // O AJUDANTE ÚNICO, que é o que impede a nona superfície de nascer errada.
+    ok(/function pontuacaoDoAtleta\(a\)/.test(fonteLimpa),
+      "existe UM ajudante que devolve o rótulo e o número que o circuito usa");
+    ok(/rotulo: "Pontos"[\s\S]{0,80}saldoTemp/.test(fonteLimpa),
+      "e no Sistema B ele devolve «Pontos» com o saldo da temporada, não o rating");
+    const usos = (fonteLimpa.match(/pontuacaoDoAtleta\(/g) || []).length;
+    ok(usos >= 7,
+      `e ele é usado em pelo menos 7 lugares (hoje ${usos}) — se cair, alguém voltou ao ternário copiado`);
+
+    // O CANVAS É O ÚNICO ARTEFATO QUE SAI DO APP: o atleta baixa o PNG e manda no
+    // WhatsApp e no Instagram. A versão de TELA já ramificava; esta não, e havia uma
+    // asserção dizendo proteger "o cartão que sai do app" que verificava o cartão da
+    // tela — confiança falsa exatamente sobre a superfície que ela nomeava.
+    const iCanvas = fonteLimpa.indexOf("async function desenharCartaCanvas(");
+    const fimCanvas = fonteLimpa.indexOf("\n}", iCanvas) + 2;
+    ok(iCanvas > 0 && fimCanvas > iCanvas, "a função do canvas foi localizada");
+    const canvas = fonteLimpa.slice(iCanvas, fimCanvas);
+    ok(/saldo = 0/.test(canvas),
+      "o canvas RECEBE o saldo — sem isso ele não teria o que desenhar num circuito de pontos");
+    ok(/SISTEMA_ATIVO === "B" \? "PONTOS" : "RATING"/.test(canvas),
+      "e o rótulo desenhado no PNG ramifica por sistema");
+    ok(/\(saldo \?\? 0\) : \(rating \?\? 0\)/.test(canvas),
+      'e o número tem `?? 0` nos dois lados — sem isso a imagem sairia com a palavra "null" desenhada');
+    ok(/saldo: athlete\.saldoTemp \|\| 0,/.test(fonteLimpa),
+      "e quem manda baixar passa o saldo de verdade");
+
+    // O PORTÃO DA EXCLUSÃO dos atributos: `rating={...}` só é inofensivo porque o
+    // componente que recebe decide por dentro. Sem isto, "é atributo" seria licença.
+    const iCard = fonteLimpa.indexOf("function AtletaCard(");
+    const fimCard = fonteLimpa.indexOf("\nfunction ", iCard + 10);
+    ok(iCard > 0 && fimCard > iCard, "o AtletaCard foi localizado");
+    const card = fonteLimpa.slice(iCard, fimCard);
+    ok(/SISTEMA_ATIVO === "B" \? \(saldo \?\? 0\) : rating/.test(card),
+      "o AtletaCard escolhe o número por sistema DENTRO dele — é isso que torna legítimo passar `rating={...}` como atributo");
+    ok(/SISTEMA_ATIVO === "B" \? "Pontos" : "Rating"/.test(card),
+      "e o rótulo dele também");
+  }
+
   // CADA STATUS RECEBE A SUA FRASE — quatro situações, quatro respostas.
   //
   // A guarda do login é `status !== "ativo"` e engloba pendente, reprovado,

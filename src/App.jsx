@@ -389,6 +389,21 @@ function mapAtletaFromDb(a) {
 // Fase 4C: monta um atleta a partir da linha de circuito_atletas com `atletas`
 // aninhado — identidade vem de `atletas`, sazonal de circuito_atletas (espelha o
 // mergeAtletaCircuito do servidor). Reaproveita o mapAtletaFromDb.
+// O RÓTULO E O NÚMERO QUE ESTE CIRCUITO REALMENTE USA — em um lugar só.
+//
+// Existe desde 30/09/2026. O `vB-01` diz QUATRO vezes que num circuito de pontos
+// "não há rating", e o app mostrava "Rating: <número do outro circuito>" em oito
+// lugares. Eu já tinha consertado cinco nesta onda, contado "cinco superfícies", e
+// o Supervisor do Admin mediu ~20 (oito delas mostrando o NÚMERO). O erro não foi
+// a contagem: foi consertar com ternário copiado, que obriga a achar todos os
+// irmãos na mão. Com um ajudante, quem escrever a nona superfície usa este e já
+// nasce certo — e a varredura da bateria pega quem não usar.
+function pontuacaoDoAtleta(a) {
+  return SISTEMA_ATIVO === "B"
+    ? { rotulo: "Pontos", valor: (a?.saldoTemp ?? a?.saldo_temp ?? 0) }
+    : { rotulo: "Rating", valor: (a?.rating ?? 0) };
+}
+
 function mapAtletaFromCircuito(ca) {
   const a = ca.atletas || {};
   return mapAtletaFromDb({
@@ -3800,7 +3815,7 @@ function AdminHistorico({ state }) {
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
                     <div style={{flex:1}}>
                       <div style={{fontSize:13,fontWeight:700,color:p1venceu?"#6a9d7a":"#F0EAE0"}}>{p1venceu?"🏆 ":""}{p1?.name}</div>
-                      <div style={{fontSize:10,color:"#7d9188"}}>Rating: {p1?.rating}</div>
+                      <div style={{fontSize:10,color:"#7d9188"}}>{pontuacaoDoAtleta(p1).rotulo}: {pontuacaoDoAtleta(p1).valor}</div>
                       {m.p1SubAt && (
                         <div style={{fontSize:9,color:"#4a5d56",marginTop:1}}>Lançado em {new Date(m.p1SubAt).toLocaleDateString("pt-BR")}</div>
                       )}
@@ -3816,7 +3831,7 @@ function AdminHistorico({ state }) {
                     </div>
                     <div style={{flex:1,textAlign:"right"}}>
                       <div style={{fontSize:13,fontWeight:700,color:!p1venceu?"#6a9d7a":"#F0EAE0"}}>{!p1venceu?"🏆 ":""}{p2?.name}</div>
-                      <div style={{fontSize:10,color:"#7d9188"}}>Rating: {p2?.rating}</div>
+                      <div style={{fontSize:10,color:"#7d9188"}}>{pontuacaoDoAtleta(p2).rotulo}: {pontuacaoDoAtleta(p2).valor}</div>
                       {m.p2SubAt && (
                         <div style={{fontSize:9,color:"#4a5d56",marginTop:1}}>Lançado em {new Date(m.p2SubAt).toLocaleDateString("pt-BR")}</div>
                       )}
@@ -6978,7 +6993,15 @@ function caminhoArredondado(ctx, x, y, w, h, r) {
 // Autossuficiente: usa só o Canvas do navegador, sem bibliotecas externas.
 // O resultado é idêntico em qualquer aparelho (o brilho holográfico da tela é
 // substituído por um brilho fixo desenhado, que sai igual em todo lugar).
-async function desenharCartaCanvas({ apelido, foto, estilo = "Clássico", membroDesde, posicao, rating, vitorias, derrotas, historico = [], logo }) {
+// ⚠️ ESTE CANVAS É O ÚNICO ARTEFATO QUE SAI DO APP — o atleta baixa o PNG e manda
+// no WhatsApp e no Instagram, com instrução de marcar o perfil do clube. A versão
+// de TELA (`AtletaCard`) já ramificava por sistema; esta não, e escrevia "RATING"
+// mais o número do outro circuito. Se o rating fosse nulo num circuito de pontos,
+// a imagem saía com a palavra "null". Achado do Supervisor do Admin.
+// Pior: havia uma asserção dizendo proteger "o cartão que sai do app, vai para o
+// WhatsApp" — e ela verificava o cartão da TELA. Confiança falsa exatamente sobre
+// a superfície que ela nomeava.
+async function desenharCartaCanvas({ apelido, foto, estilo = "Clássico", membroDesde, posicao, rating, saldo = 0, vitorias, derrotas, historico = [], logo }) {
   const W = 1080, H = 1350;
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
@@ -7092,9 +7115,10 @@ async function desenharCartaCanvas({ apelido, foto, estilo = "Clássico", membro
   ctx.textAlign = "center";
   ctx.fillStyle = T.terracota;
   ctx.font = `132px ${serif}`;
-  ctx.fillText(String(rating), W/2, linhaY + 30);
+  // `?? 0` para a imagem nunca sair com a palavra "null" desenhada.
+  ctx.fillText(String(SISTEMA_ATIVO === "B" ? (saldo ?? 0) : (rating ?? 0)), W/2, linhaY + 30);
   ctx.font = `22px ${mono}`; ctx.fillStyle = "rgba(240,234,224,.55)";
-  ctx.fillText("RATING", W/2, linhaY + 68);
+  ctx.fillText(SISTEMA_ATIVO === "B" ? "PONTOS" : "RATING", W/2, linhaY + 68);
 
   // V · D (direita)
   ctx.textAlign = "right";
@@ -7332,6 +7356,7 @@ function CartaModal({ athlete, posicao, onClose, podeBaixar = false }) {
         membroDesde: membroDesde(athlete.inscritoEm),
         posicao,
         rating: athlete.rating,
+        saldo: athlete.saldoTemp || 0,
         vitorias: athlete.wins || 0,
         derrotas: athlete.losses || 0,
         historico: athlete.historico || [],
@@ -7616,8 +7641,8 @@ function EstatisticasView({ state, athlete, onClose }) {
       <div style={{flex:1,overflowY:"auto",padding:"18px 22px 30px",width:"100%",maxWidth:480,boxSizing:"border-box"}}>
         <div style={{display:"flex",gap:10,marginBottom:14}}>
           <div style={{flex:1,background:"rgba(216,90,48,0.12)",border:"1px solid rgba(216,90,48,0.3)",borderRadius:16,padding:"14px 16px"}}>
-            <div style={{fontFamily:T.serif,fontSize:32,lineHeight:1,color:T.offwhite}}>{eu.rating}</div>
-            <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:1.4,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:6}}>Rating atual</div>
+            <div style={{fontFamily:T.serif,fontSize:32,lineHeight:1,color:T.offwhite}}>{pontuacaoDoAtleta(eu).valor}</div>
+            <div style={{fontFamily:T.mono,fontSize:8,letterSpacing:1.4,textTransform:"uppercase",color:"rgba(240,234,224,0.55)",marginTop:6}}>{pontuacaoDoAtleta(eu).rotulo} atual</div>
           </div>
           <div style={{flex:1,background:"rgba(240,234,224,0.04)",border:"1px solid rgba(240,234,224,0.1)",borderRadius:16,padding:"14px 16px"}}>
             <div style={{fontFamily:T.serif,fontSize:32,lineHeight:1,color:T.offwhite}}>{pico}</div>
@@ -9950,7 +9975,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
                 <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}</div>
-                <div style={{fontSize:11,color:"#9db3a8"}}>{telefones[a.id] || "···"} · {a.federated?"Federado":"Não fed."} · Rating: {a.rating}</div>
+                <div style={{fontSize:11,color:"#9db3a8"}}>{telefones[a.id] || "···"} · {a.federated?"Federado":"Não fed."} · {pontuacaoDoAtleta(a).rotulo}: {pontuacaoDoAtleta(a).valor}</div>
               </div>
               <div style={{display:"flex",gap:6}}>
                 <Btn small onClick={()=>{setSelected(a);setRatingEdit(a.rating);setModo("revisar")}}>Revisar</Btn>
@@ -10011,7 +10036,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}</div>
-                <div style={{fontSize:11,color:"#9db3a8"}}>{telefones[a.id] || "···"} · Rating: {a.rating}</div>
+                <div style={{fontSize:11,color:"#9db3a8"}}>{telefones[a.id] || "···"} · {pontuacaoDoAtleta(a).rotulo}: {pontuacaoDoAtleta(a).valor}</div>
                 <div style={{display:"flex",gap:4,marginTop:3}}>
                   {a.aceiteRegulamento && <span style={{fontSize:9,background:"rgba(74,222,128,0.15)",color:"#6a9d7a",padding:"1px 6px",borderRadius:8,fontWeight:700}}>📋 Reg. aceito</span>}
                   {a.aceiteLGPD && <span style={{fontSize:9,background:"rgba(77,163,255,0.15)",color:"#D85A30",padding:"1px 6px",borderRadius:8,fontWeight:700}}>🔒 LGPD</span>}
@@ -10058,7 +10083,7 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}</div>
-                <div style={{fontSize:11,color:"#c25a45"}}>{telefones[a.id] || "···"} · suspenso · Rating: {a.rating}</div>
+                <div style={{fontSize:11,color:"#c25a45"}}>{telefones[a.id] || "···"} · suspenso · {pontuacaoDoAtleta(a).rotulo}: {pontuacaoDoAtleta(a).valor}</div>
               </div>
               <Btn small color="#D85A30" onClick={()=>abrirEditar(a)}>✏️ Revisar</Btn>
             </div>

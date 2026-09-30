@@ -461,6 +461,36 @@ const ORG_MEMBRO_FIELD: Record<string, string> = {
   INSCRICAO_VALIDAR: "id", INCLUIR_NO_CIRCUITO: "id", RECUSAR_CIRCUITO: "id", ARQUIVAR_ATLETA: "id", DESARQUIVAR_ATLETA: "id",
   EXCLUIR_ATLETA: "id", DEFINIR_DESCONTO_ATLETA: "atletaId", REGISTRAR_PAGAMENTO: "atletaId",
 };
+// PARTICIPANTE DA PARTIDA — campos do payload que tem de ser um dos DOIS atletas
+// daquela partida. Existe desde 30/09/2026.
+//
+// O buraco que isto fecha foi achado por tres guardioes/supervisores por caminhos
+// independentes, e a prova estava VERMELHA desde a 1a rodada sem ninguem ler:
+// o `APLICAR_WO` conferia em QUE PARTIDA o organizador agia (ORG_MATCH_FIELD,
+// logo abaixo) e nunca conferia QUEM ele apontou como faltoso ou beneficiario.
+//
+// Medido no motor, com `sucesso: true` nos quatro cenarios:
+//  · faltoso que nao jogou aquela partida -> os DOIS jogadores de verdade ficam
+//    com zero, o beneficiario leva a vitoria, e o -15 do Cap. 07 desaparece:
+//    5 pontos distribuidos onde o vB-01 previa 3. PONTO CRIADO.
+//  · o terceiro leva `wo_culposos_temporada = 1`, que e o contador da SUSPENSAO
+//    (Cap. 07, dois injustificados) e o 2o desempate (Cap. 09). Suspensao
+//    plantavel em qualquer atleta.
+//  · faltoso que e membro so de OUTRO circuito -> `recontarWoCulposos` ->
+//    `writeAtleta` -> `mirrorSazonal` faz upsert com onConflict e FABRICA a
+//    linha dele em `circuito_atletas` do circuito do atacante. Escrita cruzada
+//    entre circuitos, que e a Regra Inviolavel no 3.
+//
+// Isto nao era alcancavel pela tela (o `RegistrarWoInline` so oferece `m.p1Id` e
+// `m.p2Id`), entao nao houve dano em producao -- era guarda de servidor faltando.
+// A guarda irma, para `matchId`, ja existia 30 linhas abaixo com o raciocinio
+// inteiro escrito; ninguem a estendeu ao par faltoso/beneficiario. E a quarta vez
+// que "conserto de instrumento e conserto de UM caminho" morde este arquivo, e e
+// por isso que isto entra como TABELA e nao como `if` dentro do `case`: a proxima
+// acao que receber um id de atleta junto com um `matchId` ja nasce coberta.
+const ORG_PARTICIPANTE_FIELDS: Record<string, string[]> = {
+  APLICAR_WO: ["faltosoId", "beneficiarioId"],
+};
 
 function confrontosDaTemporada(partidas: any[]): Set<string> {
   const set = new Set<string>();
@@ -1062,11 +1092,25 @@ Deno.serve(async (req) => {
     if (mf) {
       const mid = pl[mf];
       if (mid) {
-        const { data: pm } = await supabase.from("partidas").select("circuito_id").eq("id", mid).maybeSingle();
+        const { data: pm } = await supabase.from("partidas").select("circuito_id,atleta1_id,atleta2_id").eq("id", mid).maybeSingle();
         if (!pm || pm.circuito_id !== circuitoId) {
           return jsonResponse({ sucesso: false, erro: ehSuper
             ? "Esta partida é de outro circuito. Troque de circuito antes de agir sobre ela."
             : "Partida não é do seu circuito." }, 403);
+        }
+        // Mesma pergunta da guarda acima, aplicada a QUEM em vez de a ONDE: se a
+        // acao nomeia um atleta que nao e um dos dois daquela partida, isso nunca
+        // e intencao -- e bug de quem chamou, e a resposta certa e recusar. Ver o
+        // bloco do `ORG_PARTICIPANTE_FIELDS` la em cima para o que estava aberto.
+        // So confere o campo que VEIO: no Sistema B o `faltosoId` e opcional no
+        // `a_favor` (o motor o deriva da propria partida), e derivar da partida ja
+        // e seguro por construcao.
+        for (const campo of ORG_PARTICIPANTE_FIELDS[acao] || []) {
+          const quem = pl[campo];
+          if (quem && quem !== pm.atleta1_id && quem !== pm.atleta2_id) {
+            return jsonResponse({ sucesso: false, erro:
+              "Este atleta não é um dos dois jogadores desta partida. Confira antes de aplicar o W.O." }, 403);
+          }
         }
       } else if (!ORG_MATCH_OPCIONAL.has(acao)) {
         return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);

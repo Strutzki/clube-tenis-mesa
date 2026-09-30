@@ -1034,6 +1034,61 @@ secao("O contador de W.O. injustificados é DERIVADO — RODANDO os dois sistema
       "o cenário do Sistema B alcança MESMO o ramo B do motor — esta recusa só existe lá (o ramo A não exige beneficiário no culposo… exige faltoso)");
   }
 
+  // 8. O FALTOSO E O BENEFICIÁRIO TÊM DE SER OS DOIS JOGADORES DAQUELA PARTIDA.
+  //
+  //    Achado por três auditores independentes, com a prova VERMELHA desde a 1ª
+  //    rodada e ninguém lendo a saída. O motor conferia em QUE partida o
+  //    organizador agia e nunca conferia QUEM ele apontou. Medido no motor, com
+  //    `sucesso: true`: um W.O. distribuía 5 pontos onde o vB-01 previa 3, os dois
+  //    jogadores de verdade ficavam com ZERO, a vitória ia para quem não jogou, e
+  //    um terceiro levava `wo_culposos_temporada = 1` — que é o contador da
+  //    SUSPENSÃO do Cap. 07 e o 2º desempate do Cap. 09. Dava para suspender
+  //    qualquer atleta da plataforma em dois cliques de API.
+  //
+  //    Não era alcançável pela tela (o RegistrarWoInline só oferece os dois
+  //    jogadores), então não houve dano — era guarda de servidor faltando.
+  //
+  //    Nos DOIS sistemas, porque foi exatamente aqui que eu já errei uma vez hoje:
+  //    o `circuitoDoSistema` é o que garante que o "B" não é o BH disfarçado.
+  const X = "eeeeeeee-0000-0000-0000-0000000000ff"; // não joga a partida j1
+  for (const sistema of ["A", "B"]) {
+    const CIRC = circuitoDoSistema(sistema);
+    {
+      const { banco, motor } = await cenarioWo(sistema);
+      const r = await comoAdmin(motor, "APLICAR_WO",
+        { circuitoId: CIRC, matchId: "j1", tipo: "culposo", faltosoId: X, beneficiarioId: V });
+      igual(r.status, 403,
+        `[${sistema}] apontar como faltoso alguém que não jogou a partida é RECUSADO`);
+      igual(banco.acha("circuito_atletas", c => c.atleta_id === X), undefined,
+        `[${sistema}] e o estranho NÃO ganha vínculo fabricado em circuito_atletas — Regra Inviolável nº 3`);
+      igual(banco.acha("atletas", a => a.id === X), undefined,
+        `[${sistema}] nem linha de identidade inventada em atletas`);
+      const j1 = banco.acha("partidas", p => p.id === "j1");
+      igual(j1?.wo_faltoso_id ?? null, null,
+        `[${sistema}] e a partida não foi consumida — nada de W.O. gravado com faltoso de fora`);
+    }
+    // O beneficiário também. Sem esta, metade da guarda podia cair e passar verde.
+    {
+      const { banco, motor } = await cenarioWo(sistema);
+      const r = await comoAdmin(motor, "APLICAR_WO",
+        { circuitoId: CIRC, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: X });
+      igual(r.status, 403,
+        `[${sistema}] apontar como beneficiário alguém que não jogou a partida é RECUSADO`);
+      igual(contador(banco, sistema) ?? 0, 0,
+        `[${sistema}] e ninguém leva falta numa ação recusada`);
+    }
+    // E o caminho legítimo continua passando — senão a guarda seria só um "não"
+    // para tudo, que é o jeito mais fácil de ficar verde sem servir para nada.
+    {
+      const { banco, motor } = await cenarioWo(sistema);
+      const r = await comoAdmin(motor, "APLICAR_WO",
+        { circuitoId: CIRC, matchId: "j1", tipo: "culposo", faltosoId: F, beneficiarioId: V });
+      ok(r.corpo?.sucesso === true,
+        `[${sistema}] e o W.O. legítimo, com os dois jogadores da partida, segue funcionando (erro: ${JSON.stringify(r.corpo?.erro)})`);
+      igual(contador(banco, sistema), 1, `[${sistema}] com a falta contando 1 para quem faltou`);
+    }
+  }
+
   // 3. Duas faltas de verdade, em partidas diferentes, contam 2 — senão as
   //    asserções acima passariam com um contador que nunca sobe.
   {

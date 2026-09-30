@@ -28,8 +28,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   montarMotor, comoAdmin, circuito, atleta, partida,
-  ok, igual, secao, placar, BH, PIN,
-} from "./ferramentas.mjs";
+  ok, igual, secao, placar, BH, PIN, semComentarios} from "./ferramentas.mjs";
 import { carregarFuncao } from "./carrega-motor.mjs";
 
 const comAdminSlugBH = (motor) => comoAdmin(motor, "CRIAR_CIRCUITO", {
@@ -446,8 +445,27 @@ secao("Trocar de circuito: a troca DIZ se aconteceu, e a agenda é invalidada");
   // Quem chama tem de ABORTAR quando a troca não aconteceu.
   ok(/const trocou = await trocarCircuito\(\{ id: c\.id \}\);\s*\n\s*if \(!trocou\)/.test(fonteApp2.replace(/\r/g, "")),
     "quem troca antes de uma ação confere o resultado antes de seguir");
-  igual((fonteApp2.match(/if \(!trocou\)/g) || []).length, 2,
-    "nos DOIS lugares: processar a rodada e abrir o circuito");
+  // ⚠️ ESTA ASSERÇÃO PUNIA O CONSERTO CERTO, e é o pior tipo de asserção que
+  // existe neste projeto.
+  //
+  // Ela dizia `igual(..., 2, "nos DOIS lugares")`. Havia CINCO chamadores de
+  // `trocarCircuito` e só dois conferiam o retorno — inclusive o do login do
+  // atleta, onde uma falha de rede o deixava no BH em silêncio, que é o sintoma
+  // que aquele bloco existia para consertar. Corrigir o terceiro deixava a bateria
+  // VERMELHA sem defeito nenhum: ela defendia o número de hoje, não a regra.
+  // Achado do Supervisor do Atleta, que previu a vermelha antes de ela acontecer —
+  // e ela aconteceu exatamente assim quando eu fiz o conserto.
+  //
+  // A forma nova se mantém sozinha: conta os chamadores e exige que TODOS
+  // confiram. Chamador novo sem conferência fica vermelho por construção, e
+  // conserto certo nunca mais fica vermelho.
+  {
+    const chamadas = (fonteApp2.match(/trocarCircuito\(/g) || []).length - 1; // −1: a definição
+    const conferencias = (fonteApp2.match(/if \(!trocou\)/g) || []).length;
+    ok(chamadas > 0, `há chamadores de trocarCircuito no app (${chamadas})`);
+    igual(conferencias, chamadas,
+      `TODOS os ${chamadas} chamadores de trocarCircuito conferem o retorno — nenhum troca de circuito em silêncio`);
+  }
   ok(/nada foi processado/.test(fonteApp2),
     "e a recusa diz ao admin que NADA foi processado — não deixa dúvida");
 
@@ -2625,10 +2643,7 @@ secao("Nenhum texto promete anulação num circuito de pontos");
   // a primeira versão desta varredura acusou o comentário que documenta o
   // próprio defeito, o que a tornaria impossível de deixar verde sem apagar a
   // documentação.
-  const fonteApp = bruto
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => " ".repeat(m.length))
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length))
-    .replace(/^([ \t]*)\/\/.*$/gm, (m) => " ".repeat(m.length));
+  const fonteApp = semComentarios(bruto);
 
   // EXCLUSÃO DECLARADA: o `RegulamentoView` mostra o regulamento DO CIRCUITO e
   // recebe `sistema` como propriedade — lá o texto do Sistema A dizer "rodada

@@ -19,8 +19,7 @@
 // CLAUDE.md registra que regex fica verde com a regra quebrada.
 
 import {
-  montarMotor, pinGuardado, atleta, circuito, ok, igual, secao, placar, BH,
-} from "./ferramentas.mjs";
+  montarMotor, pinGuardado, atleta, circuito, ok, igual, secao, placar, BH, semComentarios} from "./ferramentas.mjs";
 
 const CIRC = "88888888-8888-8888-8888-888888888888";
 const ATL = "aaaa0001-0000-4000-8000-0000000000a1";
@@ -625,8 +624,18 @@ secao("A tela mostra a versão DO CIRCUITO ABERTO, não uma global");
 
   ok(/circuito_atletas\?circuito_id=eq\.\$\{CIRCUITO_ATIVO\}/.test(fonteApp),
     "(1) o roster é lido filtrado pelo circuito aberto");
-  ok(/select=[^`]*\bversao_regulamento\b/.test(fonteApp),
-    "e a versão aceita vem da linha SAZONAL, que é por circuito");
+  // ⚠️ Esta asserção era `/select=[^`]*\bversao_regulamento\b/` e passou a falhar
+  // em 30/09/2026 quando a lista de colunas saiu de dentro do `getAtletas` para a
+  // constante `ATLETA_SAZONAL_COLS` — o comportamento não mudou, o regex é que
+  // olhava para o lugar errado. Reescrita apontando para o MECANISMO, o que a
+  // torna mais forte: agora afirma que a coluna está na lista SAZONAL (e não na
+  // de identidade, que é global e serviria a versão do circuito errado).
+  ok(/const ATLETA_SAZONAL_COLS = "[^"]*\bversao_regulamento\b/.test(fonteApp),
+    "e a versão aceita está na lista SAZONAL de colunas, que é por circuito");
+  ok(!/const ATLETA_IDENTIDADE_COLS = "[^"]*\bversao_regulamento\b/.test(fonteApp),
+    "e NÃO na lista de identidade, que é global — de lá viria a versão de outro circuito");
+  ok(/getAtletas: \(\) => supaFetch\(`circuito_atletas\?circuito_id=eq\.\$\{CIRCUITO_ATIVO\}&select=\$\{ATLETA_SELECT\}`\)/.test(fonteApp),
+    "e o roster usa essa lista única — sem segunda cópia para divergir");
   ok(/const atletaCompleto = athletesMapped\.find\(a => a\.id === sessAgora\.athleteId\);/.test(fonteApp),
     "(2) o atleta logado é restaurado de dentro do roster já filtrado — trocar de circuito troca o objeto inteiro");
   ok(/const versaoCircuito = String\(state\.regulamentoVersao \|\| ""\)\.trim\(\);/.test(fonteApp) &&
@@ -839,6 +848,78 @@ secao("O app manda o PIN do super-admin ao porteiro — a linha de que tudo depe
     "a soma só vale quando a leitura normal trouxe linha — circuito privado cai no porteiro puro, que é limite conhecido");
   ok(/setDbStatus\("error"\)[\s\S]{0,200}porteiro/.test(fonteApp) || /\[porteiro\][\s\S]{0,120}vazia/.test(fonteApp),
     "e a falha do porteiro com leitura vazia AVISA em vez de degradar em silêncio");
+
+  // O LOGIN POR BIOMETRIA PERGUNTA "ONDE ESSA PESSOA JOGA?", NÃO "ESTÁ AQUI?".
+  //
+  // Até 30/09/2026 ele fazia `athletes.find(...)` — o elenco do circuito ABERTO
+  // NA TELA — e o logout força o BH. Num circuito novo o atleta autenticava com
+  // sucesso no Face ID / digital do próprio aparelho e lia "Cadastro não
+  // encontrado. Entre com seu número.": o passkey provou quem ele é e o app
+  // respondeu que ele não existe. Pior, `athletes` nasce `[]`, então em conexão
+  // lenta a MESMA frase aparecia só porque o elenco não tinha chegado.
+  // Achado do Supervisor do Atleta.
+  {
+    // ⚠️ EXISTEM DUAS `autenticarBiometria`: uma em `AdminLoginBiometria` e uma em
+    // `AthleteLoginBiometria`. A primeira versão desta asserção usou
+    // `indexOf("async function autenticarBiometria()")` e caiu na DO ADMIN — ficou
+    // vermelha apontando para código que estava certo, e por um instante me fez
+    // duvidar de um conserto que estava no arquivo. Recortar o COMPONENTE primeiro
+    // é o que torna a medição inequívoca; e fica registrado que são duas, porque
+    // essa é a informação que se perde.
+    const iComp = fonteApp.indexOf("function AthleteLoginBiometria(");
+    const fimComp = fonteApp.indexOf("\nfunction ", iComp + 10);
+    ok(iComp > 0 && fimComp > iComp, "o componente de login do ATLETA por biometria foi localizado");
+    const comp = fonteApp.slice(iComp, fimComp);
+    igual((fonteApp.match(/async function autenticarBiometria\(\)/g) || []).length, 2,
+      "há DUAS funções de login por biometria no app (atleta e admin) — asserção que não escolher o componente mede a errada");
+
+    const iBio = comp.indexOf("async function autenticarBiometria()");
+    const fimBio = comp.indexOf("\n  }", iBio) + 4;
+    ok(iBio >= 0 && fimBio > iBio, "e a função de login dentro dele foi localizada");
+    // Sem comentário: a asserção abaixo proíbe `athletes.find` NO CÓDIGO, e o
+    // comentário que documenta a remoção contém a expressão. Sem isto, a única
+    // forma de deixar verde seria apagar a explicação.
+    const bio = semComentarios(comp.slice(iBio, fimBio));
+    ok(/navigator\.credentials\.get/.test(bio),
+      "o recorte contém MESMO a chamada do passkey — recorte errado é falha de medição, não resultado");
+
+    ok(!/athletes\.find\(/.test(bio),
+      "o login por biometria NÃO busca a pessoa no elenco do circuito aberto — era o que dizia «Cadastro não encontrado» a quem acabou de se autenticar");
+    ok(/db\.getAtletaPorId\(atletaId\)/.test(bio),
+      "ele busca a identidade GLOBAL no servidor, em todos os circuitos de que a pessoa é membro ativo");
+    ok(/não está ativa em nenhum circuito/.test(bio),
+      "e distingue «reconhecido mas sem circuito» de «não reconhecido» — a frase antiga misturava os dois");
+    ok(!/trocarCircuito\(/.test(bio),
+      "e NÃO troca de circuito aqui dentro: quem decide é o onAthleteLogin, um lugar só (a primeira versão disto chamava, e o no-undef da bateria pegou)");
+
+    // A consulta tem de ser por PESSOA e por vínculo ATIVO — nunca por circuito.
+    const iCons = fonteApp.indexOf("getAtletaPorId:");
+    ok(iCons > 0, "a consulta por identidade global existe no `db`");
+    const consulta = fonteApp.slice(iCons, fonteApp.indexOf("\n", iCons));
+    ok(/atleta_id=eq\.\$\{id\}/.test(consulta),
+      "a consulta filtra por ATLETA, não por circuito");
+    ok(/status=eq\.ativo/.test(consulta),
+      "e só traz vínculo ativo");
+    ok(!/circuito_id=eq/.test(consulta),
+      "e NÃO amarra a um circuito — é justamente o que o defeito fazia");
+
+    // A ativação que falha tem de AVISAR. `onAthleteLogin` desmonta a tela, então
+    // entrar direto apagava o erro: a pessoa saía acreditando que tinha ativado.
+    // Mesma armadilha: `cadastrarBiometria` também existe nos dois componentes.
+    // A do atleta recebe `(atleta)`; a do admin não recebe parâmetro — mas recortar
+    // do componente é o que garante, em vez de depender da assinatura.
+    const iAtiv = comp.indexOf("async function cadastrarBiometria(atleta)");
+    const fimAtiv = comp.indexOf("\n  }", iAtiv) + 4;
+    ok(iAtiv >= 0 && fimAtiv > iAtiv, "a função de ativação do ATLETA foi localizada");
+    const ativ = semComentarios(comp.slice(iAtiv, fimAtiv));
+    const iCatch = ativ.lastIndexOf("} catch");
+    ok(iCatch > 0, "o ramo de falha da ativação foi localizado");
+    const falha = ativ.slice(iCatch);
+    ok(/setErr\(/.test(falha),
+      "a falha de ativação da biometria AVISA o atleta — antes ela só trocava um status que a tela nunca desenhava");
+    ok(!/onAthleteLogin\(/.test(falha),
+      "e não entra direto no app apagando o aviso: quem decide seguir é ele, no botão");
+  }
 
   // A CADEIA DOS DOIS TRADUTORES, RODADA DE VERDADE.
   //

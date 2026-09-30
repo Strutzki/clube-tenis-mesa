@@ -54,6 +54,30 @@ export function placar(nomeDaBateria) {
 
 export function totais() { return { passou, falhou }; }
 
+// CÓDIGO SEM COMENTÁRIO — para asserção que varre o fonte do app.
+//
+// Existe desde 30/09/2026 porque o mesmo acidente aconteceu TRÊS vezes na mesma
+// noite: uma asserção que proíbe um trecho no código ficava vermelha por causa do
+// COMENTÁRIO que documenta o defeito removido. O jeito de deixá-la verde seria
+// apagar a explicação — ou seja, a asserção estava punindo a documentação.
+//
+// Troca cada comentário por espaços em vez de removê-lo, para os índices e os
+// números de linha continuarem valendo. Cobre `//`, `/* */` e `{/* */}` do JSX.
+// LIMITE DELIBERADO: apaga comentário de LINHA (`//` no começo da linha) e de
+// bloco, mas NÃO comentário no fim de uma linha de código. Isso é escolha, não
+// esquecimento: `//` aparece dentro de `https://` em dezenas de strings do app
+// (URL do Supabase, link do WhatsApp), e apagar do `//` até o fim da linha
+// comeria essas strings — quebrando outras asserções em silêncio, que é
+// exatamente a classe de problema que este ajudante existe para evitar.
+// Se um dia um comentário no fim da linha disparar uma asserção, o sinal será uma
+// vermelha sem defeito, e o conserto é aqui, num lugar só.
+export function semComentarios(texto) {
+  return String(texto)
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => " ".repeat(m.length))
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length))
+    .replace(/^([ \t]*)\/\/.*$/gm, (m) => " ".repeat(m.length));
+}
+
 // ---------------------------------------------------------------------------
 // Cenário: um banco de partida com o mínimo para o motor funcionar.
 // Os valores seguem os defaults reais das tabelas (ver README).

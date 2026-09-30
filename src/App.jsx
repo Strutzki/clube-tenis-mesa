@@ -206,9 +206,30 @@ function mesDoPrazo(deadline) {
   return MESES_NOME[d.getMonth()];
 }
 
+// AS COLUNAS DO ATLETA, EM UM LUGAR SÓ.
+//
+// Antes esta lista vivia inline no `getAtletas`, e quem precisasse da mesma forma
+// em outro lugar copiava — que é exatamente como duas listas divergem em silêncio.
+// A onda de 29/09 teve TRÊS defeitos desta família: o porteiro devolvendo 18
+// colunas onde o painel pedia 25, o adaptador que descartava o
+// `wo_culposos_temporada`, e a lista NOT NULL que cobria 2 de 16.
+//
+// Sazonal fica na RAIZ (`circuito_atletas`), identidade dentro de `atletas(...)`.
+// A separação não é estética: a versão de regulamento aceita é SAZONAL, e lê-la do
+// lado global traria a versão de outro circuito — a bateria prende isso.
+// O `anon` tem grant POR COLUNA nas duas tabelas, então `select=*` aqui não passa.
+const ATLETA_SAZONAL_COLS = "status,motivo_reprovacao,pendente_circuito,ultima_recusa_circuito_em,chave,saldo_temp,vitorias,derrotas,vitorias_total,derrotas_total,aceite_regulamento,data_aceite_regulamento,versao_regulamento,pagamento_confirmado,pagamento_proxima_confirmado,quer_renovar,renovacao_em,inscrito_em,historico,posicao_historico";
+const ATLETA_IDENTIDADE_COLS = "atletas(id,nome,federado,rating,rating_inicial,apelido,foto_url,estilo_jogo,aceite_lgpd,data_aceite_lgpd,atualizado_em,rating_pico,rating_historico,exclusao_solicitada_em,bio_cred_ids)";
+const ATLETA_SELECT = `${ATLETA_SAZONAL_COLS},${ATLETA_IDENTIDADE_COLS}`;
+
 const db = {
   // Atletas
-  getAtletas: () => supaFetch(`circuito_atletas?circuito_id=eq.${CIRCUITO_ATIVO}&select=status,motivo_reprovacao,pendente_circuito,ultima_recusa_circuito_em,chave,saldo_temp,vitorias,derrotas,vitorias_total,derrotas_total,aceite_regulamento,data_aceite_regulamento,versao_regulamento,pagamento_confirmado,pagamento_proxima_confirmado,quer_renovar,renovacao_em,inscrito_em,historico,posicao_historico,atletas(id,nome,federado,rating,rating_inicial,apelido,foto_url,estilo_jogo,aceite_lgpd,data_aceite_lgpd,atualizado_em,rating_pico,rating_historico,exclusao_solicitada_em,bio_cred_ids)`),
+  getAtletas: () => supaFetch(`circuito_atletas?circuito_id=eq.${CIRCUITO_ATIVO}&select=${ATLETA_SELECT}`),
+  // Busca o atleta pela IDENTIDADE GLOBAL, em todos os circuitos de que ele é
+  // membro ativo — sem depender do circuito aberto na tela. É o que o login por
+  // biometria precisa: o passkey prova QUEM é, e daí o app tem de descobrir ONDE
+  // essa pessoa joga, não presumir que é aqui.
+  getAtletaPorId: (id) => supaFetch(`circuito_atletas?atleta_id=eq.${id}&status=eq.ativo&select=circuito_id,${ATLETA_SELECT},circuitos(id,nome_circuito,sistema,publico,ativo)`),
   insertAtleta: (data) => supaFetch("atletas", { method:"POST", body: JSON.stringify(data), prefer: "return=minimal" }),
   updateAtleta: (id, data) => supaFetch(`atletas?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data), prefer: "return=minimal" }),
 
@@ -5148,8 +5169,17 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
       setBioStatus("");
       onAthleteLogin(atleta);
     } catch(e) {
+      // ⚠️ ESTE RAMO FAZIA `setBioStatus("erro")` E ENTRAVA DIRETO. O
+      // `onAthleteLogin` desmonta esta tela na hora, então o erro nunca era
+      // desenhado: o atleta apertava "Ativar agora", a ativação falhava, e ele
+      // entrava ACREDITANDO que tinha ativado. Na vez seguinte o Face ID não
+      // funcionaria e ele não teria como saber por quê — e não existe lugar no app
+      // para ativar depois (pendência registrada; é tela nova). O admin, no mesmo
+      // caso, já via a falha.
+      // Não precisa de tela nova: esta já fica montada e já desenha o `err`. Basta
+      // NÃO sair dela. Não bloqueia o login — só para de mentir por omissão.
       setBioStatus("erro");
-      onAthleteLogin(atleta); // não bloqueia o login por causa da ativação ter falhado
+      setErr("Não deu para ativar o Face ID / digital neste aparelho. Você pode tentar de novo ou seguir sem isso — seu acesso pelo número continua funcionando.");
     }
   }
 
@@ -5177,9 +5207,47 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
           if (handle.startsWith("atleta-")) atletaId = handle.slice(7);
         }
       } catch (e) { /* usa o fallback do localStorage */ }
-      const atleta = athletes.find(a => String(a.id) === String(atletaId) && a.status === "ativo");
-      if (atleta) { setBioStatus(""); onAthleteLogin(atleta); }
-      else { setBioStatus("erro"); setErr("Cadastro não encontrado. Entre com seu número."); setMostrarFallback(true); }
+      // ⚠️ ATÉ 30/09/2026 ESTA BUSCA ERA `athletes.find(...)` — o elenco do
+      // circuito ABERTO NA TELA. E o logout força o BH. Num circuito novo o atleta
+      // autenticava com sucesso no Face ID / digital do próprio aparelho e lia
+      // "Cadastro não encontrado. Entre com seu número.": o passkey provou quem ele
+      // é, e o app respondeu que ele não existe. Pior, `athletes` nasce `[]`, então
+      // em conexão lenta a MESMA frase aparecia só porque o elenco não chegou.
+      // O passkey prova QUEM é; cabe ao app descobrir ONDE essa pessoa joga — e
+      // isso exige o servidor, não a memória da tela.
+      if (!atletaId) {
+        setBioStatus("erro");
+        setErr("Não deu para identificar sua conta por aqui. Entre com seu número desta vez.");
+        setMostrarFallback(true);
+        return;
+      }
+      let vinculos = null;
+      try { vinculos = await db.getAtletaPorId(atletaId); }
+      catch (e) {
+        setBioStatus("erro");
+        setErr("Sua identidade foi reconhecida, mas não deu para carregar seus dados agora. Confira a internet e tente de novo.");
+        setMostrarFallback(true);
+        return;
+      }
+      const ativos = (vinculos || []).filter(v => v.circuitos?.ativo !== false);
+      if (!ativos.length) {
+        // Distinção que a frase antiga não fazia: reconhecido, mas sem circuito.
+        setBioStatus("erro");
+        setErr("Reconhecemos você, mas sua inscrição não está ativa em nenhum circuito. Fale com o organizador.");
+        setMostrarFallback(true);
+        return;
+      }
+      const escolhido = ativos.find(v => String(v.circuito_id) === String(CIRCUITO_ATIVO)) || ativos[0];
+      setBioStatus("");
+      // A TROCA DE CIRCUITO NÃO ACONTECE AQUI, de propósito: quem decide é o
+      // `onAthleteLogin` no nível do app — um lugar só, que já sabe reverter se a
+      // carga falhar. Este componente só informa ONDE a pessoa joga. A primeira
+      // versão disto chamava `trocarCircuito` aqui e o `no-undef` da bateria pegou
+      // na hora: a função não existe neste escopo.
+      onAthleteLogin(
+        mapAtletaFromCircuito(escolhido),
+        ativos.map(v => ({ id: v.circuito_id, ...(v.circuitos || {}) })),
+      );
     } catch(e) {
       setBioStatus("erro");
       setErr("Biometria não reconhecida. Use seu número.");
@@ -5288,7 +5356,12 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
           <span style={{fontSize:20}}>👆</span>
           {bioStatus==="verificando" ? "Verificando…" : "Ativar agora"}
         </button>
-        <button style={s.outline} onClick={()=>onAthleteLogin(oferecerBio)}>Agora não</button>
+        {/* Depois de uma falha, o rótulo diz o que o botão faz de verdade: seguir
+            SEM biometria. "Agora não" sugeriria que ele está recusando uma oferta,
+            quando na prática está contornando um erro. */}
+        <button style={s.outline} onClick={()=>onAthleteLogin(oferecerBio)}>
+          {bioStatus==="erro" ? "Continuar sem biometria" : "Agora não"}
+        </button>
         {err && <div style={s.err}>⚠️ {err}</div>}
       </div>
     </div>
@@ -6557,11 +6630,18 @@ export default function App() {
   if (!isAdmin && !currentAthlete && !isVisitante) return (
     <LoginScreen
       onLogin={() => { setAcaoErro(null); setIsAdmin(true); setTab("dashboard"); }}
-      onAthleteLogin={a => {
+      onAthleteLogin={async (a, circuitosDoLogin) => {
         setAcaoErro(null);
         setCurrentAthlete(a); setTab("meus_jogos");
         const cred = getAtletaCred();
-        const circs = (cred && Array.isArray(cred.circuitos)) ? cred.circuitos : [];
+        // `circuitosDoLogin` existe para o login por BIOMETRIA, que não passa pelo
+        // servidor e portanto não grava credencial — logo `cred.circuitos` vem
+        // vazio e, sem isto, o atleta caía no BH mesmo com o elenco certo em mão.
+        // Quem sabe a lista informa a lista; quem DECIDE o circuito continua sendo
+        // este lugar, um só.
+        const circs = (Array.isArray(circuitosDoLogin) && circuitosDoLogin.length)
+          ? circuitosDoLogin
+          : ((cred && Array.isArray(cred.circuitos)) ? cred.circuitos : []);
         // ⚠️ "SENÃO ENTRA DIRETO" ERA MENTIRA — e era o outro lado do bloqueio que o
         // servidor consertou em 29/09/2026. Com UM circuito o app não apontava para
         // ele: ficava no que já estava ativo, que por padrão é o BH (linha ~114).
@@ -6577,7 +6657,18 @@ export default function App() {
         // reverte se a carga falhar, limpa mensagens e agenda de telefones. Ele só
         // nunca era chamado aqui. Devolve `false` de graça quando o circuito único
         // já é o ativo, então o caminho do BH não muda em nada.
-        if (circs.length === 1) { trocarCircuito(circs[0]); }
+        // ⚠️ SEM `await` E COM O RETORNO NO LIXO — era o único dos cinco chamadores
+        // de `trocarCircuito` que ignorava o resultado. Dentro dela há o ramo
+        // `if (ok === false) { ...reverte...; return false; }`: uma falha de rede na
+        // carga pós-login devolvia `false` e o atleta ficava no BH EM SILÊNCIO —
+        // exatamente o sintoma que este bloco existe para consertar. O Supervisor
+        // do Atleta previu que a bateria ficaria VERMELHA ao consertar isto, porque
+        // a asserção travava em DOIS chamadores. Ficou. A asserção foi corrigida
+        // para contar os chamadores em vez de cravar um número.
+        if (circs.length === 1) {
+          const trocou = await trocarCircuito(circs[0]);
+          if (!trocou) setAcaoErro({ msg: "Entramos com a sua conta, mas não deu para abrir o seu circuito agora. Puxe a tela para baixo para tentar de novo." });
+        }
         setEscolherCircuito(circs.length > 1); // >1 circuito: mostra a escolha
       }}
       onVisitante={() => {
@@ -6634,7 +6725,7 @@ export default function App() {
 
       <div style={{padding:"12px 16px 0"}}>
         {isAdmin ? (
-          <AdminView state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} msgsStatus={msgsStatus} />
+          <AdminView setAcaoErro={setAcaoErro} state={state} dispatch={dispatchAndSync} tab={tab} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} msgsStatus={msgsStatus} />
         ) : isVisitante ? (
           visitanteCirc ? (
             <VisitanteView state={state} tab={tab} setTab={setTab} nomeCircuito={visitanteCirc.nome_exibicao || visitanteCirc.nome_circuito} onVoltar={()=>{ setVisitanteCirc(null); setCircuitoAtivo(CIRCUITO_BH_ID); setCircuitoSelId(CIRCUITO_BH_ID); }} />
@@ -6642,7 +6733,16 @@ export default function App() {
             <VisitanteCircuitos circuitos={circuitosVisitante} onAbrir={(c)=>{ setCircuitoAtivo(c.id); setCircuitoSelId(c.id); setVisitanteCirc(c); setTab("ranking"); loadFromSupabase(); }} />
           )
         ) : escolherCircuito ? (
-          <EscolhaCircuito circuitos={circuitosAtleta} onEscolher={(c)=>{ setEscolherCircuito(false); if (c && c.id && c.id !== CIRCUITO_ATIVO) trocarCircuito({ id: c.id }); }} />
+          /* Confere o retorno como todos os outros chamadores: se a carga falhar,
+             `trocarCircuito` reverte e devolve `false`, e sem isto o atleta escolhia
+             um circuito e continuava no anterior sem uma palavra. */
+          <EscolhaCircuito circuitos={circuitosAtleta} onEscolher={async (c)=>{
+            setEscolherCircuito(false);
+            if (c && c.id && c.id !== CIRCUITO_ATIVO) {
+              const trocou = await trocarCircuito({ id: c.id });
+              if (!trocou) setAcaoErro({ msg: "Não deu para abrir esse circuito agora. Você continua no anterior — puxe a tela para baixo e tente de novo." });
+            }
+          }} />
         ) : (
           <AthleteView state={state} dispatch={dispatchAndSync} athlete={currentAthlete} tab={tab} setTab={setTab} circuitoSelId={circuitoSelId} circuitosAtleta={circuitosAtleta} onVoltarLista={()=>setEscolherCircuito(true)} />
         )}
@@ -7632,7 +7732,7 @@ const Badge = ({label, color="#D85A30"}) => (
 );
 
 // ── ADMIN VIEW ───────────────────────────────────────────────────────────────
-function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg, msgsStatus }) {
+function AdminView({ setAcaoErro, state, dispatch, tab, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg, msgsStatus }) {
   // ⚠️ `key={circuitoSelId}` NO PAINEL INTEIRO, e não campo a campo (29/09/2026).
   // Este era o ÚNICO dos quatro painéis sem `key` — `AdminHistorico`,
   // `AdminMensagens` e `AdminFinanceiro` já tinham. E a consequência não era
@@ -7645,7 +7745,7 @@ function AdminView({ state, dispatch, tab, setTab, telefones, garantirTelefones,
   // renovação (`pixLinha`). Os atletas de B pagariam na chave de A.
   // Consertar campo a campo seria tapar um caminho de uma classe: qualquer painel
   // novo com `useState(state.…)` nasceria torto de novo. A `key` fecha a classe.
-  if (tab === "dashboard") return <AdminDashboard key={circuitoSelId} state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} msgsStatus={msgsStatus} />;
+  if (tab === "dashboard") return <AdminDashboard key={circuitoSelId} setAcaoErro={setAcaoErro} state={state} setTab={setTab} dispatch={dispatch} chamarAdminAction={chamarAdminAction} fetchDespachos={fetchDespachos} loadFromSupabase={loadFromSupabase} circuitos={circuitos} circuitoSelId={circuitoSelId} trocarCircuito={trocarCircuito} recarregarCircuitos={recarregarCircuitos} dbStatus={dbStatus} modoOrg={modoOrg} msgsStatus={msgsStatus} />;
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
@@ -8786,7 +8886,7 @@ function RegulamentoDoCircuitoCard({ versaoAtual, nomeCircuito, athletes, chamar
   );
 }
 
-function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg, msgsStatus }) {
+function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminAction, fetchDespachos, loadFromSupabase, circuitos, circuitoSelId, trocarCircuito, recarregarCircuitos, dbStatus, modoOrg, msgsStatus }) {
   const [nomeEdit, setNomeEdit] = useState(state.nomeCircuito || "");
 
   // Ressincroniza quando o nome muda no banco (recarga, troca de circuito, ou
@@ -8952,7 +9052,10 @@ function AdminDashboard({ state, setTab, dispatch, chamarAdminAction, fetchDespa
               circuitos={circuitos}
               circuitoSelId={circuitoSelId}
               recarregarCircuitos={recarregarCircuitos}
-              voltarParaBH={() => trocarCircuito({ id: CIRCUITO_BH_ID })}
+              voltarParaBH={async () => {
+                const trocou = await trocarCircuito({ id: CIRCUITO_BH_ID });
+                if (!trocou) setAcaoErro({ msg: "Não deu para voltar ao Circuito BH agora. Tente de novo em instantes." });
+              }}
             />
           )}
         </>

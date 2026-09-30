@@ -72,12 +72,21 @@ async function doisCircuitos({ sistemaDoOutro = "B", partidasExtras = [], organi
       // A virada de temporada chama esta função do banco. A de verdade arquiva
       // as partidas DE UM circuito; a de mentira faz o mesmo, para o teste poder
       // conferir que nenhuma partida do BH foi levada junto.
-      arquivar_partidas_temporada_circuito: (bd, args) => {
-        const alvo = String(args?.p_circuito_id ?? args?.circuito_id ?? "");
-        const rotulo = args?.p_rotulo ?? args?.rotulo ?? null;
-        const daqui = (bd.tabelas.partidas || []).filter((p) => String(p.circuito_id) === alvo);
-        bd.tabelas.partidas_historico.push(...daqui.map((p) => ({ ...p, temporada_rotulo: rotulo })));
-        return null;
+      // ⚠️ Os nomes em `args` sao os que o MOTOR manda (admin-action:1806 e
+      // :1909): `p_rotulo` e `p_circuito`. Ate 30/09/2026 este dublê lia
+      // `p_circuito_id`, que o motor nao manda -- o alvo resolvia para "", ele
+      // arquivava ZERO partidas, e a assercao de escopo la embaixo passava por
+      // vacuidade. Declarar `args` faz o banco-falso PARAR ALTO se o motor
+      // trocar o nome, em vez de arquivar nada em silencio.
+      arquivar_partidas_temporada_circuito: {
+        args: ["p_rotulo", "p_circuito"],
+        fn: (bd, args) => {
+          const alvo = String(args.p_circuito);
+          const rotulo = args.p_rotulo ?? null;
+          const daqui = (bd.tabelas.partidas || []).filter((p) => String(p.circuito_id) === alvo);
+          bd.tabelas.partidas_historico.push(...daqui.map((p) => ({ ...p, temporada_rotulo: rotulo })));
+          return null;
+        },
       },
     },
   });
@@ -137,6 +146,17 @@ secao("Virada de temporada não arrasta as partidas do vizinho");
   const partidasBHDepois = banco.linhas("partidas").filter((p) => p.circuito_id === BH);
   igual(partidasBHDepois.length, partidasBHAntes, "as partidas do BH continuam lá depois da virada do outro");
   const arquivadas = banco.linhas("partidas_historico");
+  // ⚠️ LEITURA VAZIA E FALHA DE MEDICAO, NAO RESULTADO. Estas duas linhas
+  // existem desde 30/09/2026 e sao a irma indispensavel da de baixo. Ate esta
+  // data o dublê lia um nome de argumento que o motor nao manda, o arquivo
+  // ficava VAZIO, e a assercao "nenhuma do BH no arquivo" passava por
+  // VACUIDADE -- zero do BH porque zero de todo mundo. Sem afirmar primeiro
+  // que o arquivo TEM conteudo, "nada do vizinho aqui" nao prova escopo algum.
+  // A virada e a acao mais destrutiva do app e NAO SE DESFAZ.
+  ok(arquivadas.length > 0,
+    "a virada arquivou alguma partida — sem isto, a asserção de escopo abaixo é vazia");
+  igual(arquivadas.filter((p) => p.circuito_id === OUTRO).length, arquivadas.length,
+    "e TODAS as arquivadas são do circuito que virou");
   igual(arquivadas.filter((p) => p.circuito_id === BH).length, 0,
     "e nenhuma partida do BH foi parar no arquivo do outro circuito");
   const chamadaGlobal = banco.funcoesChamadas.find((f) => f.nome === "arquivar_partidas_temporada");

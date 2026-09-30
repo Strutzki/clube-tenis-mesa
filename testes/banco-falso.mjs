@@ -509,7 +509,41 @@ export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {
       if (!(nome in funcoes)) {
         return { data: null, error: { message: `banco-falso: RPC "${nome}" nao foi definida no teste` } };
       }
-      const resultado = await funcoes[nome](banco, argumentos);
+      const def = funcoes[nome];
+      // ARGUMENTO DESCONHECIDO E FALHA DE MEDICAO, NAO RESULTADO.
+      // Existe desde 30/09/2026. O motivo: o dublê da `arquivar_partidas_
+      // temporada_circuito` lia `p_circuito_id` e o motor manda `p_circuito`.
+      // O nome nao casava, o alvo resolvia para "", o dublê arquivava ZERO
+      // partidas -- e a assercao "nenhuma partida do BH foi parar no arquivo
+      // do outro circuito" passava por VACUIDADE: nao havia arquivo nenhum
+      // para conter nada. A virada de temporada, que e a acao mais destrutiva
+      // do app e NAO SE DESFAZ, ficou sem portao nenhum sem ninguem notar.
+      // Por isso o dublê agora DECLARA os argumentos que entende (`args`) e
+      // qualquer chave fora da lista para o teste na hora. Mesma regra do
+      // `projetar`: o instrumento recusa o que nao modela, em vez de inventar
+      // um valor plausivel. Dublê sem `args` declarado segue como antes --
+      // migracao gradual, sem quebrar os que ja existem.
+      const fn = typeof def === "function" ? def : def?.fn;
+      const permitidos = typeof def === "function" ? null : def?.args;
+      if (permitidos) {
+        const conhecidos = new Set(permitidos);
+        const intrusos = Object.keys(argumentos || {}).filter((k) => !conhecidos.has(k));
+        if (intrusos.length) {
+          throw new Error(
+            `banco-falso: a RPC "${nome}" recebeu argumento que o dublê nao modela: ` +
+            `${intrusos.join(", ")}. O dublê entende: ${permitidos.join(", ")}. ` +
+            `Se o motor mudou o nome, corrija o dublê -- nao o deixe resolver para vazio.`
+          );
+        }
+        const faltando = permitidos.filter((k) => !(k in (argumentos || {})));
+        if (faltando.length) {
+          throw new Error(
+            `banco-falso: a RPC "${nome}" foi chamada SEM os argumentos ${faltando.join(", ")}, ` +
+            `que o dublê declara como obrigatorios.`
+          );
+        }
+      }
+      const resultado = await fn(banco, argumentos);
       return { data: resultado === undefined ? null : resultado, error: null };
     },
     // STORAGE de mentira. Existe para a bateria poder carregar funcoes que

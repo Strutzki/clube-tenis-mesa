@@ -106,6 +106,7 @@ class Consulta {
     this.devolverLinhas = false;
     this.conflito = null;
     this.colunas = "*";
+    this.janela = null;
   }
 
   // ---- filtros ----
@@ -431,6 +432,12 @@ class Consulta {
         });
       }
       if (this.limite !== null) achadas = achadas.slice(0, this.limite);
+      // A janela do `range` e INCLUSIVA nas duas pontas, como no PostgREST.
+      // ⚠️ A CONTAGEM e do total FILTRADO, nao da janela -- e assim que o PostgREST
+      // responde, e a funcao de backup DEPENDE disso: ela compara `count` com o
+      // numero de linhas e ABORTA se divergirem. Se o dublê contasse a janela, a
+      // guarda que impede backup incompleto nunca poderia ser exercitada.
+      if (this.janela) achadas = achadas.slice(this.janela.de, this.janela.ate + 1);
       const contagem = this.contar ? this.filtrar(linhas).length : null;
       achadas = this.aplicarJuncao(achadas);
       achadas = this.projetar(achadas);
@@ -506,6 +513,15 @@ class Consulta {
   //
   // Em producao o PostgREST devolve o 23505 com ou sem `.single()`: a violacao de
   // unicidade acontece ANTES de qualquer questao de quantas linhas voltaram.
+  // `range(de, ate)` — a janela de linhas do PostgREST, INCLUSIVA nas duas pontas.
+  // Entrou em 01/10/2026 com os testes do backup, que a usa para puxar a tabela
+  // inteira (`range(0, 999999)`). Sem ela o dublê estourava "range is not a function"
+  // e a funcao de backup nao rodava.
+  range(de, ate) {
+    this.janela = { de: Number(de) || 0, ate: Number(ate) };
+    return this;
+  }
+
   single() {
     const r = this.executar();
     if (r.error) return r;
@@ -560,6 +576,7 @@ export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {
     // tinha como provar que a foto some.
     arquivos: clonar(arquivosIniciais),
     remocoes: [],            // { bucket, caminhos } — o que a funcao mandou apagar
+    conteudos: {},           // "bucket/nome" -> bytes, para o `download` devolver o que o `upload` gravou
   };
 
   banco.cliente = {
@@ -630,13 +647,49 @@ export function criarBancoFalso(tabelasIniciais = {}, funcoes = {}, relacoes = {
             const achados = busca ? todos.filter((n) => n.startsWith(busca)) : todos;
             return { data: achados.map((name) => ({ name })), error: null };
           },
+          // ⚠️ O `remove` RELATAVA TER APAGADO TUDO QUE FOI PEDIDO, inclusive arquivo
+          // que nao existia -- instrumento MAIS GENEROSO que a producao. O Supabase
+          // real devolve so o que apagou de fato, e e exatamente por isso que a
+          // `anonimizar-atleta` confere `removidos.length !== pedidos.length` antes de
+          // anular a coluna: se o nome derivado nao existir no balde, o atestado FICA
+          // com a URL ja apagada -- o estado "pior que os dois". Com o dublê generoso,
+          // essa guarda nunca podia ser exercitada. (01/10/2026)
           async remove(caminhos) {
             const recusa = banco.recusas.find((r) => r.tabela === bucket && r.operacao === "remove");
             if (recusa) return { data: null, error: recusa.erro };
             banco.remocoes.push({ bucket, caminhos: clonar(caminhos) });
             const antes = banco.arquivos[bucket] || [];
+            const existiam = caminhos.filter((n) => antes.includes(n));
             banco.arquivos[bucket] = antes.filter((n) => !caminhos.includes(n));
-            return { data: caminhos.map((name) => ({ name })), error: null };
+            return { data: existiam.map((name) => ({ name })), error: null };
+          },
+          // `upload` e `download` entraram em 01/10/2026, quando a funcao de BACKUP
+          // ganhou testes. Ela e a unica coisa entre um engano e a perda definitiva de
+          // dado, e nao tinha UM teste -- nao dava para ter, porque o dublê nao sabia
+          // gravar arquivo. O conteudo fica em `banco.conteudos` para o `download`
+          // devolver o mesmo que o `upload` gravou.
+          async upload(nome, bytes, opcoes) {
+            const recusa = banco.recusas.find((r) => r.tabela === bucket && r.operacao === "upload");
+            if (recusa) return { data: null, error: recusa.erro };
+            const existentes = banco.arquivos[bucket] || [];
+            // `upsert: false` e o padrao do Supabase, e a funcao de backup DEPENDE
+            // dele para nao sobrescrever o arquivo do dia.
+            if (existentes.includes(nome) && !opcoes?.upsert) {
+              return { data: null, error: { message: "The resource already exists", statusCode: "409" } };
+            }
+            banco.arquivos[bucket] = [...existentes.filter((n) => n !== nome), nome];
+            banco.conteudos[`${bucket}/${nome}`] = bytes;
+            return { data: { path: nome }, error: null };
+          },
+          async download(nome) {
+            const recusa = banco.recusas.find((r) => r.tabela === bucket && r.operacao === "download");
+            if (recusa) return { data: null, error: recusa.erro };
+            const conteudo = banco.conteudos[`${bucket}/${nome}`];
+            if (conteudo === undefined) {
+              return { data: null, error: { message: "Object not found", statusCode: "404" } };
+            }
+            // Imita o Blob que o Supabase devolve: o que a funcao usa e `arrayBuffer()`.
+            return { data: { arrayBuffer: async () => conteudo.buffer ?? conteudo }, error: null };
           },
         };
       },

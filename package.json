@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "motor:publicar": "node scripts/publicar-motor.mjs",
     "motor:listar": "supabase functions list --project-ref eultwfzzlgcmcikobmmy",
-    "teste": "node testes/nomes-que-nao-existem.mjs && node testes/rating.mjs && node testes/sistema-b.mjs && node testes/isolamento.mjs && node testes/permissoes.mjs && node testes/mensagens.mjs && node testes/pacote.mjs && node testes/erros-na-tela.mjs && node testes/contador-mensagens.mjs && node testes/regulamento-por-circuito.mjs && node testes/onda-06.mjs && node testes/participar-outro-circuito.mjs && node testes/segundo-circuito.mjs && node testes/ataques.mjs && node testes/ataques2.mjs && node testes/ataques3.mjs && node testes/ataques4.mjs",
+    "teste": "node testes/nomes-que-nao-existem.mjs && node testes/rating.mjs && node testes/sistema-b.mjs && node testes/isolamento.mjs && node testes/permissoes.mjs && node testes/mensagens.mjs && node testes/pacote.mjs && node testes/erros-na-tela.mjs && node testes/contador-mensagens.mjs && node testes/regulamento-por-circuito.mjs && node testes/onda-06.mjs && node testes/participar-outro-circuito.mjs && node testes/segundo-circuito.mjs && node testes/backup.mjs && node testes/ataques.mjs && node testes/ataques2.mjs && node testes/ataques3.mjs && node testes/ataques4.mjs",
     "motor:conferir": "node scripts/conferir-motor.mjs"
   },
   "dependencies": {

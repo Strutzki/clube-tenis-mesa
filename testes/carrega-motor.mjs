@@ -38,7 +38,11 @@ export async function carregarFuncao(nomeDaFuncao, banco) {
   //    devolve o banco de mentira no lugar do cliente do Supabase.
   const antes = codigo;
   codigo = codigo.replace(
-    /from\s+["']https:\/\/esm\.sh\/@supabase\/supabase-js@\d+["']/g,
+    // ⚠️ ERA `@\d+` — só dígitos. A `backup-clube-tenis-mesa` importa `@2.45.4`, com
+    // pontos, e por isso o carregador NUNCA CONSEGUIU CARREGÁ-LA: a única função do
+    // projeto que apaga arquivos era, por acidente do instrumento, a única impossível
+    // de testar. Ele falhava alto (bom), mas ninguém tinha tentado. (01/10/2026)
+    /from\s+["']https:\/\/esm\.sh\/@supabase\/supabase-js@[\d.]+["']/g,
     `from ${JSON.stringify(pathToFileURL(path.join(AQUI, "cliente-falso.mjs")).href)}`
   );
   if (codigo === antes) {

@@ -1,6 +1,67 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
-const TABLES = ["atletas", "chaves", "partidas", "configuracao", "mensagens_enviadas"] as const;
+// ── O QUE O BACKUP COPIA, E O QUE NAO COPIA DE PROPOSITO ──────────────────────
+//
+// Reescrito em 01/10/2026. A lista anterior era `["atletas", "chaves", "partidas",
+// "configuracao", "mensagens_enviadas"]` -- escrita antes do Modelo B, e nunca
+// atualizada. Resultado: O MODELO MULTI-CIRCUITO INTEIRO ESTAVA FORA DO BACKUP.
+// Medido em producao antes de mexer: 15 vinculos em `circuito_atletas` (o estado
+// sazonal de TODO atleta: pontos, vitorias, W.O., pagamento, aceite), 12
+// `pagamentos` (dinheiro), 1 `circuitos` (a configuracao do circuito), 5
+// `solicitacoes_wo`. Nada disso tinha copia.
+//
+// `partidas_historico` esta vazia hoje, e e a mais importante das novas: e para la
+// que a VIRADA DE TEMPORADA arquiva as partidas, e a virada NAO SE DESFAZ. Uma
+// temporada inteira perdida sem backup e perda definitiva.
+//
+// Cada entrada pode nomear COLUNAS. Nomear nao e detalhe: `select *` num backup
+// copia dado sensivel para um balde, e backup restaurado RESSUSCITA o que foi
+// apagado. Por isso duas regras:
+//   · `solicitacoes_wo` entra SEM `justificativa` e SEM `comprovante_url` -- sao
+//     dado de saude (art. 5o, II). O registro de competicao e preservado; o motivo
+//     medico nao vai para o balde.
+//   · as tabelas da lista NAO_COPIADAS ficam de fora inteiras (ver abaixo).
+const TABLES: ReadonlyArray<{ nome: string; colunas: string }> = [
+  // Identidade e competicao
+  { nome: "atletas", colunas: "*" },
+  { nome: "chaves", colunas: "*" },
+  { nome: "partidas", colunas: "*" },
+  { nome: "partidas_historico", colunas: "*" },   // a virada NAO se desfaz
+  { nome: "configuracao", colunas: "*" },
+  { nome: "mensagens_enviadas", colunas: "*" },
+  // Modelo B — faltavam TODAS
+  { nome: "circuitos", colunas: "*" },
+  { nome: "circuito_atletas", colunas: "*" },
+  { nome: "circuito_organizadores", colunas: "*" },
+  // Dinheiro
+  { nome: "pagamentos", colunas: "*" },
+  { nome: "circuito_cobranca", colunas: "*" },
+  { nome: "cobrancas", colunas: "*" },
+  // W.O. — SEM as duas colunas de dado de saude
+  { nome: "solicitacoes_wo", colunas: "id,match_id,atleta_id,atleta_nome,adversario_id,adversario_nome,round,status,criado_em,respondido_em,motivo_recusa,notificado_solicitante,notificado_adversario,circuito_id" },
+];
+
+// NAO COPIADAS, e cada uma tem motivo escrito. Esta lista existe para ninguem
+// "completar" o backup sem pensar -- acrescentar qualquer uma destas e decisao, nao
+// manutencao.
+//
+//  · `arquivo_wo_justificativas` e `atleta_documento` -- dado de saude e hash de CPF.
+//    Backup restaurado RESSUSCITA dado apagado: copiar isto para o balde desfaria
+//    uma exclusao de LGPD no dia da restauracao. Quem precisa do original tem a
+//    tabela, que e privada (RLS ligada, nenhuma policy).
+//  · `atleta_sessao` -- sessoes vivas. Restaurar sessao velha e reabrir acesso que
+//    foi encerrado. Perder sessoes custa um login; restaurar custa seguranca.
+//  · `tentativas_login_admin`, `tentativas_busca_cpf`, `tentativas_busca_telefone` --
+//    registro de tentativas, que so serve para a janela de 15 minutos. Restaurar
+//    tentativas antigas poderia TRANCAR o painel logo apos uma restauracao.
+//  · `instagram_artes`, `instagram_artes_chunk`, `instagram_config`,
+//    `instagram_publicacoes` -- conteudo gerado, reconstituivel, e o `_chunk` e
+//    pesado. Fica fora por tamanho, nao por sigilo; se um dia importar, entra.
+const NAO_COPIADAS = [
+  "arquivo_wo_justificativas", "atleta_documento", "atleta_sessao",
+  "tentativas_login_admin", "tentativas_busca_cpf", "tentativas_busca_telefone",
+  "instagram_artes", "instagram_artes_chunk", "instagram_config", "instagram_publicacoes",
+] as const;
 const PROJETO = "eultwfzzlgcmcikobmmy (clube-tenis-mesa)";
 const BUCKET = "backups";
 const TZ = "America/Sao_Paulo";
@@ -110,25 +171,32 @@ Deno.serve(async (req: Request) => {
       contagem_linhas = {};
       const dump: Record<string, unknown[]> = {};
       for (const t of TABLES) {
-        const { data, error, count } = await supabase.from(t).select("*", { count: "exact" }).range(0, 999999);
-        if (error) throw new Error(`select ${t}: ${error.message}`);
+        const { data, error, count } = await supabase.from(t.nome).select(t.colunas, { count: "exact" }).range(0, 999999);
+        if (error) throw new Error(`select ${t.nome}: ${error.message}`);
         const rows = data ?? [];
         if (count !== null && count !== rows.length) {
-          return json({ ok: false, error: `Contagem divergente em ${t}: count=${count}, linhas=${rows.length}. Backup abortado.` }, 500);
+          return json({ ok: false, error: `Contagem divergente em ${t.nome}: count=${count}, linhas=${rows.length}. Backup abortado.` }, 500);
         }
-        contagem_linhas[t] = rows.length;
-        dump[t] = rows;
+        contagem_linhas[t.nome] = rows.length;
+        dump[t.nome] = rows;
       }
       const backup = {
         backup_gerado_em: now.toISOString(),
         data_referencia: dateStr,
         projeto_supabase: PROJETO,
         contagem_linhas,
-        atletas: dump.atletas,
-        chaves: dump.chaves,
-        partidas: dump.partidas,
-        configuracao: dump.configuracao,
-        mensagens_enviadas: dump.mensagens_enviadas,
+        // ⚠️ ERA UMA LISTA DE CINCO NOMES ESCRITA A MAO AQUI -- `atletas: dump.atletas,
+        // chaves: dump.chaves, ...`. Duas listas para a mesma coisa: a que LE (TABLES) e
+        // a que GRAVA (esta). Acrescentar uma tabela em TABLES e esquecer aqui faria o
+        // backup ler a tabela, contar as linhas no `contagem_linhas`, e NAO GRAVAR OS
+        // DADOS -- um backup que parece completo pelo relatorio e nao tem o conteudo.
+        // E a terceira vez nesta onda que duas listas para a mesma coisa divergem (as
+        // outras: as colunas do atleta, e a lista NOT NULL). Agora e UMA so.
+        ...dump,
+        // Registro do que ficou de fora, DENTRO do arquivo. Quem abrir o backup daqui a
+        // seis meses tem de saber o que nao vai achar la -- sem isso, "nao tem" e
+        // indistinguivel de "perdeu".
+        nao_copiadas: NAO_COPIADAS,
       };
       bytes = new TextEncoder().encode(JSON.stringify(backup, null, 2));
       const { error: upErr } = await supabase.storage.from(BUCKET).upload(filename, bytes, { contentType: "application/json", upsert: false });

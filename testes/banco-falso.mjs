@@ -34,6 +34,34 @@ export function registrarViolacao(mensagem) {
   return Object.assign(new Error(mensagem), { instrumento: true });
 }
 
+// PROVOCAR O PORTAO DE PROPOSITO, para poder TESTAR o portao.
+//
+// Existe desde 01/10/2026. O registro acima e implacavel de proposito: qualquer
+// violacao derruba o arquivo, mesmo capturada num `catch`. Isso e o que o torna
+// fail-closed de verdade, e NAO deve ser enfraquecido. Mas cria um problema: sem
+// nenhuma valvula, o portao e a unica parte do instrumento que nao pode ter
+// assercao propria -- testa-lo derrubaria a bateria.
+//
+// Esta funcao e a valvula, e e deliberadamente estreita:
+//   · exige que a violacao TENHA acontecido (se nao houve, ela falha -- entao nao
+//     serve para silenciar nada: serve para AFIRMAR que o portao disparou);
+//   · remove apenas as entradas que apareceram DURANTE a propria execucao dela,
+//     comparando o tamanho antes e depois -- nunca limpa o registro inteiro;
+//   · devolve a mensagem, para o teste poder afirmar QUAL violacao foi.
+//
+// Uso exclusivo: testar o instrumento. Em codigo sob teste, violacao e defeito.
+export async function provocandoViolacao(fn) {
+  const antes = violacoesDeInstrumento.length;
+  let lancou = null;
+  try { await fn(); } catch (e) { lancou = e; }
+  const novas = violacoesDeInstrumento.splice(antes);
+  if (novas.length === 0) {
+    throw new Error("provocandoViolacao: o portao NAO disparou -- nada foi registrado. " +
+      "Esta funcao serve para afirmar que o portao funciona, nao para silenciar violacao.");
+  }
+  return { mensagens: novas, erro: lancou };
+}
+
 function comparar(campo, op, valor) {
   // Tudo que chega de texto é comparado como texto — é o que o PostgREST faz
   // com os filtros da URL.
@@ -176,9 +204,14 @@ class Consulta {
     //
     // VAZAM -- instrumento MAIS GENEROSO que a producao, e uma regressao passa
     // VERDE. Sao os perigosos:
-    //   · `upsert(...).select(...)` NAO projeta: devolve a linha inteira.
-    //     (apelido e embed aninhado saiam desta lista em 29/09 -- agora o `projetar`
-    //      LANCA ERRO neles, ver acima.)
+    //   · (nenhum conhecido hoje.)
+    //     Esta lista ja teve tres: apelido e embed aninhado sairam em 29/09, quando o
+    //     `projetar` passou a LANCAR ERRO neles; e `upsert(...).select(...)` saiu em
+    //     01/10, quando o `projetar` entrou no caminho do upsert. Esse ultimo era o
+    //     pior: o `mirrorSazonal` grava por upsert, e foi por ai que o ataque do W.O.
+    //     fabricava vinculo em circuito alheio -- o portao ficava cego no lugar exato
+    //     do vazamento conhecido. Lista vazia aqui nao significa "nao vaza mais":
+    //     significa "nao sabemos de nenhum". Quando alguem achar o quarto, escreve.
     //
     // SO DAO FALSO VERMELHO -- instrumento MAIS POBRE que a producao. Dao trabalho,
     // nao carimbam regressao:
@@ -442,7 +475,15 @@ class Consulta {
         if (existente) { Object.assign(existente, nova); tocadas.push(existente); }
         else { linhas.push(nova); tocadas.push(nova); }
       }
-      return { data: this.devolverLinhas ? clonar(tocadas) : null, error: null, count: null };
+      // ⚠️ O `projetar` ENTROU AQUI EM 01/10/2026. Até então este era o único dos
+      // quatro caminhos de gravação que devolvia a linha INTEIRA, e era o pior lugar
+      // possível para a falha: o `mirrorSazonal` do motor grava por `upsert`, e foi
+      // justamente por aí que o ataque do W.O. FABRICAVA vínculo em circuito alheio.
+      // O portão à prova de falha que o Guardião de Segurança propôs (o `projetar`
+      // que LANÇA em forma não modelada) ficava cego exatamente onde morava o
+      // vazamento conhecido — instrumento mais generoso que a produção, e regressão
+      // passando verde. Achado do Supervisor de Segurança, que mediu esta linha.
+      return { data: this.devolverLinhas ? this.projetar(clonar(tocadas)) : null, error: null, count: null };
     }
 
     throw new Error(`banco-falso: operacao "${this.operacao}" desconhecida`);

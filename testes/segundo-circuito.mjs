@@ -30,6 +30,7 @@ import {
   montarMotor, comoAdmin, circuito, atleta, partida,
   ok, igual, secao, placar, BH, PIN, semComentarios} from "./ferramentas.mjs";
 import { carregarFuncao } from "./carrega-motor.mjs";
+import { criarBancoFalso, provocandoViolacao } from "./banco-falso.mjs";
 
 const comAdminSlugBH = (motor) => comoAdmin(motor, "CRIAR_CIRCUITO", {
   slug: "bh", nome: "Outro BH", sistema: "B", pareamento: "sorteio",
@@ -2216,6 +2217,77 @@ secao("O porteiro: o portão de autenticação, RODANDO a função");
         `o porteiro NÃO devolve \`${proibido}\` no item de ranking`);
     }
     ok("nome" in item && "rating" in item, "e devolve o que a tela precisa (nome, rating)");
+  }
+}
+
+secao("O instrumento se confere — os quatro caminhos de gravação projetam colunas");
+{
+  // POR QUE O INSTRUMENTO PRECISA DAS PRÓPRIAS ASSERÇÕES.
+  //
+  // O banco falso deixou de ser um detalhe de teste e virou peça da segurança: é ele
+  // que decide se "o porteiro não devolve `telefone`" é uma afirmação medida ou um
+  // verde vazio. Nesta onda ele falhou nessa função TRÊS vezes — apelido e embed
+  // aninhado (consertados em 29/09, agora LANÇAM erro) e `upsert` (01/10) — e das
+  // três a do `upsert` era a pior: o `mirrorSazonal` do motor grava por upsert, e foi
+  // por esse caminho que o ataque do W.O. fabricava vínculo em circuito alheio. O
+  // portão à prova de falha ficava cego no lugar exato do vazamento conhecido.
+  //
+  // ⚠️ CALIBRAGEM HONESTA: hoje NENHUM lugar do motor faz `upsert(...).select(...)`
+  // (medido: zero encadeamentos nas 9 funções). Então a entrada do `projetar` no
+  // upsert é ENDURECIMENTO, não fechamento de buraco vivo — ela não muda
+  // comportamento nenhum agora. O valor dela é este: no dia em que alguém escrever o
+  // primeiro `upsert().select()`, o portão já está lá. Sem estas asserções essa
+  // proteção seria invisível e indistinguível de código morto.
+  const comUpsert = () => criarBancoFalso({ circuito_atletas: [] });
+
+  {
+    const banco = comUpsert();
+    const r = await banco.cliente.from("circuito_atletas")
+      .upsert({ circuito_id: "C1", atleta_id: "A1", saldo_temp: 3, telefone: "31999998888" },
+              { onConflict: "circuito_id,atleta_id" })
+      .select("circuito_id,atleta_id,saldo_temp");
+    const item = r.data?.[0] || {};
+    ok("saldo_temp" in item, "o upsert com select devolve a coluna pedida");
+    ok(!("telefone" in item),
+      "e NÃO devolve a coluna que o select não pediu — era o 4º caminho de gravação, o único que entregava a linha inteira");
+  }
+
+  {
+    // E o portão fail-closed vale no upsert também: forma não modelada LANÇA, em vez
+    // de devolver algo plausível. Foi a solução que o Guardião de Segurança propôs e
+    // que eu aceitei em lugar da minha.
+    const banco = comUpsert();
+    const r = await provocandoViolacao(() => banco.cliente.from("circuito_atletas")
+      .upsert({ circuito_id: "C1", atleta_id: "A1" }, { onConflict: "circuito_id,atleta_id" })
+      .select("ca:circuito_atletas!inner(id,nome)"));
+    ok(/APELIDO|nao e modelad/i.test(r.mensagens.join(" ")),
+      "forma de select que o instrumento não modela DISPARA o portão, inclusive no upsert — não devolve valor plausível");
+    ok(r.erro && r.erro.instrumento === true,
+      "e lança um erro marcado como `instrumento`, para ninguém confundir com erro do motor");
+  }
+
+  {
+    // A VÁLVULA TEM O PORTÃO DELA. `provocandoViolacao` remove do registro as
+    // violações que ela mesma causou — e isso seria um jeito de silenciar violações
+    // de verdade se ela aceitasse "nenhuma violação" como resultado válido. Ela
+    // FALHA nesse caso, e esta asserção é o que garante que continue falhando.
+    let recusou = false;
+    try { await provocandoViolacao(() => Promise.resolve("nada de errado aqui")); }
+    catch (e) { recusou = /NAO disparou/.test(String(e.message)); }
+    ok(recusou,
+      "a válvula que testa o portão FALHA quando o portão não dispara — ela afirma que a proteção funciona, não silencia violação");
+  }
+
+  {
+    // COMPLETUDE: os quatro caminhos que devolvem linha passam pelo `projetar`. Se
+    // alguém acrescentar um quinto e esquecer, esta asserção fica vermelha — foi
+    // assim que o upsert ficou de fora por meses.
+    const fonteBanco = readFileSync(new URL("./banco-falso.mjs", import.meta.url), "utf8");
+    const devolucoes = [...fonteBanco.matchAll(/this\.devolverLinhas \? [^:]+ : null/g)];
+    ok(devolucoes.length >= 4, `há ${devolucoes.length} caminhos que devolvem linha gravada`);
+    const semProjetar = devolucoes.filter((m) => !/this\.projetar\(/.test(m[0]));
+    igual(semProjetar.length, 0,
+      "TODO caminho de gravação que devolve linha passa pelo `projetar` — nenhum entrega a linha inteira");
   }
 }
 

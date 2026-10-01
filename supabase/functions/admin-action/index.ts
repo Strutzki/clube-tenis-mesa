@@ -1888,12 +1888,32 @@ Deno.serve(async (req) => {
       }
 
       case "CANCELAR_PROXIMA": {
+        // ⚠️ ISTO LIMPAVA A CONFIGURACAO E DEIXAVA O FLAG DOS ATLETAS PRESO.
+        //
+        // `pagamento_proxima_confirmado` ficava `true` para uma temporada que deixou de
+        // existir. Na pre-abertura SEGUINTE, esses atletas apareciam como JA PAGOS sem
+        // ter pago nada dela -- e o organizador nao tinha como saber, porque o flag nao
+        // diz de que temporada ele e. Achado do Supervisor do Admin, junto com o
+        // estorno (os dois defeitos sao a mesma raiz: o flag nao sabe a que temporada
+        // pertence, e so o `temporada_rotulo` do PAGAMENTO sabe).
+        //
+        // Zerar o flag NAO apaga o pagamento: as linhas de `pagamentos` ficam, porque a
+        // pessoa pagou de verdade. O que se desfaz e a afirmacao "esta em dia com a
+        // proxima", que deixou de ter objeto. A resposta diz QUANTOS flags cairam, para
+        // o organizador saber quantas devolucoes ou transferencias ele tem para resolver
+        // -- isso e dinheiro, e silencio aqui vira prejuizo de alguem.
+        const { data: comFlag } = await supabase.from("circuito_atletas")
+          .select("atleta_id").eq("circuito_id", circuitoId).eq("pagamento_proxima_confirmado", true);
+        const alvos = (comFlag || []).map((r: any) => r.atleta_id).filter(Boolean);
+        for (const aId of alvos) {
+          await writeAtleta(circuitoId, aId, { pagamento_proxima_confirmado: false });
+        }
         const updCancel = {
           proxima_aberta: false, proxima_nome: null, proxima_data_inicio: null, proxima_rotulo: null,
           proxima_valor_cheio: null, proxima_valor_desconto: null,
         };
         await setCfg(circuitoId, updCancel);
-        return jsonResponse({ sucesso: true });
+        return jsonResponse({ sucesso: true, dados: { pagamentosProximaLimpos: alvos.length } });
       }
 
       case "NOVA_TEMPORADA": {
@@ -2515,13 +2535,45 @@ Deno.serve(async (req) => {
         if (!pag) return jsonResponse({ sucesso: false, erro: "Pagamento não encontrado." }, 404);
         const { error: errUpd } = await supabase.from("pagamentos").update({ status: "estornado" }).eq("id", id).eq("circuito_id", circuitoId);
         if (errUpd) throw errUpd;
+        // ⚠️ ESTE BLOCO DERRUBAVA O PAGAMENTO DA TEMPORADA ERRADA. Achado do
+        // Supervisor do Admin, e o caminho e curto:
+        //
+        //   · a decisao era `pag.temporada_rotulo === cfg.proxima_rotulo`, e tudo que
+        //     NAO casasse caia no `else`, marcando `pagamento_confirmado: false`;
+        //   · o `CANCELAR_PROXIMA` ZERA `proxima_rotulo`. Depois dele, NADA casa.
+        //
+        // Efeito: o organizador cancela a pre-abertura, estorna um pagamento DA
+        // PROXIMA, e o motor derruba o pagamento da temporada EM CURSO. O atleta passa
+        // a aparecer como inadimplente numa temporada que ele pagou -- e no circuito
+        // com financeiro ligado isso BLOQUEIA a inclusao dele.
+        //
+        // E havia um terceiro caso que ninguem tinha nomeado: estornar pagamento de uma
+        // temporada JA ENCERRADA tambem caia no `else` e derrubava a atual.
+        //
+        // A correcao: o rotulo do pagamento e a fonte de verdade, e ele e comparado com
+        // AS DUAS temporadas que tem flag -- a atual (montada de `temporada_numero/ano`,
+        // a mesma conta de tres outros lugares) e a proxima. Nao casando nenhuma, NAO SE
+        // TOCA EM FLAG NENHUMA: o estorno fica registrado e nenhuma temporada viva e
+        // afetada. Recusar o palpite e melhor que derrubar a conta errada.
+        let flagTocada: string | null = null;
         if (pag.atleta_id) {
-          const cfg = await getCfg(circuitoId, "proxima_rotulo");
-          const ehProxima = !!(pag.temporada_rotulo && cfg?.proxima_rotulo && pag.temporada_rotulo === cfg.proxima_rotulo);
-          const flagCol = ehProxima ? { pagamento_proxima_confirmado: false } : { pagamento_confirmado: false };
-          await writeAtleta(circuitoId, pag.atleta_id, flagCol);
+          const cfg = await getCfg(circuitoId, "proxima_rotulo,temporada_numero,temporada_ano");
+          const rotuloAtual = `${cfg?.temporada_numero ?? ""}/${cfg?.temporada_ano ?? ""}`;
+          const rot = pag.temporada_rotulo || null;
+          if (rot && cfg?.proxima_rotulo && rot === cfg.proxima_rotulo) {
+            await writeAtleta(circuitoId, pag.atleta_id, { pagamento_proxima_confirmado: false });
+            flagTocada = "proxima";
+          } else if (rot && rot === rotuloAtual) {
+            await writeAtleta(circuitoId, pag.atleta_id, { pagamento_confirmado: false });
+            flagTocada = "atual";
+          } else {
+            // Temporada encerrada, pre-abertura cancelada, ou pagamento sem rotulo.
+            console.warn("estorno sem temporada viva:", { id, rot, rotuloAtual, proxima: cfg?.proxima_rotulo });
+          }
         }
-        return jsonResponse({ sucesso: true });
+        // O organizador precisa saber O QUE o estorno mexeu -- "sucesso" sozinho ja
+        // deixou ele achar que tinha mexido na temporada certa.
+        return jsonResponse({ sucesso: true, dados: { flagTocada } });
       }
 
       case "LISTAR_PAGAMENTOS": {

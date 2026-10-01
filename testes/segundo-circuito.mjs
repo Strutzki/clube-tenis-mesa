@@ -2236,6 +2236,95 @@ secao("O porteiro: o portão de autenticação, RODANDO a função");
   }
 }
 
+secao("Dinheiro — o estorno não derruba o pagamento da temporada errada");
+{
+  // DOIS DEFEITOS COM A MESMA RAIZ, achados pelo Supervisor do Admin: o flag
+  // `pagamento_confirmado` / `pagamento_proxima_confirmado` não sabe A QUE TEMPORADA
+  // pertence. Só o `temporada_rotulo` do PAGAMENTO sabe.
+  //
+  //  · o estorno decidia por `pag.temporada_rotulo === cfg.proxima_rotulo`, e tudo que
+  //    não casasse caía no `else` derrubando `pagamento_confirmado`. O
+  //    `CANCELAR_PROXIMA` ZERA `proxima_rotulo` — depois dele NADA casa, então estornar
+  //    um pagamento da PRÓXIMA derrubava o da temporada EM CURSO. Com financeiro
+  //    ligado, isso BLOQUEIA a inclusão de quem pagou;
+  //  · e `CANCELAR_PROXIMA` deixava `pagamento_proxima_confirmado: true` preso, para
+  //    uma temporada que deixou de existir — na pré-abertura seguinte, esses atletas
+  //    apareciam como já pagos sem ter pago nada dela.
+  //
+  // É a primeira seção de DINHEIRO comportamental da bateria: antes só havia o teste
+  // de permissão de `REGISTRAR_PAGAMENTO`, que confere quem pode chamar, não o efeito.
+  const CIRC_M = "dddddddd-1111-4111-8111-dddddddddddd";
+  const A1 = "dddddddd-0000-4000-8000-00000000000a";
+
+  const cenarioDinheiro = async ({ proximaAberta = true } = {}) => montarMotor({
+    circuitos: [
+      circuito(BH),
+      circuito(CIRC_M, { slug: "dinheiro", sistema: "B", regulamento_versao: "vB-01",
+        financeiro_ativo: true, temporada_numero: 1, temporada_ano: 2026,
+        proxima_aberta: proximaAberta,
+        proxima_rotulo: proximaAberta ? "2/2026" : null,
+        proxima_nome: proximaAberta ? "Temporada 2" : null }),
+    ],
+    atletas: [atleta(A1, { nome: "Pagador" })],
+    circuito_atletas: [{ id: "ca-m", circuito_id: CIRC_M, atleta_id: A1, status: "ativo",
+      pendente_circuito: false, pagamento_confirmado: true, pagamento_proxima_confirmado: true }],
+    partidas: [],
+    outras: { pagamentos: [
+      { id: "pg-atual",   circuito_id: CIRC_M, atleta_id: A1, temporada_rotulo: "1/2026", status: "confirmado", valor: 10000 },
+      { id: "pg-proxima", circuito_id: CIRC_M, atleta_id: A1, temporada_rotulo: "2/2026", status: "confirmado", valor: 10000 },
+      { id: "pg-velho",   circuito_id: CIRC_M, atleta_id: A1, temporada_rotulo: "3/2025", status: "confirmado", valor: 10000 },
+    ] },
+  });
+  const flags = (banco) => banco.acha("circuito_atletas", c => c.atleta_id === A1 && c.circuito_id === CIRC_M);
+
+  // 1. O CAMINHO NORMAL continua certo: estornar o da próxima mexe no flag da próxima.
+  {
+    const { banco, motor } = await cenarioDinheiro();
+    const r = await comoAdmin(motor, "ESTORNAR_PAGAMENTO", { circuitoId: CIRC_M, id: "pg-proxima" });
+    ok(r.corpo?.sucesso === true, `o estorno da próxima funciona (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    igual(r.corpo?.dados?.flagTocada, "proxima", "e a resposta DIZ qual flag mexeu");
+    igual(flags(banco)?.pagamento_proxima_confirmado, false, "o flag da próxima cai");
+    igual(flags(banco)?.pagamento_confirmado, true, "e o da temporada EM CURSO fica intacto");
+  }
+
+  // 2. O DEFEITO: pré-abertura cancelada e depois estorno da próxima.
+  {
+    const { banco, motor } = await cenarioDinheiro();
+    await comoAdmin(motor, "CANCELAR_PROXIMA", { circuitoId: CIRC_M });
+    const r = await comoAdmin(motor, "ESTORNAR_PAGAMENTO", { circuitoId: CIRC_M, id: "pg-proxima" });
+    ok(r.corpo?.sucesso === true, "o estorno roda mesmo depois de a pré-abertura ser cancelada");
+    igual(flags(banco)?.pagamento_confirmado, true,
+      "e NÃO derruba o pagamento da temporada em curso — era o defeito: o atleta virava inadimplente numa temporada que pagou");
+    igual(r.corpo?.dados?.flagTocada, null,
+      "e a resposta diz que NENHUM flag foi tocado, em vez de deixar o organizador achar que mexeu no certo");
+  }
+
+  // 3. O TERCEIRO CASO, que ninguém tinha nomeado: estornar temporada JÁ ENCERRADA.
+  {
+    const { banco, motor } = await cenarioDinheiro();
+    const r = await comoAdmin(motor, "ESTORNAR_PAGAMENTO", { circuitoId: CIRC_M, id: "pg-velho" });
+    ok(r.corpo?.sucesso === true, "estornar pagamento de temporada encerrada roda");
+    igual(flags(banco)?.pagamento_confirmado, true,
+      "e não derruba a atual — caía no mesmo `else` e tinha o mesmo efeito");
+    igual(flags(banco)?.pagamento_proxima_confirmado, true, "nem a da próxima");
+    igual(banco.acha("pagamentos", x => x.id === "pg-velho")?.status, "estornado",
+      "mas o estorno FICA registrado — a devolução aconteceu, só não mexe em temporada viva");
+  }
+
+  // 4. CANCELAR A PRÉ-ABERTURA limpa o flag que ficava preso.
+  {
+    const { banco, motor } = await cenarioDinheiro();
+    const r = await comoAdmin(motor, "CANCELAR_PROXIMA", { circuitoId: CIRC_M });
+    igual(flags(banco)?.pagamento_proxima_confirmado, false,
+      "cancelar a pré-abertura zera `pagamento_proxima_confirmado` — ele ficava preso para uma temporada que deixou de existir");
+    igual(flags(banco)?.pagamento_confirmado, true, "e não encosta no da temporada em curso");
+    igual(r.corpo?.dados?.pagamentosProximaLimpos, 1,
+      "e a resposta DIZ quantos flags caíram — é dinheiro, e o organizador tem devoluções para resolver");
+    igual(banco.acha("pagamentos", x => x.id === "pg-proxima")?.status, "confirmado",
+      "o PAGAMENTO continua registrado: a pessoa pagou de verdade, o que se desfez foi a afirmação «está em dia com a próxima»");
+  }
+}
+
 secao("As três telas que paravam de falar com o atleta");
 {
   // Três consertos do bloco 2 que eu fiz SEM ASSERÇÃO, e a mutação me pegou: sabotar

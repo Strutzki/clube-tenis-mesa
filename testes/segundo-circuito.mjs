@@ -2271,10 +2271,17 @@ secao("As três telas que paravam de falar com o atleta");
   const iFilaC = fonteApp.indexOf("function FilaDeEsperaCard(");
   ok(iFilaC > 0, "o card de fila foi localizado");
   const filaC = fonteApp.slice(iFilaC, fonteApp.indexOf("\nfunction ", iFilaC + 10));
-  ok(/const dentro = /.test(filaC) && /state\.maxAtletas/.test(filaC),
-    "o card CONTA quantos estão dentro e compara com o teto do circuito");
-  ok(/lotado\s*$|lotado\n|\{lotado/.test(filaC),
-    "e decide a frase pelo resultado da conta");
+  // ⚠️ ESTAS DUAS ASSERÇÕES ERAM `/const dentro = /` e `/{lotado/` — procuravam o
+  // NOME da variável, não a conta. A mutação "troca a conta por `const dentro = 0;
+  // const lotado = true;`" passou VERDE, porque o nome continuava lá. Agora prendem a
+  // EXPRESSÃO: trocar a conta por um valor fixo quebra. É a mesma lição do `select=*`
+  // e do comentário — asserção que olha para o procurador da regra não protege a regra.
+  ok(/const dentro = \(state\.athletes \|\| \[\]\)\.filter\(a => a\.status === "ativo" && !a\.pendenteCircuito\)\.length;/.test(filaC),
+    "o card CONTA quem está dentro filtrando o roster de verdade — não um número fixo");
+  ok(/const lotado = dentro >= \(state\.maxAtletas \|\| 20\);/.test(filaC),
+    "e compara a conta com o teto do circuito, também de verdade");
+  ok(/\{lotado\n|\{lotado$|\{lotado\s/m.test(filaC),
+    "e decide a frase pelo resultado dessa comparação");
   ok(/falta o organizador te/.test(filaC),
     "quando NÃO está lotado, diz a verdade: falta o organizador incluir");
   ok(/todas as \{state\.maxAtletas\} vagas ocupadas/.test(filaC),

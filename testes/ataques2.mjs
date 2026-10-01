@@ -199,6 +199,70 @@ const cenPort = (pub) => montarMotor({
     "P16 o anônimo RECEBE wo_culposos_temporada em circuito público — deliberado: é o 2º desempate do Cap. 09, e sem ele o ranking público não é verificável");
 }
 
+secao("O dado de saúde do W.O. só chega por caminho autenticado");
+{
+  // A `justificativa` de um W.O. é texto livre onde o atleta explica por que não vai
+  // jogar: dado de SAÚDE (art. 5º, II da LGPD). A tabela tem SELECT para `anon`, e a
+  // leitura do app NÃO NOMEAVA COLUNA NENHUMA — sem `select`, o PostgREST devolve
+  // tudo. O texto de cinco pessoas reais ficou legível por qualquer visitante.
+  //
+  // O texto já saiu do banco em 30/09 (saneamento rodado pelo Juliano, conferido:
+  // 0 linhas com texto). Isto fecha a PORTA, que é o que faltava para a frase do
+  // consentimento deixar de ser falsa.
+  //
+  // ⚠️ A ORDEM IMPORTA e está nas três asserções abaixo: o motor passa a OFERECER
+  // por caminho autenticado, o app para de PEDIR pelo caminho aberto, e só então a
+  // permissão fecha. Inverter derruba o app — a leitura pede todas as colunas, e
+  // revogar o acesso a uma faz a leitura INTEIRA falhar com erro de permissão. Foi
+  // assim que o app caiu em 07/09.
+  const { readFileSync } = await import("node:fs");
+  const fonteApp = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  const fonteMotor = readFileSync(new URL("../supabase/functions/admin-action/index.ts", import.meta.url), "utf8");
+
+  // (1) a leitura aberta NOMEIA as colunas, e as duas sensíveis ficam de fora
+  const iLe = fonteApp.indexOf("getSolicitacoesWo: () =>");
+  ok(iLe > 0, "a leitura aberta de solicitações foi localizada");
+  const leitura = fonteApp.slice(iLe, fonteApp.indexOf("\n", iLe));
+  ok(/select=/.test(leitura),
+    "a leitura aberta NOMEIA as colunas — sem `select` o PostgREST devolve tudo que a chave pode ler");
+  ok(!/\bjustificativa\b/.test(leitura),
+    "e NÃO pede a justificativa (dado de saúde)");
+  ok(!/\bcomprovante_url\b/.test(leitura),
+    "nem o comprovante (o atestado médico)");
+  ok(/\batleta_nome\b/.test(leitura) && /\bstatus\b/.test(leitura),
+    "e continua pedindo o que a tela precisa para listar as pendências");
+
+  // (2) o motor oferece o caminho autenticado, escopado no circuito
+  ok(/case "LER_JUSTIFICATIVA_WO"/.test(fonteMotor),
+    "o motor tem a ação autenticada que entrega a justificativa");
+  const iAcao = fonteMotor.indexOf('case "LER_JUSTIFICATIVA_WO"');
+  const acao = fonteMotor.slice(iAcao, fonteMotor.indexOf("\n      case ", iAcao + 10));
+  ok(/\.eq\("circuito_id", circuitoId\)/.test(acao),
+    "e ela é ESCOPADA no circuito — organizador de um circuito não lê a justificativa de outro");
+  ok(/"LER_JUSTIFICATIVA_WO"/.test(fonteMotor.slice(fonteMotor.indexOf("const ACOES_ORG"), fonteMotor.indexOf("const ACOES_ORG") + 1200)),
+    "e está em ACOES_ORG — quem decide o W.O. é o organizador do circuito, e ninguém age fora do seu");
+
+  // (3) o mapeador não espera mais os campos do caminho aberto
+  const iMap = fonteApp.indexOf("const solicitacoesWoMapped");
+  const mapeador = fonteApp.slice(iMap, fonteApp.indexOf("}));", iMap));
+  ok(!/justificativa: s\.justificativa/.test(mapeador),
+    "o mapeador NÃO lê mais a justificativa da leitura aberta");
+  ok(!/comprovanteUrl: s\.comprovante_url/.test(mapeador),
+    "nem o comprovante");
+
+  // (4) a tela busca sob demanda, e DIZ quando não conseguiu
+  ok(/<JustificativaWo id=\{s\.id\}/.test(fonteApp),
+    "a tela de pendências busca o texto pelo componente autenticado");
+  const iComp = fonteApp.indexOf("function JustificativaWo(");
+  const comp = fonteApp.slice(iComp, fonteApp.indexOf("\nfunction ", iComp + 10));
+  ok(/LER_JUSTIFICATIVA_WO/.test(comp),
+    "e o componente chama a ação autenticada, não a tabela");
+  ok(/Não deu para carregar a justificativa/.test(comp),
+    "e DIZ quando não conseguiu, em vez de mostrar «—» como se não houvesse motivo — a tela não mente por omissão");
+  ok(/O atleta não escreveu um motivo/.test(comp),
+    "e distingue «não carregou» de «não há motivo escrito», que são coisas diferentes para quem vai decidir");
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 secao("ANONIMIZAR — escopo e checagem de erro dos três comandos");
 const cenAnon = () => montarMotor({

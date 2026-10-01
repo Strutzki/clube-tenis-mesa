@@ -269,7 +269,21 @@ const db = {
   insertMensagemEnviada: (data) => supaFetch("mensagens_enviadas", { method:"POST", body: JSON.stringify(data) }),
 
   // Solicitações de W.O. Justificado (atleta sinaliza que não vai jogar; admin aprova/recusa)
-  getSolicitacoesWo: () => supaFetch(`solicitacoes_wo?circuito_id=eq.${CIRCUITO_ATIVO}&order=criado_em.desc&limit=200`),
+  // ⚠️ ESTA LEITURA NÃO NOMEAVA COLUNA NENHUMA até 01/10/2026 — e sem `select` o
+  // PostgREST devolve TUDO que a chave pode ler, inclusive a `justificativa`, que é
+  // texto livre onde o atleta explica por que não vai jogar: dado de SAÚDE. Com
+  // SELECT para `anon` na tabela, o texto de cinco pessoas reais ficou legível por
+  // qualquer visitante do site.
+  //
+  // Agora as colunas são nomeadas, e as duas sensíveis (`justificativa` e
+  // `comprovante_url`) ficam DE FORA. O organizador, que precisa do texto para
+  // decidir o W.O., o pede pelo caminho autenticado (`LER_JUSTIFICATIVA_WO`), uma
+  // solicitação por vez, escopado no circuito dele.
+  //
+  // Nomear as colunas é também o que permite a permissão fechar depois: enquanto a
+  // leitura pedisse tudo, revogar o acesso a uma coluna faria a leitura INTEIRA
+  // falhar com erro de permissão — a armadilha que derrubou o app em 07/09.
+  getSolicitacoesWo: () => supaFetch(`solicitacoes_wo?circuito_id=eq.${CIRCUITO_ATIVO}&select=id,match_id,atleta_id,atleta_nome,adversario_id,adversario_nome,round,status,criado_em,respondido_em,motivo_recusa,notificado_solicitante,notificado_adversario&order=criado_em.desc&limit=200`),
   insertSolicitacaoWo: (data) => supaFetch("solicitacoes_wo", { method:"POST", body: JSON.stringify(data) }),
   updateSolicitacaoWo: (id, data) => supaFetch(`solicitacoes_wo?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data) }),
   deleteSolicitacaoWo: (id) => supaFetch(`solicitacoes_wo?id=eq.${id}`, { method:"DELETE" }),
@@ -5931,7 +5945,9 @@ export default function App() {
       const solicitacoesWoMapped = (solicitacoesWoLog||[]).map(s => ({
         id: s.id, matchId: s.match_id, athleteId: s.atleta_id, athleteName: s.atleta_nome,
         adversarioId: s.adversario_id, adversarioNome: s.adversario_nome, round: s.round,
-        justificativa: s.justificativa, comprovanteUrl: s.comprovante_url,
+        // `justificativa` e `comprovanteUrl` NÃO vêm mais daqui: são dado de saúde e
+        // saíram da leitura aberta. A tela de pendências os busca por caminho
+        // autenticado, por solicitação, quando o organizador vai decidir.
         status: s.status, criadoEm: s.criado_em, respondidoEm: s.respondido_em,
         motivoRecusa: s.motivo_recusa,
         notificadoSolicitante: s.notificado_solicitante || false,
@@ -7803,7 +7819,7 @@ function AdminView({ setAcaoErro, state, dispatch, tab, setTab, telefones, garan
   if (tab === "inscricoes") return <AdminInscricoes state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} />;
   if (tab === "etapa") return <AdminEtapa state={state} dispatch={dispatch} />;
   if (tab === "ranking") return <RankingView state={state} isAdmin/>;
-  if (tab === "pendencias") return <AdminPendencias state={state} dispatch={dispatch} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} />;
+  if (tab === "pendencias") return <AdminPendencias chamarAdminAction={chamarAdminAction} state={state} dispatch={dispatch} setTab={setTab} telefones={telefones} garantirTelefones={garantirTelefones} urlComprovante={urlComprovante} anonimizarAtleta={anonimizarAtleta} />;
   if (tab === "historico") return <AdminHistorico key={circuitoSelId} state={state} />;
   if (tab === "mensagens") return <AdminMensagens key={circuitoSelId} state={state} dispatch={dispatch} telefones={telefones} garantirTelefones={garantirTelefones} msgsStatus={msgsStatus} />;
   if (tab === "financeiro") return <AdminFinanceiro key={circuitoSelId} state={state} chamarAdminAction={chamarAdminAction} loadFromSupabase={loadFromSupabase} />;
@@ -10433,7 +10449,58 @@ function ComprovanteBotao({ path, urlComprovante }) {
   );
 }
 
-function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta }) {
+// O TEXTO DE SAÚDE CHEGA POR AQUI, E SÓ AQUI.
+//
+// Busca a justificativa do W.O. por caminho autenticado quando o card aparece, em
+// vez de ela vir na leitura aberta do circuito. Três estados visíveis de propósito:
+// carregando, erro (com motivo e botão de tentar de novo) e pronto. O organizador
+// precisa saber se está vendo o texto ou a ausência dele — "—" para os dois casos
+// seria a tela mentindo por omissão, que é o defeito que esta onda mais encontrou.
+function JustificativaWo({ id, chamarAdminAction, urlComprovante }) {
+  const [estado, setEstado] = useState("carregando");
+  const [texto, setTexto] = useState("");
+  const [comprovante, setComprovante] = useState(null);
+  const [erro, setErro] = useState("");
+  const [tentativa, setTentativa] = useState(0);
+
+  useEffect(() => {
+    let vivo = true;
+    setEstado("carregando");
+    (async () => {
+      try {
+        const d = await chamarAdminAction("LER_JUSTIFICATIVA_WO", { id });
+        if (!vivo) return;
+        setTexto(String(d?.justificativa || ""));
+        setComprovante(d?.comprovanteUrl || null);
+        setEstado("pronto");
+      } catch (e) {
+        if (!vivo) return;
+        setErro(e?.message || "não deu para carregar");
+        setEstado("erro");
+      }
+    })();
+    return () => { vivo = false; };
+  }, [id, tentativa]);
+
+  const caixa = { fontSize:12, color:"#F0EAE0", background:"rgba(0,0,0,0.15)", borderRadius:8, padding:"8px 10px", marginBottom:8, lineHeight:1.5 };
+
+  if (estado === "carregando") return <div style={{...caixa, color:"#7d9188"}}>Carregando a justificativa…</div>;
+  if (estado === "erro") return (
+    <div style={{...caixa, color:"#c25a45"}}>
+      Não deu para carregar a justificativa ({erro}).{" "}
+      <span onClick={()=>setTentativa(t=>t+1)} style={{textDecoration:"underline",cursor:"pointer"}}>Tentar de novo</span>
+      <div style={{fontSize:11,color:"#7d9188",marginTop:4}}>Decidir sem ler o motivo não é recomendado.</div>
+    </div>
+  );
+  return (
+    <>
+      <div style={caixa}>{texto ? `"${texto}"` : "O atleta não escreveu um motivo."}</div>
+      {comprovante && <ComprovanteBotao path={comprovante} urlComprovante={urlComprovante} />}
+    </>
+  );
+}
+
+function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones, urlComprovante, anonimizarAtleta, chamarAdminAction }) {
   // Precisa de telefone pra notificar via WhatsApp depois de decidir um W.O.
   useEffect(() => { garantirTelefones(); }, []);
 
@@ -10597,10 +10664,7 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
               <span style={{fontFamily:T.mono,fontSize:10,color:"#7d9188",letterSpacing:0.5,textTransform:"uppercase"}}>Rodada {s.round}</span>
             </div>
             {s.adversarioNome && <div style={{fontSize:11,color:"#7d9188",marginBottom:8}}>Adversário: {s.adversarioNome}</div>}
-            <div style={{fontSize:12,color:"#F0EAE0",background:"rgba(0,0,0,0.15)",borderRadius:8,padding:"8px 10px",marginBottom:8,lineHeight:1.5}}>"{s.justificativa || "—"}"</div>
-            {s.comprovanteUrl && (
-              <ComprovanteBotao path={s.comprovanteUrl} urlComprovante={urlComprovante} />
-            )}
+            <JustificativaWo id={s.id} chamarAdminAction={chamarAdminAction} urlComprovante={urlComprovante} />
             {!recusandoWo[s.id] ? (
               <div style={{display:"flex",gap:8}}>
                 <Btn small onClick={()=>aprovarWo(s)} color="#6a9d7a">✅ Aprovar (W.O. Justificado)</Btn>

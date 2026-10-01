@@ -468,7 +468,7 @@ async function ehOrganizadorDe(atletaId: string, circuitoId: string): Promise<bo
 const ACOES_ORG = new Set([
   "INICIAR_ETAPA","AVANCAR_RODADA","PROCESSAR_RODADA",
   "VALIDATE_RESULT","ADMIN_IMPUTAR_RESULTADO","DESFAZER_VALIDACAO","MARCAR_RESULTADO_COMUNICADO",
-  "APLICAR_WO","RESPONDER_WO","MARCAR_WO_NOTIFICADO",
+  "APLICAR_WO","RESPONDER_WO","MARCAR_WO_NOTIFICADO","LER_JUSTIFICATIVA_WO",
   "INSCRICAO_VALIDAR","INCLUIR_NO_CIRCUITO","RECUSAR_CIRCUITO","ARQUIVAR_ATLETA","DESARQUIVAR_ATLETA","DEFINIR_DESCONTO_ATLETA",
   "DEFINIR_INSCRICOES_ABERTAS","DEFINIR_PUBLICO","DEFINIR_AUTO_VALIDAR","DEFINIR_CONFIG_CIRCUITO",
   // Financeiro (config + pagamentos): decisão do Juliano = "depende do financeiro por circuito".
@@ -2144,6 +2144,46 @@ Deno.serve(async (req) => {
         const { error } = await supabase.from("solicitacoes_wo").update({ [campo]: true }).eq("id", id).eq("circuito_id", circuitoId);
         if (error) throw error;
         return jsonResponse({ sucesso: true });
+      }
+
+      // ── LER_JUSTIFICATIVA_WO — o unico caminho AUTENTICADO para o dado de saude ──
+      //
+      // Existe desde 01/10/2026, e e a metade do conserto que o app precisava antes
+      // de a permissao fechar.
+      //
+      // O problema: a `justificativa` de um W.O. e texto livre onde o atleta explica
+      // por que nao vai jogar -- dado de SAUDE (art. 5o, II da LGPD). A tabela
+      // `solicitacoes_wo` tem SELECT para `anon`, e o app lia a tabela SEM nomear
+      // coluna nenhuma, entao o PostgREST devolvia tudo. Resultado: o texto de cinco
+      // pessoas reais ficou legivel por qualquer visitante do site. O texto ja foi
+      // saneado do banco em 30/09; o que falta e fechar a PORTA.
+      //
+      // Nao da para fechar so a permissao: a leitura do app pede todas as colunas, e
+      // tirar o acesso a uma faria a leitura INTEIRA falhar com erro de permissao --
+      // a mesma armadilha que derrubou o app em 07/09. E o organizador PRECISA do
+      // texto: e com ele que decide aprovar ou recusar o W.O.
+      //
+      // Entao o caminho e este: o organizador pede o texto por aqui, autenticado e
+      // escopado no circuito dele, UMA solicitacao por vez. O `anon` deixa de ter
+      // como pedir, porque o app para de pedir no `select` aberto.
+      //
+      // ⚠️ ORDEM DE SUBIDA: motor PRIMEIRO (passa a oferecer), app DEPOIS (passa a
+      // usar e para de pedir pelo caminho aberto), e a MIGRACAO POR ULTIMO -- so
+      // quando nada mais depender do acesso aberto. Fechar antes derruba o app.
+      case "LER_JUSTIFICATIVA_WO": {
+        const { id } = payload || {};
+        if (!id) return jsonResponse({ sucesso: false, erro: "id é obrigatório" }, 400);
+        // O `.eq("circuito_id", circuitoId)` e o escopo: organizador de um circuito
+        // nao le a justificativa de outro. Mesmo padrao do RESPONDER_WO.
+        const { data: sol, error: eSol } = await supabase.from("solicitacoes_wo")
+          .select("id,justificativa,comprovante_url,status")
+          .eq("id", id).eq("circuito_id", circuitoId).maybeSingle();
+        if (eSol) throw eSol;
+        if (!sol) return jsonResponse({ sucesso: false, erro: "Solicitação não é deste circuito." }, 403);
+        return jsonResponse({ sucesso: true, dados: {
+          justificativa: sol.justificativa ?? "",
+          comprovanteUrl: sol.comprovante_url ?? null,
+        } });
       }
 
       case "DEFINIR_RODADAS": {

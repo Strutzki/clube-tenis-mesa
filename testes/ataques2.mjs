@@ -1,5 +1,5 @@
 // Reconferência do Guardião de Segurança — 5bc6703
-import { montarMotor, comoAdmin, atleta, partida, circuito, BH, PIN, ok, igual, secao, placar } from "./ferramentas.mjs";
+import { montarMotor, comoAdmin, atleta, partida, circuito, BH, PIN, ok, igual, secao, placar , semComentarios} from "./ferramentas.mjs";
 import fs from "node:fs";
 
 const OUTRO = "33333333-aaaa-4444-8888-333333333333";
@@ -225,6 +225,11 @@ secao("O dado de saúde do W.O. só chega por caminho autenticado");
   const leitura = fonteApp.slice(iLe, fonteApp.indexOf("\n", iLe));
   ok(/select=/.test(leitura),
     "a leitura aberta NOMEIA as colunas — sem `select` o PostgREST devolve tudo que a chave pode ler");
+  // ⚠️ `select=*` PASSAVA pelas asserções de baixo, porque elas procuram o NOME da
+  // coluna e o asterisco não nomeia nada — pede tudo sem dizer o que. A mutação
+  // "volta a pedir tudo" ficou verde em três das quatro asserções por causa disso.
+  ok(!/select=\*/.test(leitura),
+    "e não usa `select=*`, que pede tudo sem nomear — o asterisco escapa de qualquer asserção que procure o nome da coluna");
   ok(!/\bjustificativa\b/.test(leitura),
     "e NÃO pede a justificativa (dado de saúde)");
   ok(!/\bcomprovante_url\b/.test(leitura),
@@ -236,7 +241,12 @@ secao("O dado de saúde do W.O. só chega por caminho autenticado");
   ok(/case "LER_JUSTIFICATIVA_WO"/.test(fonteMotor),
     "o motor tem a ação autenticada que entrega a justificativa");
   const iAcao = fonteMotor.indexOf('case "LER_JUSTIFICATIVA_WO"');
-  const acao = fonteMotor.slice(iAcao, fonteMotor.indexOf("\n      case ", iAcao + 10));
+  // ⚠️ `semComentarios` AQUI NÃO É ENFEITE. A primeira versão desta asserção leu o
+  // trecho cru, e o COMENTÁRIO logo acima da consulta cita `.eq("circuito_id",
+  // circuitoId)` para explicar o escopo. A mutação que REMOVEU o escopo da consulta
+  // passou VERDE, porque o texto continuava no comentário. É a quarta vez nesta
+  // sessão que a minha própria documentação engana a minha própria asserção.
+  const acao = semComentarios(fonteMotor.slice(iAcao, fonteMotor.indexOf("\n      case ", iAcao + 10)));
   ok(/\.eq\("circuito_id", circuitoId\)/.test(acao),
     "e ela é ESCOPADA no circuito — organizador de um circuito não lê a justificativa de outro");
   ok(/"LER_JUSTIFICATIVA_WO"/.test(fonteMotor.slice(fonteMotor.indexOf("const ACOES_ORG"), fonteMotor.indexOf("const ACOES_ORG") + 1200)),

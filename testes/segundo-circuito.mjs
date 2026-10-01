@@ -2108,6 +2108,90 @@ secao("O porteiro: o portão de autenticação, RODANDO a função");
       "depois de 5 tentativas erradas o freio tranca — e tranca ATÉ o PIN certo, que é o que impede adivinhar por força bruta");
   }
 
+  // ── 5b. O FREIO É POR ORIGEM — não tranca o resto do mundo ───────────────
+  //
+  // Até 01/10/2026 a contagem olhava `tentativa_em + sucesso` e mais nada, e a
+  // tabela não guardava de onde veio a tentativa. Então 5 erros de QUALQUER pessoa
+  // trancavam a entrada de TODOS por 15 minutos — inclusive o super-admin no
+  // próprio painel. Não precisava de ataque: bastava alguém achar o endereço e
+  // errar cinco vezes. Achado do Supervisor de Segurança.
+  {
+    const { motor } = await cenarioPorteiro();
+    const outro = { "x-forwarded-for": "198.51.100.7" };
+    for (let i = 0; i < 5; i++) await motor.chamar({ circuitoId: PRIV, pin: "9999" }, outro);
+    // A origem que errou está trancada…
+    const bloqueada = await motor.chamar({ circuitoId: PRIV, pin: PIN }, outro);
+    igual(bloqueada.status, 429, "a origem que errou 5 vezes fica trancada");
+    // …e QUEM NÃO ERROU continua entrando.
+    const minha = await motor.chamar({ circuitoId: PRIV, pin: PIN }, { "x-forwarded-for": "203.0.113.9" });
+    ok(minha.corpo?.sucesso === true,
+      `outra origem com o PIN certo NÃO é trancada pelo erro de terceiros (erro: ${JSON.stringify(minha.corpo?.erro)})`);
+  }
+
+  // ── 5c. O FREIO É POR PORTA — um erro numa função não tranca as outras ───
+  //
+  // As SEIS funções que pedem PIN usavam a MESMA contagem, e a tabela não guardava
+  // em qual porta o erro foi. Então errar o PIN na porta de resetar PIN trancava a
+  // porta da EXCLUSÃO DE DADOS, que é obrigação legal com prazo. E esta onda dobrou
+  // a superfície: a `circuito-dados` passou a usar o mesmo caderno.
+  {
+    const { banco, motor } = await cenarioPorteiro();
+    const minhaOrigem = "203.0.113.9";
+    // Cinco erros registrados em OUTRA porta, da MESMA origem.
+    for (let i = 0; i < 5; i++) {
+      banco.tabelas.tentativas_login_admin.push({
+        id: 900 + i, tentativa_em: new Date().toISOString(),
+        sucesso: false, porta: "resetar-pin-atleta", origem: minhaOrigem,
+      });
+    }
+    const r = await motor.chamar({ circuitoId: PRIV, pin: PIN }, { "x-forwarded-for": minhaOrigem });
+    ok(r.corpo?.sucesso === true,
+      `erro em OUTRA porta não tranca esta — a exclusão de dados não pode ser trancada de fora (erro: ${JSON.stringify(r.corpo?.erro)})`);
+  }
+
+  // ── 5d. FAIL-CLOSED: se não dá para conferir, RECUSA ────────────────────
+  //
+  // O defeito mais grave dos três, e o mais silencioso: o erro da contagem era
+  // descartado (`const { count }`), então banco fora do ar ou rede lenta devolvia
+  // `count` vazio, `(count ?? 0)` virava zero, `0 >= 5` dava falso e a trava
+  // LIBERAVA. Freio que abre ao quebrar não é freio.
+  {
+    const { banco, motor } = await cenarioPorteiro();
+    banco.recusar("tentativas_login_admin", "select", { message: "connection reset", code: "08006" });
+    const r = await motor.chamar({ circuitoId: PRIV, pin: PIN }, { "x-forwarded-for": "203.0.113.9" });
+    ok(r.corpo?.sucesso !== true,
+      "quando a contagem do freio FALHA, o acesso é recusado — não liberado");
+    igual(r.status, 503,
+      "e com 503 («não consegui conferir»), que é diferente do 429 («você excedeu») — o app trata as duas de forma diferente");
+  }
+
+  // ── 5e. AS SEIS PORTAS TÊM A MESMA TRAVA ────────────────────────────────
+  //
+  // Não existe pasta compartilhada entre Edge Functions neste projeto, então a
+  // trava é a mesma forma repetida seis vezes. Consertar uma e esquecer cinco é
+  // exatamente como este defeito sobreviveu — por isso a varredura, e não
+  // asserções soltas por função.
+  {
+    const { readFileSync } = await import("node:fs");
+    const PORTAS = ["admin-action", "circuito-dados", "anonimizar-atleta",
+                    "resetar-pin-atleta", "comprovante-url", "despachos-do-dia"];
+    for (const nome of PORTAS) {
+      const src = readFileSync(new URL(`../supabase/functions/${nome}/index.ts`, import.meta.url), "utf8");
+      ok(/from\("tentativas_login_admin"\)/.test(src),
+        `[${nome}] usa a tabela de tentativas (se parar de usar, esta varredura precisa saber)`);
+      ok(/\.eq\("porta", PORTA\)[\s\S]{0,80}\.eq\("origem", origem\)|\.eq\("porta", PORTA\)\.eq\("origem", origem\)/.test(src),
+        `[${nome}] a contagem filtra por PORTA e por ORIGEM`);
+      ok(/insert\(\{ sucesso: ok[A-Za-z]*, porta: PORTA, origem \}\)/.test(src),
+        `[${nome}] e a tentativa é anotada com a porta e a origem`);
+      ok(/if \(errConta\)/.test(src),
+        `[${nome}] e o erro da contagem é CONFERIDO — fail-closed`);
+      ok(new RegExp(`const PORTA = "${nome}"`).test(src),
+        `[${nome}] com o nome da própria porta, não o de outra`);
+      ok(/x-forwarded-for/.test(src),
+        `[${nome}] e lê a origem do cabeçalho da chamada`);
+    }
+  }
+
   // ── 6. `pin` COM `telefone` não entra pelo caminho do super-admin ────────
   // O `!telefone` é a chave da distinção entre organizador e super-admin. Sem
   // ele, um telefone qualquer com o PIN global entraria por um caminho que não

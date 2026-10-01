@@ -31,12 +31,32 @@ async function bhId(): Promise<string> {
   return _bhId;
 }
 
-async function pinValido(pin: string): Promise<boolean> {
+// ── TRAVA DE TENTATIVAS DE PIN — POR ORIGEM E POR PORTA, E FAIL-CLOSED ──────────
+// Ver o comentario longo no `admin-action/index.ts` para o historico completo. Em
+// resumo, a versao anterior: (1) trancava TODO MUNDO porque nao sabia a origem;
+// (2) LIBERAVA quando a contagem dava erro, porque o erro era descartado; (3) usava
+// a MESMA contagem das outras cinco funcoes, entao um erro numa trancava as seis --
+// inclusive a `anonimizar-atleta`, que tem prazo legal.
+//
+// Esta funcao devolve BOOLEANO (as outras devolvem {ok, motivo}), e por isso o
+// fail-closed aqui e `return false` -- recusar e o unico desfecho que ela sabe dar.
+const PORTA = "despachos-do-dia";
+
+function ipDaChamada(req: Request): string {
+  // Mesmo idioma que o `login-atleta` e o `athlete-action` ja usam.
+  return (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "desconhecida";
+}
+
+async function pinValido(pin: string, origem: string): Promise<boolean> {
   const desde = new Date(Date.now() - JANELA_MINUTOS * 60_000).toISOString();
-  const { count } = await supabase.from("tentativas_login_admin").select("*", { count: "exact", head: true }).gte("tentativa_em", desde).eq("sucesso", false);
+  const { count, error: errConta } = await supabase.from("tentativas_login_admin")
+    .select("*", { count: "exact", head: true })
+    .gte("tentativa_em", desde).eq("sucesso", false)
+    .eq("porta", PORTA).eq("origem", origem);
+  if (errConta) return false; // FAIL-CLOSED: nao conferiu, nao passa.
   if ((count ?? 0) >= MAX_TENTATIVAS) return false;
   const ok = pin === ADMIN_PIN;
-  await supabase.from("tentativas_login_admin").insert({ sucesso: ok });
+  await supabase.from("tentativas_login_admin").insert({ sucesso: ok, porta: PORTA, origem });
   return ok;
 }
 
@@ -184,7 +204,7 @@ Deno.serve(async (req) => {
       circuitos = data || [];
     } else {
       if (!pin) return json({ sucesso: false, erro: "pin é obrigatório" }, 400);
-      if (!(await pinValido(String(pin)))) return json({ sucesso: false, erro: "PIN inválido ou muitas tentativas." }, 401);
+      if (!(await pinValido(String(pin), ipDaChamada(req)))) return json({ sucesso: false, erro: "PIN inválido ou muitas tentativas." }, 401);
       const { data } = await supabase.from("circuitos").select("id,nome_circuito,sistema,publico,ativo,fase,rodadas_por_temporada,max_atletas").eq("ativo", true).order("nome_circuito", { ascending: true });
       circuitos = data || [];
     }

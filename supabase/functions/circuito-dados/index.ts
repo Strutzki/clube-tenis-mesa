@@ -103,6 +103,23 @@ function mergeAtletaCircuito(ca: any): any {
   };
 }
 
+// ── TRAVA DE TENTATIVAS DE PIN — POR ORIGEM E POR PORTA, E FAIL-CLOSED ──────────
+// Ver o comentario longo no `admin-action/index.ts` para o historico completo. Em
+// resumo, a versao anterior: (1) trancava TODO MUNDO porque nao sabia a origem;
+// (2) LIBERAVA quando a contagem dava erro, porque o erro era descartado; (3) usava
+// a MESMA contagem das outras cinco funcoes, entao um erro numa trancava as seis --
+// inclusive a `anonimizar-atleta`, que tem prazo legal.
+//
+// Aqui a trava e INLINE (nao ha `pinValido`), e o 503 do fail-closed e diferente do
+// 429 do bloqueio de proposito: "nao consegui conferir" e "voce excedeu" sao coisas
+// distintas, e o app trata as duas de forma diferente.
+const PORTA = "circuito-dados";
+
+function ipDaChamada(req: Request): string {
+  // Mesmo idioma que o `login-atleta` e o `athlete-action` ja usam.
+  return (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "desconhecida";
+}
+
 Deno.serve(async (req) => {
   const origin = req.headers.get("Origin") || "";
   const CORS_HEADERS = {
@@ -168,11 +185,15 @@ Deno.serve(async (req) => {
     // funcao viraria um oraculo para adivinhar o PIN global sem limite nenhum.
     if (!acesso && typeof pin === "string" && pin && !telefone) {
       const desde = new Date(Date.now() - 15 * 60_000).toISOString();
-      const { count } = await supabase.from("tentativas_login_admin")
-        .select("*", { count: "exact", head: true }).gte("tentativa_em", desde).eq("sucesso", false);
+      const origem = ipDaChamada(req);
+      const { count, error: errConta } = await supabase.from("tentativas_login_admin")
+        .select("*", { count: "exact", head: true }).gte("tentativa_em", desde).eq("sucesso", false)
+        .eq("porta", PORTA).eq("origem", origem);
+      // FAIL-CLOSED: nao conseguir conferir e motivo para RECUSAR, nunca para liberar.
+      if (errConta) return jsonResponse({ sucesso: false, erro: "indisponivel_tente_de_novo" }, 503);
       if ((count ?? 0) >= 5) return jsonResponse({ sucesso: false, erro: "muitas_tentativas" }, 429);
       const okSuper = !!ADMIN_PIN && pin === ADMIN_PIN;
-      await supabase.from("tentativas_login_admin").insert({ sucesso: okSuper });
+      await supabase.from("tentativas_login_admin").insert({ sucesso: okSuper, porta: PORTA, origem });
       if (okSuper) acesso = true;
     }
 

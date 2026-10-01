@@ -216,8 +216,9 @@ class Consulta {
     // SO DAO FALSO VERMELHO -- instrumento MAIS POBRE que a producao. Dao trabalho,
     // nao carimbam regressao:
     //   · `!left` (o `aplicarJuncao` so conhece `!inner`)
-    //   · `single()`/`maybeSingle()` trocam o erro injetado por PGRST116, o que faz
-    //     o ramo `telefone_duplicado` do INSCREVER ser intestavel
+    //   · (`single()`/`maybeSingle()` trocavam o erro injetado por PGRST116 e
+    //     tornavam o `telefone_duplicado` intestavel -- consertado em 01/10/2026:
+    //     as duas agora propagam o erro do banco antes de contar linhas.)
     //
     // RESTRICOES DE COLUNA: NOT NULL agora e modelado (ver `executar`). UNIQUE e
     // PARCIALMENTE tratado -- o `REGISTRAR_MENSAGEM_ENVIADA` trata o 23505 e tem
@@ -489,8 +490,25 @@ class Consulta {
     throw new Error(`banco-falso: operacao "${this.operacao}" desconhecida`);
   }
 
+  // ⚠️ O `if (r.error) return r;` DAS DUAS ENTROU EM 01/10/2026.
+  //
+  // Antes elas chamavam `executar()` e olhavam SÓ o `data`, ignorando o `error`.
+  // Consequencia: uma recusa injetada por `banco.recusar(...)` devolvia
+  // `{ data: null, error: {code:"23505"} }`, o `linhas` virava `[]`, o tamanho nao
+  // era 1, e o erro REAL era substituido por PGRST116 ("esperava 1 linha"). Um erro
+  // de banco engolido por um erro de forma.
+  //
+  // Isso tornava INTESTAVEL o ramo `telefone_duplicado` do INSCREVER -- que e o
+  // caminho que decide se duas pessoas podem ficar com o mesmo telefone, e telefone
+  // e o login do atleta em todos os circuitos. O Supervisor de Seguranca classificou
+  // como "so da falso vermelho", e e verdade que nao carimbava regressao; mas o
+  // efeito colateral era uma area do motor sem portao possivel.
+  //
+  // Em producao o PostgREST devolve o 23505 com ou sem `.single()`: a violacao de
+  // unicidade acontece ANTES de qualquer questao de quantas linhas voltaram.
   single() {
     const r = this.executar();
+    if (r.error) return r;
     const linhas = r.data || [];
     if (linhas.length !== 1) {
       return { data: null, error: { message: `esperava 1 linha em ${this.tabela}, achou ${linhas.length}`, code: "PGRST116" }, count: null };
@@ -500,6 +518,7 @@ class Consulta {
 
   maybeSingle() {
     const r = this.executar();
+    if (r.error) return r;
     const linhas = r.data || [];
     if (linhas.length > 1) {
       return { data: null, error: { message: `esperava no maximo 1 linha em ${this.tabela}, achou ${linhas.length}` }, count: null };

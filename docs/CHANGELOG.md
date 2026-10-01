@@ -25,7 +25,31 @@ A entrada anterior (de `707c40f`) diz *"app primeiro, motor depois"* com duas fu
 dois guardiões sem conflito** em `434b16d`:
 
 > **1º `circuito-dados` · 2º `anonimizar-atleta` · 3º `admin-action` · 4º `athlete-action` ·
-> 5º APP** — e os passos **4 e 5 seguidos, sem intervalo**.
+> 5º APP · 6º `backup-clube-tenis-mesa` · 7º A MIGRAÇÃO** — e os passos **4 e 5 seguidos,
+> sem intervalo**.
+
+⚠️ **A LISTA CRESCEU DE NOVO EM 01/10/2026 — DE CINCO PARA SETE PASSOS**, e os dois novos
+são omissões que a rodada de supervisores achou:
+
+- **6º `backup-clube-tenis-mesa`** — é a **sexta função** da onda, e eu tratei a onda como
+  cinco durante um dia inteiro. Ela **apaga arquivos**, ganhou 38 linhas (a retenção de 6
+  meses que o Juliano aprovou), não tinha cópia do que está no ar, não tinha teste e não
+  estava no registro. A v6 do ar é de 10/07/2026 ⇒ **`git push` sozinho publicaria a
+  promessa de 6 meses com nada cumprindo ela.** Achado dos Supervisores de Confiabilidade
+  e Jurídico.
+- **7º `docs/migracoes/2026-10-01-fechar-acesso-dado-saude.sql`** — revoga o SELECT de
+  `anon` nas colunas `justificativa` e `comprovante_url` de `solicitacoes_wo` (dado de
+  saúde, art. 5º II). **TEM de ser o último.** O app que está no ar lê a tabela sem
+  nomear coluna, e o PostgREST recusa a leitura INTEIRA quando a chave perde acesso a
+  uma coluna pedida — a armadilha que derrubou o app em 07/09. O arquivo traz a
+  conferência de que o passo 5 já subiu: na tela de Pendências, o texto da justificativa
+  tem de aparecer **depois** de um "Carregando a justificativa…"; se aparecer na hora, o
+  app no ar ainda é o antigo.
+
+  O texto em si **já foi saneado em 30/09** (o Juliano rodou os quatro comandos; conferido
+  por mim: 0 linhas com texto, 7 partidas com o rótulo neutro, cópia em
+  `arquivo_wo_justificativas` com RLS ligada e nenhuma policy). A migração fecha a
+  **porta**; a sala já está vazia.
 
 O que mudou o raciocínio: a `anonimizar-atleta` tem dependência do app **na direção
 contrária** (a tela nova promete o que a v2 do ar não faz), e publicar a

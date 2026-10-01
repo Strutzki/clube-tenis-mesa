@@ -2236,6 +2236,76 @@ secao("O porteiro: o portão de autenticação, RODANDO a função");
   }
 }
 
+secao("Os números citados existem no arquivo de prova");
+{
+  // O DEFEITO Nº 1 DESTE PROJETO — "não cite de memória, rode e leia" — tinha
+  // acontecido DENTRO do número que existia para combatê-lo. O motor citava
+  // `93/1500 (6,2%)`, nenhum arquivo continha esse valor, e a única execução
+  // preservada dizia 83/1500 (5,5%) terminando em `FATAL ERROR: heap out of memory`.
+  // Três lugares — motor, tela e documento de governança — citando um valor
+  // irreproduzível. Achado do Supervisor de Regulamento.
+  //
+  // Esta seção fecha a porta: todo número citado tem de aparecer no ARQUIVO DE PROVA.
+  // Se alguém editar o comentário sem re-medir, ou re-medir sem atualizar o
+  // comentário, a bateria acusa. É o único jeito de o número não apodrecer de novo.
+  const { readFileSync } = await import("node:fs");
+  const prova = readFileSync(new URL("../docs/medicoes/2026-10-01-repeticao-grupos.txt", import.meta.url), "utf8");
+  const motorSrc = semComentarios(
+    readFileSync(new URL("../supabase/functions/admin-action/index.ts", import.meta.url), "utf8"),
+  );
+  const motorBruto = readFileSync(new URL("../supabase/functions/admin-action/index.ts", import.meta.url), "utf8");
+  const readme = readFileSync(new URL("./README.md", import.meta.url), "utf8");
+
+  // A prova existe e tem as seis células — leitura vazia é falha de medição.
+  const celulas = (prova.match(/atletas \/ /g) || []).length;
+  igual(celulas, 6, "o arquivo de prova tem as SEIS células medidas");
+  ok(/Semente fixa/.test(prova), "e declara que a semente é fixa, ou seja reproduzível");
+
+  // Cada número citado no motor tem de estar na prova. O motor é lido BRUTO aqui de
+  // propósito: os números vivem em COMENTÁRIO, e é justamente o comentário que mente.
+  for (const n of ["276/3000", "76/1500", "6.100"]) {
+    ok(motorBruto.includes(n), `o motor cita \`${n}\``);
+  }
+  for (const n of ["276/3000", "76/1500"]) {
+    ok(prova.includes(n), `e \`${n}\` ESTÁ no arquivo de prova`);
+  }
+  // ⚠️ A PRIMEIRA VERSÃO DISTO ERA `ok(!motorBruto.includes("93/1500"))` — e ficou
+  // VERMELHA acusando a minha PRÓPRIA EXPLICAÇÃO, que precisa nomear o valor errado
+  // para contar o que foi corrigido. Quinta vez nesta sessão que a documentação
+  // dispara a asserção. Apagar a explicação para deixar verde seria o pior desfecho
+  // possível: é ela que impede o número de apodrecer de novo.
+  //
+  // A asserção certa não pergunta "o texto errado desapareceu?", e sim "TODO número
+  // que o motor APRESENTA COMO RESULTADO está na prova?". Os resultados vivem nas
+  // linhas da tabela (`... .... N/M (X%)`); o valor antigo só aparece no parágrafo
+  // que explica a correção, e lá ele deve ficar.
+  const linhasTabela = [...motorBruto.matchAll(/elenco estavel, [^.]*\.+ (\d+\/\d+) \(([\d,]+)%\)/g)];
+  igual(linhasTabela.length, 2, "o motor apresenta DUAS taxas como resultado");
+  for (const m of linhasTabela) {
+    ok(prova.includes(m[1]),
+      `a taxa \`${m[1]}\` que o motor apresenta ESTÁ no arquivo de prova — era isto que faltava: o 93/1500 não estava em prova nenhuma`);
+  }
+  // E o valor antigo, quando aparece, tem de estar marcado como corrigido — nunca
+  // solto como se ainda valesse.
+  const iAntigo = motorBruto.indexOf("93/1500");
+  ok(iAntigo > 0, "a explicação nomeia o valor antigo (é o que torna a correção auditável)");
+  ok(/CORRIGIDOS|corrigid/i.test(motorBruto.slice(Math.max(0, iAntigo - 700), iAntigo + 300)),
+    "e o nomeia dentro do parágrafo que o declara CORRIGIDO — não solto, como se ainda valesse");
+
+  // A metade da decisão que nunca foi executada: o número no testes/README.md.
+  ok(/9,2 %/.test(readme) && /5,1 %/.test(readme),
+    "o `testes/README.md` traz as duas taxas — era a metade da decisão de 29/09 que ninguém executou");
+  ok(/2026-10-01-repeticao-grupos\.txt/.test(readme),
+    "e aponta o arquivo de prova ao lado do número");
+
+  // "invariante" era erro de categoria: o teto é limite MEDIDO, sem mecanismo provado.
+  ok(!/teto, invariante|TETO, invariante/.test(motorBruto),
+    "o motor não chama o teto de «invariante» — invariante se prova por mecanismo, e não há argumento de por que o guloso não pode repetir duas vezes");
+  ok(/limite MEDIDO|LIMITE MEDIDO/.test(motorBruto),
+    "e diz o que ele é: limite medido");
+  void motorSrc;
+}
+
 secao("Dinheiro — o estorno não derruba o pagamento da temporada errada");
 {
   // DOIS DEFEITOS COM A MESMA RAIZ, achados pelo Supervisor do Admin: o flag

@@ -1,0 +1,12 @@
+# MEDIÇÃO 01/10/2026 — repetição de confronto no modo grupos
+# Semente fixa; uma célula por processo (ver o cabeçalho do .mjs).
+# Motor em 5ab3fee. Node v24.17.0.
+
+8 atletas / grupos / justo  N=3000  ->  276/3000 com repetição (9.2%)  | distribuição  0:2724  1:276  | máx pares repetidos: 1  | mesmo par no máx 2x  | roster mudou: 0
+8 atletas / grupos / forte  N=1500  ->  76/1500 com repetição (5.1%)  | distribuição  0:1424  1:76  | máx pares repetidos: 1  | mesmo par no máx 2x  | roster mudou: 0
+9 atletas / grupos / forte  N=400  ->  0/400 com repetição (0.0%)  | distribuição  0:400  | máx pares repetidos: 0  | mesmo par no máx 1x  | roster mudou: 0
+10 atletas / grupos / forte  N=400  ->  0/400 com repetição (0.0%)  | distribuição  0:400  | máx pares repetidos: 0  | mesmo par no máx 1x  | roster mudou: 0
+12 atletas / grupos / forte  N=300  ->  0/300 com repetição (0.0%)  | distribuição  0:300  | máx pares repetidos: 0  | mesmo par no máx 1x  | roster mudou: 0
+8 atletas / sorteio / justo  N=500  ->  0/500 com repetição (0.0%)  | distribuição  0:500  | máx pares repetidos: 0  | mesmo par no máx 1x  | roster mudou: 0
+
+# TOTAL: 6100 temporadas, em 6 processos separados.

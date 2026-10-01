@@ -3558,16 +3558,22 @@ function RegulamentoView({ onBack, sistema, circuitoNome, versao }) {
             (5) O número SAIU do regulamento, por decisão do Guardião de
                 Regulamento depois de o Jurídico objetar. O argumento decisivo é de
                 engenharia, não de direito: a TAXA é propriedade dos RESULTADOS da
-                temporada, não do motor — ele mediu 9,3% com vencedor sorteado 50/50
-                e 6,2% com um favorito vencendo mais, mesmo código. Pior: o número
+                temporada, não do motor — ele mediu 9,2% com vencedor sorteado 50/50
+                e 5,1% com um favorito vencendo mais, mesmo código. (Os valores que
+                estavam aqui, 9,3% e 6,2%, foram corrigidos em 01/10/2026: nenhum
+                arquivo de prova continha o 6,2%, e a execução preservada terminava em
+                erro de memória. A medição virou arquivo versionado com semente fixa,
+                em `docs/medicoes/2026-10-01-repeticao-grupos.*`.) Pior: o número
                 TAXA A MELHORIA, porque fica falso no dia em que o pareamento do
                 grupos melhorar, e pela regra 7 isso custaria versão nova + re-aceite
                 de todo mundo. Texto com aceite tem de ser escrito de modo que
                 melhorar o produto nunca crie obrigação de re-aceite.
-                O que ficou no lugar é o TETO, que é invariante: ele mediu 6.700
-                temporadas com elenco estável e a distribuição só tem 0 e 1 — nunca
-                houve dois reencontros, e ninguém jogou contra o mesmo adversário
-                mais de duas vezes. Vale no cenário de 9,3% e no de 6,2%.
+                O que ficou no lugar é o TETO: em 6.100 temporadas com elenco estável
+                a distribuição só tem 0 e 1 — nunca houve dois reencontros, e ninguém
+                jogou contra o mesmo adversário mais de duas vezes. Vale nos dois
+                cenários de resultado. ⚠️ É LIMITE MEDIDO, não invariante: invariante
+                se prova por mecanismo, e não existe argumento de por que o guloso não
+                PODE repetir duas vezes — só a observação de que não repetiu.
                 ⚠️ E a frase é FALSA sem o escopo "com o grupo completo": com o
                 elenco encolhendo ele mediu máximo 2, em 80 de 80 temporadas. Por
                 isso a última oração existe.

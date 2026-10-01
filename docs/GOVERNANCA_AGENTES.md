@@ -33,12 +33,13 @@ ensaios deram 9,9%, e o intervalo dos 400 ia de 6,6% a 12,5%. **Número de prome
 arredonda contra quem promete**, e amostra pequena não vira frase de regulamento.
 
 **Corolário 2 — por que o número saiu do regulamento.** A taxa é propriedade dos
-RESULTADOS da temporada, não do motor: 9,3% com vencedor sorteado 50/50, 6,2% com
+RESULTADOS da temporada, não do motor: 9,2% com vencedor sorteado 50/50, 5,1% com
 um favorito vencendo mais, mesmo código. E o número **taxa a melhoria** — fica
 falso no dia em que o pareamento melhorar, e pela regra 7 isso custaria versão
 nova + re-aceite de todo mundo. **Texto com aceite tem de ser escrito de modo que
 melhorar o produto nunca crie obrigação de re-aceite.** O que vai para o
-regulamento é o **teto** (invariante, medido em 6.700 temporadas); o **número**
+regulamento é o **teto** (limite MEDIDO — não invariante — em 6.100 temporadas,
+com a saída completa em `docs/medicoes/2026-10-01-repeticao-grupos.txt`); o **número**
 vive no comentário do motor e no `testes/README.md`, onde se atualiza sem tocar em
 recibo de ninguém.
 
@@ -256,6 +257,12 @@ enquanto **quatro rodadas inteiras** aconteciam por cima. A fonte de cada veredi
 o commit que fechou as condições dele; onde o commit não nomeia a dupla, está escrito
 **"não nomeado no registro"** em vez de um veredito inventado. Ver a seção de cima.
 
+**01/10/2026 — a tabela está COMPLETA.** A última linha sem veredito era a da dupla
+Marca/Visual; ela rodou e o supervisor devolveu REVISAR, registrado abaixo. A regra de
+escrever "não nomeado no registro" em vez de inventar continua valendo para a próxima
+onda — foi ela que impediu um veredito fabricado de entrar aqui e, por não ser
+preenchida com mentira, fez a lacuna ser resolvida medindo em vez de supondo.
+
 **Escopo da rodada: as 8 duplas completas.** A mudança toca **motor** (`admin-action`,
 `athlete-action`), **regra de competição** (Cap. 03, 07 e 09 do `vB-01`) e **dado pessoal**
 (`atletas.status`, `rating_inicial` global, telefone que é credencial de login) — três
@@ -277,7 +284,7 @@ das quatro coisas que o `CLAUDE.md` diz não terem conserto depois.
 | Jurídico/LGPD + supervisor | o recibo de consentimento que respondia sucesso sem gravar; o `vB-01` editado no lugar sob a regra 7 | **GO-com-condições** (`7965020`), e foi ele quem levantou **a condição bloqueante da 4ª rodada** (`434b16d`): o dado de saúde legível pelo visitante anônimo. Provou **rodando** que a `anonimizar-atleta` era um único `update` em `atletas` — o vínculo seguia ativo, o `INICIAR_ETAPA` ainda pareava o atleta, e o banco **continuava provando** um consentimento que o titular havia revogado. Provou também que a `promoverIdentidadeGlobal` punha o atleta do circuito novo **dentro do roster do BH**, rodando o `INICIAR_ETAPA` do BH e vendo os intrusos pareados contra atletas do BH. E foi dele a redação da retenção de 6 meses, com a exigência de que a frase **não** entrasse antes de o sistema cumpri-la |
 | Admin + supervisor | Despachos do Dia abortando; agenda de telefones; guarda do telefone vazio | **GO-com-condições** (`7965020`/`0bdc380`). Achou que o banco em memória **não modelava o `DEFAULT false`** de `rejeitado`/`validado`/`calculado`: qualquer cenário que gerasse partidas pelo motor e chamasse `PROCESSAR_RODADA` recebia `{processadas: 0}` e passava **verde sem processar nada**. E levantou a tela do organizador num circuito de **pontos**: a aba "Config" que não existe, o circuito que não aparecia no seletor sem F5, o botão "Justificado" que devolvia **400**, o painel de W.O. com números de rating, e a 5ª superfície do "Rating inicial" — a que dispara **na hora de aprovar**. Também achou que a correção do Bloco 2 era **inerte para o dono da plataforma**, porque o porteiro não tinha caminho para o PIN do super |
 | Atleta + supervisor | o atleta aprovado que não conseguia entrar; a mensagem de inscrição não concluída | **GO-com-condições** (`0bdc380`). A condição que valia a rodada: o Bloco 3 fez o atleta aprovado **conseguir** entrar, e ele caía no BH — com **um** circuito o `onAthleteLogin` não apontava o app para ele, então via ranking do BH, "Meus Jogos" vazio, um card pedindo que aceitasse o **regulamento do BH**, e no primeiro refresh levava **logout silencioso**, sem botão de trocar (o hub só aparece com 2+). Ou seja: *"não consegue entrar"* tinha virado *"entra e não chega a lugar nenhum"*. E o **aviso do 1º W.O. injustificado** que o Cap. 07 do `vB-01` promete e **não existia** — o atleta podia ser suspenso no 2º sem nunca ter sido avisado do 1º, em texto que ele assina |
-| Marca/Visual + supervisor | o aviso novo no modal de edição e o texto do Cap. 03 na tela | **Não nomeado no registro.** Os commits desta série não atribuem veredito a esta dupla, e o Supervisor de Curadoria **não o inventa**. O que há de rastreável no escopo dela foi feito: os textos de tela do Cap. 03 alinhados nas três superfícies, o rodapé do ranking ("culposos" → "injustificados", 6 critérios), o banner do ranking vazio, e a cor semântica saindo do texto pequeno (asserção de contraste na rodada de 28/09). ⚠️ **Se esta dupla não rodou, o passo 3 do rito não está cumprido para ela** — e a mudança tocou motor, banco e dado pessoal, o que exige **as 8 completas**. Confirmar antes do de acordo |
+| Marca/Visual + supervisor | o aviso novo no modal de edição e o texto do Cap. 03 na tela | **RODOU, e o supervisor devolveu REVISAR** — registrado em 01/10/2026, fechando a lacuna que o Supervisor de Curadoria apontou e corretamente se recusou a preencher por conta própria. O veredito do supervisor: a dupla atribuiu à onda defeitos de paleta que a **precedem** — `#c25a45` aparece 61× na base contra +2 no diff da onda. Eu conferi e concordei com a crítica, e disse ao designer para não persegui-los. E os números de contraste do parecer estavam **inflados**: 8,97/10,42 alegados contra 7,83/9,33 medidos. O que sobrevive do parecer e continua **ABERTO**: `#7d9188` tem contraste 4,41, abaixo do mínimo AA de 4,5, em ~200 ocorrências — **anterior a esta onda**, e é decisão do Juliano, não conserto desta leva. O que há de rastreável no escopo da dupla foi feito: textos do Cap. 03 alinhados nas três superfícies, o rodapé do ranking ("culposos" → "injustificados", 6 critérios), o banner do ranking vazio, e a cor semântica saindo do texto pequeno |
 | Curador + supervisor | acervo e drift | **GO-com-condições** — ver abaixo |
 
 **Curador do Projeto — GO-com-condições (29/09/2026).** Documentação auditada e
@@ -298,9 +305,15 @@ gerador sem proteção. As três estão em `docs/ROADMAP.md`, "Decisões ainda e
 ser levado ao Juliano** — é o passo 3 do rito, e ele antecede o passo 4.
 ✅ **As sete linhas foram preenchidas em 29/09/2026 (noite)** pelo Supervisor de Curadoria,
 a partir das mensagens de commit. **Uma ressalva fica aberta, e ela é do tipo que o passo 3
-existe para pegar:** a dupla **Marca/Visual** não tem veredito atribuído em registro nenhum.
-Este aviso, portanto, **continua valendo** para ela — e o registro de que ele ficou aberto
-por quatro rodadas está na seção acima.
+existe para pegar:** a dupla **Marca/Visual** não tinha veredito atribuído em registro
+nenhum, e o Supervisor de Curadoria se recusou — corretamente — a inventar um.
+
+**FECHADO em 01/10/2026:** a dupla rodou e o supervisor devolveu **REVISAR**. A linha
+da tabela acima traz o veredito. Com isso, o passo 3 do rito está cumprido para as
+oito duplas, e o aviso ⚠️ daquela tabela deixa de bloquear o resumo do de acordo
+— que era o portão que ficou aberto por quatro rodadas inteiras, com dois NO-GO e uma
+condição bloqueante por cima, porque **ninguém lia o portão que estava escrito no
+próprio arquivo que o define**.
 
 ### REGRA NOVA, 28/09/2026 (tarde) — conserto de instrumento é conserto de UM CAMINHO
 

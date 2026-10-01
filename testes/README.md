@@ -317,3 +317,42 @@ regulamento. Corrigido, e provado sabotando uma asserção do regulamento: o
   (ROADMAP 0.10.24) e o 2º critério (menos W.O. injustificados) tem asserção de
   fonte no `cmpRanking`. O **Sistema A** (`cmpRankingDB`) segue sem asserção.
 - O financeiro.
+
+## A taxa de repetição do modo grupos — onde o número vive
+
+A decisão de 29/09/2026 foi **tirar a taxa do regulamento** e guardá-la em dois lugares
+duráveis: o comentário do motor e **este arquivo**. A metade de cá nunca foi executada —
+o Supervisor de Regulamento mediu `grep` zero aqui — e foi exatamente a metade a que um
+leitor futuro recorreria.
+
+| cenário (8 atletas, elenco estável) | repetições | taxa |
+|---|---|---|
+| modo grupos, vencedor sorteado 50/50 | 276 / 3000 | **9,2 %** |
+| modo grupos, favorito vencendo mais | 76 / 1500 | **5,1 %** |
+| modo grupos, 9 · 10 · 12 atletas | 0 / 1100 | **0 %** |
+| modo sorteio, vencedor sorteado | 0 / 500 | **0 %** |
+
+**Prova:** `docs/medicoes/2026-10-01-repeticao-grupos.txt` — saída completa, **semente
+fixa**, uma célula por processo. Rodar de novo com os mesmos argumentos dá o mesmo
+resultado. 6.100 temporadas no total.
+
+**O que esses números corrigem.** O motor citava `93/1500 (6,2%)` e `6.700 temporadas`.
+Nenhum arquivo continha o 6,2% — a única execução preservada dizia 83/1500 (5,5%), e
+**terminava em `FATAL ERROR: heap out of memory`**, truncada no meio da lista. O total de
+6.700 não reconstituía de jeito nenhum (os papéis somavam 7.700 numa contagem e 4.700
+noutra). Três lugares — motor, tela e documento de governança — citando um valor que
+ninguém conseguia reproduzir, que é o defeito nº 1 deste projeto acontecendo dentro do
+número que existia para combatê-lo.
+
+**Por que uma célula por processo.** O `carregarFuncao` cria um módulo novo por
+temporada, e o Node guarda todo módulo importado para sempre: 6.100 temporadas num
+processo estouram a memória mesmo com 4 GB. E **não dá para cachear o módulo** — o
+`admin-action` tem estado no nível do módulo (`_bhId`, `_sistemaCache`), e reusá-lo faria
+um cenário ler o *sistema* de outro. É o erro que custou um teste inteiro em 29/09, e o
+módulo por chamada é o que garante o isolamento.
+
+**O teto é limite MEDIDO, não invariante.** Em todas as células a distribuição tem só 0 e
+1, e "mesmo par no máximo 2x". Mas invariante é o que se prova por mecanismo, e não existe
+argumento de por que o guloso *não pode* repetir duas vezes — só a observação de que não
+repetiu. O regulamento diz "**sempre** de um único confronto", que é absoluto: ou ganha
+mecanismo e portão com poder, ou cai. Pendência registrada.

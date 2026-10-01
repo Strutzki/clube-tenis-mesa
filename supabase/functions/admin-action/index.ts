@@ -935,16 +935,45 @@ function gerarPareamentoB(
   // Ela NAO esta no regulamento de proposito (decisao do Guardiao de Regulamento
   // em 29/09/2026, depois de objecao do Juridico), e mora aqui pelo motivo que ele
   // deu: a taxa e propriedade dos RESULTADOS da temporada, nao do motor --
-  //     8 atletas, elenco estavel, vencedor sorteado 50/50 .... 279/3000 (9,3%)
-  //     8 atletas, elenco estavel, favorito vencendo mais ..... 93/1500 (6,2%)
+  //     8 atletas, elenco estavel, vencedor sorteado 50/50 .... 276/3000 (9,2%)
+  //     8 atletas, elenco estavel, favorito vencendo mais ..... 76/1500 (5,1%)
+  //
+  // ⚠️ ESTES DOIS NUMEROS FORAM CORRIGIDOS EM 01/10/2026, e a correcao importa mais
+  // que os numeros. O comentario dizia "93/1500 (6,2%)" para o segundo cenario, e o
+  // Supervisor de Regulamento mostrou que NENHUM arquivo de prova continha esse valor:
+  // a unica execucao preservada dizia 83/1500 (5,5%), e ela TERMINAVA EM ERRO DE
+  // MEMORIA -- truncada no meio da lista. O total alegado de "6.700 temporadas" tambem
+  // nao reconstituia (os papeis somavam 7.700 numa contagem e 4.700 noutra).
+  //
+  // Ou seja: o defeito no 1 deste projeto -- "nao cite de memoria, rode e leia" --
+  // dentro de um numero que foi para o motor, para a tela e para o documento de
+  // governanca. Tres lugares citando um valor que ninguem conseguia reproduzir.
+  //
+  // A medicao agora e ARQUIVO VERSIONADO, com SEMENTE FIXA:
+  //     docs/medicoes/2026-10-01-repeticao-grupos.mjs   (como medir)
+  //     docs/medicoes/2026-10-01-repeticao-grupos.txt   (a saida, completa)
+  // Rodar de novo com os mesmos argumentos da o MESMO resultado. Conferir e rodar.
   // Mesmo codigo, taxas diferentes. E o numero TAXA A MELHORIA: fica falso no dia
   // em que o pareamento do grupos melhorar, e pela regra 7 isso custaria versao
   // nova do regulamento + re-aceite de todo mundo. Texto com aceite tem de ser
   // escrito de modo que melhorar o produto nunca crie obrigacao de re-aceite.
   //
-  // O que FOI para o regulamento e o TETO, invariante: 6.700 temporadas com elenco
-  // estavel, distribuicao so com 0 e 1 -- nunca dois reencontros, e ninguem
-  // enfrentou o mesmo adversario mais de duas vezes. Vale nos dois cenarios acima.
+  // O que FOI para o regulamento e o TETO: em 6.100 temporadas com elenco estavel
+  // (seis celulas, 8/9/10/12 atletas, nos dois cenarios de resultado e nos dois modos
+  // de pareamento), a distribuicao so tem 0 e 1 -- nunca dois reencontros, e ninguem
+  // enfrentou o mesmo adversario mais de duas vezes.
+  //
+  // ⚠️ E "LIMITE MEDIDO", NAO "INVARIANTE". A palavra estava errada e o Supervisor de
+  // Regulamento tinha razao: invariante e o que se prova por mecanismo, e nao existe no
+  // registro nenhum argumento de por que o guloso NAO PODE produzir dois reencontros --
+  // so a observacao de que nao produziu. Chamar medicao de invariante e o erro de
+  // categoria que este projeto cobra dos outros.
+  //
+  // E a consequencia e concreta: o texto do regulamento diz "SEMPRE de um unico
+  // confronto", que e absoluto e cai no primeiro contraexemplo -- custando versao nova
+  // + re-aceite de todo mundo, exatamente o custo que tirar a taxa evitava. Ou o
+  // "sempre" ganha mecanismo e portao com poder, ou ele tem de cair. Registrado como
+  // pendencia; nao se conserta com numero, e sim com argumento ou com texto mais fraco.
   //
   // ⚠️ METODO, sem o qual o numero apodrece: medicao de pareamento do modo grupos
   // SO VALE com vencedor sorteado e `PROCESSAR_RODADA` rodando entre os pares

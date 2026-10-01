@@ -2236,6 +2236,74 @@ secao("O porteiro: o portão de autenticação, RODANDO a função");
   }
 }
 
+secao("As três telas que paravam de falar com o atleta");
+{
+  // Três consertos do bloco 2 que eu fiz SEM ASSERÇÃO, e a mutação me pegou: sabotar
+  // o prazo de renovação deixou a bateria VERDE. Disciplina da casa é todo conserto
+  // nascer com asserção; estes três nasceram sem, e esta seção é a dívida paga.
+  const { readFileSync } = await import("node:fs");
+  const fonteApp = semComentarios(readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8"));
+
+  // ── 1. O LOGOUT DEIXA DE SER SILENCIOSO ──────────────────────────────────
+  // A carga do circuito encerra a sessão quando o atleta não está mais no roster, e
+  // fazia isso sem mensagem nem log. Todos os caminhos que chegam lá são legítimos
+  // (organizador removeu, temporada virou, circuito de que não é membro), e o atleta
+  // caía na tela de login sem uma palavra.
+  ok(/ctm_aviso_saida/.test(fonteApp),
+    "o logout por ausência no roster grava um aviso para a tela de login");
+  ok(/localStorage\.setItem\("ctm_aviso_saida"/.test(fonteApp),
+    "e no localStorage, que é o único lugar onde o aviso sobrevive à remontagem do app");
+  ok(/localStorage\.removeItem\("ctm_aviso_saida"\)/.test(fonteApp),
+    "e a tela de login o APAGA depois de ler — ninguém merece ver duas vezes");
+  ok(/3600_000|3600000/.test(fonteApp),
+    "com validade de uma hora: aviso velho não explica nada e só assusta");
+  ok(/Você saiu do circuito/.test(fonteApp),
+    "e a tela de entrada mostra o aviso com título próprio");
+  const iSai = fonteApp.indexOf('localStorage.setItem("ctm_aviso_saida"');
+  const janelaSai = fonteApp.slice(Math.max(0, iSai - 500), iSai);
+  ok(/console\.warn\(/.test(fonteApp.slice(iSai, iSai + 900)),
+    "e deixa rastro no console — o aviso é para o atleta, o log é para quem for investigar");
+
+  // ── 2. O CARD DE FILA CONTA AS VAGAS EM VEZ DE AFIRMAR LOTAÇÃO ───────────
+  // `pendente_circuito: true` é gravado em TODA aprovação, lotação ou não. Quem
+  // entrou com 12 de 20 vagas lia "todas as vagas ocupadas" — e a mensagem de
+  // WhatsApp era mais precisa que o app.
+  const iFilaC = fonteApp.indexOf("function FilaDeEsperaCard(");
+  ok(iFilaC > 0, "o card de fila foi localizado");
+  const filaC = fonteApp.slice(iFilaC, fonteApp.indexOf("\nfunction ", iFilaC + 10));
+  ok(/const dentro = /.test(filaC) && /state\.maxAtletas/.test(filaC),
+    "o card CONTA quantos estão dentro e compara com o teto do circuito");
+  ok(/lotado\s*$|lotado\n|\{lotado/.test(filaC),
+    "e decide a frase pelo resultado da conta");
+  ok(/falta o organizador te/.test(filaC),
+    "quando NÃO está lotado, diz a verdade: falta o organizador incluir");
+  ok(/todas as \{state\.maxAtletas\} vagas ocupadas/.test(filaC),
+    "e quando está lotado, diz o número — não uma afirmação vaga");
+
+  // ── 3. O PRAZO DE RENOVAÇÃO APARECE PARA O ATLETA ────────────────────────
+  // `janelaRenovacao` era chamada em três lugares — as duas mensagens de WhatsApp e o
+  // painel do admin — e em NENHUM na tela dele. A mensagem mandava "abrir o app para
+  // garantir a vaga" e o app não mostrava até quando. Os 7 dias de prioridade são do
+  // Cap. 13, texto que ele assinou.
+  const iRen = fonteApp.indexOf("function RenovacaoCard(");
+  ok(iRen > 0, "o card de renovação foi localizado");
+  const ren = fonteApp.slice(iRen, fonteApp.indexOf("\nfunction ", iRen + 10));
+  ok(/janelaRenovacao\(dataIni\)/.test(ren),
+    "o card do ATLETA calcula a janela de renovação — era a única das quatro telas que não calculava");
+  ok(/jan\.fechaTxt/.test(ren),
+    "e mostra a DATA do prazo, que é o que a mensagem de WhatsApp manda ele vir ver");
+  ok(/jan\.abreTxt/.test(ren),
+    "e a data em que a prioridade abre, para quem olha antes");
+  ok(/jan\.aberta/.test(ren) && /jan\.encerrada/.test(ren) && /jan\.jaAbriu/.test(ren),
+    "com os três estados distintos: ainda não abriu, aberta, encerrada");
+  ok(/diasAteFechar/.test(ren),
+    "e a contagem de dias quando o prazo está perto");
+  // A conta é UMA: três contas separadas foi o que permitiu a divergência de 27/09.
+  const chamadas = (fonteApp.match(/janelaRenovacao\(/g) || []).length - 1; // −1: a definição
+  ok(chamadas >= 4,
+    `as quatro telas usam a MESMA função (${chamadas} chamadas) — três contas separadas foi o que deixou o app se contradizer em 27/09`);
+}
+
 secao("O instrumento se confere — os quatro caminhos de gravação projetam colunas");
 {
   // POR QUE O INSTRUMENTO PRECISA DAS PRÓPRIAS ASSERÇÕES.

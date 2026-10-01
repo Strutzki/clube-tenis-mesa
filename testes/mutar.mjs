@@ -49,7 +49,45 @@ if (!re.test(antes)) {
   process.exit(2);
 }
 
+// PORTÃO 2b — ÂNCORA AMBÍGUA É FALHA. Acrescentado depois de eu sabotar a linha
+// ERRADA: havia duas `if (r.error) return r;` no mesmo arquivo, o `replace` troca só
+// a PRIMEIRA, e a bateria ficou verde — então a ferramenta me disse "a asserção não
+// protege a regra" sobre um conserto que estava protegido. Sabotar o lugar errado
+// não é resultado: é medição que não aconteceu, mesma regra do portão acima.
+const quantas = (antes.match(new RegExp(de, "sg")) || []).length;
+if (quantas > 1) {
+  console.error(`✗ RECUSADO: a âncora casa ${quantas} vezes em ${arquivo}, e só a PRIMEIRA seria trocada.`);
+  console.error('  Sabotar o lugar errado dá verde falso. Torne a âncora única — no modo "s" o "." atravessa linha.');
+  process.exit(2);
+}
+
+// PORTÃO 2c — a substituição não pode trazer barra-n literal. TRÊS medições minhas
+// foram perdidas assim nesta sessão: o shell passa `\n` como DOIS caracteres, o
+// `replace` o insere cru no fonte, o arquivo quebra de sintaxe, e a bateria "fica
+// vermelha" por motivo nenhum — a sabotagem nunca foi testada e eu quase concluí
+// coisa errada sobre a asserção.
+if (para.includes(String.fromCharCode(92) + "n")) {
+  console.error('✗ RECUSADO: a substituição contém barra-n literal, que entraria cru no arquivo e quebraria a sintaxe.');
+  console.error('  Use o modo "s" com "." para atravessar a linha, ou passe a substituição sem quebra de linha.');
+  process.exit(2);
+}
+
 writeFileSync(arquivo, antes.replace(re, para));
+
+// PORTAO 2d — MOSTRAR O QUE FOI SABOTADO, sempre.
+// Acrescentado depois de tres medicoes perdidas na mesma sessao, todas por sabotar
+// algo diferente do que eu pensava: duas por barra-n literal quebrando a sintaxe, e
+// uma porque a ancora casou dentro de um COMENTARIO que citava o proprio codigo.
+// Nos tres casos a saida parecia um resultado e nao era. Imprimir o diff torna o
+// erro visivel na hora, em vez de virar conclusao errada sobre uma assercao.
+try {
+  const diff = execFileSync("git", ["diff", "--unified=0", "--", arquivo], { encoding: "utf-8" });
+  const linhas = diff.split("\n").filter((l) => /^[+-][^+-]/.test(l));
+  console.log("   sabotagem aplicada:");
+  linhas.slice(0, 6).forEach((l) => console.log("     " + l.trim().slice(0, 100)));
+  if (linhas.length > 6) console.log(`     … e mais ${linhas.length - 6} linha(s)`);
+  if (linhas.length === 0) console.log("     ⚠️ NENHUMA linha mudou — a sabotagem nao fez nada.");
+} catch (e) { console.log("   (nao consegui mostrar o diff: " + e.message + ")"); }
 let saida = 0, texto = "";
 try {
   texto = execFileSync("npm", ["run", "teste"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });

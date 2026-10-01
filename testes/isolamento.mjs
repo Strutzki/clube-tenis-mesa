@@ -163,6 +163,94 @@ secao("Virada de temporada não arrasta as partidas do vizinho");
   ok(!chamadaGlobal, "a virada não chama a função de arquivar global (a que apagaria tudo)");
 }
 
+secao("A virada zera TODO membro do circuito, não só os ativos");
+{
+  // Até 01/10/2026 a virada varria `.eq("status","ativo")`, então membro ARQUIVADO ou
+  // SUSPENSO atravessava com os pontos, vitórias e W.O. da temporada velha.
+  // Desarquivado depois, voltava competindo na temporada NOVA com números da ANTIGA.
+  // Achado do Supervisor de Regulamento.
+  //
+  // A virada não se desfaz, então este é o tipo de defeito que não tem conserto
+  // depois: no dia em que alguém notar, a temporada velha já foi arquivada.
+  const ARQ = "aaaaaaaa-0000-4000-8000-00000000aaaa";
+  const SUS = "aaaaaaaa-0000-4000-8000-00000000bbbb";
+  const { banco, motor } = await doisCircuitos({ partidasExtras: [] });
+  // Dois membros que NÃO estão ativos, com saldo da temporada que vai ser encerrada.
+  banco.tabelas.atletas.push({ id: ARQ, nome: "Arquivado", status: "arquivado" });
+  banco.tabelas.atletas.push({ id: SUS, nome: "Suspenso", status: "suspenso" });
+  banco.tabelas.circuito_atletas.push(
+    { id: "ca-arq", circuito_id: OUTRO, atleta_id: ARQ, status: "arquivado",
+      saldo_temp: 9, vitorias: 4, derrotas: 1, wo_culposos_temporada: 2 },
+    { id: "ca-sus", circuito_id: OUTRO, atleta_id: SUS, status: "suspenso",
+      saldo_temp: 7, vitorias: 3, derrotas: 2, wo_culposos_temporada: 2 },
+  );
+  await comoAdmin(motor, "PROCESSAR_RODADA", { circuitoId: OUTRO, round: 1 });
+  await comoAdmin(motor, "NOVA_TEMPORADA", { circuitoId: OUTRO, rotulo: "2026/2" });
+
+  const doArq = banco.acha("circuito_atletas", c => c.atleta_id === ARQ && c.circuito_id === OUTRO);
+  const doSus = banco.acha("circuito_atletas", c => c.atleta_id === SUS && c.circuito_id === OUTRO);
+  igual(doArq?.saldo_temp, 0, "o membro ARQUIVADO tem o saldo zerado pela virada");
+  igual(doArq?.vitorias, 0, "e as vitórias");
+  igual(doArq?.wo_culposos_temporada, 0,
+    "e o contador de W.O. — senão ele voltaria a um passo da suspensão por faltas de uma temporada encerrada");
+  igual(doSus?.saldo_temp, 0, "o SUSPENSO também");
+  igual(doSus?.wo_culposos_temporada, 0, "inclusive o contador que o suspendeu");
+
+  // E o acumulado da vida continua somando — zerar a temporada não apaga o histórico.
+  igual(doArq?.vitorias_total, 4, "mas as vitórias vão para o total da vida, como de todo mundo");
+
+  // ⚠️ O OUTRO LADO: zerar não pode dar POSIÇÃO FINAL a quem não estava jogando.
+  ok(!(doArq?.historico || []).some(h => h.temporada === "2026/2" || h.temporada === "2026/1"),
+    "e o arquivado NÃO recebe posição final no histórico — ele não disputou a temporada");
+}
+
+secao("O aviso da virada diz a verdade sobre o que zera e o que fica");
+{
+  // A VIRADA NÃO SE DESFAZ. É a pior hora possível para a tela mentir por omissão, e
+  // era o que ela fazia: prometia "o rating é preservado" em TODO circuito — inclusive
+  // nos de pontos, que não têm rating — e OMITIA três coisas que o servidor apaga: o
+  // contador de W.O. injustificados (2º desempate e painel de suspensão), o desconto de
+  // entrada no meio da temporada (dinheiro: volta a 100%) e a intenção de renovar.
+  // Achado do Supervisor do Admin.
+  //
+  // Cada item abaixo foi lido no motor. A asserção compara o TEXTO com o que o motor
+  // GRAVA, que é o único jeito de o aviso não apodrecer de novo.
+  const { readFileSync } = await import("node:fs");
+  const bruto = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  const motor = readFileSync(new URL("../supabase/functions/admin-action/index.ts", import.meta.url), "utf8");
+  const i = bruto.indexOf("Virar encerra a temporada atual");
+  ok(i > 0, "o aviso da virada foi localizado");
+  const aviso = bruto.slice(i, i + 2200);
+
+  // O que o motor ZERA tem de estar no aviso.
+  ok(/W\.O\. injustificados/.test(aviso),
+    "o aviso diz que o contador de W.O. injustificados zera — é o 2º desempate e o painel de suspensão");
+  ok(/wo_culposos_temporada: 0/.test(motor),
+    "e o motor realmente o zera (senão o aviso é que estaria errado)");
+  ok(/desconto de entrada no meio/.test(aviso),
+    "o aviso diz que o desconto de entrada volta a 100% — é dinheiro");
+  ok(/percentual_entrada_meio: 100/.test(motor),
+    "e o motor realmente o devolve a 100");
+  ok(/intenção de renovar/.test(aviso),
+    "o aviso diz que a intenção de renovar zera");
+  ok(/quer_renovar: false/.test(motor),
+    "e o motor realmente a zera");
+  ok(/arquivados e suspensos/.test(aviso),
+    "e diz que zera TODO membro, inclusive arquivado e suspenso — o conserto de 01/10");
+
+  // O que SOBREVIVE também tem de estar: meia verdade num aviso irreversível é mentira.
+  ok(/NÃO zera/.test(aviso),
+    "o aviso tem uma seção do que NÃO zera — meia verdade num aviso irreversível não serve");
+  ok(/desconto individual e a isenção/.test(aviso),
+    "e diz que o desconto individual e a isenção ATRAVESSAM a virada");
+  ok(!/desconto_pct: /.test(motor.slice(motor.indexOf("const updCfgN"), motor.indexOf("const updCfgN") + 900)),
+    "e o motor de fato NÃO os zera — o aviso está descrevendo o comportamento real, não o desejado");
+
+  // E a promessa do rating é ramificada por sistema.
+  ok(/SISTEMA_ATIVO === "B"/.test(aviso),
+    "a promessa sobre o rating ramifica por sistema — num circuito de pontos não há rating para preservar");
+}
+
 secao("Organizador só age no circuito dele");
 {
   const hash = await pinGuardado("9876");

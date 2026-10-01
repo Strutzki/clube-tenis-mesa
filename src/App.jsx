@@ -1652,6 +1652,30 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
   const [err, setErr] = useState("");
   const [conferindo, setConferindo] = useState(false); // trava enquanto o servidor confere a senha
 
+  // O AVISO DE SAÍDA, lido UMA vez e apagado.
+  //
+  // A carga do circuito encerra a sessão do atleta quando ele não está mais no
+  // roster — e até 01/10/2026 fazia isso em silêncio absoluto: nem mensagem, nem
+  // log. O atleta era jogado para esta tela sem uma palavra, e todos os caminhos que
+  // chegam lá são legítimos (o organizador removeu alguém, a temporada virou, ele
+  // abriu um circuito de que não é membro). Achado do Supervisor do Atleta.
+  //
+  // Vai pelo localStorage porque a remontagem do app desmonta tudo o que estava em
+  // memória: é o único lugar onde o aviso sobrevive do logout até esta tela. Lido e
+  // APAGADO no mesmo efeito — ninguém merece ver duas vezes.
+  const [avisoSaida, setAvisoSaida] = useState("");
+  useEffect(() => {
+    try {
+      const cru = localStorage.getItem("ctm_aviso_saida");
+      if (!cru) return;
+      localStorage.removeItem("ctm_aviso_saida");
+      const a = JSON.parse(cru);
+      // Aviso velho não serve: se o app ficou dias fechado, a frase já não explica
+      // nada e só assusta. Uma hora é folga suficiente para um refresh.
+      if (a?.texto && a?.em && (Date.now() - new Date(a.em).getTime()) < 3600_000) setAvisoSaida(String(a.texto));
+    } catch (e) { /* localStorage bloqueado ou JSON velho: sem aviso, nunca quebra a tela */ }
+  }, []);
+
   const s = {
     wrap: { minHeight:"100vh", background:T.verde, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, fontFamily:T.sans },
     logo: { width:132, height:132, borderRadius:"50%", overflow:"hidden", border:`1px solid ${T.borda}`, marginBottom:20 },
@@ -1669,6 +1693,13 @@ function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscric
   if (mode === "select") return (
     <div style={{minHeight:"100vh",background:T.telaFundo,fontFamily:T.sans,display:"flex",justifyContent:"center"}}>
       <div style={{width:"100%",maxWidth:390,minHeight:"100vh",padding:"14px 26px 26px",position:"relative",display:"flex",flexDirection:"column",alignItems:"center",boxSizing:"border-box",color:T.offwhite}}>
+
+        {avisoSaida && (
+          <div style={{width:"100%",maxWidth:360,background:"rgba(156,111,62,0.14)",border:"1px solid rgba(156,111,62,0.45)",borderRadius:12,padding:"12px 14px",marginBottom:14,fontSize:12.5,color:"#e8c9a0",lineHeight:1.6,zIndex:3}}>
+            <div style={{fontWeight:700,color:"#F0EAE0",marginBottom:4}}>Você saiu do circuito</div>
+            {avisoSaida}
+          </div>
+        )}
 
         {/* brilho superior */}
         <div style={{position:"absolute",top:0,left:0,right:0,height:340,background:"radial-gradient(120% 100% at 50% 0%, rgba(216,90,48,0.14), transparent 62%)",pointerEvents:"none"}}/>
@@ -5988,7 +6019,26 @@ export default function App() {
       if (sessAgora.athleteId) {
         const atletaCompleto = athletesMapped.find(a => a.id === sessAgora.athleteId);
         if (atletaCompleto) setCurrentAthlete(atletaCompleto);
-        else { setCurrentAthlete(null); localStorage.removeItem("ctm_sessao"); }
+        else {
+          // ⚠️ ISTO ERA LOGOUT EM SILÊNCIO ABSOLUTO até 01/10/2026: nem mensagem, nem
+          // log. O atleta era jogado para a tela de login sem uma palavra, e os
+          // caminhos que chegam aqui são todos legítimos — o organizador tirou ele do
+          // roster, a temporada virou, ele trocou para um circuito de que não é
+          // membro. Eu havia consertado UM gatilho na onda anterior e deixado o
+          // mecanismo. (Supervisor do Atleta.)
+          //
+          // Não dá para "não deslogar": ele realmente não está mais neste roster. O
+          // que dá é DIZER, e o aviso sobrevive à remontagem porque vai no
+          // localStorage — a tela de login o lê e apaga depois de mostrar.
+          try {
+            localStorage.setItem("ctm_aviso_saida", JSON.stringify({
+              em: new Date().toISOString(),
+              texto: "Sua sessão foi encerrada porque você não está mais na lista deste circuito. Isso acontece quando o organizador remove alguém, quando a temporada vira, ou se você abriu um circuito de que não participa. Entre de novo para ver seus circuitos.",
+            }));
+          } catch (e) { /* localStorage bloqueado: segue sem o aviso, nunca quebra o logout */ }
+          console.warn("[sessao] atleta", sessAgora.athleteId, "não está no roster de", CIRCUITO_ATIVO, "— sessão encerrada");
+          setCurrentAthlete(null); localStorage.removeItem("ctm_sessao");
+        }
       }
       setDbStatus("ok");
       return true;
@@ -9469,7 +9519,21 @@ function NovaTemporadaPanel({ state, dispatch }) {
         Pré-abertura ativa — <b>{nome}</b> ({state.proximaRotulo || "—"}), início {dataTxt}. Inscrições e pagamentos da próxima já estão abertos.
       </div>
       <div style={{fontSize:11,color:"#9db3a8",marginBottom:10,lineHeight:1.5}}>
-        Virar encerra a temporada atual: arquiva o ranking e as partidas no histórico permanente, zera stats, carrega os pagamentos da próxima e abre as inscrições da nova. O <b>rating é preservado</b>.
+        {/* ⚠️ ESTE TEXTO PROMETIA "o rating é preservado" EM TODO CIRCUITO — inclusive
+            nos de pontos, que não têm rating. E OMITIA três coisas que o servidor apaga:
+            o contador de W.O. culposos (que é o 2º desempate e o painel de suspensão), o
+            desconto de entrada no meio da temporada (que é DINHEIRO, volta a 100%) e a
+            intenção de renovar. A virada NÃO SE DESFAZ, então um aviso incompleto aqui é
+            a pior hora possível para a tela mentir por omissão. (Supervisor do Admin.)
+            Cada item abaixo foi lido no motor, não suposto. */}
+        Virar encerra a temporada atual: arquiva o ranking e as partidas no histórico permanente, carrega os pagamentos da próxima e abre as inscrições da nova.
+        <br/><b>Zera, para TODO membro do circuito</b> — inclusive arquivados e suspensos: pontos, vitórias, derrotas, o contador de <b>W.O. injustificados</b>, a chave e a intenção de renovar.
+        <br/><b>Volta o desconto de entrada no meio da temporada para 100%</b> (é dinheiro: quem entrar depois pagará cheio até você baixar de novo).
+        <br/>{SISTEMA_ATIVO === "B"
+          ? <>Este circuito é de <b>pontos</b>, então não há rating envolvido.</>
+          : <>O <b>rating é preservado</b> — ele é global e não pertence à temporada.</>}
+        <br/><b>NÃO zera</b>: o desconto individual e a isenção de cada atleta (quem tem desconto segue com ele na temporada nova), e o aceite do regulamento — que aponta a VERSÃO aceita, então só pede re-aceite se o texto mudar.
+        {SISTEMA_ATIVO === "B" ? null : <> O rating também fica: ele é global, não pertence à temporada.</>}
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
         <Btn onClick={()=>setConfirmando(true)} color="#D85A30">Virar para a próxima temporada…</Btn>
@@ -9483,7 +9547,7 @@ function NovaTemporadaPanel({ state, dispatch }) {
             style={{background:T.verdeCard,borderRadius:16,padding:22,maxWidth:380,width:"100%",border:"1px solid rgba(216,90,48,0.45)",boxShadow:"0 20px 50px rgba(0,0,0,0.5)"}}>
             <div style={{fontSize:17,fontWeight:700,color:"#F0EAE0",marginBottom:12}}>⚠️ Virar {state.nomeCircuito} para {nome}?</div>
             <div style={{fontSize:13,color:"#c9d4ce",marginBottom:18,lineHeight:1.6}}>
-              Isto <b style={{color:"#e79b8c"}}>zera pontos, vitórias e derrotas</b> de <b>{ativos.length} atleta(s)</b>, <b>arquiva</b> e remove as partidas da temporada atual, e <b>carrega os pagamentos da próxima</b>. O rating é preservado. <b style={{color:"#e79b8c"}}>Esta ação não pode ser desfeita.</b>
+              Isto <b style={{color:"#e79b8c"}}>zera pontos, vitórias, derrotas e o contador de W.O. injustificados</b> de <b>todo membro do circuito</b> (os {ativos.length} ativo(s) e também arquivados e suspensos), <b>arquiva</b> e remove as partidas da temporada atual, <b>carrega os pagamentos da próxima</b> e <b>devolve o desconto de entrada no meio a 100%</b>.{SISTEMA_ATIVO === "B" ? null : <> O rating é preservado.</>} <b style={{color:"#e79b8c"}}>Esta ação não pode ser desfeita.</b>
             </div>
             <label style={{fontSize:10,fontWeight:700,color:T.cinzaSuave,textTransform:"uppercase",letterSpacing:0.6,display:"block",marginBottom:4}}>
               Digite o nome do circuito para confirmar
@@ -9618,11 +9682,32 @@ function RenovacaoCard({ state, dispatch, athlete }) {
     inicioTxt = new Date(dataIni+"T00:00:00").toLocaleDateString("pt-BR");
   }
   const pagoEfetivo = naProxima ? eu.pagamentoProximaConfirmado : eu.pagamentoConfirmado;
+  // A MESMA conta das outras três telas — ver o comentário longo do `janelaRenovacao`.
+  const jan = janelaRenovacao(dataIni);
   const pix = state.pixChave || "";
   const copiarPix = () => { try { navigator.clipboard.writeText(pix.trim()); setCopiado(true); setTimeout(()=>setCopiado(false),1500); } catch(e){} };
   return (
     <Card style={{marginBottom:12,border:"1px solid rgba(106,157,122,0.35)"}}>
       <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>🎟️ Inscrições abertas — {nomeCirc}</div>
+      {/* ⚠️ O PRAZO NUNCA APARECIA AQUI até 01/10/2026. O `janelaRenovacao` era chamado
+          em três lugares — as duas mensagens de WhatsApp e o painel do admin — e em
+          NENHUM na tela do atleta. A mensagem mandava ele "abrir o app para garantir a
+          vaga" e o app não mostrava até quando. Os 7 dias de prioridade são do Cap. 13,
+          texto que ele assinou. (Supervisor do Atleta.)
+          A conta é a MESMA função das outras três telas: três contas separadas foi o
+          que permitiu a divergência que o Guardião do Regulamento achou em 27/09. */}
+      {jan && !pagoEfetivo && (
+        <div style={{fontSize:11.5,lineHeight:1.6,marginBottom:8,padding:"7px 10px",borderRadius:8,
+          background: jan.encerrada ? "rgba(194,90,69,0.12)" : "rgba(156,111,62,0.12)",
+          border: `1px solid ${jan.encerrada ? "rgba(194,90,69,0.4)" : "rgba(156,111,62,0.4)"}`,
+          color: jan.encerrada ? "#e8b0a0" : "#e8c9a0"}}>
+          {!jan.jaAbriu
+            ? <>Sua prioridade para renovar <strong style={{color:"#F0EAE0"}}>abre em {jan.abreTxt}</strong> e vale até {jan.fechaTxt}.</>
+            : jan.aberta
+              ? <>Você tem <strong style={{color:"#F0EAE0"}}>prioridade para garantir sua vaga até {jan.fechaTxt}</strong>{Math.ceil(jan.diasAteFechar) <= 3 ? <> — faltam {Math.max(1, Math.ceil(jan.diasAteFechar))} dia(s)</> : null}. Depois disso, as vagas não confirmadas abrem para a fila de espera.</>
+              : <>O prazo de prioridade <strong style={{color:"#F0EAE0"}}>encerrou em {jan.fechaTxt}</strong>. Sua vaga agora depende de haver espaço — fale com o organizador.</>}
+        </div>
+      )}
       {isentoInd ? (
         <div style={{fontSize:13,color:"#c9d4ce",marginBottom:4}}>Sua temporada: <b style={{color:"#6a9d7a"}}>Isento</b></div>
       ) : finalC != null ? (
@@ -11393,6 +11478,59 @@ function ReAceiteRegulamentoCard({ state, dispatch, athlete }) {
   );
 }
 
+// ── OS DOIS CARDS QUE EXPLICAM "POR QUE EU NÃO ESTOU NO RANKING" ──────────────
+//
+// Saíram de dentro do `AthleteGames` em 01/10/2026. Eles só renderizavam sob
+// `tab === "meus_jogos"`, e a aba é RESTAURADA DO localStorage — então quem fechou o
+// app no Ranking reabria no Ranking e nunca encontrava a explicação de por que não
+// estava no Ranking. O card de W.O. é justamente o "aviso formal" que a auditoria de
+// 29/09 criou para que ninguém fosse suspenso sem ser avisado do 1º; preso numa aba,
+// ele não cumpria isso.
+//
+// O remédio já existia no arquivo, aplicado ao card de re-aceite, e não tinha sido
+// estendido a estes dois. (Supervisor do Atleta.)
+function AvisoWoCard({ state, athlete }) {
+  const eu = state.athletes.find(a => a.id === athlete?.id) || null;
+  if (!eu || (eu.woCulpososTemporada || 0) < 1) return null;
+  return (
+    <Card style={{marginBottom:12, border:"1px solid rgba(194,90,69,0.5)", background:"rgba(194,90,69,0.12)"}}>
+      <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>
+        ⚠️ {eu.woCulpososTemporada === 1 ? "Você tem 1 W.O. injustificado nesta temporada" : `Você tem ${eu.woCulpososTemporada} W.O. injustificados nesta temporada`}
+      </div>
+      <div style={{fontSize:12,color:"#e8b0a0",lineHeight:1.7}}>
+        {eu.woCulpososTemporada === 1
+          ? <>No <strong style={{color:"#F0EAE0"}}>2º</strong> você é suspenso do circuito — é o que diz o capítulo de W.O. e Faltas do regulamento. Se a ausência teve motivo, peça a justificativa pelo app: aprovada pelo organizador, ela deixa de contar.</>
+          : <>Você atingiu o limite do capítulo de W.O. e Faltas. Fale com o organizador — se alguma das ausências teve motivo, a justificativa aprovada deixa de contar.</>}
+      </div>
+    </Card>
+  );
+}
+
+function FilaDeEsperaCard({ state, athlete }) {
+  const eu = state.athletes.find(a => a.id === athlete?.id) || null;
+  if (!eu || !(eu.status === "ativo" && eu.pendenteCircuito)) return null;
+  const dentro = (state.athletes || []).filter(a => a.status === "ativo" && !a.pendenteCircuito).length;
+  const lotado = dentro >= (state.maxAtletas || 20);
+  return (
+    <Card style={{marginBottom:12, border:"1px solid rgba(156,111,62,0.45)", background:"rgba(156,111,62,0.12)"}}>
+      <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>⏳ Sua inscrição foi aprovada — você está na fila de espera</div>
+      <div style={{fontSize:12,color:"#e8c9a0",lineHeight:1.7}}>
+        {/* ⚠️ ESTE TEXTO AFIRMAVA "todas as vagas ocupadas" SEM CONFERIR NADA. O
+            `pendente_circuito: true` é gravado em TODA aprovação, lotação ou não —
+            então quem entrou com 12 de 20 vagas lia frase falsa, e a mensagem de
+            WhatsApp era mais precisa que o app. (Supervisor do Atleta.) */}
+        {lotado
+          ? <>O circuito está com <strong style={{color:"#F0EAE0"}}>todas as {state.maxAtletas} vagas ocupadas</strong>. Você <strong style={{color:"#F0EAE0"}}>entra assim que abrir uma vaga</strong>, e a partir daí já é pareado nas rodadas.</>
+          : <>Há <strong style={{color:"#F0EAE0"}}>{dentro} de {state.maxAtletas} vagas</strong> ocupadas, então não é falta de espaço: falta o organizador te <strong style={{color:"#F0EAE0"}}>incluir no circuito</strong>. A partir daí você já é pareado nas rodadas.</>}
+        {" "}Enquanto isso você não aparece no ranking e não tem jogos — <strong style={{color:"#F0EAE0"}}>não é erro do app</strong>.
+      </div>
+      <div style={{fontSize:11,color:"#9db3a8",lineHeight:1.6,marginTop:8}}>
+        A ordem é por data de inscrição, mas a entrada depende da aprovação do organizador. Em caso de dúvida, fale com ele.
+      </div>
+    </Card>
+  );
+}
+
 function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, circuitosAtleta, onVoltarLista }) {
   const hub = <HubCircuitosAtleta circuitos={circuitosAtleta} circuitoSelId={circuitoSelId} onVoltarLista={onVoltarLista} />;
   let content = null;
@@ -11405,7 +11543,11 @@ function AthleteView({ state, dispatch, athlete, tab, setTab, circuitoSelId, cir
   // app no Ranking reabria no Ranking e NUNCA encontrava o card. A frase do
   // ROADMAP — "o atleta vê o aviso ao abrir o app" — só valia para quem abria
   // em Jogos. (Guardião Jurídico J4, achado também pelo do Atleta.)
-  return <>{hub}<ReAceiteRegulamentoCard state={state} dispatch={dispatch} athlete={athlete} />{content}</>;
+  // Os três ficam FORA da aba, acima de tudo: o re-aceite (desde 29/09) e, desde
+  // 01/10, o aviso de W.O. e o de fila de espera. Os dois últimos explicam "por que eu
+  // não estou no Ranking", e estavam presos exatamente na aba que o atleta não abre
+  // quando quer essa resposta.
+  return <>{hub}<ReAceiteRegulamentoCard state={state} dispatch={dispatch} athlete={athlete} /><AvisoWoCard state={state} athlete={athlete} /><FilaDeEsperaCard state={state} athlete={athlete} />{content}</>;
 }
 
 // Tela de escolha de circuito, logo após o login, pra atleta em >1 circuito.
@@ -11759,7 +11901,10 @@ function AthleteGames({ state, dispatch, athlete }) {
   // criaria expectativa que o app pode quebrar legitimamente — trocaríamos um
   // silêncio por uma promessa falsa, que é pior. A frase vem primeiro; número, se
   // um dia, vem depois dela. (Guardião da Experiência do Atleta, 28/09/2026.)
-  const naFilaDeEspera = eu.status === "ativo" && eu.pendenteCircuito;
+  // As três variáveis que viviam aqui (`naFilaDeEspera`, `dentro`, `lotado`) foram
+  // com o card para o `FilaDeEsperaCard`, que renderiza FORA da aba. Deixá-las aqui
+  // seria código morto — e código morto num arquivo deste tamanho é o que faz a
+  // próxima pessoa achar que o card ainda mora aqui.
   const saldoStr = saldo > 0 ? `+${saldoAnimado}` : saldo < 0 ? `-${saldoAnimado}` : `${saldoAnimado}`;
 
   return (
@@ -11781,30 +11926,6 @@ function AthleteGames({ state, dispatch, athlete }) {
           SUSPENSO no 2º W.O. sem nunca ter sido avisado do 1º, e é texto que ele
           assinou. (Guardião da Experiência do Atleta, 29/09/2026.)
           Só o dono do número o vê: quem mostrava era o painel do organizador. */}
-      {(eu.woCulpososTemporada || 0) >= 1 && (
-        <Card style={{marginBottom:12, border:"1px solid rgba(194,90,69,0.5)", background:"rgba(194,90,69,0.12)"}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>
-            ⚠️ {eu.woCulpososTemporada === 1 ? "Você tem 1 W.O. injustificado nesta temporada" : `Você tem ${eu.woCulpososTemporada} W.O. injustificados nesta temporada`}
-          </div>
-          <div style={{fontSize:12,color:"#e8b0a0",lineHeight:1.7}}>
-            {eu.woCulpososTemporada === 1
-              ? <>No <strong style={{color:"#F0EAE0"}}>2º</strong> você é suspenso do circuito — é o que diz o capítulo de W.O. e Faltas do regulamento. Se a ausência teve motivo, peça a justificativa pelo app: aprovada pelo organizador, ela deixa de contar.</>
-              : <>Você atingiu o limite do capítulo de W.O. e Faltas. Fale com o organizador — se alguma das ausências teve motivo, a justificativa aprovada deixa de contar.</>}
-          </div>
-        </Card>
-      )}
-      {naFilaDeEspera && (
-        <Card style={{marginBottom:12, border:"1px solid rgba(156,111,62,0.45)", background:"rgba(156,111,62,0.12)"}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>⏳ Sua inscrição foi aprovada — você está na fila de espera</div>
-          <div style={{fontSize:12,color:"#e8c9a0",lineHeight:1.7}}>
-            O circuito está com todas as vagas ocupadas. Você <strong style={{color:"#F0EAE0"}}>entra assim que abrir uma vaga</strong>, e a partir daí já é pareado nas rodadas.
-            {" "}Enquanto isso você não aparece no ranking e não tem jogos — <strong style={{color:"#F0EAE0"}}>não é erro do app</strong>.
-          </div>
-          <div style={{fontSize:11,color:"#9db3a8",lineHeight:1.6,marginTop:8}}>
-            A ordem é por data de inscrição, mas a entrada depende da aprovação do organizador. Em caso de dúvida, fale com ele.
-          </div>
-        </Card>
-      )}
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,marginBottom:20}}>
         <div style={{position:"relative"}}>
           <div onClick={()=>setPerfilAberto(true)} style={{cursor:"pointer"}}>

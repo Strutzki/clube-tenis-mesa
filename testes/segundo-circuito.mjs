@@ -353,14 +353,30 @@ secao("O atleta na fila sabe que está na fila, e o admin sabe quem fica de fora
   // ── 0.6.16: quem está aprovado aguardando vaga sai do ranking, então a POSIÇÃO
   // vira "—" enquanto pontos e rating continuam na tela. Ficava com cara de
   // DEFEITO, e não havia uma linha explicando em lugar nenhum do app.
-  ok(/const naFilaDeEspera = eu\.status === "ativo" && eu\.pendenteCircuito;/.test(fonteApp),
-    "a tela do atleta reconhece o estado 'aprovado, aguardando vaga'");
-  // ⚠️ ANCORADA NA CONDIÇÃO QUE RENDERIZA, não no texto. A primeira redação
-  // casava só a frase — e desligar a guarda (`{naFilaDeEspera && (` → `{false && (`)
-  // deixava a bateria VERDE com a caixa morta na tela. Oitava vez nesta sessão que
-  // uma asserção minha olha para o procurador da regra em vez da regra.
-  ok(/\{naFilaDeEspera && \(/.test(fonteApp),
-    "a caixa é renderizada sob essa condição — não é texto morto no arquivo");
+  // ⚠️ REESCRITA EM 01/10/2026. A asserção antiga ancorava em
+  // `const naFilaDeEspera = eu.status === "ativo" && eu.pendenteCircuito;` e em
+  // `{naFilaDeEspera && (` — as duas DENTRO do `AthleteGames`. O card saiu de lá: ele
+  // só renderizava sob `tab === "meus_jogos"`, e a aba é restaurada do localStorage,
+  // então quem fechava o app no Ranking reabria no Ranking e NUNCA achava a
+  // explicação de por que não estava no Ranking.
+  //
+  // A intenção da asserção antiga continua valendo e está preservada abaixo: a caixa
+  // tem de renderizar sob CONDIÇÃO, não ser texto morto. O mecanismo agora é o
+  // `return null` de um componente próprio, e a condição nova — que é o conserto —
+  // é ele estar FORA da aba.
+  const iFila = fonteApp.indexOf("function FilaDeEsperaCard(");
+  ok(iFila > 0, "o card de fila é um componente próprio, fora do AthleteGames");
+  const fila = fonteApp.slice(iFila, fonteApp.indexOf("\nfunction ", iFila + 10));
+  ok(/eu\.status === "ativo" && eu\.pendenteCircuito/.test(fila),
+    "e reconhece o estado 'aprovado, aguardando vaga'");
+  ok(/return null;/.test(fila),
+    "e não renderiza nada fora dele — a caixa é condicional, não texto morto");
+  ok(/<FilaDeEsperaCard state=\{state\} athlete=\{athlete\} \/>\{content\}/.test(fonteApp),
+    "e é renderizado ANTES do `content`, ou seja FORA da aba — era o conserto que faltava");
+  ok(/<AvisoWoCard state=\{state\} athlete=\{athlete\} \/>/.test(fonteApp),
+    "e o aviso de W.O. também saiu da aba — é o «aviso formal» que a auditoria criou para ninguém ser suspenso sem saber do 1º");
+  ok(!/\{naFilaDeEspera && \(/.test(fonteApp),
+    "e a versão presa na aba não existe mais");
   ok(/Sua inscrição foi aprovada — você está na fila de espera/.test(fonteApp),
     "e diz isso a ele, com essas palavras");
   ok(/não é erro do app/.test(fonteApp),

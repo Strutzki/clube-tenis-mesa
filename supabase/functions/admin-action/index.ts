@@ -1902,9 +1902,25 @@ Deno.serve(async (req) => {
           // (o ramo do BH abaixo fica INTOCADO — decisão do Juliano). Tudo aqui
           // opera só sobre circuito_atletas/partidas/chaves DESTE circuito.
           const sistemaNova = await getSistema(circuitoId);
+          // ⚠️ O `.eq("status", "ativo")` SAIU DAQUI EM 01/10/2026, e a mudança separa
+          // DUAS perguntas que eram uma só:
+          //   · QUEM RECEBE POSIÇÃO FINAL na temporada que está sendo encerrada?
+          //     Só quem está ativo e jogou — isso continua igual, no `rankingNova`.
+          //   · DE QUEM OS CONTADORES SAZONAIS ZERAM? TODO MUNDO do circuito.
+          //
+          // Até aqui a virada varria apenas os ativos, então membro ARQUIVADO ou
+          // SUSPENSO atravessava a virada com os pontos, as vitórias e os W.O. da
+          // temporada velha intactos. Desarquivado depois, voltava com saldo de uma
+          // temporada que já tinha sido encerrada e arquivada — competindo na nova com
+          // números da antiga. Achado do Supervisor de Regulamento.
+          //
+          // Zerar o arquivado é seguro e é o que o Cap. 13 implica: a temporada acabou
+          // para o circuito, não para um subconjunto dele. Quem volta, volta do zero,
+          // como qualquer outro. O histórico de posições (`historico`) só recebe linha
+          // de quem teve posição final, então o arquivado não ganha posição inventada.
           const { data: membrosCa, error: errMembros } = await supabase
             .from("circuito_atletas").select("*, atletas!inner(*)")
-            .eq("circuito_id", circuitoId).eq("status", "ativo");
+            .eq("circuito_id", circuitoId);
           if (errMembros) throw errMembros;
           const membrosNova = (membrosCa || []).map(mergeAtletaCircuito);
           const { data: partidasCirc, error: errPc } = await supabase
@@ -1913,7 +1929,11 @@ Deno.serve(async (req) => {
           if (errPc) throw errPc;
           const idsComPartidaN = idsNoRankingFinal(partidasCirc ?? []);
           const cmpNova = sistemaNova === "B" ? cmpRankingB(partidasCirc ?? []) : cmpRankingDB(partidasCirc ?? []);
-          const rankingNova = membrosNova.filter((a: any) => !a.pendente_circuito && idsComPartidaN.has(a.id)).sort(cmpNova);
+          // O ranking final segue sendo só de quem estava ATIVO e jogou — o filtro de
+          // status mudou de lugar, não desapareceu. Era isto que o `.eq` da consulta
+          // garantia junto com o zeramento; agora as duas regras são explícitas e
+          // separadas, que é o que permitiu zerar o arquivado sem lhe dar posição.
+          const rankingNova = membrosNova.filter((a: any) => a.status === "ativo" && !a.pendente_circuito && idsComPartidaN.has(a.id)).sort(cmpNova);
           const posFinalN: Record<string, number> = {};
           rankingNova.forEach((a: any, i: number) => { posFinalN[a.id] = i + 1; });
           const cfgN = await getCfg(circuitoId, "temporada_numero,temporada_ano,proxima_aberta,proxima_nome,proxima_data_inicio,proxima_rotulo,proxima_valor_cheio,proxima_valor_desconto");

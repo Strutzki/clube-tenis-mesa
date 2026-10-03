@@ -2236,6 +2236,48 @@ secao("O porteiro: o portão de autenticação, RODANDO a função");
   }
 }
 
+secao("Painel: dois cards não podem se contradizer na mesma tela");
+{
+  // ACHADO EM USO pelo Juliano, 03/10/2026, por um print: o Painel mostrava
+  //   "🧮 Rodada 6 validada, mas ainda não processada → Ir para Pendências"
+  // e, logo abaixo,
+  //   "Temporada completa (6 rodadas). Para continuar, inicie uma nova temporada."
+  // Dois cards se contradizendo, e o primeiro mandando-o a uma página sem nada.
+  //
+  // A causa: a condição era `!hasNextRound`, e `hasNextRound = todasResolvidas &&
+  // !temporadaCompleta`. Então `!hasNextRound` é verdadeiro por DOIS motivos — falta
+  // processar algo, OU a temporada acabou. O card existe só para o primeiro.
+  //
+  // Conferido no banco: 34 partidas, 27 calculadas, 7 rejeitadas, ZERO validadas sem
+  // processar. Não havia nada pendente, e o card afirmava que havia.
+  //
+  // SEGUNDO defeito achado por USO em dois dias, depois de oito duplas de auditoria.
+  const { readFileSync } = await import("node:fs");
+  const fonteApp = semComentarios(readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8"));
+
+  const iCard = fonteApp.indexOf("validada, mas ainda não processada");
+  ok(iCard > 0, "o card de rodada não processada foi localizado");
+  const condicao = fonteApp.slice(Math.max(0, iCard - 320), iCard);
+  ok(/!todasResolvidas/.test(condicao),
+    "o card exige que REALMENTE falte processar algo — `!hasNextRound` sozinho também é verdadeiro quando a temporada acabou");
+  ok(/allCurrentValidated/.test(condicao),
+    "e continua exigindo que a rodada atual esteja toda validada");
+
+  // A frase de dentro só pode afirmar o que a condição garante.
+  const corpo = fonteApp.slice(iCard, iCard + 700);
+  ok(/Alguma partida de uma rodada anterior ainda não foi processada/.test(corpo),
+    "a frase de recurso continua lá");
+  ok(/calculoPendente\.length > 0/.test(corpo),
+    "e a outra frase, com o número, também — as duas são verdadeiras sob `!todasResolvidas`");
+
+  // E o card de temporada completa não pode depender da mesma condição, senão os
+  // dois voltam a aparecer juntos.
+  const iCompleta = fonteApp.indexOf("Temporada completa");
+  ok(iCompleta > 0, "o card de temporada completa existe");
+  ok(iCompleta !== iCard,
+    "e é um card distinto — é ele que deve aparecer quando as 6 rodadas acabaram, sozinho");
+}
+
 secao("Criar circuito: o botão desabilitado DIZ o que falta");
 {
   // ACHADO EM USO REAL, 03/10/2026, pelo Juliano: ele foi criar o 2º circuito do

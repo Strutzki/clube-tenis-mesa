@@ -9364,7 +9364,26 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
       )}
 
 
-      {state.phase === "etapa" && allCurrentValidated && !hasNextRound && (
+      {/* ⚠️ ESTE CARD APARECIA COM A TEMPORADA COMPLETA E NADA PENDENTE.
+          Achado em uso pelo Juliano em 03/10/2026, pelo print da tela: ele via ESTE
+          card dizendo "ainda não processada → Ir para Pendências" e, logo abaixo,
+          outro dizendo "Temporada completa (6 rodadas)". Dois cards se contradizendo
+          na mesma tela, e o primeiro mandava ele a uma página onde não havia nada.
+
+          A causa: a condição era `!hasNextRound`, e `hasNextRound = todasResolvidas
+          && !temporadaCompleta`. Logo `!hasNextRound` é verdadeiro por DOIS motivos
+          diferentes — falta processar algo, OU a temporada acabou. O card existe só
+          para o primeiro, e tratava os dois como iguais.
+
+          Conferido no banco antes de consertar: 34 partidas, 27 calculadas, 7
+          rejeitadas, ZERO validadas sem processar. Não havia nada pendente mesmo.
+
+          Agora exige `!todasResolvidas`, que é exatamente "falta processar alguma
+          coisa" — e com isso a frase de baixo ("Alguma partida de uma rodada anterior
+          ainda não foi processada") passa a ser verdadeira sempre que o card aparece.
+          Antes ela era o ramo que sobrava quando `calculoPendente` estava VAZIO, ou
+          seja: a frase afirmava algo justamente quando não havia o que afirmar. */}
+      {state.phase === "etapa" && allCurrentValidated && !hasNextRound && !todasResolvidas && (
         <Card style={{border:"1px solid rgba(216,90,48,0.3)"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#D85A30",marginBottom:6}}>🧮 Rodada {currentRound} validada, mas ainda não processada</div>
           <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>

@@ -2236,6 +2236,126 @@ secao("O porteiro: o portão de autenticação, RODANDO a função");
   }
 }
 
+secao("Cada circuito define os três meses em que roda");
+{
+  // DECISÃO DO JULIANO, 03/10/2026. Até aqui os três meses eram SEMPRE CONSECUTIVOS:
+  // o motor fazia "mês da rodada 1 + índice do par" e não havia onde dizer outra coisa.
+  //
+  // E o vB-01 já prometia o contrário — "os meses de recesso são definidos pelo
+  // organizador do circuito" — numa promessa que não tinha campo nenhum no banco. O
+  // texto que o atleta aceita dizia que o organizador define, e não havia onde definir.
+  //
+  // O BH é diferente e continua: o v03-13, Cap. 13, CRAVA janeiro, julho e dezembro
+  // como férias, e é texto com aceite. Por isso NULL mantém o comportamento antigo.
+  const CIRC_M = "eeeeeeee-9999-4999-8999-eeeeeeeeeeee";
+  const A1 = "eeeeeeee-0000-4000-8000-000000009001";
+  const A2 = "eeeeeeee-0000-4000-8000-000000009002";
+
+  const cenarioMeses = async (meses) => montarMotor({
+    circuitos: [
+      circuito(BH),
+      circuito(CIRC_M, { slug: "meses", sistema: "B", pareamento: "sorteio",
+        regulamento_versao: "vB-01", fase: "temporada",
+        ...(meses === undefined ? {} : { meses_temporada: meses }) }),
+    ],
+    atletas: [atleta(A1), atleta(A2)],
+    circuito_atletas: [
+      { circuito_id: CIRC_M, atleta_id: A1, status: "ativo", pendente_circuito: false },
+      { circuito_id: CIRC_M, atleta_id: A2, status: "ativo", pendente_circuito: false },
+    ],
+    chaves: [{ id: "chave1", nome: "Chave A", rodada_atual: 2, circuito_id: CIRC_M }],
+    // Rodada 1 com prazo em MARÇO: é a âncora de onde o motor caminha.
+    partidas: [
+      partida("j1", { circuito_id: CIRC_M, rodada: 1, atleta1_id: A1, atleta2_id: A2,
+                      placar1: 3, placar2: 1, validado: true, calculado: true, prazo: "2026-03-15" }),
+      partida("j2", { circuito_id: CIRC_M, rodada: 2, atleta1_id: A2, atleta2_id: A1,
+                      placar1: 3, placar2: 0, validado: true, calculado: true, prazo: "2026-03-27" }),
+    ],
+  });
+  const mesDaRodada = (banco, r) => {
+    const p = banco.tabelas.partidas.find(x => x.circuito_id === CIRC_M && x.rodada === r && x.prazo);
+    return p ? p.prazo.slice(0, 7) : null; // "AAAA-MM"
+  };
+
+  // 1. SEM meses definidos: o comportamento antigo, três consecutivos. É o do BH.
+  {
+    const { banco, motor } = await cenarioMeses(undefined);
+    const r = await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC_M });
+    ok(r.corpo?.sucesso === true, `avança a rodada (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    igual(mesDaRodada(banco, 3), "2026-04",
+      "sem meses definidos, o 2º par cai no mês SEGUINTE — o comportamento antigo, que é o do BH e não muda");
+  }
+
+  // 2. COM meses definidos e um buraco: março, MAIO, agosto (pula abril e junho/julho).
+  {
+    const { banco, motor } = await cenarioMeses([3, 5, 8]);
+    await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC_M });
+    igual(mesDaRodada(banco, 3), "2026-05",
+      "com os meses definidos, o 2º par vai para MAIO — pulando abril, que é o ponto da regra");
+  }
+
+  // 3. O TERCEIRO par também, e o buraco maior.
+  {
+    const { banco, motor } = await cenarioMeses([3, 5, 8]);
+    await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC_M });
+    banco.tabelas.chaves[0].rodada_atual = 4;
+    await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC_M });
+    igual(mesDaRodada(banco, 5), "2026-08",
+      "e o 3º par vai para AGOSTO — a lista manda, não a aritmética de +1 mês");
+  }
+
+  // 4. O ANO VIRA SOZINHO. Começa em novembro, segue em fevereiro e abril.
+  {
+    const { banco, motor } = await montarMotor({
+      circuitos: [circuito(BH), circuito(CIRC_M, { slug: "meses", sistema: "B",
+        pareamento: "sorteio", regulamento_versao: "vB-01", fase: "temporada",
+        meses_temporada: [11, 2, 4] })],
+      atletas: [atleta(A1), atleta(A2)],
+      circuito_atletas: [
+        { circuito_id: CIRC_M, atleta_id: A1, status: "ativo", pendente_circuito: false },
+        { circuito_id: CIRC_M, atleta_id: A2, status: "ativo", pendente_circuito: false },
+      ],
+      chaves: [{ id: "chave1", nome: "Chave A", rodada_atual: 2, circuito_id: CIRC_M }],
+      partidas: [
+        partida("j1", { circuito_id: CIRC_M, rodada: 1, atleta1_id: A1, atleta2_id: A2,
+                        placar1: 3, placar2: 1, validado: true, calculado: true, prazo: "2026-11-15" }),
+        partida("j2", { circuito_id: CIRC_M, rodada: 2, atleta1_id: A2, atleta2_id: A1,
+                        placar1: 3, placar2: 0, validado: true, calculado: true, prazo: "2026-11-27" }),
+      ],
+    });
+    await comoAdmin(motor, "AVANCAR_RODADA", { circuitoId: CIRC_M });
+    igual(mesDaRodada(banco, 3), "2027-02",
+      "de novembro para fevereiro o ANO VIRA sozinho — sem isso o prazo cairia num fevereiro que já passou");
+  }
+
+  // 5. A CONFIGURAÇÃO RECUSA O QUE ESTÁ ERRADO, dizendo o quê.
+  //    Gravar um valor "quase certo" deslocaria o prazo de uma rodada inteira para
+  //    atletas reais, e o organizador não teria como saber de onde veio.
+  for (const [valor, pedaco, oque] of [
+    [[3, 5], "exatamente 3 meses", "só dois meses"],
+    [[3, 5, 13], "Mês inválido", "mês 13"],
+    [[3, 5, 5], "diferentes entre si", "mês repetido"],
+  ]) {
+    const { motor } = await cenarioMeses(undefined);
+    const r = await comoAdmin(motor, "DEFINIR_CONFIG_CIRCUITO", { circuitoId: CIRC_M, mesesTemporada: valor });
+    igual(r.status, 400, `a configuração RECUSA ${oque}`);
+    ok(String(r.corpo?.erro || "").includes(pedaco),
+      `e diz o motivo (${oque}) — recusa sem motivo é o defeito que esta onda mais encontrou`);
+  }
+
+  // 6. E aceita o certo, e aceita voltar ao automático.
+  {
+    const { banco, motor } = await cenarioMeses(undefined);
+    const r = await comoAdmin(motor, "DEFINIR_CONFIG_CIRCUITO", { circuitoId: CIRC_M, mesesTemporada: [3, 5, 8] });
+    ok(r.corpo?.sucesso === true, `a configuração aceita três meses válidos (erro: ${JSON.stringify(r.corpo?.erro)})`);
+    igual(banco.acha("circuitos", c => c.id === CIRC_M)?.meses_temporada?.join(","), "3,5,8",
+      "e grava na ordem das etapas");
+    await comoAdmin(motor, "DEFINIR_CONFIG_CIRCUITO", { circuitoId: CIRC_M, mesesTemporada: null });
+    igual(banco.acha("circuitos", c => c.id === CIRC_M)?.meses_temporada, null,
+      "e `null` devolve ao automático — o organizador pode desfazer a escolha");
+  }
+}
+
 secao("Painel: dois cards não podem se contradizer na mesma tela");
 {
   // ACHADO EM USO pelo Juliano, 03/10/2026, por um print: o Painel mostrava

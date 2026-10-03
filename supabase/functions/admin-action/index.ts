@@ -1003,6 +1003,34 @@ function gerarPareamentoB(
   return { rodada1: r1.pares, bye1: r1.bye, rodada2: r2.pares, bye2: r2.bye };
 }
 
+// O MES DE CADA PAR DE RODADAS, quando o circuito define os proprios meses.
+//
+// Ate 03/10/2026 os tres meses eram SEMPRE CONSECUTIVOS -- o motor fazia
+// `mes da rodada 1 + indice do par` e nao havia onde dizer outra coisa. Mas o vB-01
+// ja prometia que "os meses de recesso sao definidos pelo organizador do circuito":
+// a promessa existia no texto que o atleta aceita e nao tinha campo nenhum no banco.
+//
+// `meses` vem de `circuitos.meses_temporada` -- 3 numeros de 1 a 12, NA ORDEM DAS
+// ETAPAS. NULL (o caso do BH) mantem o comportamento antigo, intocado.
+//
+// ⚠️ O ANO VIRA SOZINHO. A ancora e o mes REAL da rodada 1, nao `meses[0]`: se os dois
+// discordarem (o organizador mudou os meses depois de a temporada comecar), caminhar a
+// partir da realidade e o unico jeito de nao errar o ano. Cada vez que o proximo mes e
+// menor ou igual ao anterior, soma um ano -- [11,2,4] vira nov deste ano, fev e abr do
+// seguinte.
+function mesDoPar(meses: number[] | null, dataRodada1: Date, parIndex: number): Date | undefined {
+  if (!Array.isArray(meses) || meses.length !== 3) return undefined;
+  if (!meses.every((m) => Number.isInteger(m) && m >= 1 && m <= 12)) return undefined;
+  if (parIndex <= 0) return undefined; // o 1o par ja tem o mes dele: o da rodada 1
+  let ano = dataRodada1.getFullYear();
+  let anterior = dataRodada1.getMonth() + 1;
+  for (let i = 1; i <= parIndex; i++) {
+    if (meses[i] <= anterior) ano += 1;
+    anterior = meses[i];
+  }
+  return new Date(ano, meses[parIndex] - 1, 1);
+}
+
 function calcularPrazos(mesRef?: Date) {
   let ref: Date;
   if (mesRef) {
@@ -1759,7 +1787,13 @@ Deno.serve(async (req) => {
         let mesRef: Date | undefined;
         if (prazoR1Existente) {
           const d1 = new Date(prazoR1Existente + "T12:00:00");
-          mesRef = new Date(d1.getFullYear(), d1.getMonth() + parIndex, 1);
+          // Se o circuito define os proprios meses, eles mandam. Senao, o antigo:
+          // tres consecutivos a partir da rodada 1 -- que e o caso do BH, onde os
+          // meses de ferias sao CRAVADOS no regulamento (v03-13, Cap. 13) e nao
+          // configuraveis.
+          const cfgMeses = await getCfg(circuitoId, "meses_temporada");
+          mesRef = mesDoPar((cfgMeses?.meses_temporada as number[]) || null, d1, parIndex)
+            || new Date(d1.getFullYear(), d1.getMonth() + parIndex, 1);
         }
         const { prazoA, prazoB } = calcularPrazos(mesRef);
         const sistemaAv = await getSistema(circuitoId); // Fatia 3: pareamento do Sistema B
@@ -2463,6 +2497,30 @@ Deno.serve(async (req) => {
         // desfeita antes de subir. Se voltar um dia, volta como decisao de
         // plataforma, nao de circuito.
         if (p.pixChave !== undefined) upd.pix_chave = (typeof p.pixChave === "string" && p.pixChave.trim()) ? p.pixChave.trim() : null;
+        // OS TRES MESES EM QUE O CIRCUITO RODA (03/10/2026). `null` volta ao
+        // comportamento antigo (tres consecutivos), que e o do BH.
+        //
+        // A recusa e EXPLICITA e nao silenciosa: mandar 2 meses, ou o mes 13, ou o
+        // mesmo mes duas vezes, devolve erro dizendo o que esta errado. Gravar um
+        // valor "quase certo" aqui deslocaria o prazo de uma rodada inteira para
+        // atletas reais, e o organizador nao teria como saber de onde veio.
+        if (p.mesesTemporada !== undefined) {
+          if (p.mesesTemporada === null) {
+            upd.meses_temporada = null;
+          } else {
+            const ms = Array.isArray(p.mesesTemporada) ? p.mesesTemporada.map((x: unknown) => Number(x)) : null;
+            if (!ms || ms.length !== 3) {
+              return jsonResponse({ sucesso: false, erro: "Escolha exatamente 3 meses — a temporada tem 3 meses e 2 rodadas em cada (Cap. 13)." }, 400);
+            }
+            if (!ms.every((m) => Number.isInteger(m) && m >= 1 && m <= 12)) {
+              return jsonResponse({ sucesso: false, erro: "Mês inválido — use números de 1 (janeiro) a 12 (dezembro)." }, 400);
+            }
+            if (new Set(ms).size !== 3) {
+              return jsonResponse({ sucesso: false, erro: "Os 3 meses têm de ser diferentes entre si." }, 400);
+            }
+            upd.meses_temporada = ms;
+          }
+        }
         if (Object.keys(upd).length === 0) return jsonResponse({ sucesso: false, erro: "Nada para atualizar." }, 400);
         await setCfg(circuitoId, upd);
         return jsonResponse({ sucesso: true });

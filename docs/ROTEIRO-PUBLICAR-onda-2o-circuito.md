@@ -1,5 +1,45 @@
 # Publicar a onda do 2º circuito — 7 passos
 
+## ✅ EXECUTADO EM 03/10/2026, os sete passos
+
+| passo | resultado |
+|---|---|
+| 1 `circuito-dados` | v4 → **v5** · 0 divergências |
+| 2 `anonimizar-atleta` | v2 → **v3** · 0 divergências |
+| 3 `admin-action` | v64 → **v65** · 0 divergências |
+| 4 `athlete-action` | v22 → **v23** · 0 divergências |
+| 5 o app | `4b4b740..fe6f921` · pacote no ar `index-BD3H344L.js`, **byte por byte** igual ao compilado e testado aqui |
+| 6 `backup-clube-tenis-mesa` | v6 → **v7** · 0 divergências |
+| 7 a migração | aplicada — **mas não como estava escrita**, ver abaixo |
+
+**Produção depois:** 15 atletas · 15 vínculos · 34 partidas · 12 pagamentos · 1 circuito ·
+5 solicitações · 5 arquivadas · **0 linhas com texto de saúde**.
+
+### O passo 7 estava errado no roteiro
+
+`revoke select (coluna)` **não remove um grant de TABELA**, e o `anon` tinha SELECT na
+tabela inteira. O SQL do roteiro *reportou sucesso e não fez nada* — `has_column_privilege`
+continuou `true`. Foi a conferência que pegou, não o retorno do comando.
+
+O que funcionou: tirar o grant de tabela e devolver só as 14 colunas que o app lê.
+
+E uma coisa que quase quebrou o app, achada antes de apertar: o `supaFetch` manda
+`Prefer: return=representation`, e o envio de W.O. inclui a justificativa — se ele passasse
+pelo PostgREST anônimo, precisaria de SELECT nessa coluna e quebraria. Não passa: vai pela
+Edge Function. E as três funções de escrita do `db` são código morto.
+
+**Conferência de ponta a ponta, com a chave PÚBLICA** (medir com a privilegiada não prova
+nada sobre o visitante):
+
+```
+a leitura exata do app ....... HTTP 200 · 5 linhas · 13 campos
+pedir `justificativa` ........ HTTP 401 · permission denied (42501)
+`select=*` (jeito antigo) .... HTTP 401 · permission denied (42501)
+```
+
+---
+
+
 > **Estado em 03/10/2026:** 18 seções, 1791 asserções, 0 falhas, árvore limpa em `7f43ddc`.
 > 37 commits locais sem publicar (todos da mesma onda, de 27/09 em diante).
 > Produção: 15 atletas · 15 vínculos · 34 partidas · 12 pagamentos · 1 circuito · 0 linhas

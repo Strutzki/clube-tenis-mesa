@@ -1,4 +1,36 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- ⚠️ APLICADO EM 03/10/2026 — MAS NÃO COMO ESTÁ ESCRITO ABAIXO.
+--
+-- O SQL deste arquivo "deu sucesso" e NÃO FEZ NADA. `revoke select (coluna)` não
+-- remove um grant de TABELA, e o `anon` tinha SELECT na tabela inteira — então o
+-- revoke de coluna passou sem efeito e `has_column_privilege` continuou `true`.
+-- Sucesso sem efeito, em produção. Foi a conferência que pegou, não o retorno.
+--
+-- O QUE REALMENTE FUNCIONOU (migração `fechar_acesso_anon_dado_saude_wo_v2`):
+--   revoke select on solicitacoes_wo from anon, authenticated;
+--   grant select (id, match_id, atleta_id, atleta_nome, adversario_id,
+--                 adversario_nome, round, status, criado_em, respondido_em,
+--                 motivo_recusa, notificado_solicitante, notificado_adversario,
+--                 circuito_id) on solicitacoes_wo to anon, authenticated;
+--
+-- E UMA COISA QUE QUASE QUEBROU O APP, achada antes de apertar: o `supaFetch` manda
+-- `Prefer: return=representation` por padrão, e o envio de W.O. inclui a
+-- `justificativa`. Se o insert passasse pelo PostgREST anônimo, ele precisaria de
+-- SELECT nessa coluna para devolver a linha — e quebraria. Não passa: vai pelo
+-- `chamarAtletaAction("SOLICITAR_WO")`, ou seja pela Edge Function com service_role.
+-- E as três funções de escrita do `db` (insert/update/delete) são CÓDIGO MORTO,
+-- definidas e nunca chamadas (conferido linha por linha antes da migração).
+--
+-- CONFERÊNCIA DE PONTA A PONTA, com a chave PÚBLICA real (não a privilegiada):
+--   a leitura exata do app ............ HTTP 200 · 5 linhas · 13 campos
+--   pedir `justificativa` ............. HTTP 401 · permission denied (42501)
+--   `select=*`, o jeito antigo ........ HTTP 401 · permission denied (42501)
+--
+-- LIÇÃO: medir com a chave privilegiada não prova nada sobre o visitante. O
+-- `has_column_privilege` rodado pelo MCP responde pelo papel do MCP.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- FECHA O ACESSO ANÔNIMO AO DADO DE SAÚDE DO W.O.
 --
 -- ⚠️ ESTE É O ÚLTIMO PASSO DA PUBLICAÇÃO. NÃO RODE ANTES DO APP NOVO ESTAR NO AR.

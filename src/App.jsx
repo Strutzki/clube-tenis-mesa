@@ -8192,7 +8192,28 @@ function CriarCircuitoCard({ chamarAdminAction, recarregarCircuitos }) {
   const [criado, setCriado] = useState(null);
 
   const slugLimpo = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
-  const podeCriar = !!(nome.trim() && slugLimpo.length >= 2 && slugLimpo !== "bh" && sistema && (sistema === "A" || pareamento));
+
+  // ⚠️ O BOTÃO FICAVA DESABILITADO SEM DIZER POR QUÊ.
+  //
+  // O Juliano tentou criar um circuito do Sistema B em 03/10/2026, escolheu sistema e
+  // pareamento, e o botão continuou morto — porque `podeCriar` exige TAMBÉM nome e
+  // slug com 2+ caracteres, e a tela não dizia nada. Ele viu "escolhi os parâmetros e
+  // não deixa avançar", que é a leitura correta do que a tela mostrava.
+  //
+  // É a mesma família de defeito que esta onda inteira perseguiu — a tela sabendo algo
+  // e não falando — só que aqui pelo silêncio em vez da frase errada. Botão
+  // desabilitado é uma recusa; recusa sem motivo é a pior forma de recusa.
+  //
+  // A lista é derivada da MESMA condição do botão, não escrita à mão: se alguém
+  // acrescentar uma exigência ao `podeCriar` e esquecer a lista, a lista fica vazia
+  // com o botão morto — e a bateria prende as duas juntas.
+  const faltando = [];
+  if (!nome.trim()) faltando.push("o nome do circuito");
+  if (slugLimpo.length < 2) faltando.push(slug.trim() ? "um slug com ao menos 2 letras ou números" : "o slug (apelido na URL)");
+  if (slugLimpo === "bh") faltando.push("um slug diferente de \"bh\" (esse é reservado)");
+  if (!sistema) faltando.push("o sistema de pontuação");
+  if (sistema === "B" && !pareamento) faltando.push("o método de pareamento");
+  const podeCriar = faltando.length === 0;
 
   function reset() {
     setNome(""); setCidade(""); setUf(""); setSlug(""); setSistema(null);
@@ -8222,7 +8243,16 @@ function CriarCircuitoCard({ chamarAdminAction, recarregarCircuitos }) {
 
   const inp = { width:"100%", boxSizing:"border-box", background:"#182420", border:`1px solid ${T.borda}`, borderRadius:8, color:T.offwhite, padding:"10px 12px", fontSize:14, fontFamily:T.sans, marginTop:6 };
   const lbl = { fontSize:11, fontWeight:700, color:T.cinzaSuave, textTransform:"uppercase", letterSpacing:0.6 };
-  const optCard = (sel) => ({ border:`1.5px solid ${sel?T.terracota:T.bordaSuave}`, borderRadius:10, padding:"10px 12px", marginTop:8, cursor:"pointer", background: sel ? "rgba(216,90,48,0.10)" : "transparent" });
+  // A seleção era SÓ uma borda trocando de cor — difícil de ver no escuro, e no
+  // relato do Juliano ("tento selecionar e não deixa avançar") não dá para saber se
+  // ele não viu a seleção ou não viu o motivo do botão morto. Agora as duas coisas
+  // são explícitas: a seleção ganha marca, e o botão ganha motivo.
+  const optCard = (sel) => ({ border:`1.5px solid ${sel?T.terracota:T.bordaSuave}`, borderRadius:10, padding:"10px 12px", marginTop:8, cursor:"pointer", background: sel ? "rgba(216,90,48,0.10)" : "transparent", position:"relative" });
+  const marcaSel = (sel) => (
+    <span style={{position:"absolute", top:10, right:12, fontSize:13, color: sel ? T.terracota : "rgba(240,234,224,0.22)", fontWeight:700}}>
+      {sel ? "✓" : "○"}
+    </span>
+  );
 
   return (
     <Card style={{marginBottom:16, border:`1px solid ${T.bordaSuave}`}}>
@@ -8291,7 +8321,8 @@ function CriarCircuitoCard({ chamarAdminAction, recarregarCircuitos }) {
                     {id:"B", t:"B — Pontos fixos", d:"Vitória vale 2, derrota vale 1. Sem rating: todos começam em 0 e o ranking é a soma dos pontos da temporada."},
                   ].map(o => (
                     <div key={o.id} onClick={()=>{ setSistema(o.id); if(o.id==="A") setPareamento(null); }} style={optCard(sistema===o.id)}>
-                      <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{o.t}</div>
+                      {marcaSel(sistema===o.id)}
+                      <div style={{fontSize:13,fontWeight:700,color:T.offwhite,paddingRight:22}}>{o.t}</div>
                       <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>{o.d}</div>
                     </div>
                   ))}
@@ -8340,7 +8371,8 @@ function CriarCircuitoCard({ chamarAdminAction, recarregarCircuitos }) {
                       {id:"grupos", t:"Grupos por faixa", d:"Pareia por faixa de posição na tabela de pontos atual."},
                     ].map(o => (
                       <div key={o.id} onClick={()=>setPareamento(o.id)} style={optCard(pareamento===o.id)}>
-                        <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>{o.t}</div>
+                        {marcaSel(pareamento===o.id)}
+                        <div style={{fontSize:13,fontWeight:700,color:T.offwhite,paddingRight:22}}>{o.t}</div>
                         <div style={{fontSize:11.5,color:T.cinza,marginTop:2}}>{o.d}</div>
                       </div>
                     ))}
@@ -8357,6 +8389,16 @@ function CriarCircuitoCard({ chamarAdminAction, recarregarCircuitos }) {
                 </div>
 
                 {erro && <div style={{fontSize:13,color:T.vermelho,marginTop:14}}>{erro}</div>}
+
+                {/* O QUE FALTA, em português, ao lado do botão. Sem isto o botão era
+                    uma recusa sem motivo — e foi exatamente onde o Juliano travou. */}
+                {!podeCriar && (
+                  <div style={{marginTop:14, background:"rgba(156,111,62,0.12)", border:`1px solid rgba(156,111,62,0.45)`, borderRadius:9, padding:"9px 12px", fontSize:12.5, color:"#e8c9a0", lineHeight:1.6}}>
+                    Para criar, falta {faltando.length === 1
+                      ? faltando[0]
+                      : <>{faltando.slice(0, -1).join(", ")} e {faltando[faltando.length - 1]}</>}.
+                  </div>
+                )}
 
                 <div style={{display:"flex",gap:8,marginTop:18,flexWrap:"wrap"}}>
                   <Btn onClick={criar} disabled={!podeCriar||salvando} color={T.terracotaBtn}>{salvando?"Criando…":"Criar circuito"}</Btn>

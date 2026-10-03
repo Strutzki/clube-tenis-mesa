@@ -2236,6 +2236,69 @@ secao("O porteiro: o portão de autenticação, RODANDO a função");
   }
 }
 
+secao("Criar circuito: o botão desabilitado DIZ o que falta");
+{
+  // ACHADO EM USO REAL, 03/10/2026, pelo Juliano: ele foi criar o 2º circuito do
+  // Sistema B, escolheu sistema e pareamento, e o botão continuou morto. O relato
+  // dele — "escolhi os parâmetros e não deixa avançar" — era a leitura CORRETA do
+  // que a tela mostrava: `podeCriar` exige TAMBÉM nome e slug com 2+ caracteres, e
+  // nada na tela dizia isso.
+  //
+  // É a mesma família que esta onda inteira perseguiu — a tela sabendo algo e não
+  // falando — só que pelo SILÊNCIO em vez da frase errada. Botão desabilitado é uma
+  // recusa, e recusa sem motivo é a pior forma de recusa. E foi encontrado por USO,
+  // não pela auditoria: oito duplas de guardião e supervisor passaram por esta tela
+  // e nenhuma tentou criar um circuito com o slug vazio.
+  const { readFileSync } = await import("node:fs");
+  const fonteApp = semComentarios(readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8"));
+  const motorSrc = semComentarios(readFileSync(new URL("../supabase/functions/admin-action/index.ts", import.meta.url), "utf8"));
+
+  // A LISTA É DERIVADA DA MESMA CONDIÇÃO DO BOTÃO, não escrita à mão.
+  ok(/const faltando = \[\];/.test(fonteApp),
+    "a tela monta a lista do que falta");
+  ok(/const podeCriar = faltando\.length === 0;/.test(fonteApp),
+    "e o BOTÃO usa essa mesma lista — se alguém acrescentar exigência e esquecer a lista, o botão não morre em silêncio: ele passa a deixar criar");
+  ok(/Para criar, falta /.test(fonteApp),
+    "e a tela mostra a frase com o que falta");
+  ok(/\{!podeCriar && \(/.test(fonteApp),
+    "renderizada exatamente quando o botão está desabilitado — não é texto morto");
+
+  // CADA EXIGÊNCIA DO MOTOR TEM DE TER UMA LINHA NA LISTA. É isto que impede o
+  // silêncio de voltar: o motor recusa quatro coisas, e a tela nomeia as quatro.
+  const iFalt = fonteApp.indexOf("const faltando = [];");
+  const bloco = fonteApp.slice(iFalt, fonteApp.indexOf("const podeCriar", iFalt));
+  for (const [cond, oque] of [
+    ["nome.trim()", "o nome"],
+    ["slugLimpo.length < 2", "o slug curto ou vazio"],
+    ['slugLimpo === "bh"', "o slug reservado"],
+    ["!sistema", "o sistema"],
+    ['sistema === "B" && !pareamento', "o pareamento no Sistema B"],
+  ]) {
+    ok(bloco.includes(cond), `a lista cobre ${oque}`);
+  }
+
+  // E as cinco do motor são exatamente estas — a tela não pode nomear menos do que o
+  // servidor recusa, senão o botão volta a morrer por um motivo que ninguém lê.
+  const iAcao = motorSrc.indexOf('case "CRIAR_CIRCUITO"');
+  const acao = motorSrc.slice(iAcao, motorSrc.indexOf("\n      case ", iAcao + 10));
+  for (const [re, oque] of [
+    [/Nome do circuito é obrigatório/, "nome"],
+    [/Slug inválido/, "slug curto"],
+    [/reservado ao circuito de Belo Horizonte/, "slug bh"],
+    [/Escolha o sistema do circuito/, "sistema"],
+    [/escolha o método de pareamento/, "pareamento no B"],
+  ]) {
+    ok(re.test(acao), `o motor recusa por ${oque} (a tela tem de nomear o mesmo)`);
+  }
+
+  // A SELEÇÃO FICOU INEQUÍVOCA: era só uma borda trocando de cor.
+  ok(/const marcaSel = /.test(fonteApp),
+    "as opções ganharam marca de selecionado, não só borda");
+  const marcas = (fonteApp.match(/\{marcaSel\(/g) || []).length;
+  igual(marcas, 2,
+    "nos DOIS seletores — sistema e pareamento; um só marcado deixaria o outro com o problema original");
+}
+
 secao("Os números citados existem no arquivo de prova");
 {
   // O DEFEITO Nº 1 DESTE PROJETO — "não cite de memória, rode e leia" — tinha

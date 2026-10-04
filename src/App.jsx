@@ -247,7 +247,23 @@ const db = {
   deleteAllChaves: () => supaFetch("chaves?id=neq.__none__", { method:"DELETE" }),
 
   // Config
-  getConfig: () => supaFetch(`circuitos?id=eq.${CIRCUITO_ATIVO}`),
+  // ⚠️ ERA A ÚLTIMA LEITURA SEM LISTA DE COLUNAS — e ela DERRUBOU A PRODUÇÃO em
+  // 03/10/2026, 20:55. Sem `select`, o PostgREST pede TODAS as colunas; o `anon` tem
+  // grant POR COLUNA nesta tabela; coluna nova nasce SEM grant; e o PostgREST recusa
+  // a leitura INTEIRA quando falta uma. Bastou eu acrescentar `meses_temporada` para
+  // o app inteiro responder "permission denied for table circuitos" (42501).
+  //
+  // O Supervisor do Admin apontou exatamente isto em 29/09 — "o último `select *` na
+  // tabela da armadilha nº 1" — e EU CLASSIFIQUEI COMO "endurecimento, não defeito"
+  // porque não consegui demonstrar a quebra. Demonstrei quatro dias depois, sozinho,
+  // em produção. A lição não é sobre colunas: é que "não consegui demonstrar" não é
+  // o mesmo que "não quebra", e eu tratei como se fosse.
+  //
+  // As colunas abaixo são as 23 que o app realmente lê (levantadas de todo
+  // `config?.[0]?.x` no arquivo) mais `id`. Acrescentar coluna ao banco agora é
+  // inofensivo: esta leitura não a pede, e nada quebra até alguém vir aqui de
+  // propósito — que é exatamente o acoplamento que se quer.
+  getConfig: () => supaFetch(`circuitos?id=eq.${CIRCUITO_ATIVO}&select=id,fase,nome_circuito,sistema,pareamento,regulamento_versao,temporada_numero,temporada_ano,rodadas_por_temporada,max_atletas,auto_validar_placar,inscricoes_abertas,data_inicio_temporada,financeiro_ativo,valor_temporada,desconto_global_pct,percentual_entrada_meio,pix_chave,proxima_aberta,proxima_nome,proxima_data_inicio,proxima_rotulo,proxima_valor_cheio,proxima_valor_desconto,publico,meses_temporada`),
   updateConfig: (data) => supaFetch("configuracao?id=eq.1", { method:"PATCH", body: JSON.stringify(data) }),
 
   // Circuitos com inscrições abertas (leitura pública — só campos públicos). Fatia 2/inscrição por circuito.
@@ -284,9 +300,20 @@ const db = {
   // leitura pedisse tudo, revogar o acesso a uma coluna faria a leitura INTEIRA
   // falhar com erro de permissão — a armadilha que derrubou o app em 07/09.
   getSolicitacoesWo: () => supaFetch(`solicitacoes_wo?circuito_id=eq.${CIRCUITO_ATIVO}&select=id,match_id,atleta_id,atleta_nome,adversario_id,adversario_nome,round,status,criado_em,respondido_em,motivo_recusa,notificado_solicitante,notificado_adversario&order=criado_em.desc&limit=200`),
-  insertSolicitacaoWo: (data) => supaFetch("solicitacoes_wo", { method:"POST", body: JSON.stringify(data) }),
-  updateSolicitacaoWo: (id, data) => supaFetch(`solicitacoes_wo?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data) }),
-  deleteSolicitacaoWo: (id) => supaFetch(`solicitacoes_wo?id=eq.${id}`, { method:"DELETE" }),
+  // ⚠️ AS TRÊS GANHARAM `return=minimal` EM 03/10/2026, e o motivo é um que eu criei:
+  // ao fechar o acesso ao dado de saúde, `solicitacoes_wo` passou de grant de TABELA
+  // para grant POR COLUNA (14 de 16). Sem `return=minimal`, o `supaFetch` manda
+  // `Prefer: return=representation` e o PostgREST tenta devolver a linha INTEIRA —
+  // incluindo as duas colunas que o `anon` deixou de poder ler. As três passariam a
+  // falhar com 42501.
+  //
+  // Elas são CÓDIGO MORTO hoje (definidas e nunca chamadas — o fluxo real de W.O. vai
+  // pelo `chamarAtletaAction`), então não houve quebra. Mas código morto que quebraria
+  // se usado é pior que código morto: a próxima pessoa que chamar uma delas vai
+  // debugar uma permissão em vez de ler esta linha.
+  insertSolicitacaoWo: (data) => supaFetch("solicitacoes_wo", { method:"POST", body: JSON.stringify(data), prefer: "return=minimal" }),
+  updateSolicitacaoWo: (id, data) => supaFetch(`solicitacoes_wo?id=eq.${id}`, { method:"PATCH", body: JSON.stringify(data), prefer: "return=minimal" }),
+  deleteSolicitacaoWo: (id) => supaFetch(`solicitacoes_wo?id=eq.${id}`, { method:"DELETE", prefer: "return=minimal" }),
 };
 
 // ── FOTO DE PERFIL DO ATLETA (Supabase Storage) ───────────────────────────────

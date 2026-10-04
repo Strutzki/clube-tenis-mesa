@@ -2236,6 +2236,63 @@ secao("O porteiro: o portão de autenticação, RODANDO a função");
   }
 }
 
+secao("Nas tabelas com grant por coluna, nada pede TODAS as colunas");
+{
+  // ISTO DERRUBOU A PRODUÇÃO em 03/10/2026, 20:55, e o aviso existia desde 29/09.
+  //
+  // O `db.getConfig()` lia `circuitos?id=eq.X` SEM lista de colunas. Sem `select`, o
+  // PostgREST pede TODAS; o `anon` tem grant POR COLUNA em `circuitos`; coluna nova
+  // nasce SEM grant; e o PostgREST recusa a leitura INTEIRA quando falta uma. Bastou
+  // eu acrescentar `meses_temporada` para o app responder, em toda tela,
+  // "permission denied for table circuitos" (42501).
+  //
+  // O Supervisor do Admin apontou exatamente isso — "o último `select *` na tabela da
+  // armadilha nº 1" — e eu classifiquei como "endurecimento, não defeito" porque não
+  // consegui demonstrar a quebra. Demonstrei quatro dias depois, sozinho, em produção.
+  // A lição não é sobre colunas: é que "não consegui demonstrar" não é o mesmo que
+  // "não quebra", e eu tratei como se fosse.
+  //
+  // ⚠️ POR QUE SÓ ESTAS QUATRO TABELAS, e não todas. Medido no banco em 03/10:
+  //    grant POR COLUNA (a armadilha é viva):
+  //        circuitos · atletas · circuito_atletas · solicitacoes_wo
+  //    grant de TABELA (coluna nova já nasce coberta, sem risco):
+  //        partidas · chaves · configuracao · mensagens_enviadas · partidas_historico
+  // Exigir `select` nas nove seria pedir mudança em código que não corre risco — e
+  // asserção que cobra o que não importa é asserção que alguém desliga. Se um dia
+  // alguma das cinco virar grant por coluna, ela entra NESTA lista, e esta frase é o
+  // lembrete de por quê.
+  const COM_GRANT_POR_COLUNA = ["circuitos", "atletas", "circuito_atletas", "solicitacoes_wo"];
+
+  const { readFileSync } = await import("node:fs");
+  const fonteApp = semComentarios(readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8"));
+
+  const chamadas = [...fonteApp.matchAll(/supaFetch\(\s*[`"']([a-z_]+)\??([^`"']*)[`"']([^\n]*)/g)];
+  ok(chamadas.length >= 10, `o app tem leituras diretas ao PostgREST (${chamadas.length})`);
+
+  const emRisco = chamadas.filter((m) => {
+    const [, tabela, query, resto] = m;
+    if (!COM_GRANT_POR_COLUNA.includes(tabela)) return false;
+    if (/\bselect=/.test(query)) return false;        // nomeia as colunas: seguro
+    if (/return=minimal/.test(resto)) return false;    // não devolve linha: seguro
+    return true;                                       // pede a linha inteira: QUEBRA
+  });
+  igual(emRisco.length, 0,
+    `nenhuma chamada a tabela com grant por coluna pede a linha INTEIRA${emRisco.length ? " (em risco: " + emRisco.map(m => m[1] + "?" + m[2].slice(0, 36)).join(" | ") + ")" : ""}`);
+
+  // E `select=*` é a mesma armadilha com outra roupa: pede tudo sem nomear.
+  const comEstrela = chamadas.filter((m) => COM_GRANT_POR_COLUNA.includes(m[1]) && /\bselect=\*/.test(m[2]));
+  igual(comEstrela.length, 0,
+    "e nenhuma usa `select=*` nessas tabelas — o asterisco tem o mesmo efeito do `select` ausente");
+
+  // A leitura que quebrou, especificamente, tem de pedir o que o app usa.
+  const iCfg = fonteApp.indexOf("getConfig: () =>");
+  const cfg = fonteApp.slice(iCfg, fonteApp.indexOf("\n", iCfg));
+  for (const col of ["fase", "sistema", "pareamento", "regulamento_versao", "max_atletas",
+                     "financeiro_ativo", "proxima_aberta", "publico", "meses_temporada"]) {
+    ok(cfg.includes(col), `a leitura de configuração pede \`${col}\``);
+  }
+}
+
 secao("Cada circuito define os três meses em que roda");
 {
   // DECISÃO DO JULIANO, 03/10/2026. Até aqui os três meses eram SEMPRE CONSECUTIVOS:

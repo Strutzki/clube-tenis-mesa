@@ -944,6 +944,7 @@ const INIT = {
   nomeCircuito: "Clube do Tênis de Mesa", // nome exibido (cabeçalho + mensagens)
   dataInicioTemporada: null, // data de início da próxima temporada (define prazos de renovação)
   maxAtletas: 20,            // teto de atletas por circuito
+  mesesTemporada: null,      // os 3 meses em que ESTE circuito roda (null = 3 consecutivos)
   proximaAberta: false,      // pré-abertura da próxima temporada (renovação/pagamento) sem encerrar a atual
   proximaNome: null,         // nome da próxima temporada (definido na pré-abertura)
   proximaDataInicio: null,   // data de início da próxima temporada
@@ -1531,15 +1532,19 @@ function reducer(state, action) {
     }
 
     case "DEFINIR_CONFIG_CIRCUITO": {
-      const { nome, dataInicio } = action.payload || {};
+      const { nome, dataInicio, mesesTemporada } = action.payload || {};
       return { ...state,
         ...(nome !== undefined ? { nomeCircuito: nome || "Clube do Tênis de Mesa" } : {}),
         ...(dataInicio !== undefined ? { dataInicioTemporada: dataInicio || null } : {}),
+        // `mesesTemporada` entra aqui para a tela refletir a escolha na hora. Sem esta
+        // linha o card mostraria o valor antigo até o próximo carregamento — e o
+        // organizador acharia que a escolha não pegou.
+        ...(mesesTemporada !== undefined ? { mesesTemporada: mesesTemporada || null } : {}),
       };
     }
 
     case "LOAD_FROM_DB": {
-      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, regulamentoVersao, nomeCircuito, dataInicioTemporada, maxAtletas, proximaAberta, proximaNome, proximaDataInicio, proximaRotulo, proximaValorCheio, proximaValorDesconto, pixChave, mensagensEnviadas, solicitacoesWo, inscricoesAbertas } = action.payload;
+      const { athletes, matches, keys, phase, temporadaNumero, temporadaAno, rodadasPorTemporada, autoValidarPlacar, financeiroAtivo, valorTemporada, descontoGlobalPct, percentualEntradaMeio, regulamentoVersao, nomeCircuito, dataInicioTemporada, maxAtletas, mesesTemporada, proximaAberta, proximaNome, proximaDataInicio, proximaRotulo, proximaValorCheio, proximaValorDesconto, pixChave, mensagensEnviadas, solicitacoesWo, inscricoesAbertas } = action.payload;
       return {
         ...state, athletes, matches, keys, phase,
         proximaAberta: proximaAberta ?? state.proximaAberta,
@@ -1559,6 +1564,7 @@ function reducer(state, action) {
         nomeCircuito: nomeCircuito ?? state.nomeCircuito,
         dataInicioTemporada: dataInicioTemporada !== undefined ? dataInicioTemporada : state.dataInicioTemporada,
         maxAtletas: maxAtletas ?? state.maxAtletas,
+        mesesTemporada: mesesTemporada !== undefined ? mesesTemporada : state.mesesTemporada,
         temporadaNumero: temporadaNumero ?? state.temporadaNumero,
         temporadaAno: temporadaAno ?? state.temporadaAno,
         mensagensEnviadas: mensagensEnviadas ?? state.mensagensEnviadas,
@@ -6034,6 +6040,7 @@ export default function App() {
         nomeCircuito: config?.[0]?.nome_circuito || "Clube do Tênis de Mesa",
         dataInicioTemporada: config?.[0]?.data_inicio_temporada || null,
         maxAtletas: config?.[0]?.max_atletas || 20,
+        mesesTemporada: config?.[0]?.meses_temporada || null,
         proximaAberta: config?.[0]?.proxima_aberta || false,
         proximaNome: config?.[0]?.proxima_nome || null,
         proximaDataInicio: config?.[0]?.proxima_data_inicio || null,
@@ -8654,6 +8661,126 @@ function CobrancaPlataformaCard({ chamarAdminAction, circuitoSelId, ativosCount 
   );
 }
 
+// ── OS TRÊS MESES EM QUE O CIRCUITO RODA ──────────────────────────────────────
+//
+// Decisão do Juliano, 03/10/2026. O vB-01 já prometia "os meses de recesso são
+// definidos pelo organizador do circuito" — texto que o atleta aceita — e a promessa
+// não tinha onde morar: nem campo no banco, nem tela. O motor ganhou o campo em
+// 03/10; esta é a tela.
+//
+// Só aparece em circuito NÃO-BH, e isso não é detalhe de layout: no BH os meses de
+// férias são CRAVADOS no regulamento (v03-13, Cap. 13 — janeiro, julho e dezembro), e
+// oferecer a escolha lá seria oferecer o que o texto com aceite não permite.
+//
+// O calendário mostra os DOZE meses, não só os escolhidos. É deliberado: o organizador
+// precisa ver os buracos que está criando. Escolher março, maio e agosto significa que
+// o circuito fica parado em abril, junho e julho — e isso é mais fácil de entender
+// olhando o ano inteiro do que lendo três nomes numa lista.
+function MesesTemporadaCard({ state, dispatch }) {
+  const salvos = Array.isArray(state.mesesTemporada) ? state.mesesTemporada : null;
+  const [sel, setSel] = useState(salvos || []);
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  // Mantém a tela em dia quando o circuito troca ou o carregamento chega depois.
+  useEffect(() => { setSel(Array.isArray(state.mesesTemporada) ? state.mesesTemporada : []); setMsg(""); },
+    [state.mesesTemporada, state.nomeCircuito]);
+
+  const toca = (m) => {
+    setMsg("");
+    setSel((atual) => atual.includes(m)
+      ? atual.filter((x) => x !== m)          // desmarcar é sempre permitido
+      : (atual.length >= 3 ? atual : [...atual, m])); // a ORDEM do clique é a ordem das etapas
+  };
+
+  async function salvar(valor) {
+    setSalvando(true); setMsg("");
+    try {
+      await dispatch({ type: "DEFINIR_CONFIG_CIRCUITO", payload: { mesesTemporada: valor } });
+      setMsg(valor ? "✓ Meses salvos." : "✓ Voltou ao automático.");
+    } catch (e) {
+      setMsg("✗ " + (e?.message || "Não foi possível salvar."));
+    } finally { setSalvando(false); }
+  }
+
+  const mudou = JSON.stringify(sel) !== JSON.stringify(salvos || []);
+  const completo = sel.length === 3;
+
+  return (
+    <Card style={{marginBottom:16, border:`1px solid ${T.bordaSuave}`}}>
+      <div style={{fontSize:13,fontWeight:700,color:T.offwhite}}>🗓️ Meses em que o circuito roda</div>
+      <div style={{fontSize:12,color:T.cinza,marginTop:2,lineHeight:1.55}}>
+        A temporada tem <strong style={{color:T.offwhite}}>3 meses</strong> e 2 rodadas em cada — 6 no total (Cap. 13).
+        Escolha quais três. A ordem do clique é a ordem das etapas.
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:6,marginTop:12}}>
+        {MESES_NOME.map((nome, i) => {
+          const m = i + 1;
+          const pos = sel.indexOf(m);
+          const escolhido = pos >= 0;
+          const cheio = sel.length >= 3 && !escolhido;
+          return (
+            <div key={m} onClick={()=>!cheio && !salvando && toca(m)}
+              style={{
+                border:`1.5px solid ${escolhido ? T.terracota : T.bordaSuave}`,
+                background: escolhido ? "rgba(216,90,48,0.14)" : "transparent",
+                borderRadius:9, padding:"7px 4px", textAlign:"center",
+                cursor: (cheio || salvando) ? "default" : "pointer",
+                opacity: cheio ? 0.38 : 1, position:"relative",
+              }}>
+              <div style={{fontSize:11.5,fontWeight:escolhido?700:500,color:escolhido?T.offwhite:T.cinza}}>
+                {nome.slice(0,3)}
+              </div>
+              {escolhido && (
+                <div style={{fontSize:9,fontFamily:T.mono,color:T.terracota,marginTop:1}}>{pos+1}ª etapa</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* O QUE A ESCOLHA SIGNIFICA, em português. Três nomes numa lista não deixam
+          claro que o circuito vai FICAR PARADO nos outros meses. */}
+      {completo && (
+        <div style={{marginTop:12,fontSize:12,color:"#e8c9a0",background:"rgba(156,111,62,0.12)",
+          border:"1px solid rgba(156,111,62,0.4)",borderRadius:9,padding:"9px 12px",lineHeight:1.6}}>
+          As rodadas saem em <strong style={{color:T.offwhite}}>{sel.map(m=>MESES_NOME[m-1]).join(", ")}</strong>.
+          O circuito fica <strong style={{color:T.offwhite}}>parado</strong> nos outros {12 - 3} meses.
+          {sel[0] > sel[2] || sel[1] > sel[2] || sel[0] > sel[1]
+            ? <> A temporada <strong style={{color:T.offwhite}}>atravessa o ano</strong> — quando um mês é anterior ao anterior, ele cai no ano seguinte.</>
+            : null}
+        </div>
+      )}
+      {!completo && sel.length > 0 && (
+        <div style={{marginTop:12,fontSize:12,color:T.cinza}}>
+          Faltam {3 - sel.length} mês(es) para completar a temporada.
+        </div>
+      )}
+
+      {msg && <div style={{fontSize:12.5,color: msg.startsWith("✗") ? T.vermelho : "#6a9d7a",marginTop:10}}>{msg}</div>}
+
+      <div style={{display:"flex",gap:8,marginTop:14,flexWrap:"wrap"}}>
+        <Btn small disabled={!completo || !mudou || salvando} onClick={()=>salvar(sel)} color={T.terracotaBtn}>
+          {salvando ? "Salvando…" : "Salvar os 3 meses"}
+        </Btn>
+        {salvos && (
+          <Btn small disabled={salvando} onClick={()=>{ setSel([]); salvar(null); }} color={T.bordaSuave}>
+            Voltar ao automático
+          </Btn>
+        )}
+      </div>
+
+      <div style={{fontSize:11,color:"#7d9188",marginTop:10,lineHeight:1.55}}>
+        {salvos
+          ? <>Hoje: <strong style={{color:T.offwhite}}>{salvos.map(m=>MESES_NOME[m-1]).join(" · ")}</strong>.</>
+          : <>Hoje está no <strong style={{color:T.offwhite}}>automático</strong>: três meses seguidos, a partir do mês da 1ª rodada.</>}
+        {" "}Mudar isso no meio da temporada só afeta as etapas que <em>ainda não saíram</em> — as rodadas já publicadas mantêm os prazos delas.
+      </div>
+    </Card>
+  );
+}
+
 function VisibilidadeCircuitoCard({ chamarAdminAction, circuitos, circuitoSelId, recarregarCircuitos }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -9211,6 +9338,12 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
           <CriarCircuitoCard chamarAdminAction={chamarAdminAction} recarregarCircuitos={recarregarCircuitos} />
           {circuitoSelId !== CIRCUITO_BH_ID && (
             <GerenciarOrganizadoresCard chamarAdminAction={chamarAdminAction} circuitoSelId={circuitoSelId} />
+          )}
+          {/* Só em circuito não-BH: no BH os meses de férias são CRAVADOS no
+              regulamento (v03-13, Cap. 13) e oferecer a escolha ali seria oferecer o
+              que o texto com aceite não permite. */}
+          {circuitoSelId !== CIRCUITO_BH_ID && (
+            <MesesTemporadaCard state={state} dispatch={dispatch} />
           )}
           {circuitoSelId !== CIRCUITO_BH_ID && (
             <VisibilidadeCircuitoCard

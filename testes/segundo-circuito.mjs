@@ -2236,6 +2236,60 @@ secao("O porteiro: o portão de autenticação, RODANDO a função");
   }
 }
 
+secao("A tela dos meses: a escolha chega ao motor e some no BH");
+{
+  // O motor ganhou o campo em 03/10 e a TELA ficou pela metade — eu derrubei a
+  // produção no meio e parei. Esta é a outra ponta.
+  const { readFileSync } = await import("node:fs");
+  const fonteApp = semComentarios(readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8"));
+
+  const iCard = fonteApp.indexOf("function MesesTemporadaCard(");
+  ok(iCard > 0, "o card dos meses existe");
+  const card = fonteApp.slice(iCard, fonteApp.indexOf("\nfunction ", iCard + 10));
+
+  // ⚠️ NÃO APARECE NO BH, e isso não é layout: lá os meses de férias são CRAVADOS no
+  // v03-13, Cap. 13, que é texto com aceite. Oferecer a escolha seria oferecer o que
+  // o regulamento aceito não permite.
+  ok(/\{circuitoSelId !== CIRCUITO_BH_ID && \(\s*<MesesTemporadaCard/.test(fonteApp),
+    "o card só aparece em circuito NÃO-BH — no BH os meses são cravados no regulamento com aceite");
+
+  // A ESCOLHA TEM DE CHEGAR AO MOTOR com o nome que ele espera.
+  ok(/DEFINIR_CONFIG_CIRCUITO/.test(card) && /mesesTemporada: valor/.test(card),
+    "a tela manda a escolha pela ação de configuração, no campo `mesesTemporada`");
+  const motorSrc = semComentarios(readFileSync(new URL("../supabase/functions/admin-action/index.ts", import.meta.url), "utf8"));
+  ok(/p\.mesesTemporada !== undefined/.test(motorSrc),
+    "e o motor lê exatamente esse nome — se os dois divergirem, a tela salva no vazio");
+
+  // O CAMINHO INTEIRO: banco → estado → tela. Um elo que perde o campo faz a tela
+  // mostrar o valor errado sem erro nenhum, que foi o defeito de três tradutores
+  // nesta onda.
+  ok(/mesesTemporada: config\?\.\[0\]\?\.meses_temporada/.test(fonteApp),
+    "a configuração lida do banco vira estado");
+  ok(/getConfig: \(\) => supaFetch\(`circuitos[^`]*meses_temporada/.test(fonteApp),
+    "e a leitura PEDE a coluna — sem isso o estado nasceria sempre nulo");
+  ok(/mesesTemporada !== undefined \? mesesTemporada : state\.mesesTemporada/.test(fonteApp),
+    "o LOAD_FROM_DB preserva o campo");
+  ok(/\.\.\.\(mesesTemporada !== undefined \? \{ mesesTemporada: mesesTemporada \|\| null \} : \{\}\)/.test(fonteApp),
+    "e o reducer reflete a escolha na hora — senão o card mostraria o valor antigo e o organizador acharia que não pegou");
+
+  // A TELA SÓ DEIXA SALVAR 3, e diz o que falta.
+  ok(/atual\.length >= 3 \? atual/.test(card),
+    "a tela impede escolher mais de 3 meses");
+  ok(/Faltam \{3 - sel\.length\}/.test(card),
+    "e diz quantos faltam — botão desabilitado sem motivo foi o defeito de 03/10");
+  ok(/completo \|\| !mudou/.test(card.replace(/\s+/g, " ")) || /!completo \|\| !mudou/.test(card),
+    "e o botão só liga com os 3 escolhidos E alguma mudança");
+
+  // E DIZ O QUE A ESCOLHA SIGNIFICA — três nomes numa lista não deixam claro que o
+  // circuito FICA PARADO nos outros meses.
+  ok(/fica <strong[^>]*>parado/.test(card),
+    "o card avisa que o circuito fica PARADO nos meses de fora");
+  ok(/atravessa o ano/.test(card),
+    "e avisa quando a temporada atravessa o ano — é o caso em que o ano vira sozinho no motor");
+  ok(/Voltar ao automático/.test(card),
+    "e dá como desfazer: voltar ao automático");
+}
+
 secao("Nas tabelas com grant por coluna, nada pede TODAS as colunas");
 {
   // ISTO DERRUBOU A PRODUÇÃO em 03/10/2026, 20:55, e o aviso existia desde 29/09.

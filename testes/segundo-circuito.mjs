@@ -3679,6 +3679,45 @@ secao("O atleta sabe quanto, quando e como pagar — antes de se comprometer");
     "e o motor confirma que são duas rodadas por avanço — é o que sustenta a frase");
 }
 
+secao("O pagamento registra QUEM confirmou — rodando o motor de verdade");
+{
+  // 16/10/2026. O Juliano entrou como atleta, viu "pagamento confirmado" e
+  // disse "não lembro de ter pago". O registro existia (03/10, 21:03:47,
+  // R$ 50,00, criado e confirmado no MESMO milissegundo — assinatura do botão
+  // do painel), mas a tabela não guardava autoria. O melhor que dava para
+  // responder era "foi pelo painel", nunca "foi você".
+  //
+  // ⚠️ Campo de AUDITORIA: nenhum cálculo depende dele, e a trava do pareamento
+  // continua olhando só `pagamento_confirmado`. As duas asserções abaixo provam
+  // as duas metades — que a autoria é gravada, e que o efeito no pareamento não
+  // mudou.
+  const ATL_PG = "aaaa0000-0000-0000-0000-0000000000pg".replace("pg", "99");
+  const { banco, motor } = await montarMotor({
+    circuitos: [circuito(BH, { financeiro_ativo: true, valor_temporada: 5000 })],
+    atletas: [atleta(ATL_PG, { nome: "Quem Pagou", status: "ativo" })],
+    circuito_atletas: [{ circuito_id: BH, atleta_id: ATL_PG, status: "ativo" }],
+  });
+  const r = await comoAdmin(motor, "REGISTRAR_PAGAMENTO", {
+    atletaId: ATL_PG, valor: 5000, temporadaRotulo: "1/2026", metodo: "pix",
+  });
+  igual(r.status, 200, "o pagamento é registrado");
+  const pg = banco.linhas("pagamentos").find(x => x.atleta_id === ATL_PG);
+  ok(!!pg, "e a linha existe no livro");
+  igual(pg?.confirmado_por, "super-admin",
+    "com a AUTORIA gravada — era isto que faltava para o app dizer de onde veio a confirmação");
+  ok(!!pg?.confirmado_em, "e com a data da confirmação");
+  // A autoria vem do SERVIDOR: o cliente não a declara.
+  const corpoAcao = motorFonte.slice(motorFonte.indexOf('case "REGISTRAR_PAGAMENTO"'),
+                                     motorFonte.indexOf('case "ESTORNAR_PAGAMENTO"'));
+  ok(/confirmado_por: ehSuper \? "super-admin" : \(orgAtletaId \|\| null\)/.test(corpoAcao),
+    "e ela sai da autenticação do servidor, não do payload — autoria que o cliente declara não é autoria");
+  ok(!/confirmadoPor/.test(corpoAcao),
+    "o motor não aceita autoria vinda do cliente");
+  // O efeito que importa para a competição não mudou.
+  igual(banco.acha("circuito_atletas", c => c.atleta_id === ATL_PG)?.pagamento_confirmado, true,
+    "e o atleta passa a contar como pago — a trava do pareamento segue a mesma");
+}
+
 secao("Aprovado e pago são coisas diferentes, e a tela diz isso");
 {
   // 16/10/2026. Pedido do Juliano, com as palavras dele: "quando um atleta se

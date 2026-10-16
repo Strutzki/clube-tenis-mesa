@@ -8595,6 +8595,24 @@ function AdminFinanceiro({ state, chamarAdminAction, loadFromSupabase }) {
             <div style={{minWidth:0}}>
               <div style={{fontSize:12,color:"#F0EAE0"}}>{at?nomeComApelido(at):"(atleta removido)"}</div>
               <div style={{fontSize:10,color:"#7d9188"}}>{p.temporada_rotulo||""} · {p.percentual||100}%{p.status==="estornado"?" · ESTORNADO":""}{p.observacao?` · ${p.observacao}`:""}</div>
+              {/* A ORIGEM DA AFIRMAÇÃO — 16/10/2026.
+                  O livro dizia QUANTO e DE QUEM, nunca QUEM CONFIRMOU nem
+                  QUANDO. Foi o que impediu de responder "não lembro de ter
+                  pago": o registro existia e não tinha autoria.
+                  `null` é dito como "origem não registrada", não escondido —
+                  pagamento anterior a hoje não tem como saber, e inventar
+                  "confirmado por você" seria afirmar o que ninguém mediu. */}
+              <div style={{fontSize:10,color:"#5d6f67",fontFamily:T.mono,marginTop:2}}>
+                {p.confirmado_em
+                  ? new Date(p.confirmado_em).toLocaleString("pt-BR", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})
+                  : "sem data"}
+                {" · "}
+                {p.confirmado_por === "super-admin"
+                  ? "confirmado pelo administrador"
+                  : p.confirmado_por
+                    ? `confirmado pelo organizador ${(state.athletes.find(x=>x.id===p.confirmado_por) ? nomeComApelido(state.athletes.find(x=>x.id===p.confirmado_por)) : p.confirmado_por)}`
+                    : "origem não registrada"}
+              </div>
             </div>
             <div style={{fontSize:13,fontWeight:700,color:p.status==="estornado"?"#7d9188":"#6a9d7a",whiteSpace:"nowrap"}}>{fmtR(p.valor)}</div>
           </div>

@@ -2607,6 +2607,19 @@ Deno.serve(async (req) => {
           isento: !!p.isento, status: "confirmado", metodo: p.metodo || "pix",
           comprovante_url: p.comprovanteUrl || null, observacao: p.observacao || null,
           confirmado_em: now, criado_em: now,
+          // QUEM confirmou — 16/10/2026. A tabela guardava valor, método e data
+          // e não guardava autoria, então o app afirmava "pago" sem poder
+          // mostrar a origem da afirmação. Virou pergunta real do Juliano, que
+          // viu "pagamento confirmado" no próprio card e não lembrava de ter
+          // pago (era um registro de teste do dia em que ele criou o circuito).
+          //
+          // Vem do SERVIDOR, não do payload: `ehSuper` e `orgAtletaId` já foram
+          // estabelecidos pela autenticação lá em cima. Autoria que o cliente
+          // declara não é autoria.
+          //
+          // Campo de AUDITORIA: nenhum cálculo depende dele, e a trava do
+          // pareamento continua olhando só `pagamento_confirmado`.
+          confirmado_por: ehSuper ? "super-admin" : (orgAtletaId || null),
         });
         if (errIns) throw errIns;
         const flagCol = alvo === "proxima" ? { pagamento_proxima_confirmado: true } : { pagamento_confirmado: true };

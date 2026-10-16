@@ -1,6 +1,76 @@
 # INDICE — fonte canônica do projeto Clube do Tênis de Mesa
 
-**Leia este arquivo ANTES de reescrever qualquer documento.** Ele traz (1) a hierarquia de fontes de verdade e (2) o inventário do que está atual vs. superado. Mantido pelo agente `curador-projeto`; toda revisão é registrada em `docs/curadoria-log.md`. **Estado: 29/09/2026 (noite), árvore `60ccc86`** — passagem do `supervisor-curador` sobre a revisão do curador, que havia sido feita em `707c40f`, **oito commits atrás**. As seções não marcadas com data de 29/09 continuam com o retrato de 19/09/2026.
+**Leia este arquivo ANTES de reescrever qualquer documento.** Ele traz (1) a hierarquia de fontes de verdade e (2) o inventário do que está atual vs. superado. Mantido pelo agente `curador-projeto`; toda revisão é registrada em `docs/curadoria-log.md`. **Estado: 12/10/2026, árvore `0cdb524` + 6 modificados** — revisão do Curador na onda da INSCRIÇÃO (piloto real do `bh2`). A revisão anterior foi em **29/09/2026 (noite), árvore `60ccc86`**; as seções não marcadas com data de 12/10 continuam com o retrato daquela data ou de 19/09/2026.
+
+---
+
+## 0. ⛔ O QUE ESTA PASSAGEM (12/10/2026) DERRUBOU — leia antes de citar este arquivo
+
+**Houve um buraco de treze dias na curadoria.** A entrada mais recente do
+`docs/curadoria-log.md` era de **29/09**, e entre ela e hoje aconteceram: a onda de
+01/10, **a publicação de 03/10** (7 passos, que foram ao ar), **uma queda de produção
+de 9 minutos**, quatro commits de app empurrados e a onda da inscrição. Nada disso
+estava no acervo. Consequência direta: **quem leu este índice ou o `CHANGELOG`
+entre 03/10 e 12/10 leu as versões erradas do que está no ar.**
+
+1. ⛔ **REGRA 7 PASSOU A MORDER: o `vB-01` SAIU DA JANELA DE EDIÇÃO.** Este arquivo
+   afirmava que *"o `vB-01` tem **ZERO aceites gravados** … e é por isso que aquela
+   edição pôde ser feita **no lugar**, sem versão nova"*. **Venceu.** Conferido no
+   banco hoje: **`bh2` → `vB-01` = 3 aceites**, de atletas reais. ⇒
+   `docs/REGULAMENTO_vB-01.md` **e** o texto do Sistema B na `RegulamentoView` estão
+   **CONGELADOS**; correção vai em **`vB-02`** com aviso prévio e re-aceite. ⚠️ **E
+   a armadilha do gerador:** como o `.md` é **gerado da tela**, editar a tela "só
+   para melhorar o texto" muda **retroativamente** o que 3 recibos provam. Ver
+   ROADMAP **1.2**.
+2. ⛔ **A `v03-13` FOI CARIMBADA NO BH.** Este arquivo dizia *"ainda não é a versão
+   do BH"*. Hoje `circuitos.bh.regulamento_versao = **v03-13**`, com **4 aceites**.
+3. ⛔ **AS VERSÕES NO AR MUDARAM TODAS** — ver seção 2, reconferidas ao vivo hoje.
+4. ⛔ **UM DEFEITO ATIVO EM PRODUÇÃO AGORA:** a tela dos meses está no ar falando com
+   um motor que não conhece o campo, e **responde "✓ Meses salvos" sem salvar** —
+   porque o `catch` dela é **código morto**. `meses_temporada` do `bh2` está `null`
+   e o Juliano acredita tê-lo configurado. **1ª etapa em 01/11/2026.** Ver
+   `CLAUDE.md` (Armadilhas) e ROADMAP **1.3**.
+5. **A bateria está em 1930 asserções / 18 seções** (era 1357 / 13). Quem somar "as
+   13 seções" perde **220** asserções.
+6. **A bateria carrega SETE Edge Functions, não seis** — faltava
+   `backup-clube-tenis-mesa`, a que **apaga arquivos** — e executa **três** recortes
+   puros do `App.jsx`, não dois.
+7. ⛔ **A TABELA DO `testes/README.md` ESTÁ INCOMPLETA — 17 de 23 arquivos.** É a
+   **quarta** vez que esta família de afirmação nasce velha, e a **primeira** em que
+   é a tabela, não o número. Fora dela: `ataques.mjs`, `ataques2.mjs`, `ataques3.mjs`,
+   `ataques4.mjs`, `backup.mjs`, `mutar.mjs`. **Não corrigido** — o arquivo está em
+   `testes/`, congelado como prova desta rodada. Texto pronto no `curadoria-log.md`.
+8. **O `admin-action` tem 47 ações, não 46** — a nova é `LER_JUSTIFICATIVA_WO`.
+9. **Mudança de schema em produção sem arquivo de migração:** a coluna
+   `circuitos.meses_temporada`, o grant ao `anon` e o CHECK existem no banco e **não
+   há `.sql` em `docs/migracoes/`** sobre nada disso. E o CHECK **não** valida mês
+   repetido, ao contrário do que o commit `9da18e4` afirma. ROADMAP **1.9**.
+10. ⛔ **O `README.md` — a PORTA DE ENTRADA — tinha SETE números errados de uma vez**
+    na tabela "As Edge Functions" (v62/v21/v9/v4/v1/v1/v5 e *"46 ações"*), mais
+    "SEIS" Edge Functions, "1357 asserções", "as duas exceções" puras e o BH em
+    "v03-12". **Corrigido em 12/10.** *(Eu havia **perdido** este arquivo na primeira
+    passagem; foi o **Supervisor de Curadoria** que o pegou e devolveu REVISAR. Fica
+    registrado porque é a lição da rodada para o próprio curador: a porta de entrada
+    é o lugar onde número velho custa mais caro, e foi o que eu não olhei.)*
+11. **`PLANO_PAGAMENTOS.md`** dizia *"Edge a deployar (v55) quando houver o 1º
+    circuito vendido"* — **TODO resolvido lido como aberto**: as duas ações de
+    cobrança da plataforma **já estão na v65 no ar** (verificado no corpo da função).
+    Corrigido.
+
+⚠️ **Aviso de método que esta rodada reforça:** eu **não** confirmei nada por
+leitura deste arquivo nem de mensagem de commit. Bateria somada seção a seção;
+versões lidas de `npm run motor:listar`; o corpo da função **no ar** lido via
+`get_edge_function`; aceites, colunas, grants e CHECK lidos do banco. **Onde eu não
+medi, está dito.**
+
+---
+
+> 🕰️ **BLOCO HISTÓRICO (29/09/2026) — NÃO É O ESTADO DE HOJE.** Marcado pelo Curador
+> em 12/10. O que nele venceu: a bateria (1357 → **1930**), o número de seções
+> (13 → **18**), as **SEIS** Edge Functions (são **SETE**), as duas funções puras
+> (são **três recortes**) e, principalmente, as *"cinco peças pendentes de subir"* —
+> **elas subiram em 03/10/2026**, nos 7 passos (ver `docs/CHANGELOG.md`). Leia a
+> seção 0 acima para o estado atual.
 
 ⚠️ **O QUE ESTA PASSAGEM MUDOU NO ACERVO, e é o que interessa a quem for escrever:** a bateria está em **1357 asserções** (era 1149 — o número envelheceu em horas, nas quatro rodadas de guardiões da mesma noite); a bateria carrega **SEIS** Edge Functions, não quatro (`admin-action`, `athlete-action`, `login-atleta`, `comprovante-url`, `circuito-dados`, `anonimizar-atleta`), mais **duas** funções puras do `App.jsx`; **cinco** peças estão pendentes de subir, nesta ordem confirmada por dois guardiões — **1º `circuito-dados` · 2º `anonimizar-atleta` · 3º `admin-action` · 4º `athlete-action` · 5º APP** (os passos 4 e 5 seguidos); e o `docs/ESPEC_CPF_SEGURANCA.md`, que **nunca havia passado por curadoria**, mudou de premissa — o `cpf_hash` passou a ser **apagado** na exclusão, por decisão do Juliano, com preço declarado. Detalhe em `docs/curadoria-log.md` (entrada de 29/09 noite).
 
@@ -19,11 +89,31 @@ Regra permanente: **BH em produção nunca é prejudicado** (comparador byte-id�
 
 ## 2. Mapa rápido (qual arquivo manda em quê)
 - **Front:** `src/App.jsx` (SPA único, Vite/rolldown). Deploy: `atualizar.sh` → Vercel. Cache: `vercel.json`.
-- **Backend:** `supabase/functions/` (Deno). **Versões no ar — conferido ao vivo em 29/09/2026** (`npm run motor:listar`, projeto `eultwfzzlgcmcikobmmy`): admin-action **v64**, athlete-action **v22**, login-atleta **v11**, comprovante-url **v3**, circuito-dados **v4**, despachos-do-dia **v6**. ⚠️ **Em 29/09/2026 o FONTE de `admin-action` e `athlete-action` está à frente do ar** (a auditoria multi-circuito, commits `f1cd61c`/`6266f11`/`707c40f`, não publicados) — ver `docs/CHANGELOG.md`. **Novo e sem dono documentado:** uma função **`arte` v1** apareceu no projeto em 29/09/2026 (11h52 BRT), sem pasta neste repositório; sinalizada, não tocada. *(Números anteriores desta linha: v62/v21/v9 em 19/09, que já estavam três deploys atrás em 29/09.)* Lista anterior mantida como registro: + comprovante-url, anonimizar-atleta, resetar-pin-atleta, backup, torneios-api (outro produto, mesmo projeto). (Corrigido: estava anotado v58/v19 — a Onda 0.10 de 16/09 já tinha subido v59→v60/v19→v20 e o índice não tinha acompanhado.) **Achado novo nesta rodada:** o `entrypoint_path` ao vivo de `login-atleta`, `circuito-dados` e `despachos-do-dia` — as três sem redeploy desde 08/09/2026 — ainda aponta para uma pasta de **rascunho do projeto de torneios** (`.../JULIANO-APP-TORNEIO/.../scratchpad/publicar-so-cors/...`), não para este repositório. O `CHANGELOG.md` (08/09) já registrava esse padrão ("deploys anteriores saíram de cópias montadas à mão... entrypoint_path apontava para pastas temporárias") e dizia tê-lo corrigido — mas só para `admin-action` (que hoje aponta corretamente para `/Users/strutzki/clube-tenis-mesa-v2/...`, junto com `athlete-action`). As outras três nunca foram republicadas desde então, então continuam com a origem antiga. Sem rollback confiável para essas três enquanto isso não for corrigido — é o mesmo achado do Guardião de Segurança sobre o `login-atleta` (ver `CLAUDE.md`, Armadilhas), só que abrange mais funções do que ele tinha nomeado.
+- **Backend:** `supabase/functions/` (Deno). ⚠️ **Versões no ar — RECONFERIDO AO VIVO EM 12/10/2026** (`npm run motor:listar`, projeto `eultwfzzlgcmcikobmmy`), com o `updated_at` real de cada uma: **admin-action v65** (03/10 07:27:49), **athlete-action v23** (03/10 07:28:24), **login-atleta v11** (28/09 21:46:55), **comprovante-url v3** (27/09 20:41:50), **circuito-dados v5** (03/10 07:26:39), **anonimizar-atleta v3** (03/10 07:26:54), **backup-clube-tenis-mesa v7** (03/10 07:29:38), **despachos-do-dia v6** (07/09 23:00:50). *(A lista anterior desta linha — v64/v22/v11/v3/v4/v6 — era de 29/09 e **ficou falsa em 03/10**, quando a onda dos 7 passos subiu. Ela sobreviveu nove dias aqui e no `CHANGELOG`.)* ⚠️ **O fonte segue à frente do ar em dois pontos:** o conserto de `meses_temporada` no `admin-action` (`9da18e4`, **nunca publicado** — é o defeito ativo do item 4 acima) e os 6 arquivos modificados da onda da inscrição. **A função `arte` v1** segue no projeto sem pasta neste repositório, desde 29/09 11:52 — sinalizada pela 2ª vez, não tocada. *(Linha anterior, mantida como registro:* admin-action v64, athlete-action v22, login-atleta v11, comprovante-url v3, circuito-dados v4, despachos-do-dia v6.*)* ⚠️ **Em 29/09/2026 o FONTE de `admin-action` e `athlete-action` está à frente do ar** (a auditoria multi-circuito, commits `f1cd61c`/`6266f11`/`707c40f`, não publicados) — ver `docs/CHANGELOG.md`. **Novo e sem dono documentado:** uma função **`arte` v1** apareceu no projeto em 29/09/2026 (11h52 BRT), sem pasta neste repositório; sinalizada, não tocada. *(Números anteriores desta linha: v62/v21/v9 em 19/09, que já estavam três deploys atrás em 29/09.)* Lista anterior mantida como registro: + comprovante-url, anonimizar-atleta, resetar-pin-atleta, backup, torneios-api (outro produto, mesmo projeto). (Corrigido: estava anotado v58/v19 — a Onda 0.10 de 16/09 já tinha subido v59→v60/v19→v20 e o índice não tinha acompanhado.) **Achado novo nesta rodada:** o `entrypoint_path` ao vivo de `login-atleta`, `circuito-dados` e `despachos-do-dia` — as três sem redeploy desde 08/09/2026 — ainda aponta para uma pasta de **rascunho do projeto de torneios** (`.../JULIANO-APP-TORNEIO/.../scratchpad/publicar-so-cors/...`), não para este repositório. O `CHANGELOG.md` (08/09) já registrava esse padrão ("deploys anteriores saíram de cópias montadas à mão... entrypoint_path apontava para pastas temporárias") e dizia tê-lo corrigido — mas só para `admin-action` (que hoje aponta corretamente para `/Users/strutzki/clube-tenis-mesa-v2/...`, junto com `athlete-action`). As outras três nunca foram republicadas desde então, então continuam com a origem antiga. Sem rollback confiável para essas três enquanto isso não for corrigido — é o mesmo achado do Guardião de Segurança sobre o `login-atleta` (ver `CLAUDE.md`, Armadilhas), só que abrange mais funções do que ele tinha nomeado.
 - **Banco (Modelo B):** identidade+rating global em `atletas`; sazonal por circuito em `circuito_atletas`; config em `circuitos` (BH em `configuracao`); histórico em `partidas_historico`; CPF em `atleta_documento`; papéis em `circuito_organizadores`; sessão em `atleta_sessao`.
-- **Regulamento A (rating/CBTM):** BH roda hoje a versão **v03-12** (com Cap. 10, Torneio Presencial, e o desconto de 80% para quem entra na 2ª etapa). Existe uma versão nova, **v03-13** (`docs/REGULAMENTO_TENIS_DE_MESA_v03-13.md`, criada 13/09/2026, revisada em 14 e 16/09) — mesmo texto, só tira o desconto por etapa (valor único em qualquer etapa); mantém o Cap. 10 e o resto do texto do BH intacto. **Ainda não é a versão do BH**: o motor recusa (409) virar a temporada do BH enquanto `circuitos.regulamento_versao` continuar `v03-12`. **Atualizado 19/09/2026:** o carimbo (`DEFINIR_REGULAMENTO_VERSAO`, super-admin, confirmação-com-nome), o re-aceite do atleta (`ACEITAR_REGULAMENTO`, token de sessão) e o aviso prévio (dois modos, antes/depois do carimbo) — 0.10.15 (a)+(b)+(c) — **estão construídos no fonte** (árvore provada por hash, bateria 474/0, build OK — **hoje 535/0**, ver a seção da rodada final), em revisão pelos sete guardiões, **ainda não publicados nem carimbados**. Seguem abertos: o registro da DATA do carimbo (decisão de schema, fica como gatilho), o snapshot dos aceites de hoje antes do 1º re-aceite, e o passo **(b2)**, liquidar as 3 pendências de pagamento da temporada 1/2026 (não reverificado nesta rodada) — antes de carimbar, e com a ordem de publicação de (e): **motor primeiro, app depois**. Detalhe em ROADMAP 0.10.15 e `docs/curadoria-log.md`, entrada de 19/09/2026. O `v03-12.md` continua intocado de propósito: é o registro do que os atletas de hoje aceitaram. Circuito de rating **novo** (não-BH) = versão **`vA-nc-01`** — mesmo texto de v03-12 **menos o Cap. 10** e, desde 12/09/2026, também sem o desconto por etapa; é a diferença de conteúdo definida em `docs/REGULAMENTOS_NOVOS_CIRCUITOS.md`, mas **sem `.md` canônico próprio** — mora só dentro desse arquivo, compartilhado com o texto do B (ROADMAP 0.10.3). **Regulamento B (pontos):** versão **vB-01**, sem torneio. ⚠️ **Corrigido em 29/09/2026:** o texto canônico **deixou de ser** o de `REGULAMENTOS_NOVOS_CIRCUITOS.md` e passou a ser **`docs/REGULAMENTO_vB-01.md`, GERADO** do que o app exibe por `scripts/gerar-regulamento.mjs` — **não se edita à mão**; edita-se a tela e regenera-se, e a bateria fica vermelha se os dois divergirem. Se os três arquivos discordarem, vale o gerado. (`REGULAMENTO_SISTEMA_B.md` é o **rascunho anterior**, hoje marcado como nota de projeto — ver Inventário.) **O `vB-01` tem ZERO aceites gravados** em `circuito_atletas` (conferido no banco em 29/09/2026 antes da correção do Cap. 03), e é por isso que aquela edição pôde ser feita **no lugar** sem versão nova — regra 7. A escolha do texto é por `circuitos.regulamento_versao`; no `App.jsx`, `RegulamentoView` usa **duas listas**, não uma: `VERSOES_COM_TORNEIO = new Set(["v03-12","v03-13"])` decide se o Cap. 10 aparece, e `VERSOES_COM_DESCONTO_ETAPA = new Set(["v03-12"])` decide se os 3 textos de valor prometem 80% — a v03-13 é o primeiro caso em que as duas divergem (tem torneio, não tem desconto). As duas são fail-closed (versão desconhecida não ganha nem o capítulo nem o desconto). Texto no `App.jsx` (RegulamentoView) + docs `REGULAMENTO_*` / `REGULAMENTOS_NOVOS_CIRCUITOS.md`.
+- **Regulamento A (rating/CBTM):** BH roda hoje a versão **v03-12** (com Cap. 10, Torneio Presencial, e o desconto de 80% para quem entra na 2ª etapa). Existe uma versão nova, **v03-13** (`docs/REGULAMENTO_TENIS_DE_MESA_v03-13.md`, criada 13/09/2026, revisada em 14 e 16/09) — mesmo texto, só tira o desconto por etapa (valor único em qualquer etapa); mantém o Cap. 10 e o resto do texto do BH intacto. ⛔ **CORRIGIDO EM 12/10/2026: A `v03-13` JÁ É A VERSÃO DO BH.** Esta linha dizia *"**Ainda não é a versão do BH**: o motor recusa (409) virar a temporada do BH enquanto `circuitos.regulamento_versao` continuar `v03-12`"*. Conferido no banco hoje: `circuitos.bh.regulamento_versao = **v03-13**`, com **4 aceites** em `circuito_atletas` (e o BH mantém o histórico de `v03-3` ×8, `v03-12` ×1, `v03-11` ×1, `v03-5` ×1). **O carimbo do 0.10.15(a) aconteceu** — o ROADMAP pode ser revisitado nessa parte. ⇒ a `v03-13` também está **congelada** pela regra 7 (4 recibos). **Atualizado 19/09/2026:** o carimbo (`DEFINIR_REGULAMENTO_VERSAO`, super-admin, confirmação-com-nome), o re-aceite do atleta (`ACEITAR_REGULAMENTO`, token de sessão) e o aviso prévio (dois modos, antes/depois do carimbo) — 0.10.15 (a)+(b)+(c) — **estão construídos no fonte** (árvore provada por hash, bateria 474/0, build OK — **hoje 535/0**, ver a seção da rodada final), em revisão pelos sete guardiões, **ainda não publicados nem carimbados**. Seguem abertos: o registro da DATA do carimbo (decisão de schema, fica como gatilho), o snapshot dos aceites de hoje antes do 1º re-aceite, e o passo **(b2)**, liquidar as 3 pendências de pagamento da temporada 1/2026 (não reverificado nesta rodada) — antes de carimbar, e com a ordem de publicação de (e): **motor primeiro, app depois**. Detalhe em ROADMAP 0.10.15 e `docs/curadoria-log.md`, entrada de 19/09/2026. O `v03-12.md` continua intocado de propósito: é o registro do que os atletas de hoje aceitaram. Circuito de rating **novo** (não-BH) = versão **`vA-nc-01`** — mesmo texto de v03-12 **menos o Cap. 10** e, desde 12/09/2026, também sem o desconto por etapa; é a diferença de conteúdo definida em `docs/REGULAMENTOS_NOVOS_CIRCUITOS.md`, mas **sem `.md` canônico próprio** — mora só dentro desse arquivo, compartilhado com o texto do B (ROADMAP 0.10.3). **Regulamento B (pontos):** versão **vB-01**, sem torneio. ⚠️ **Corrigido em 29/09/2026:** o texto canônico **deixou de ser** o de `REGULAMENTOS_NOVOS_CIRCUITOS.md` e passou a ser **`docs/REGULAMENTO_vB-01.md`, GERADO** do que o app exibe por `scripts/gerar-regulamento.mjs` — **não se edita à mão**; edita-se a tela e regenera-se, e a bateria fica vermelha se os dois divergirem. Se os três arquivos discordarem, vale o gerado. (`REGULAMENTO_SISTEMA_B.md` é o **rascunho anterior**, hoje marcado como nota de projeto — ver Inventário.) ⛔ **CORRIGIDO EM 12/10/2026 — ESTA FRASE VENCEU E ERA UM CONVITE A VIOLAR A REGRA 7.** Dizia: *"O `vB-01` tem ZERO aceites gravados em `circuito_atletas` (conferido no banco em 29/09/2026 antes da correção do Cap. 03), e é por isso que aquela edição pôde ser feita **no lugar** sem versão nova — regra 7."* **Hoje o `vB-01` tem 3 ACEITES**, de atletas reais do `bh2` (conferido no banco em 12/10). A afirmação era verdadeira em 29/09 e autorizava, nas suas próprias palavras, editar o texto **no lugar** — o que hoje reescreveria retroativamente o que 3 recibos provam. ⇒ **`vB-01` CONGELADO; correção só em `vB-02`, com aviso prévio e re-aceite.** E cuidado com o **gerador**: editar a tela e regenerar o `.md` é a mesma violação pela porta dos fundos. Ver ROADMAP **1.2** e a consulta obrigatória no `CLAUDE.md`, regra 7. A escolha do texto é por `circuitos.regulamento_versao`; no `App.jsx`, `RegulamentoView` usa **duas listas**, não uma: `VERSOES_COM_TORNEIO = new Set(["v03-12","v03-13"])` decide se o Cap. 10 aparece, e `VERSOES_COM_DESCONTO_ETAPA = new Set(["v03-12"])` decide se os 3 textos de valor prometem 80% — a v03-13 é o primeiro caso em que as duas divergem (tem torneio, não tem desconto). As duas são fail-closed (versão desconhecida não ganha nem o capítulo nem o desconto). Texto no `App.jsx` (RegulamentoView) + docs `REGULAMENTO_*` / `REGULAMENTOS_NOVOS_CIRCUITOS.md`.
 - **Marca:** `marca/Manual_Aplicacao_Marca_Clube_Tenis_Mesa_v2.pdf` (única). Slogan "Vem pro Clube"; 4 cores; sem "BH" na marca nacional; "cortada"=smash.
-- **LGPD/CPF:** `ESPEC_CPF_SEGURANCA.md`; consentimento `cpf-2026-08-v1`; controlador Juliano Strutzki (PF).
+- **LGPD/CPF:** `ESPEC_CPF_SEGURANCA.md`; consentimento de CPF `cpf-2026-08-v1`; controlador Juliano Strutzki (PF).
+  **NOVO EM 11/10/2026 — a POLÍTICA DE PRIVACIDADE passa a ter versão.** Nasce
+  `PRIVACIDADE_VERSAO = "privacidade-2026-10-v1"`, declarada em **três** pontas que
+  a bateria obriga a concordar (`src/App.jsx:92`, `athlete-action`, `login-atleta`) e
+  gravada em `atletas.privacidade_versao` — **carimbada pelo SERVIDOR**, ao contrário
+  do `cpfConsentVersao`, que vem no payload (*"um recibo que o cliente escolhe não é
+  recibo"*). ⛔ **No fonte, não no ar: a coluna NÃO EXISTE no banco ainda** (conferido
+  hoje) — a migração `docs/migracoes/2026-10-11-versao-do-consentimento.sql` está
+  escrita e **não aplicada**.
+  ⚠️ **E o motivo de ela existir é um defeito já consumado:** o texto de
+  consentimento **foi alterado em produção sem versão e sem re-aceite**. Em
+  05/08/2026 (`git show 2a8938d`) dizia *"Não coletamos **CPF**, endereço, e-mail ou
+  dados financeiros"*; a palavra **CPF foi apagada quando o app passou a coletar
+  CPF**, e **15 pessoas seguram esse recibo**. Os 15 ficam `NULL` de propósito.
+  **Três frentes seguem abertas** e estão no ROADMAP: o texto "dados financeiros"
+  ainda é impreciso (**1.4**), a `POLITICA_PRIVACIDADE.md` **não está servida em
+  lugar nenhum do app** (**1.6**), e **ninguém pede o re-aceite dos 15** —
+  `privacidadeVersao` entra no estado do app e **não é lido em nenhum outro ponto**
+  (**1.10**).
+  **Convenção nova, do Guardião Jurídico (11/10):** *o resumo pode prometer MENOS
+  que a política, nunca MAIS* — em `docs/GOVERNANCA_AGENTES.md`.
 
 ## 3. Inventário — o que está ATUAL vs SUPERADO
 ### Ativo / referência viva (consultar e manter)
@@ -35,6 +125,13 @@ Regra permanente: **BH em produção nunca é prejudicado** (comparador byte-id�
 - `REGULAMENTOS_NOVOS_CIRCUITOS.md` (texto de `vA-nc-01`; para o `vB-01` é **referência de projeto**, não mais a fonte — ver acima), `ESPEC_CPF_SEGURANCA.md`, `SEGURANCA_RPC_AUDIT.md`
 - `PLANO_DESPACHOS.md` (proposta ativa), `PLANO_INSCRICAO_POR_CIRCUITO.md` (parcial: falta Região/vagas)
 - `ROTEIRO_TESTE_SISTEMA_B.md`
+- **`docs/migracoes/`** — *(seção nova, 12/10/2026: a pasta existia e não estava no inventário)*. **3 arquivos**, e o estado de cada um conferido no banco hoje:
+  - `2026-10-01-fechar-acesso-dado-saude.sql` — ✅ **APLICADA** em 03/10/2026 (passo 7 dos sete). ⚠️ O roteiro original estava **errado**: `revoke select (coluna)` **não** remove grant de **TABELA**, e o SQL *reportou sucesso sem fazer nada*. O que funcionou foi tirar o grant de tabela e devolver as 14 colunas que o app lê.
+  - `2026-10-11-preco-por-circuito.sql` — ⛔ **NÃO aplicada.** Conferido: `preco_temporada_atleta` tem **1 assinatura** no banco (`p_id uuid`), a de 2 argumentos **não existe**. É a correção do defeito de dinheiro.
+  - `2026-10-11-versao-do-consentimento.sql` — ⛔ **NÃO aplicada.** Conferido: `atletas.privacidade_versao` **não existe** no banco.
+  ⚠️ **E falta uma:** a coluna `circuitos.meses_temporada`, o grant dela ao `anon` e o CHECK `meses_temporada_valido` **estão no banco sem nenhum arquivo aqui** (ROADMAP **1.9**). Quem reconstruir o banco pelos arquivos não terá a coluna.
+- **`docs/POLITICA_PRIVACIDADE.md`** — ⚠️ **status corrigido em 12/10/2026: é texto de referência viva, mas NÃO ESTÁ SERVIDO PELO APP.** Conferido (`grep` em `src/`, `supabase/`, `index.html`, `public/`): **zero** referências. O que o atleta aceita é o **resumo** da tela de inscrição, que é menos preciso que este documento. Ver ROADMAP **1.6**.
+- **`docs/ROTEIRO-PUBLICAR-onda-2o-circuito.md`** — *(novo no inventário, 12/10/2026)*. Roteiro dos 7 passos de 03/10, **já executados**. ⚠️ **É registro histórico, não plano ativo** — e foi onde a publicação ficou documentada enquanto o `CHANGELOG` não tinha a entrada. Candidato a `historico/`.
 
 ### Ativo, mas com status ambíguo — precisa de decisão de conteúdo (não é rotina)
 - `REGULAMENTO_SISTEMA_B.md` — é o **rascunho** ("RASCUNHO v2", linha 1 do arquivo) que originou o texto do `vB-01` hoje publicado em `REGULAMENTOS_NOVOS_CIRCUITOS.md`. Ficou **incompleto** de propósito (só lista o que muda do A pro B, não o texto corrido dos 13 capítulos) e sua própria última linha diz "Próximo passo (sessão futura): cabear no app" — passo que já aconteceu. O índice o listava como "Ativo" ao lado do texto completo, o que sugere dois documentos concorrentes definindo o mesmo `vB-01`. Nenhum teste depende dele. Recomendação: mover para `historico/` como registro de decisão (mantém o "porquê"), deixando `REGULAMENTOS_NOVOS_CIRCUITOS.md` como o único texto corrido do B — mesma lógica que já vale para `vA-nc-01` faltando o seu próprio `.md` (ROADMAP 0.10.3). Fica para o Juliano decidir; sinalizado, não movido.
@@ -46,7 +143,8 @@ Regra permanente: **BH em produção nunca é prejudicado** (comparador byte-id�
 - SQLs de migração já aplicados: `fase4c_reabrir_leitura.sql`, `faseA1_pareamento.sql`
 
 ### Clutter / a limpar (NÃO são fonte de verdade)
-- `files.zip` na raiz (194.897 bytes, 28/06/2026 — `logo-192.png`/`logo-512.png`/`manifest.json`/`index.html` de antes da decisão de nome de 10/09) — órfão, **sinalizado pela 3ª vez** (05/09, 10/09, 14/09) sem ação. Candidato a remoção; recomendo executar desta vez, mediante OK.
+- `files.zip` na raiz (194.897 bytes, 28/06/2026 — `logo-192.png`/`logo-512.png`/`manifest.json`/`index.html` de antes da decisão de nome de 10/09) — órfão, **sinalizado pela 4ª vez** (05/09, 10/09, 14/09, **12/10**) sem ação. **Conferido em 12/10/2026: continua lá e está VERSIONADO no git** (`git ls-files` confirma), ou seja não é lixo local — ele viaja no repositório. Lembrete do `CLAUDE.md`: *"`atualizar.sh` publica tudo que estiver na pasta"*. Candidato a remoção; **recomendo executar, mediante OK** — o histórico do git guarda o conteúdo.
+- **`fase4c_reabrir_leitura.sql` e `faseA1_pareamento.sql` na raiz** — *(sinalizado em 12/10/2026)*. Os dois estão **versionados** e são SQLs **já aplicados**, que este índice lista na seção **Histórico** — mas eles moram na **raiz**, enquanto `docs/migracoes/` existe desde 10/2026 e é onde migração vive hoje. Dois lugares para a mesma coisa é a definição de drift. Recomendo mover para `docs/migracoes/aplicadas/` (ou `historico/`), mediante OK. Não é urgente; é higiene, e evita que a próxima pessoa procure migração em dois lugares.
 - ~~`INDICE_PROJETO.md` na raiz~~ — **removido em 06/09/2026** (curadoria-log), não apenas "virou ponteiro". Corrigido aqui em 13/09/2026: este índice ainda descrevia o arquivo como existente.
 - ~~Backups datados do front (`src/App.jsx HH.MM.SS`, dezenas, + `App.jsx 20.13.44` na raiz)~~ — **RESOLVIDO em 07/09/2026** (CLAUDE.md, seção Armadilhas: "foram removidas... continuam no histórico do git"). Achado nesta rodada (14/09/2026): este índice ainda os listava como clutter pendente uma semana depois de terem sido removidos — conferido agora (`find` na raiz e em `src/`): zero arquivos desse padrão. Corrigido.
 

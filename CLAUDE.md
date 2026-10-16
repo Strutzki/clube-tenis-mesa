@@ -58,21 +58,38 @@ Claude. Explique termos técnicos na primeira vez que aparecerem.
    `atualizar.sh` se recusando a subir com teste vermelho: o portão é o passo, não
    a lembrança.
 
+   ⛔ **E O PORTÃO PASSOU A MORDER: o `vB-01` SAIU DA JANELA DE EDIÇÃO.** Rodado
+   pelo Curador em 12/10/2026, o resultado é: `bh` → `v03-3` (8), **`v03-13` (4)**,
+   `v03-12` (1), `v03-11` (1), `v03-5` (1); **`bh2` → `vB-01` (3)**. O acervo
+   afirmava, e por isso está corrigido em
+   `docs/curadoria-indice-app-tenis-de-mesa.md`, que *"o `vB-01` tem ZERO aceites
+   gravados … e é por isso que aquela edição pôde ser feita no lugar"*. **Três
+   atletas reais seguram esse recibo agora.** ⇒ `docs/REGULAMENTO_vB-01.md` **e** o
+   texto do Sistema B na `RegulamentoView` estão **congelados**; correção vai em
+   **`vB-02`**, com aviso prévio e re-aceite. **Atenção à armadilha do gerador:**
+   o `.md` do `vB-01` é **gerado** da tela, então editar a tela "só para melhorar o
+   texto" **muda retroativamente o que 3 recibos provam** — é a regra 7 pela porta
+   dos fundos. *(A `v03-13` também foi carimbada no BH; o acervo dizia que ainda
+   não era a versão dele.)*
+
 ## A bateria de testes
 
 ```bash
 npm run teste
 ```
 
-Hoje são **1357 asserções** (conferido ao vivo pelo Supervisor de Curadoria em
-29/09/2026, noite, somando as **13 seções** que a bateria imprime, no commit
-`60ccc86`; saída 0).
-**Não cite este número de memória.** Ele mudou em **quatorze** ondas seguidas, e o
+Hoje são **1930 asserções** (conferido ao vivo pelo Curador em 12/10/2026, somando
+as **18 seções** que a bateria imprime, sobre `0cdb524` + 6 arquivos modificados;
+saída 0).
+**Não cite este número de memória.** Ele mudou em **quinze** ondas seguidas, e o
 histórico desta linha é o argumento: dizia **1011**, virou **1149** na auditoria
-multi-circuito de 29/09 — e **envelheceu de novo em poucas horas**, porque as
-quatro rodadas de guardiões que vieram depois acrescentaram 208 asserções
-(1149 → 1192 → 1196 → 1220 → 1240 → 1320 → 1345 → 1357). Rode `npm run teste` e
-**some as seções**; não copie daqui.
+multi-circuito de 29/09, **envelheceu em poucas horas** para **1357** nas quatro
+rodadas de guardiões daquela noite — e **ficou treze dias parado em 1357** enquanto
+a onda do piloto real a levava a **1930**
+(1149 → 1192 → 1196 → 1220 → 1240 → 1320 → 1345 → 1357 → 1791 → 1807 → 1814 →
+1839 → 1854 → 1930). Rode `npm run teste` e **some as seções**; não copie daqui.
+**E o número de SEÇÕES também mudou** — eram 13, são 18: quem somar "as 13 seções"
+hoje perde 220 asserções (as quatro de `ataques*.mjs` e a de `backup.mjs`).
 O `atualizar.sh` roda isso antes de publicar e se recusa a subir com teste
 vermelho. O `testes/README.md` traz o mesmo número, e a tabela de arquivos dele
 tem de listar **todos** os que existem — confira com `ls testes/*.mjs`, não pelo
@@ -82,16 +99,44 @@ fora da tabela enquanto este parágrafo afirmava que ela estava completa). Era a
 dívida antiga registrada em `docs/curadoria-indice-app-tenis-de-mesa.md`.
 ⚠️ **E a frase acima sobre o `testes/README.md` também nasceu velha uma terceira
 vez:** entre `707c40f` e `60ccc86` o número dele ficou em 1149 e a contagem do
-`segundo-circuito.mjs` em 231 (hoje **426**) — a **tabela** estava completa, o
+`segundo-circuito.mjs` em 231 (então **426**) — a **tabela** estava completa, o
 **número** não. Conferir a tabela e conferir o número são duas verificações, não
 uma.
 
-Ela carrega **SEIS Edge Functions de verdade** — `admin-action`, `athlete-action`,
-`login-atleta`, `comprovante-url`, `circuito-dados` e `anonimizar-atleta`, os
-mesmos arquivos que vão para o ar — e roda contra um banco em memória.
+⛔ **QUARTA VEZ, e agora é a TABELA — conferido pelo Curador em 12/10/2026.** A
+tabela do `testes/README.md` lista **17** arquivos e existem **23**. Estão **fora
+dela**: `ataques.mjs`, `ataques2.mjs`, `ataques3.mjs`, `ataques4.mjs`, `backup.mjs`
+e `mutar.mjs`. Os cinco primeiros são **189 + 31 = 220 asserções** da bateria — as
+quatro seções de ataque dos Guardiões de Segurança **e** a sexta Edge Function
+(`backup-clube-tenis-mesa`), aquela que **apaga arquivos**. O `mutar.mjs` é o
+**aferidor de mutação**, ou seja a ferramenta de que depende a regra "todo teste
+novo nasce com teste de mutação" — indocumentada.
+**Reproduza em uma linha, não acredite nesta:**
+`for f in testes/*.mjs; do grep -q "\`$(basename $f)\`" testes/README.md || echo "FORA: $f"; done`
+E os **números dentro** da tabela também venceram: a linha do `segundo-circuito.mjs`
+diz **426** asserções (hoje **658**) e o chama de *"a 2ª maior seção"*, enquanto o
+`regulamento-por-circuito.mjs` é chamado de *"a maior seção da bateria"* — **os dois
+trocaram de posição**: 658 contra 559. O Curador **não corrigiu** o arquivo: ele
+está em `testes/`, congelado como prova desta rodada. Ver o relatório da curadoria
+de 12/10 em `docs/curadoria-log.md`, com o texto pronto para aplicar.
+
+Ela carrega **SETE Edge Functions de verdade** — `admin-action`, `athlete-action`,
+`login-atleta`, `comprovante-url`, `circuito-dados`, `anonimizar-atleta` e
+**`backup-clube-tenis-mesa`**, os mesmos arquivos que vão para o ar — e roda contra
+um banco em memória.
 *(Dizia "quatro" em três lugares até 29/09/2026; o Guardião de Confiabilidade
-contou e corrigiu. Um guardião que lê o número errado subestima a cobertura —
-conte com `grep -n 'carregarFuncao(' testes/*.mjs`, não daqui.)* Detalhe em `testes/README.md`.
+contou e corrigiu para seis. **E "seis" venceu em 01/10/2026** — o commit `5d19c6e`
+acrescentou a `backup-clube-tenis-mesa` (31 asserções, a função que **apaga
+arquivos**) e se intitulou *"a sexta função sai da sombra"*, contando as da onda e
+não as da bateria; nem este arquivo nem o `testes/README.md` acompanharam. **São
+sete, contadas pelo Curador em 12/10/2026.** Um guardião que lê o número errado
+subestima a cobertura — conte você, somando os dois caminhos de carga, porque eles
+são **dois**:*
+`grep -rhoE 'carregarFuncao\("[a-z-]+"' testes/*.mjs | sort -u`
+*e* `grep -rhoE 'funcao: *"[a-z-]+"' testes/*.mjs | sort -u`
+*, mais o `admin-action`, que é o **default** do `montarMotor` e não aparece em
+nenhum dos dois.)* Detalhe em `testes/README.md` — **cuja tabela está incompleta**,
+ver o aviso acima.
 
 O banco em memória **projeta colunas** desde 27/09/2026: se o código pede
 `select("id, telefone")`, o teste recebe só essas duas. Sem isso, trocar por
@@ -327,10 +372,13 @@ ar** — não presuma que é a do arquivo.
 - `supabase/functions/admin-action/index.ts` — **o motor**, ~1.700 linhas. As
   ações do organizador (INICIAR_ETAPA, AVANCAR_RODADA, PROCESSAR_RODADA,
   APLICAR_WO, NOVA_TEMPORADA, financeiro, papéis) saem de um `switch (acao)`.
-  São **46** hoje — **reconferido pelo Supervisor de Curadoria em 29/09/2026** no
-  commit `60ccc86`, rodando o `grep` abaixo (o Curador havia medido o mesmo 46 em
-  `707c40f`; as quatro rodadas de guardiões que vieram depois acrescentaram
-  guardas, `escalaCirculo` e o alcance da exclusão, e **nenhuma ação nova**): a
+  São **47** hoje — **reconferido pelo Curador em 12/10/2026** no commit `0cdb524`,
+  rodando o `grep` abaixo. A ação nova desde `60ccc86` é **uma**, e eu a identifiquei
+  comparando as duas listas em vez de só comparar os totais: **`LER_JUSTIFICATIVA_WO`**,
+  nascida no fechamento do dado de saúde do W.O. (`94570b0`, 01/10/2026 — o caminho
+  autenticado que substituiu a leitura anônima da `justificativa`). *(Era 46 em
+  `60ccc86` e em `707c40f`; as quatro rodadas de guardiões de 29/09 acrescentaram
+  guardas, `escalaCirculo` e o alcance da exclusão, e nenhuma ação.)* A
   auditoria multi-circuito acrescentou
   guardas e funções auxiliares (`idsNoRankingFinal`, `recontarWoCulposos`,
   `promoverIdentidadeGlobal`, `byesDaTemporada`, `entradaPermitida`), mas
@@ -402,6 +450,38 @@ gravar rating num circuito que não tem rating.
   (mesma convenção do backup de 07/09 acima) antes do próximo deploy — sem
   isso, mesmo o "republicar o código antigo" (a única forma de rollback de
   Edge Function) não teria por onde voltar.
+- ⛔ **TERCEIRO EPISÓDIO DE "o fonte não é o que está no ar" — E ESTE ESTÁ ATIVO
+  AGORA, COM ATLETAS REAIS.** Achado pelo Curador em 12/10/2026.
+  **O sintoma:** o Juliano **acredita** ter configurado os três meses do `bh2`
+  (novembro, dezembro, fevereiro). **`circuitos.meses_temporada` do `bh2` está
+  `null`.** A tela respondeu **"✓ Meses salvos"**. A 1ª etapa é **01/11/2026**.
+
+  **A cadeia, medida e não deduzida:**
+  1. `admin-action` **v65** subiu em **03/10/2026 07:27:49**;
+  2. o commit que ensina o motor a ler `mesesTemporada` (`9da18e4`) é de
+     **03/10/2026 20:55:39** — **13h28 DEPOIS** — e **nunca foi publicado**;
+  3. **prova direta:** o corpo da função **no ar** tem **zero** ocorrências de
+     `meses_temporada` e `mesesTemporada` (contendo `escalaCirculo` 3×, o que prova
+     que o arquivo veio íntegro e é a v65 da onda de 29/09);
+  4. o **app** da tela (`0cdb524`) **está no ar** — `origin/main` = `HEAD`, e
+     **`git push` é publicar**;
+  5. o motor velho **ignora campo que não conhece**: grava nada, responde sucesso.
+
+  ⚠️ **E a vítima nova, que é a lição desta armadilha: a TELA MENTIU porque o
+  `catch` é CÓDIGO MORTO.** O `salvar()` do card dos meses faz
+  `try { await dispatch(...) } catch { setMsg("✗ …") }` — e **`dispatchAndSync`
+  NUNCA lança**: ele captura o erro e **devolve** `{ ok: false, erro }`. O ramo de
+  erro é **inalcançável**, então `setMsg("✓ Meses salvos.")` roda **sempre**,
+  inclusive quando nada foi salvo. O `App.jsx` **já documenta isso** noutro ponto
+  (`:10089`: *"`dispatchAndSync` NUNCA lança"*) — o conhecimento estava no arquivo
+  e não chegou a esta tela.
+  **Regra que sai daqui:** quem chama `dispatchAndSync` confere o **`{ ok }` que ele
+  devolve**. `try/catch` em volta dele não é proteção — é teatro, e pior que nada,
+  porque vira um "✓" que o organizador acredita.
+  **Conserto pendente:** `admin-action` v65 → **v66** (código já commitado) + a tela
+  ler o `{ ok }`. Ver `docs/ROADMAP.md` **1.3** e `docs/CHANGELOG.md` (03/10 e o
+  rascunho de 11-12/10). *(Episódios 1 e 2: `circuito-dados` sem fonte no repo, e o
+  `login-atleta` publicado de uma pasta do projeto de torneios — abaixo.)*
 - **O app de torneios mora no mesmo Supabase.** A função `torneios-api` roda no
   mesmo projeto (`eultwfzzlgcmcikobmmy`) que o circuito. São dois produtos
   diferentes dividindo um banco: mexer em permissão, extensão ou tabela
@@ -413,12 +493,17 @@ gravar rating num circuito que não tem rating.
 - **`atualizar.sh` publica tudo que estiver na pasta.** Desde 07/09/2026 ele
   lista os arquivos e espera você digitar `S` antes de mandar — leia a lista:
   arquivo temporário esquecido ali viaja junto.
-- **A bateria executa SEIS Edge Functions e DUAS funções puras do app.**
-  Reconferido em 29/09/2026 rodando `grep` nos testes, não de memória. *(Esta
-  linha dizia "uma única função do app" até 29/09: a segunda —
-  `circuitoTemTorneio` — passou a ser extraída e executada em
-  `participar-outro-circuito.mjs` e ninguém trouxe o fato para cá. Ver o fim
-  desta seção.)* Quem
+- **A bateria executa SETE Edge Functions e TRÊS recortes puros do app (quatro
+  funções).** Reconferido pelo Curador em 12/10/2026 rodando `grep` nos testes, não
+  de memória. *(Esta linha dizia "uma única função do app" até 29/09, depois "DUAS"
+  até 12/10. O terceiro recorte é o par de **tradutores de atleta**,
+  `mapAtletaFromDb` + `mapAtletaFromCircuito`, extraídos juntos e executados em
+  `participar-outro-circuito.mjs:1090` — e o motivo está escrito no teste, com a
+  honestidade que esta casa cobra: o autor tentou responder "o botão Mudei de ideia
+  volta a aparecer?" **lendo** o código e **errou duas vezes em um minuto**, porque
+  o campo passa por um `{...a}` que o `grep` não vê. É a mesma lição de sempre —
+  **leitura por inspeção não é medição**. Conte os recortes com
+  `grep -n 'new Function' testes/*.mjs`, que hoje dá **três**.)* Quem
   carrega e executa código de verdade é `carregarFuncao(nome, banco)`
   (`testes/carrega-motor.mjs`) — **é esse o nome**, não `carregarMotor`, que não
   existe. `montarMotor({ funcao: "..." })` escolhe qual carregar (padrão:
@@ -452,9 +537,11 @@ gravar rating num circuito que não tem rating.
     ficava com `atletas.status = "pendente"` e o login recusava com
     `cadastro_inativo`. O `LOGIN` e o `RENOVAR` seguem sem asserção.
 
-  **`src/App.jsx` não é executado por teste nenhum — com DUAS exceções,
+  **`src/App.jsx` não é executado por teste nenhum — com TRÊS exceções,
   deliberadas** (e o `login-atleta` passou a ser executado em 27/09/2026 no
-  `PARTICIPAR` e em 29/09/2026 no `SESSAO`).
+  `PARTICIPAR` e em 29/09/2026 no `SESSAO`). *(Dizia "DUAS" até 12/10/2026 — a
+  terceira é o par de tradutores, descrita acima e detalhada no fim desta seção.
+  Conte com `grep -n 'new Function' testes/*.mjs`.)*
 
   A primeira é `janelaRenovacao`, a conta da janela de renovação: ela é uma função
   **pura** — recebe uma data, devolve datas, e só depende de `Date`. A bateria a
@@ -472,6 +559,19 @@ gravar rating num circuito que não tem rating.
   campo, estado nulo, e o `.trim()`). Foi ela que pegou o fail-open em que
   "versão desconhecida ganhava torneio" — a asserção anterior olhava os pontos
   de **chamada**, e a sabotagem morava **dentro** da função.
+
+  A terceira — **nova nesta lista em 12/10/2026, embora o teste exista desde
+  29/09** — é o par de **tradutores de atleta**, `mapAtletaFromDb` +
+  `mapAtletaFromCircuito`, extraídos **juntos** (um chama o outro) e executados em
+  `participar-outro-circuito.mjs:1090` com uma linha na forma exata que o
+  `db.getAtletas()` devolve. O que ela prende: que o **pedido de exclusão de dados
+  (LGPD)** chegue à tela em circuito não-BH — sem isso o recibo e o botão "↩️ Mudei
+  de ideia" somem a cada recarregamento **enquanto o pedido segue de pé rumo à
+  anonimização irreversível**. E o motivo de ter de **rodar** está escrito no
+  teste, nas palavras do autor: ele tentou responder a pergunta **lendo** o código e
+  **errou duas vezes em um minuto**, porque o campo atravessa um `{...a}` que o
+  `grep` não vê. *É a cadeia de tradutores que esta onda mexeu — o
+  `privacidadeVersao` entra por aí (`App.jsx:456`).*
 
   **Quando repetir a técnica — as quatro condições, todas obrigatórias:**
   (1) a função é **pura** (mesma entrada → mesma saída, sem estado, sem React, sem

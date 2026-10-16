@@ -407,7 +407,10 @@ secao("O atleta na fila sabe que está na fila, e o admin sabe quem fica de fora
     "o aviso é renderizado quando há quem fique de fora — não é texto morto");
   ok(/ficam de fora desta rodada/.test(fonteApp),
     "e avisa o admin ANTES de ele clicar em iniciar");
-  ok(/Quem pagar depois entra só na rodada seguinte/.test(fonteApp),
+  // ATUALIZADA em 11/10/2026: dizia "rodada seguinte", e `AVANCAR_RODADA` gera
+  // DUAS rodadas por avanço (`const rA = roundBase + 1, rB = roundBase + 2`) —
+  // o prazo prometido ao organizador era ~metade do real.
+  ok(/Quem pagar depois entra só no próximo par de rodadas/.test(fonteApp),
     "dizendo a consequência exata: pagar depois não traz de volta para esta rodada");
   ok(/naoPagaram\.map\(a=>nomeExibicao\(a\)\)\.join\(", "\)/.test(fonteApp),
     "e com NOMES — para o admin poder resolver, não só saber");
@@ -3454,6 +3457,226 @@ secao("Nenhum texto promete anulação num circuito de pontos");
     "e o aviso da TELA do organizador traz os dois números antes de ele aprovar");
   ok(!/Justificado \(anula\)<\/Btn>/.test(fonteApp),
     'o botão não rotula "Justificado (anula)" sem ramificar — o rótulo ficava três linhas acima de um comentário dizendo que no B não anula');
+}
+
+secao("O preço que o atleta vê é o do circuito DELE — RODANDO o login-atleta");
+{
+  // 11/10/2026, piloto do 1º circuito PAGO, com atletas reais se inscrevendo.
+  //
+  // O DEFEITO, medido em produção: a ação PRECO não mandava circuito nenhum, e a
+  // função do banco não recebia — ela lia `from configuracao where id = 1`, a
+  // configuração LEGADA DO BH. Com o `desconto_global_pct = 100` que sobrou da
+  // temporada de teste gratuita, a tela do atleta dizia
+  // "Sua temporada: R$ 100,00 (riscado) R$ 0,00 (100% off)" com a chave PIX
+  // logo abaixo, enquanto o painel do organizador dizia R$ 50,00.
+  // Dois dos três atletas não pagaram. O app disse que não havia o que pagar.
+  //
+  // A regra, nas palavras do Juliano: "o atleta precisa ver o valor que o admin
+  // configurou para aquele circuito que ele está se inscrevendo".
+  //
+  // ⚠️ LIMITE DESTA SEÇÃO, dito na cara: o cálculo mora em SQL
+  // (`docs/migracoes/2026-10-11-preco-por-circuito.sql`) e a bateria NÃO EXECUTA
+  // SQL — o banco falso serve RPC por dublê. Então aqui se prova o que é
+  // provável em JS: que o `login-atleta` EXIGE o circuito e MANDA o circuito
+  // certo. Que a função SQL faz a conta certa se prova no banco, com a consulta
+  // de conferência que está no fim do arquivo da migração.
+  // Isto não é desculpa: é a fronteira do que esta asserção cobre.
+  const sha = (t) => createHash("sha256").update(t).digest("hex");
+  const TOKEN = "token-do-preco";
+  const ATL = "aaaa0000-0000-0000-0000-00000000bb01";
+  const PAGO = "99990000-1111-2222-3333-555555555555";
+
+  // O dublê DECLARA os dois argumentos. Se o servidor voltar a chamar com
+  // `p_id` sozinho, o banco falso para alto em vez de devolver número errado.
+  const cenario = async () => {
+    const banco = criarBancoFalso({
+      circuitos: [
+        circuito(BH, { valor_temporada: 10000, desconto_global_pct: 100 }),
+        circuito(PAGO, { slug: "pago", sistema: "B", regulamento_versao: "vB-01",
+                         valor_temporada: 5000, desconto_global_pct: 0 }),
+      ],
+      atletas: [atleta(ATL, { nome: "Fulano", status: "ativo" })],
+      circuito_atletas: [
+        { circuito_id: BH, atleta_id: ATL, status: "ativo" },
+        { circuito_id: PAGO, atleta_id: ATL, status: "ativo" },
+      ],
+      atleta_sessao: [{ id: "s1", atleta_id: ATL, token_hash: sha(TOKEN),
+                        expira_em: new Date(Date.now() + 3600e3).toISOString() }],
+      partidas: [], chaves: [], solicitacoes_wo: [], tentativas_login_admin: [],
+      circuito_organizadores: [], mensagens_enviadas: [], pagamentos: [],
+      partidas_historico: [], circuito_cobranca: [],
+      configuracao: [{ id: 1, valor_temporada: 10000, desconto_global_pct: 100 }],
+    }, {
+      preco_temporada_atleta: {
+        args: ["p_id", "p_circuito"],
+        // Dublê fiel ao SQL da migração: lê `circuitos` pelo circuito recebido e
+        // o desconto do VÍNCULO, nunca a `configuracao` nem o global.
+        fn: (bd, args) => {
+          const c = (bd.tabelas.circuitos || []).find(x => String(x.id) === String(args.p_circuito));
+          const v = (bd.tabelas.circuito_atletas || []).find(x =>
+            String(x.atleta_id) === String(args.p_id) && String(x.circuito_id) === String(args.p_circuito));
+          if (!c || !v) return null;
+          const base = c.valor_temporada;
+          const pct = v.desconto_pct ?? c.desconto_global_pct ?? 0;
+          return {
+            isento: !!v.isento,
+            valor_base_cent: base,
+            preco_final_cent: base == null ? null : (v.isento ? 0 : Math.round(base * (1 - pct / 100))),
+          };
+        },
+      },
+    }, {}, {});
+    return { banco, login: await carregarFuncao("login-atleta", banco) };
+  };
+
+  // 1. O CASO QUE QUEBROU EM PRODUÇÃO: o circuito pago não herda o zero do BH.
+  {
+    const { banco, login } = await cenario();
+    const r = await login.chamar({ acao: "PRECO", token: TOKEN, circuitoId: PAGO });
+    igual(r.status, 200, "o preço do circuito pago é respondido");
+    igual(r.corpo?.dados?.preco_final_cent, 5000,
+      "e é R$ 50,00 — o valor DAQUELE circuito, não o R$ 0,00 da configuração legada do BH");
+    const chamada = banco.funcoesChamadas.find(f => f.nome === "preco_temporada_atleta");
+    igual(String(chamada?.argumentos?.p_circuito), PAGO,
+      "o servidor manda o circuito para a função do banco — era isto que faltava");
+  }
+
+  // 2. O BH continua recebendo o preço do BH: o conserto não inverteu a vítima.
+  {
+    const { login } = await cenario();
+    const r = await login.chamar({ acao: "PRECO", token: TOKEN, circuitoId: BH });
+    igual(r.corpo?.dados?.preco_final_cent, 0,
+      "no BH, que tinha 100% de desconto, o preço segue zero — cada circuito com o seu");
+  }
+
+  // 3. SEM CIRCUITO É ERRO, NÃO PALPITE. Era o palpite (cair no BH) que produzia
+  //    o número errado; responder "R$ 0,00" por omissão é o defeito, não o padrão.
+  {
+    const { banco, login } = await cenario();
+    const r = await login.chamar({ acao: "PRECO", token: TOKEN });
+    igual(r.status, 400, "sem circuito, a ação recusa em vez de adivinhar");
+    igual(banco.funcoesChamadas.filter(f => f.nome === "preco_temporada_atleta").length, 0,
+      "e nem chega a consultar o banco — a recusa não deixa rastro");
+  }
+
+  // 4. Sessão continua sendo o portão: preço e isenção são dado de uma pessoa, e
+  //    os ids dos atletas são públicos no ranking.
+  {
+    const { login } = await cenario();
+    const r = await login.chamar({ acao: "PRECO", circuitoId: PAGO });
+    igual(r.status, 401, "sem token de sessão, não se responde preço de ninguém");
+    const r2 = await login.chamar({ acao: "PRECO", token: "token-inventado", circuitoId: PAGO });
+    igual(r2.status, 401, "e token inventado também não");
+  }
+
+  // 5. O FRONT manda o circuito. Sem isto o servidor recusaria (3) e a tela
+  //    ficaria muda — trocaria um número errado por nenhum número.
+  ok(/async function buscarPrecoTemporada\(circuitoId\)/.test(fonte),
+    "a busca de preço no app exige o circuito na assinatura");
+  ok(/acao: "PRECO", token: cred\.token, circuitoId: String\(circuitoId\)/.test(fonte),
+    "e o manda no corpo da chamada");
+  ok(/buscarPrecoTemporada\(CIRCUITO_ATIVO\)/.test(fonte),
+    "o card do atleta pede o preço do circuito que está aberto na tela");
+  // A troca de circuito tem de refazer a busca: `CIRCUITO_ATIVO` é variável de
+  // módulo e não dispara efeito nenhum sozinho.
+  ok(/state\.financeiroAtivo, eu\?\.id, state\.nomeCircuito\]/.test(fonte),
+    "e trocar de circuito refaz a busca, em vez de deixar na tela o preço do anterior");
+}
+
+secao("O atleta sabe quanto, quando e como pagar — antes de se comprometer");
+{
+  // 11/10/2026. Feedback do piloto, nas palavras do Juliano: "está bem confuso e
+  // burocrático e não está muito claro a questão do pagamento, quanto vai custar,
+  // quando tem que pagar e como pagar".
+  //
+  // ⚠️ LIMITE: estas asserções são REGEX sobre o fonte. O CLAUDE.md é explícito —
+  // "se a asserção é regex, ela não protege a regra, só registra que um trecho de
+  // texto está lá", e em 19/09 três sabotagens do re-aceite ficaram verdes. Elas
+  // valem aqui porque o que mudou É texto de tela e de mensagem; o que havia de
+  // comportamento (o preço por circuito) está na seção anterior, rodando o
+  // `login-atleta` de verdade. Não confunda as duas coberturas.
+
+  // ── QUANTO: o preço existe no caminho PÚBLICO, antes do login ──
+  // Antes disto o valor só existia depois da sessão, e a sessão depois da
+  // aprovação: era inalcançável por construção para quem decide se inscrever.
+  ok(/getVersoesRegulamento: \(\) => supaFetch\(`circuitos\?select=id,regulamento_versao,financeiro_ativo,valor_temporada,desconto_global_pct,rodadas_por_temporada,data_inicio_temporada&/.test(fonte),
+    "a leitura pública carrega o preço do circuito, não só a versão do regulamento");
+  // ESTA é a asserção que impede o conserto de virar o próximo apagão: a leitura
+  // roda com a chave do visitante, e `select=*` quebra a consulta INTEIRA no dia
+  // em que existir coluna sem permissão para o `anon` (armadilha nº 1 do
+  // CLAUDE.md — derrubou o app em 07/09 e de novo em 03/10/2026).
+  ok(!/getVersoesRegulamento: \(\) => supaFetch\(`circuitos\?select=\*/.test(fonte),
+    "e continua NOMEANDO as colunas, nunca select=* na leitura do visitante");
+  ok(/Inscrição da temporada: \{pct > 0 && base > 0/.test(fonte),
+    "a tela da decisão mostra o valor da inscrição");
+  ok(/if \(base == null\) return null;/.test(fonte),
+    "e fica calada quando não há valor configurado, em vez de anunciar R$ 0,00");
+  ok(/Valor único da temporada inteira — \{rodadas\} rodadas/.test(fonte),
+    "dizendo que é da temporada inteira, com o número de rodadas");
+
+  // ── QUANDO: a regra que o motor cumpre passa a ser dita ao ATLETA ──
+  // `promoverBacklog` e `getAtivosNoCircuito` filtram por `pagamento_confirmado`,
+  // então sem pagamento o atleta não é pareado. Até aqui só o organizador sabia.
+  ok(/Sua vaga nos confrontos vale a partir do momento em que ele confirma o pagamento/.test(fonte),
+    "a tela da decisão diz que a vaga depende da confirmação do pagamento");
+  ok(/O pagamento é o que confirma sua vaga/.test(fonte),
+    "e a mensagem de aprovação também diz");
+  ok(/Enquanto não estiver confirmado, você não entra no sorteio dos confrontos/.test(fonte),
+    "com a consequência explícita, que é o prazo real");
+
+  // ── COMO: a chave PIX chega junto da aprovação, que é o canal que ele lê ──
+  ok(/🔑 PIX: \*\$\{state\.pixChave\}\*/.test(fonte),
+    "a mensagem de aprovação leva a chave PIX");
+  ok(/💵 Inscrição da temporada: \*\$\{fmtB\(finalB\)\}\* — valor único da temporada inteira, sem mensalidade/.test(fonte),
+    "e leva o valor, no mesmo vocabulário do aviso de renovação");
+  ok(/if \(state\.financeiroAtivo && finalB != null\)/.test(fonte),
+    "e não fala de dinheiro quando não há valor configurado");
+  // A chave do organizador NÃO vai para a página pública: ela só é útil depois da
+  // aprovação, e minimizar é a regra.
+  ok(!/select=id,regulamento_versao[^`]*pix_chave/.test(fonte),
+    "a chave PIX não entra na leitura pública");
+
+  // ── O caminho deixa de terminar no escuro ──
+  ok(/O que acontece agora/.test(fonte),
+    "a tela de inscrição enviada lista os próximos passos");
+  ok(/Entra no app em <b style=\{\{color:"#F0EAE0"\}\}>Sou atleta<\/b>, com este mesmo WhatsApp, e cria seu PIN/.test(fonte),
+    "inclusive o passo que ninguém adivinha: voltar ao app e criar o PIN");
+
+  // ── O card do atleta para de desaparecer quando a dívida passa a doer ──
+  // ⚠️ A janela se ancora na função SEGUINTE de verdade (`IniciarEtapaPanel`).
+  // Primeira tentativa usou `RenovacaoAdminPanel`, que vive ANTES de
+  // `RenovacaoCard` no arquivo: o recorte saía vazio e as asserções abaixo
+  // falhavam pelo motivo errado. A asserção de que o recorte foi LOCALIZADO é
+  // obrigatória pelo CLAUDE.md, e é ela que transforma isto em erro visível.
+  const iCard = fonte.indexOf("function RenovacaoCard");
+  const iDepois = fonte.indexOf("function IniciarEtapaPanel");
+  ok(iCard > 0 && iDepois > iCard, "o recorte do card do atleta foi localizado no fonte");
+  const cardAtl = fonte.slice(iCard, iDepois);
+  ok(/const devendo = !!eu && eu\.status === "ativo" && !eu\.pendenteCircuito/.test(cardAtl),
+    "quem não pagou continua vendo o card em qualquer fase");
+  ok(/const elegivel = \(inscricoes \|\| devendo\)/.test(cardAtl),
+    "e isso entra no portão do card, não só numa variável solta");
+  // Com a temporada em curso o card não pode falar da PRÓXIMA: `RENOVAR` grava
+  // `quer_renovar`, que a virada zera, e não é o que libera a vaga agora.
+  ok(/\) : !naProxima \? \(/.test(cardAtl),
+    "e o texto ramifica por pré-abertura — quem é de primeira viagem não lê 'renovar'");
+  ok(/💵 Pagamento da inscrição — \{nomeCirc\}/.test(cardAtl),
+    "o título diz do que o card trata quando a temporada já começou");
+
+  // ── O aviso de jogos presenciais deixa de depender de haver 2+ circuitos ──
+  ok(!/\{lista && lista\.length > 1 && \(escolhido\.cidade \|\| escolhido\.uf\) && \(/.test(fonte),
+    "o aviso de jogos presenciais não depende mais de existir outro circuito na lista");
+  ok(/\{\(escolhido\.cidade \|\| escolhido\.uf\) && \(/.test(fonte),
+    "ele aparece sempre que o circuito tem cidade — inclusive com um circuito só");
+
+  // ── O prazo dito ao ORGANIZADOR estava subestimado em ~2x ──
+  // `AVANCAR_RODADA` gera DUAS rodadas de uma vez (`const rA = roundBase + 1,
+  // rB = roundBase + 2`), então "entra na rodada seguinte" prometia metade do
+  // tempo real de espera de quem paga atrasado.
+  ok(/Quem pagar depois entra só no próximo par de rodadas\./.test(fonte),
+    "o painel do admin diz 'par de rodadas', que é o que o motor de fato gera");
+  ok(/const rA = roundBase \+ 1, rB = roundBase \+ 2;/.test(motorFonte),
+    "e o motor confirma que são duas rodadas por avanço — é o que sustenta a frase");
 }
 
 process.exit(placar("O segundo circuito"));

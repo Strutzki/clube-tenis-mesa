@@ -23,6 +23,36 @@ async function bhId(): Promise<string> {
 
 // --- Dual-write (Fase 4B) -------------------------------------------------
 // Espelho BEST-EFFORT em circuito_atletas: se falhar, apenas loga (o BH segue via atletas).
+// A VERSÃO DO TEXTO DE PRIVACIDADE QUE ESTE SERVIDOR CONSIDERA CORRENTE.
+//
+// Nasceu em 11/10/2026, condição C5 do Guardião Jurídico. Até aqui a política
+// não tinha versão nenhuma — o regulamento tem (`versao_regulamento`), o CPF tem
+// (`cpf_consent_versao`), e a política, que é a que fala de TODOS os dados, não
+// tinha. Os 15 recibos existentes apontam para "o texto que estiver na tela".
+//
+// E o texto já mudou sem aviso: em 05/08/2026 ele dizia "Não coletamos CPF,
+// endereço, e-mail ou dados financeiros", e a palavra CPF foi apagada quando o
+// app passou a coletar CPF.
+//
+// QUEM CARIMBA É O SERVIDOR, não o cliente — ao contrário do `cpfConsentVersao`,
+// que vem no payload. O motivo: o texto de privacidade mora no código do app, e
+// o servidor não tem como conferir uma versão que o cliente declare. Um recibo
+// que o cliente escolhe não é recibo. O que o servidor afirma é verificável:
+// "esta é a versão que o sistema considerava corrente no instante do aceite".
+//
+// ⚠️ O QUE ESTA CONSTANTE FAZ HOJE, E O QUE ELA AINDA NÃO FAZ.
+// FAZ: carimbar no recibo qual texto a pessoa aceitou. Isso passou a existir.
+// NÃO FAZ: pedir re-aceite de ninguém. Não há tela que compare a versão
+// gravada com a corrente, e o campo não é lido em lugar nenhum do app — então
+// mudar o texto da política continua NÃO gerando re-aceite.
+// Construir o recibo antes do mecanismo é a ordem certa; afirmar que o
+// mecanismo existe é que era falso, e três comentários meus afirmavam isso
+// (Guardião Jurídico, C7, 12/10/2026 — regra 6 do CLAUDE.md).
+// AO MUDAR O TEXTO DA POLÍTICA, mude esta constante no MESMO commit: é o que
+// permitirá distinguir quem aceitou o quê, no dia em que a tela de re-aceite
+// existir. A bateria exige que o app e as duas funções concordem.
+const PRIVACIDADE_VERSAO = "privacidade-2026-10-v1";
+
 const SEASONAL_COLS = new Set([
   "status","motivo_reprovacao","pendente_circuito","ultima_recusa_circuito_em","chave",
   "saldo_temp","vitorias","derrotas","vitorias_total","derrotas_total","wo_culposos_temporada",
@@ -205,6 +235,41 @@ Deno.serve(async (req) => {
         if (!nome) return jsonResponse({ sucesso: false, erro: "Nome é obrigatório." }, 400);
         if (telefone.length < 10) return jsonResponse({ sucesso: false, erro: "Telefone inválido." }, 400);
 
+        // O CONSENTIMENTO DE PRIVACIDADE É OBRIGATÓRIO — fail-closed (12/10/2026).
+        //
+        // Até aqui esta ação gravava `aceite_lgpd: !!p.aceiteLGPD` e respondia 200:
+        // uma inscrição sem consentimento entrava no banco com o recibo marcado
+        // como FALSO, mais a linha em `atleta_documento` com `cpf_hash`, data de
+        // nascimento e o responsável. Provado rodando pelo Guardião Jurídico.
+        //
+        // É LITERALMENTE A LIÇÃO QUE ESTE ARQUIVO JÁ REGISTRA algumas linhas
+        // abaixo, sobre a guarda de menor de 27/09: "a porta de serviço ficou
+        // mais frouxa que a porta da frente". Em 11/10 eu fiz o `PARTICIPAR`
+        // (porta de serviço) recusar sem aceite e deixei o `INSCREVER` (porta da
+        // frente) aberto — o mesmo erro, com o consentimento no lugar da idade.
+        //
+        // A assimetria era pior do que parece: o consentimento ESPECÍFICO de CPF
+        // já era exigido logo abaixo, e o GERAL — que cobre nome e telefone, os
+        // dados que vão para o ranking público, o grupo e o Instagram — não era.
+        // O sistema exigia consentimento para o dado que nunca mostra e dispensava
+        // para os que publica.
+        //
+        // Fica AQUI, antes de qualquer escrita — inclusive antes do hash de CPF e
+        // do registro em `tentativas_busca_cpf` —, para uma tentativa recusada não
+        // chegar a registrar dado pessoal nenhum. É o desenho que o `PARTICIPAR`
+        // já acerta.
+        //
+        // "O app sempre manda true" não é defesa: o motor é o servidor, e esta
+        // onda inteira é sobre a integridade do recibo.
+        if (!p.aceiteLGPD) {
+          return jsonResponse({ sucesso: false, erro: "aceite_privacidade_obrigatorio" }, 400);
+        }
+        // Mesma razão para o regulamento: o recibo diz que a pessoa aceitou, e
+        // gravar `false` com 200 é afirmar que ela se inscreveu sem aceitar nada.
+        if (!p.aceiteRegulamento) {
+          return jsonResponse({ sucesso: false, erro: "aceite_regulamento_obrigatorio" }, 400);
+        }
+
         // Fatia 5: valida o circuito alvo NO SERVIDOR (não confia no circuitoId do cliente).
         // A flag/versão vivem em `circuitos` p/ todos (inclusive BH). Fecha inscrição em
         // circuito fechado/inexistente e carimba a versão do regulamento do próprio circuito.
@@ -325,6 +390,10 @@ Deno.serve(async (req) => {
           versao_regulamento: versaoDoCircuito,
           aceite_lgpd: !!p.aceiteLGPD,
           data_aceite_lgpd: p.aceiteLGPD ? dataAceite : null,
+          // Só carimba versão quando houve aceite. Sem isto, uma linha sem
+          // consentimento ficaria indistinguível de uma com consentimento — e a
+          // versão viraria enfeite em vez de recibo.
+          privacidade_versao: p.aceiteLGPD ? PRIVACIDADE_VERSAO : null,
           cpf_verificado: temCpf, // true só quando veio CPF válido e não-duplicado (doc gravado abaixo)
           inscrito_em: dataAceite,
         };

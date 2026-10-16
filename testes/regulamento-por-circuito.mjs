@@ -669,14 +669,22 @@ secao("Sem saber a versão, não se colhe aceite (fail-closed)");
     "versão ausente é desconhecida em qualquer circuito — o BH não é mais isento");
   ok(!/circuitoId !== CIRCUITO_BH_ID && !\(\(circ && circ\.regulamento_versao\)/.test(fonte),
     "e não sobrou a isenção antiga do BH");
-  ok(/if \(step === 3 && versaoDesconhecida\) return/.test(fonte),
+  // ATUALIZADA em 11/10/2026: o aceite do regulamento deixou de ter passo
+  // próprio e virou uma seção do passo 2 — três telas para três caixas de
+  // consentimento era o que o atleta do piloto chamou de "burocrático".
+  // A REGRA não mudou de lugar nem afrouxou, só o número do passo.
+  ok(/if \(step === 2 && versaoDesconhecida\) return/.test(fonte),
     "o passo do aceite é bloqueado quando a versão é desconhecida");
 
-  // A ordem importa: a guarda tem de vir ANTES do passo 3 normal, senão nunca roda.
-  const iGuarda = fonte.indexOf("if (step === 3 && versaoDesconhecida) return");
-  const iNormal = fonte.indexOf("if (step === 3) return");
+  // A ordem importa: a guarda tem de vir ANTES do passo 2 normal, senão nunca roda.
+  const iGuarda = fonte.indexOf("if (step === 2 && versaoDesconhecida) return");
+  const iNormal = fonte.indexOf("if (step === 2) return");
   ok(iGuarda > 0 && iGuarda < iNormal,
-    "a guarda vem antes do passo 3 normal");
+    "a guarda vem antes do passo de aceites normal");
+  // E o passo 3 deixou de existir: se alguém recriar um, a guarda acima para de
+  // cobrir o caminho novo sem ficar vermelha.
+  ok(!/if \(step === 3\)/.test(fonte),
+    "não existe mais um passo 3 — o fluxo tem dois passos");
 
   ok(/registramos aceite de um texto que você não viu/.test(fonte),
     "a tela de recusa explica o motivo ao atleta, em vez de só falhar");
@@ -1449,6 +1457,80 @@ secao("O re-aceite RODANDO: sete cenários contra o athlete-action de verdade");
     igual(banco.tabelas.circuito_atletas.filter(x => x.circuito_id === BH && x.atleta_id === ATL).length, 1,
       "sem duplicar o vínculo");
   }
+}
+
+secao("A porta da FRENTE exige consentimento — rodando o INSCREVER de verdade");
+{
+  // 12/10/2026, bloqueante do Guardião Jurídico, provado por ele RODANDO.
+  //
+  // Em 11/10 eu fiz o `PARTICIPAR` (porta de serviço) recusar sem aceite de
+  // privacidade e deixei o `INSCREVER` (porta da frente) aberto: ele gravava
+  // `aceite_lgpd: false` e respondia 200, com nome, telefone e a linha de
+  // documento com `cpf_hash` e data de nascimento.
+  //
+  // É LITERALMENTE a lição que o próprio `athlete-action` já registra sobre a
+  // guarda de menor, de 27/09: "a porta de serviço ficou mais frouxa que a
+  // porta da frente". O mesmo erro, com o consentimento no lugar da idade.
+  const CIRC_INS = "77777777-7777-7777-7777-777777777777";
+  const cenarioIns = async (extra) => {
+    const { banco } = await montarMotor({
+      circuitos: [circuito(BH), circuito(CIRC_INS, { slug: "pago", sistema: "B",
+        regulamento_versao: "vB-01", inscricoes_abertas: true })],
+    });
+    const atletaFn = await carregarFuncao("athlete-action", banco);
+    const r = await atletaFn.chamar({ acao: "INSCREVER", payload: {
+      circuitoId: CIRC_INS, nome: "Fulano de Tal", telefone: "31988887777",
+      aceiteRegulamento: true, aceiteLGPD: true, ...extra,
+    }});
+    return { banco, r };
+  };
+
+  for (const [campo, rotulo, erro] of [
+    ["aceiteLGPD", "sem o aceite de privacidade", "aceite_privacidade_obrigatorio"],
+    ["aceiteRegulamento", "sem o aceite do regulamento", "aceite_regulamento_obrigatorio"],
+  ]) {
+    const { banco, r } = await cenarioIns({ [campo]: false });
+    igual(r.status, 400, `a inscrição é recusada ${rotulo}`);
+    igual(r.corpo?.erro, erro, `e diz exatamente o que falta (${rotulo})`);
+    igual(banco.tabelas.atletas.length, 0,
+      `e NADA é gravado em atletas ${rotulo} — nem nome, nem telefone`);
+    igual((banco.tabelas.atleta_documento || []).length, 0,
+      `nem a linha de documento com CPF e data de nascimento ${rotulo}`);
+  }
+  // Omitir o campo é igual a mandar false — era por omissão que passava.
+  {
+    const { banco, r } = await cenarioIns({ aceiteLGPD: undefined });
+    igual(r.status, 400, "omitir o aceite também é recusado, não só mandar false");
+    igual(banco.tabelas.atletas.length, 0, "e também não deixa rastro");
+  }
+  // ⚠️ O CAMINHO FELIZ NÃO ESTÁ AQUI, e isto é declaração, não esquecimento.
+  // O `INSCREVER` completo exige CPF válido com as funções de banco
+  // `get_cpf_pepper` e `dedup_por_cpf_hash`, que este cenário não monta. O
+  // carimbo do recibo no caminho feliz já é coberto pela seção "O re-aceite
+  // RODANDO" e pelo cenário do `participar-outro-circuito.mjs`.
+  // O que ESTA seção prova é o fail-closed, que era o buraco.
+}
+
+secao("Preço zero não manda ninguém fazer PIX");
+{
+  // Guardião de Regulamento, C3a, medido ao vivo nos 2 atletas do 1º circuito
+  // pago: `isentoInd` é dirigido por `preco.isento` (a isenção INDIVIDUAL), e um
+  // preço que dá zero por desconto GLOBAL tem `isento: false`. O card mostrava
+  // "R$ 0,00" junto com o bloco do PIX e o texto "faça o PIX e mande o
+  // comprovante" — mandava pagar zero.
+  // A tela PÚBLICA já tratava este mesmo zero certo; o app tinha dois
+  // tratamentos do zero e o de dentro era o errado.
+  const cardPg = fonte.slice(fonte.indexOf("function RenovacaoCard"), fonte.indexOf("function RenovacaoAdminPanel"));
+  ok(cardPg.length > 500 || fonte.indexOf("function RenovacaoCard") > 0,
+    "o card de pagamento foi localizado");
+  ok(/const nadaAPagar = !naProxima && preco && preco\.preco_final_cent === 0;/.test(fonte),
+    "o card distingue 'nada a pagar' de 'isento' — são coisas diferentes");
+  ok(/\{!pagoEfetivo && pix && !isentoInd && !nadaAPagar && \(/.test(fonte),
+    "e o bloco do PIX não aparece quando não há o que pagar");
+  ok(/\) : nadaAPagar \? \(/.test(fonte),
+    "e o texto ramifica antes de mandar fazer o PIX");
+  ok(/Não há valor a pagar nesta temporada\./.test(fonte),
+    "dizendo que não há valor, em vez de pedir pagamento de zero");
 }
 
 secao("O par (versão, preço) não pode mentir — nem pelo carimbo, nem pelo financeiro");
@@ -2438,6 +2520,67 @@ secao("A correção das rodadas fixas entra na v03-13 e NÃO reescreve a v03-12"
     "o documento da v03-12 continua com a redação original — é registro do que foi assinado");
 }
 
+secao("O mês de cada etapa — EXECUTANDO a conta das datas, não lendo o texto");
+{
+  // ⚠️ ESTA SEÇÃO EXISTE PORQUE DUAS MUTAÇÕES FICAVAM VERDES.
+  // O Guardião de Confiabilidade mediu em 12/10/2026: `grep mesDoPar testes/*.mjs`
+  // dava ZERO. A função que decide em que mês cai cada par de rodadas — e,
+  // portanto, os PRAZOS que os atletas leem — nunca era executada. Só havia
+  // regex, e regex não vê inversão de comparador.
+  //
+  // As duas sabotagens que passavam:
+  //   `meses[i] <= anterior` -> `<`        : o ano não vira, e o par cai no PASSADO
+  //   `parIndex <= 0`        -> `< 0`      : o 1º par perde o mês real da rodada 1
+  //
+  // É a família do 0.6.15, o caso que o CLAUDE.md diz que só se protege
+  // EXECUTANDO. `mesDoPar` é PURA (recebe array, data e índice; devolve data;
+  // não fecha sobre nada) — as quatro condições da extração estão satisfeitas.
+  //
+  // E o palco é real: o 1º circuito pago declara novembro, dezembro e FEVEREIRO.
+  // É a 3ª etapa pulando o ano que esta conta precisa acertar.
+  const motorDatas = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "admin-action", "index.ts"), "utf8");
+  const iMes = motorDatas.indexOf("function mesDoPar(");
+  const fimMes = motorDatas.indexOf("function calcularPrazos(", iMes);
+  ok(iMes > 0 && fimMes > iMes, "a função do mês do par foi localizada no motor");
+  const codigoMes = motorDatas.slice(iMes, fimMes)
+    .replace(/\): Date \| undefined \{/, ") {")      // o retorno sai PRIMEIRO
+    .replace(/: number\[\] \| null/g, "")
+    .replace(/: Date/g, "")
+    .replace(/: number/g, "");
+  const mesDoPar = new Function(`${codigoMes}; return mesDoPar;`)();
+
+  const NOV = new Date(2026, 10, 1); // rodada 1 em novembro/2026
+  const MESES = [11, 12, 2];         // o que o Juliano configurou: nov, dez, FEV
+
+  // 1º par: a função se recusa a opinar — o mês dele é o da rodada 1.
+  igual(mesDoPar(MESES, NOV, 0), undefined,
+    "o 1º par não recebe mês calculado — ele já tem o da rodada 1");
+
+  // 2º par: dezembro do MESMO ano.
+  const p2 = mesDoPar(MESES, NOV, 1);
+  igual(p2.getMonth(), 11, "o 2º par cai em dezembro");
+  igual(p2.getFullYear(), 2026, "no mesmo ano");
+
+  // 3º par: fevereiro do ano SEGUINTE. É aqui que a conta tem de virar o ano.
+  const p3 = mesDoPar(MESES, NOV, 2);
+  igual(p3.getMonth(), 1, "o 3º par cai em fevereiro");
+  igual(p3.getFullYear(), 2027,
+    "DO ANO SEGUINTE — sem isto o prazo da 3ª etapa nasce 10 meses no passado");
+
+  // O caso que pega a inversão do `<=`: quando o mês do 2º par é IGUAL ao da
+  // rodada 1, o ano TEM de virar (não é o mesmo mês, é o do ano que vem).
+  const p2igual = mesDoPar([11, 11, 12], NOV, 1);
+  igual(p2igual.getFullYear(), 2027,
+    "mês do par igual ao da rodada 1 vira o ano — é o que o `<=` garante");
+  igual(p2igual.getMonth(), 10, "e continua sendo novembro");
+
+  // Entrada inválida não vira palpite: devolve undefined e quem chama cai no
+  // comportamento antigo (três meses seguidos), em vez de inventar uma data.
+  igual(mesDoPar(null, NOV, 1), undefined, "sem meses configurados, não opina");
+  igual(mesDoPar([11, 12], NOV, 1), undefined, "com menos de 3 meses, não opina");
+  igual(mesDoPar([11, 13, 2], NOV, 1), undefined, "com mês fora de 1..12, não opina");
+}
+
 secao("A janela de renovação prioritária — EXECUTANDO a conta, não lendo o texto");
 {
   // Item 0.6.15. O Cap. 13 (v03-12:318 / v03-13:343, e o texto que o atleta lê) diz:
@@ -2773,6 +2916,349 @@ secao("A promessa 'esse número é fixo' é obrigada no motor, não só escrita"
     "e nada foi gravado — a promessa do texto é obrigada no banco, não só na tela");
   const r2 = await comoAdmin(motor, "DEFINIR_RODADAS", { rodadas: 6 });
   igual(r2.status, 400, "a ação recusa até quando pedem o próprio 6 — ela não existe mais");
+}
+
+secao("O texto de consentimento não se reescreve — ele só muda de embalagem");
+{
+  // 11/10/2026. O passo 2 de 3 da inscrição tinha 427 palavras em cinco blocos
+  // empilhados — mais de duas telas de rolagem num celular, no meio do cadastro.
+  // Foi o atrito mais citado no piloto do 1º circuito pago.
+  //
+  // O conserto mudou a ENTREGA, não o texto, e isso é OBRIGAÇÃO, não escolha:
+  //
+  //   • o consentimento de privacidade NÃO TEM VERSÃO no banco. `atletas` tem
+  //     `aceite_lgpd` e `data_aceite_lgpd` e mais nada — ao contrário do
+  //     regulamento, que tem `versao_regulamento`. Conferido no
+  //     information_schema em 11/10/2026.
+  //   • 15 pessoas já aceitaram, entre 29/06 e 09/08/2026.
+  //
+  // Logo, reescrever as palavras muda RETROATIVAMENTE o que aquelas 15 pessoas
+  // consentiram, e não existe versão para distinguir o texto velho do novo. É a
+  // regra 7 do CLAUDE.md, que o projeto já decidiu duas vezes pelo mesmo
+  // raciocínio e deixou escrita para não ser re-litigada numa terceira.
+  //
+  // ESTA SEÇÃO É O PORTÃO: congela o texto DE HOJE. Mexer numa frase fica
+  // VERMELHO — e aí a conversa passa a ser "qual versão nova?", que é a certa.
+  //
+  // ⚠️ CORREÇÃO DE UM FATO QUE EU AFIRMEI ERRADO (11/10/2026, Guardião Jurídico).
+  // Eu havia escrito aqui que "cada frase abaixo foi copiada do texto que as 15
+  // pessoas aceitaram". É FALSO, e o git contradiz: comparando com o `2a8938d`
+  // (05/08/2026, o último commit do App.jsx antes do último aceite, em 09/08),
+  // **7 das 21 frases não existiam** — todo o bloco do CPF, "Controlador dos
+  // dados:", os dois parágrafos de cópias de segurança, o consentimento do
+  // responsável e a linha do Sistema B. Medido, não estimado.
+  //
+  // E o texto JÁ FOI ALTERADO sem versão e sem re-aceite, na pior direção
+  // possível: em 05/08 ele dizia "❌ Não coletamos **CPF**, endereço, e-mail ou
+  // dados financeiros" — a palavra CPF foi apagada quando o app passou a coletar
+  // CPF. As 15 pessoas detêm um recibo que hoje resolve para um texto OPOSTO ao
+  // que leram sobre o dado mais sensível.
+  //
+  // Por que o comentário errado era perigoso: o próximo guardião leria verde e
+  // concluiria que o texto está congelado desde os aceites. Estava congelado a
+  // partir de HOJE — que é o que esta lista de fato garante, e só isso.
+  // A dívida que ESTA onda pagou: `atletas.privacidade_versao` passou a existir
+  // (o CPF já tinha a dele, `cpf_consent_versao`; a política não tinha). O que
+  // ela NÃO pagou é o mecanismo: ninguém compara a versão gravada com a
+  // corrente, então mudar o texto ainda não pede re-aceite de ninguém. O recibo
+  // existe; a cobrança do re-aceite, não.
+  const i2 = fonte.indexOf("if (step === 2) return (");
+  const i3 = fonte.indexOf("// ── STEP 3");
+  ok(i2 > 0, "o passo 2 da inscrição foi localizado no fonte");
+  // ⚠️ A JANELA TEM DE FALHAR ALTO, NÃO ALARGAR EM SILÊNCIO.
+  // Até 12/10/2026 o fim ancorava no cabeçalho "STEP 3", que virou comentário
+  // órfão quando o passo 3 foi absorvido pelo passo 2. Apagá-lo como lixo faria
+  // `indexOf` devolver -1 e `slice(i, -1)` engolir do passo 2 até o fim do
+  // arquivo: medido, 20.939 -> 642.573 caracteres, de 2% para 71% — com a
+  // bateria VERDE e as asserções de consentimento casando em qualquer lugar.
+  // É a armadilha de janela de 27/09, com o sinal invertido: lá ela encolheu e
+  // ficou vermelha (falhou para o lado seguro); aqui ela ALARGA e fica verde.
+  // (Guardião de Regulamento, C8.)
+  const iP2 = bruto.indexOf("// ── STEP 2: LGPD");
+  const fimP2 = bruto.indexOf("// ── FIM DO PASSO 2");
+  ok(iP2 > 0, "o início da janela do passo 2 foi localizado");
+  ok(fimP2 > iP2, "e o FIM também — sem o marco, a janela engoliria o arquivo inteiro");
+  const passo2 = bruto.slice(iP2, fimP2);
+  // A POLÍTICA SAIU DO PASSO 2 EM 15/10/2026 e virou componente próprio, usado
+  // pelas DUAS telas que colhem o consentimento (a inscrição e o "participar de
+  // outro circuito"). Duplicar o texto criaria duas cópias de um documento já
+  // consentido, que divergiriam no primeiro conserto — a doença da regra 7.
+  // As asserções do texto seguem a política; as das caixas de aceite e do botão
+  // continuam no passo 2, que é onde elas vivem.
+  const iPol = bruto.indexOf("function PoliticaPrivacidade(");
+  const fimPol = bruto.indexOf("function InscricaoForm(");
+  ok(iPol > 0 && fimPol > iPol, "o componente da política de privacidade foi localizado");
+  const politica = bruto.slice(iPol, fimPol);
+  ok(politica.length < 30000,
+    `a janela da política tem tamanho de componente (${politica.length} caracteres)`);
+  // Onde o consentimento inteiro vive: a política mais as caixas que a aceitam.
+  const consentimento = passo2 + politica;
+  // Teto de tamanho: a janela é uma tela, não um arquivo. Se um dia ela passar
+  // disso, alguém mexeu na âncora e as asserções abaixo pararam de ser sobre o
+  // passo 2.
+  ok(passo2.length < 60000,
+    `a janela do passo 2 tem tamanho de tela (${passo2.length} caracteres), não de arquivo`);
+  ok(passo2.length > 2000, "e o recorte do passo 2 tem corpo — não é janela vazia");
+
+  const CONSENTIDO = [
+    // Quais dados coletamos
+    "— para identificação, comunicação sobre suas partidas e publicação no ranking oficial do Circuito",
+    "apenas informativa. No Sistema B você entra com 0 pontos, sem rating.",
+    "para definir seu rating de entrada e garantir a integridade competitiva do Circuito.",
+    // Como usamos
+    "✅ Gestão do Circuito (inscrições, partidas, ranking)",
+    "✅ Comunicação via WhatsApp e Instagram",
+    "não são vendidos",
+    "endereço, e-mail ou dados financeiros",
+    // Direitos
+    "Seus direitos (Lei 13.709/2018 — LGPD)",
+    "Você pode a qualquer momento solicitar ao administrador:",
+    "🗑️ Exclusão dos seus dados (implica saída do Circuito)",
+    "Contato: @clubedotenisdemesa no Instagram ou WhatsApp do grupo oficial.",
+    // Retenção e backups
+    "Seus dados são mantidos enquanto você estiver ativo no Circuito e por até 2 anos após o encerramento da sua participação",
+    "Mantemos cópias de segurança do banco de dados por até",
+    "não são usadas para restaurar cadastros individuais",
+    // CPF
+    "só para identificar você de forma única",
+    "nunca é exibido",
+    "Controlador dos dados:",
+    // As duas caixas de aceite — é o que a pessoa de fato assina
+    "Li e compreendo a política de privacidade acima.",
+    "Consinto com a coleta e uso dos meus dados",
+    "de acordo com a Lei Geral de Proteção de Dados (LGPD — Lei 13.709/2018).",
+    "consinto com o uso do CPF do menor como identidade única na plataforma",
+  ];
+  const ausentes = CONSENTIDO.filter(t => !consentimento.includes(t));
+  igual(ausentes, [],
+    "toda frase que as 15 pessoas aceitaram continua no passo 2, palavra por palavra");
+
+  // O RESUMO é ADITIVO e se declara resumo. Se ele passar a substituir a
+  // política, a pessoa consente com um texto que não é o que está escrito.
+  ok(/Em resumo/.test(politica),
+    "existe um resumo no topo — é o que tira o muro de 427 palavras da frente");
+  ok(/Isto é um resumo\. A política completa está abaixo — é ela que você aceita\./.test(politica),
+    "e ele DIZ que é resumo, e que o que vale é a política inteira logo abaixo");
+
+  // O RESUMO PODE PROMETER MENOS QUE A POLÍTICA, NUNCA MAIS — a regra que o
+  // Guardião Jurídico formulou em 11/10/2026. Se o resumo não for fiel, o
+  // acordeão PASSA A SER padrão escuro: a única coisa que a pessoa lê com
+  // confiabilidade estaria errada, e o texto correto estaria fora do caminho
+  // padrão. As três infidelidades que ele achou, e que agora ficam travadas:
+  //
+  // 1. "Pedimos nome, WhatsApp e CPF" lia-se como lista FECHADA, e a tela
+  //    ANTERIOR já exige data de nascimento — e, para menor de 18, nome e CPF do
+  //    responsável (art. 14 da LGPD).
+  // ⚠️ JANELA RECORTADA NO RESUMO, não no passo 2 inteiro. A primeira versão
+  // destas três asserções olhava `passo2` todo — e "nem compartilhados com
+  // terceiros" existe DUAS vezes ali: no resumo e na política. A asserção casava
+  // com a da política e ficava verde com o resumo sabotado. O teste de mutação
+  // pegou; a leitura não teria pegado.
+  const iRes = politica.indexOf("Em resumo");
+  const iFimRes = politica.indexOf("Política completa");
+  ok(iRes > 0 && iFimRes > iRes, "o recorte do resumo foi localizado");
+  const resumo = politica.slice(iRes, iFimRes);
+  ok(/nome, WhatsApp, CPF e data de nascimento<\/strong> — e, se você for menor de 18, o nome e o CPF do seu responsável/.test(resumo),
+    "o resumo lista os dados que a inscrição de fato pede, inclusive os do responsável");
+  // 2. A política diz "compartilhados COM TERCEIROS". O resumo cortava o
+  //    complemento dois bullets depois de dizer que nome e resultados vão para o
+  //    WhatsApp e o Instagram — contradição dentro da mesma caixa.
+  ok(/não são vendidos<\/strong> nem compartilhados com terceiros/.test(resumo),
+    "e não apaga a qualificação 'com terceiros', que a política tem");
+  // 3. O direito mais forte vinha sem a ressalva que a política traz — e, com as
+  //    seções fechadas, essa ressalva era justamente o que o padrão escondia.
+  ok(/retirar seu consentimento<\/strong>, quando quiser — no app, em Editar perfil\. Como esses dados são necessários para jogar, isso implica sair do circuito/.test(resumo),
+    "e diz ONDE revogar e o que a exclusão custa — a ressalva que a política tem");
+
+  // O estado recolhido é informação material numa tela de consentimento: é a
+  // diferença entre "está a um toque" e "está a um toque ANUNCIADO". Sem
+  // `aria-expanded`, o leitor de tela anuncia o botão sem dizer que há conteúdo
+  // dobrado atrás dele.
+  const comAria = (politica.match(/aria-expanded=\{secoesAbertas\.includes\("/g) || []).length;
+  igual(comAria, 4, "as quatro seções anunciam ao leitor de tela se estão abertas ou fechadas");
+  const comControls = (politica.match(/aria-controls="pol-/g) || []).length;
+  igual(comControls, 4, "e dizem qual região controlam");
+
+  // Os cabeçalhos das seções são <button> de verdade. Era <strong> dentro de uma
+  // div; virar <div onClick> teria quebrado o caminho por teclado — e isto é
+  // consentimento, não pode depender de mouse. (O guardião do Atleta achou
+  // exatamente esse defeito nas caixas de aceite em 19/09.)
+  const botoes = (politica.match(/<button type="button" onClick=\{\(\)=>alternaSecao\("/g) || []).length;
+  igual(botoes, 4, "as quatro seções da política abrem por <button>, acessível por teclado");
+  ok(/secaoBtn: \(cor\) => \(\{ display:"flex"/.test(bruto),
+    "com estilo próprio de cabeçalho de seção");
+
+  // Nenhuma seção pode nascer aberta OU fechada por acidente: o estado inicial é
+  // explícito, e o "Abrir tudo" existe para quem quer ler tudo de uma vez.
+  ok(/const \[secoesAbertas, setSecoesAbertas\] = useState\(\[\]\);/.test(bruto),
+    "as seções começam fechadas — é o que encurta a tela");
+  ok(/secoesAbertas\.length === 4 \? "Fechar tudo" : "Abrir tudo"/.test(bruto),
+    "e há um atalho para abrir a política inteira de uma vez");
+
+  // A VERSÃO DO CONSENTIMENTO — condição C5 do Guardião Jurídico, 11/10/2026.
+  //
+  // As três constantes têm de ser a MESMA string. O servidor é quem carimba
+  // (um recibo que o cliente escolhe não é recibo), mas o app precisa da mesma
+  // para saber se o texto na frente da pessoa é o que ela já aceitou. Se
+  // divergirem, o app pede re-aceite de um texto que já está aceito, ou pior:
+  // deixa de pedir de um texto que mudou.
+  const pvApp = (bruto.match(/const PRIVACIDADE_VERSAO = "([^"]+)"/) || [])[1];
+  const pvAth = (fs.readFileSync(path.join(RAIZ, "supabase", "functions", "athlete-action", "index.ts"), "utf8")
+    .match(/const PRIVACIDADE_VERSAO = "([^"]+)"/) || [])[1];
+  const pvLog = (fs.readFileSync(path.join(RAIZ, "supabase", "functions", "login-atleta", "index.ts"), "utf8")
+    .match(/const PRIVACIDADE_VERSAO = "([^"]+)"/) || [])[1];
+  ok(!!pvApp, "o app declara a versão do texto de privacidade");
+  igual(pvAth, pvApp, "o athlete-action usa a mesma versão que o app");
+  igual(pvLog, pvApp, "e o login-atleta também — as três não podem divergir");
+
+  // Quem carimba é o SERVIDOR. O cliente não manda versão de privacidade — ao
+  // contrário do `cpfConsentVersao`, que vem no payload e por isso é frágil.
+  ok(/privacidade_versao: p\.aceiteLGPD \? PRIVACIDADE_VERSAO : null/.test(
+      fs.readFileSync(path.join(RAIZ, "supabase", "functions", "athlete-action", "index.ts"), "utf8")),
+    "o INSCREVER carimba a versão do servidor, e só quando houve aceite");
+  ok(!/privacidadeVersao|privacidade_versao/.test(bruto.slice(bruto.indexOf("async function participarCircuito"), bruto.indexOf("async function uploadComprovanteWo"))),
+    "o app não manda versão de privacidade no payload — quem decide é o servidor");
+
+  // O PARTICIPAR passou a colher aceite. Era o buraco que deixou os 3 atletas do
+  // 1º circuito pago com recibo de JULHO, de um texto que dizia "não coletamos
+  // CPF", depois de terem dado CPF em outubro por este caminho.
+  const la = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "login-atleta", "index.ts"), "utf8");
+  ok(/if \(!p\.aceiteLGPD\) \{\s*\n\s*return jsonResponse\(\{ sucesso: false, erro: "aceite_privacidade_obrigatorio" \}, 400\);/.test(la),
+    "o PARTICIPAR recusa quem não declarou o aceite de privacidade");
+  ok(/aceite_lgpd: true,\s*\n\s*data_aceite_lgpd: now,\s*\n\s*privacidade_versao: PRIVACIDADE_VERSAO,/.test(la),
+    "e grava o aceite com a versão, em vez de herdar o recibo antigo");
+  ok(/aceiteLGPD: aceitePriv \}/.test(bruto),
+    "e a tela manda o aceite que a pessoa marcou, não um `true` cravado");
+
+  // ── AS CAIXAS DE CONSENTIMENTO FUNCIONAM POR TECLADO (12/10/2026) ──
+  //
+  // Eram `<div onClick>`: o passo 2 tinha 8 controles focáveis e NENHUM era
+  // caixa de aceite. Quem navega por teclado ou leitor de tela chegava ao fim
+  // com o botão permanentemente desabilitado — ou seja, não conseguia se
+  // inscrever. Consentimento da LGPD é ato afirmativo DO TITULAR.
+  //
+  // ⚠️ A CONTAGEM É DO APP INTEIRO, não do recorte — exigência do supervisor do
+  // Atleta. Uma asserção por janela deixaria passar a próxima caixa nascida
+  // fora dela, que foi exatamente como a do `ParticiparFlow` ficou de fora.
+  // ⚠️ CAIXA A CAIXA, não por contagem. A 1ª versão comparava dois totais
+  // (6 clicáveis contra 7 `role=checkbox`) e ficava VERDE com uma caixa
+  // sabotada — sobrava marcação de outro controle para cobrir o buraco. O teste
+  // de mutação pegou; a leitura não teria pegado. Agora cada caixa é conferida
+  // na própria vizinhança, e o relatório NOMEIA a que falhar.
+  const semTeclado = [];
+  const re = /onClick=\{\(\)=>setAceite([A-Za-z]+)\(/g;
+  let m;
+  while ((m = re.exec(bruto)) !== null) {
+    const perto = bruto.slice(Math.max(0, m.index - 400), m.index + 400);
+    const completo = /role="checkbox"/.test(perto) && /tabIndex=\{0\}/.test(perto) && /onKeyDown=/.test(perto);
+    if (!completo) semTeclado.push(m[1]);
+  }
+  ok(re.lastIndex !== undefined, "o varredor de caixas de consentimento rodou");
+  igual(semTeclado, [],
+    "toda caixa de consentimento do app tem role, tabIndex e teclado — nenhuma é só clique");
+
+  // ── O CAMPO DE PIN: uma variante só, e é a da tela que já funciona no ar ──
+  //
+  // O app tinha TRÊS. A minha era a única com `autoComplete="new-password"`, que
+  // aciona a Senha Forte do iOS: ela preenche os dois campos com a mesma string,
+  // o `onChange` corta os dois para 6 dígitos, eles conferem, e o PIN é criado
+  // mascarado — sem a pessoa nunca o ter visto. O servidor recusa um segundo
+  // ("peça um reset ao administrador"): o passo que veio tirar atrito trancaria
+  // o atleta no dia 1. (Guardião do Atleta, A2.)
+  const camposPin = (bruto.match(/placeholder="••••"/g) || []).length;
+  ok(camposPin >= 3, `o app tem ${camposPin} campos de PIN`);
+  ok(!/placeholder="••••"[^>]*type="password"/.test(bruto) && !/type="password"[^>]*placeholder="••••"/.test(bruto),
+    "e nenhum usa type=password — todos seguem a tela de PIN que já está no ar");
+  // ⚠️ `fonte` (SEM comentários), não `bruto`. A primeira versão desta asserção
+  // usava `bruto` e ficava vermelha casando com o COMENTÁRIO que explica por que
+  // o `new-password` saiu. É a armadilha que o projeto já registrou em 28/09,
+  // três vezes: "uma asserção que se afoga na própria explicação não protege
+  // nada". Regra da casa: `fonte` para exigir AUSÊNCIA, `bruto` para presença.
+  ok(!/autoComplete="new-password"/.test(fonte),
+    "e nenhum pede ao navegador uma senha NOVA, que é o que dispara a Senha Forte");
+
+  // ── A POLÍTICA É LEGÍVEL NOS DOIS CAMINHOS QUE A FAZEM ACEITAR ──
+  //
+  // O "participar de outro circuito" tinha a caixa e não tinha o texto, e o
+  // servidor carimbava a versão como prova. Agora tem o mesmo portão do
+  // regulamento: a caixa só existe depois de abrir a política.
+  const usos = (bruto.match(/<PoliticaPrivacidade /g) || []).length;
+  igual(usos, 2, "a política é renderizada nos dois caminhos — inscrição e participar");
+  ok(/\{lerPriv && <div onClick=\{\(\)=>setAceitePriv/.test(bruto),
+    "e no participar a caixa de aceite só existe depois de abrir o texto");
+  ok(/🔒 Ler a política de privacidade/.test(bruto),
+    "com um botão explícito para abrir");
+  // Fonte ÚNICA: duas cópias de um texto já consentido divergiriam no primeiro
+  // conserto, que é a doença da regra 7.
+  const copias = (bruto.match(/Mantemos cópias de segurança do banco de dados por até/g) || []).length;
+  igual(copias, 1, "e o texto existe UMA vez no código — não duas cópias para divergir");
+
+  // ── ART. 9º §2º: o titular tem de saber que os três são CONDIÇÃO ──
+  // É o que legitima um botão único para três consentimentos. Sem a frase, o
+  // agrupamento fica sem a informação que o autoriza. (Jurídico, C8.)
+  ok(/Os três aceites abaixo são condição para participar do circuito<\/strong> — não há como marcar só parte deles\./.test(politica),
+    "o resumo diz, com destaque, que os três aceites são condição para participar");
+
+  // ── ART. 14 §1º: as TRÊS caixas se adaptam ao menor, não só a do CPF ──
+  // O consentimento do responsável cobre o tratamento TODO. E o aceite do
+  // regulamento é CONTRATO: menor se obrigando sozinho a um valor com penalidade
+  // é anulável, e aceite que não se sustenta não protege o clube. (Jurídico, C9.)
+  const caixasMenor = (passo2.match(/ehMenor/g) || []).length;
+  ok(caixasMenor >= 3,
+    `as três caixas de aceite se adaptam ao menor (${caixasMenor} ramificações), não só a do CPF`);
+  ok(/consinto com a coleta e uso dos dados do menor/.test(passo2),
+    "a caixa da privacidade fala em nome do responsável quando é menor");
+  ok(/declaro que o menor <strong style=\{\{color:"#F0EAE0"\}\}>aceita todas as regras, prazos e penalidades/.test(passo2),
+    "e a do regulamento também — é contrato, não só consentimento");
+
+  // A versão do regulamento na caixa de aceite vem do DADO, não cravada.
+  // Dizia "(versão vB-01)" à mão: num circuito com outra versão, a caixa que
+  // vira recibo afirmaria a errada.
+  ok(!/\(versão vB-01\)/.test(fonte),
+    "a caixa de aceite não crava a versão do regulamento no texto");
+
+  // O botão agora CONCLUI a inscrição, e exige OS TRÊS aceites mais o portão de
+  // leitura do regulamento. Antes exigia dois aqui e os outros dois na tela
+  // seguinte; juntar as telas não podia juntar só o texto e afrouxar a trava.
+  ok(/disabled=\{!aceiteLGPD\|\|!aceiteCpf\|\|!aceiteReg\|\|!lerReg\|\|enviando\}/.test(passo2),
+    "concluir exige os três consentimentos E ter aberto o regulamento");
+  ok(/Confirmar inscrição/.test(passo2),
+    "e é o botão que conclui a inscrição, não um 'Continuar' para outra tela");
+
+  // ── O PIN CRIADO NO FIM DA INSCRIÇÃO (11/10/2026) ──
+  //
+  // O passo que a volta ao app escondia: enviar a inscrição, sair, esperar o
+  // WhatsApp, voltar, achar "Sou atleta", digitar o telefone de novo e só então
+  // descobrir que precisava criar um PIN. No piloto do 1º circuito pago, ZERO
+  // atletas novos chegaram ao fim em uma semana.
+  //
+  // Funciona porque a linha do atleta JÁ EXISTE ao enviar (nasce "pendente") e o
+  // DEFINIR_PIN não confere status. As duas coisas são verificadas aqui, para a
+  // premissa não apodrecer em silêncio no dia em que alguém endurecer o motor.
+  const laPin = fs.readFileSync(path.join(RAIZ, "supabase", "functions", "login-atleta", "index.ts"), "utf8");
+  const acaoPin = laPin.slice(laPin.indexOf('if (acao === "DEFINIR_PIN")'), laPin.indexOf('// PARTICIPAR —'));
+  ok(acaoPin.length > 200, "o DEFINIR_PIN foi localizado no motor");
+  ok(!/status !== "ativo"/.test(acaoPin),
+    "o DEFINIR_PIN não exige cadastro aprovado — é o que permite criar o PIN na inscrição");
+  ok(/status: "pendente"/.test(fs.readFileSync(path.join(RAIZ, "supabase", "functions", "athlete-action", "index.ts"), "utf8")),
+    "e o atleta já nasce com linha no banco ao se inscrever, antes da aprovação");
+
+  // ⚠️ `bruto`, não `fonte`: a âncora é um COMENTÁRIO, e `fonte` é a versão sem
+  // comentários. Com `fonte` o indexOf devolvia -1 e o recorte saía vazio — as
+  // asserções abaixo falhavam pelo motivo errado. É a mesma armadilha de janela
+  // que o CLAUDE.md registra; aqui ela caiu do lado seguro, em vermelho.
+  const sucesso = bruto.slice(bruto.indexOf("// ── STEP 4: Sucesso"), bruto.indexOf("// ── MAIN APP"));
+  ok(sucesso.length > 500, "a tela de sucesso foi localizada");
+  ok(/chamarLoginAtleta\("DEFINIR_PIN", phone\.replace/.test(fonte),
+    "a tela de sucesso cria o PIN com o telefone que a pessoa já digitou");
+  ok(/Crie seu PIN agora/.test(sucesso),
+    "e oferece isso na hora, em vez de deixar para a volta");
+  // Pular tem de continuar possível: travar a tela de sucesso de uma inscrição
+  // JÁ GRAVADA seria pior que o atrito que isto veio resolver.
+  ok(/Pode deixar para depois — dá para criar na hora de entrar\./.test(sucesso),
+    "e deixa pular — a inscrição já está gravada, travar aqui seria pior");
+  ok(/pinPronto\s*\n?\s*\? <>Entra no app em <b style=\{\{color:"#F0EAE0"\}\}>Sou atleta<\/b>, com este WhatsApp e o PIN que você acabou de criar\.<\/>/.test(sucesso),
+    "e os próximos passos mudam de texto quando o PIN já foi criado");
 }
 
 process.exit(placar("Regulamento por circuito"));

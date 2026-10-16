@@ -151,7 +151,19 @@ Ordem sugerida. As primeiras são **inertes** (config sem valor = desligado) —
 
 1. **Fundação parametrizada (inerte). — ✅ FEITA.** Colunas em `circuitos` (`cobranca_plataforma_ativa`, `taxa_plataforma_temporada_cent`, `taxa_plataforma_por_atleta_tipo/valor`), desligadas por padrão, sem grant ao anon. BH (Caso 1) intocado.
 2. **Cálculo (função pura, testável). — ✅ FEITA.** `calcularCobrancaPlataforma` provada em 7 cenários (harness).
-3. **Admin: definir valores + preview. — ✅ FEITA (front + edge no fonte).** Card "💳 Cobrança da plataforma" (super-admin, ≠ BH) + ações `LER/DEFINIR_COBRANCA_PLATAFORMA`. **Edge a deployar (v55) quando houver o 1º circuito vendido.** Só grava config.
+3. **Admin: definir valores + preview. — ✅ FEITA (front + edge no fonte).** Card "💳 Cobrança da plataforma" (super-admin, ≠ BH) + ações `LER/DEFINIR_COBRANCA_PLATAFORMA`. Só grava config.
+   ⛔ **CORRIGIDO EM 12/10/2026 — TODO RESOLVIDO QUE SEGUIA LIDO COMO ABERTO.** Esta
+   linha dizia *"**Edge a deployar (v55) quando houver o 1º circuito vendido**"*. As
+   duas ações **JÁ ESTÃO NO AR**: conferido por mim no **corpo da `admin-action` v65
+   em produção** (lido via `get_edge_function`, não inferido da versão) —
+   `LER_COBRANCA_PLATAFORMA` e `DEFINIR_COBRANCA_PLATAFORMA` estão lá. Elas subiram
+   sem esperar o "1º circuito vendido", em algum ponto entre a v55 e a v65. ⇒ **a
+   condição desta linha não é mais um portão**, e quem a lesse concluiria que o
+   caminho do dinheiro da plataforma está inerte quando ele está publicado (ainda que
+   desligado por configuração — `cobranca_plataforma_ativa` nasce `false`).
+   *(O `CLAUDE.md` já registrava um caso gêmeo: a justificativa do guard-rail do
+   `motor:publicar` citava "~178 linhas do financeiro do organizador ainda não
+   liberadas", e venceu quando o financeiro subiu na v57→v58.)*
 4. **Jurídico em paralelo. — ✅ MINUTAS FEITAS (revisar com advogado).** `TERMOS_ORGANIZADOR.md` (contrato B2B: objeto, planos/valores parametrizados, split, papéis LGPD controlador/operador, rescisão/reembolso) + `POLITICA_PRIVACIDADE.md` (dados, bases legais, CPF hash, pagamento/gateway, direitos, menores, retenção). Ambas com pendências marcadas pra você/advogado fechar. Não substituem revisão jurídica.
 5. **Integração do gateway (Asaas) — cobrança real.** Conta/KYC, criar cobrança (Pix Automático), **webhook assinado** confirma pagamento (server-to-server), split automático da fatia da plataforma. Aqui é que dinheiro se move — Guardião de Segurança obrigatório, e só liga depois do jurídico.
 6. **Recorrência por temporada + inadimplência.** Renovação automática, retenção (atleta não pago não é pareado — regra já existe), estorno.

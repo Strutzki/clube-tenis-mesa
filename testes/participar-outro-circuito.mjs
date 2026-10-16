@@ -77,6 +77,9 @@ function pedido(extra = {}) {
   return {
     acao: "PARTICIPAR", telefone: TEL, pin: PIN, circuitoId: CIRC,
     aceiteRegulamento: true, versaoRegulamento: VERSAO_B,
+    // Novo em 11/10/2026: entrar num 2º circuito é tratamento NOVO de dado
+    // pessoal, e este caminho não colhia aceite de privacidade nenhum.
+    aceiteLGPD: true,
     cpf: CPF_OK, cpfConsent: true, cpfConsentVersao: "cpf-2026-08-v1",
     dataNascimento: "1990-05-10",
     ...extra,
@@ -98,6 +101,54 @@ secao("Sem aceite declarado, não entra — e nada é gravado");
   const { motor } = await cenario();
   const r = await motor.chamar(pedido({ aceiteRegulamento: "sim" }));
   igual(r.status, 400, "e 'aceite' que não é exatamente true também é recusado");
+}
+
+secao("Sem aceite de PRIVACIDADE também não entra — e o recibo ganha versão");
+{
+  // O buraco que isto fecha, com nome e data: os 3 atletas do 1º circuito pago
+  // entraram por aqui em outubro carregando recibo de privacidade de JULHO,
+  // colhido no circuito antigo, quando o texto ainda dizia "não coletamos CPF"
+  // — e foi por aqui que deram CPF. (Guardião Jurídico, D4, 11/10/2026.)
+  {
+    const { motor, banco } = await cenario();
+    const r = await motor.chamar(pedido({ aceiteLGPD: undefined }));
+    igual(r.status, 400, "participar sem declarar o aceite de privacidade é recusado");
+    igual(r.corpo?.erro, "aceite_privacidade_obrigatorio", "e diz exatamente o que falta");
+    igual(banco.linhas("circuito_atletas").filter(l => l.circuito_id === CIRC).length, 0,
+      "e nenhum vínculo é criado — a recusa não deixa rastro");
+  }
+  {
+    const { motor, banco } = await cenario();
+    const r = await motor.chamar(pedido());
+    igual(r.status, 200, "com o aceite declarado, entra");
+    const eu = banco.linhas("atletas").find(a => a.telefone === TEL);
+    igual(eu?.aceite_lgpd, true, "o aceite de privacidade é regravado AGORA");
+    ok(!!eu?.data_aceite_lgpd, "com data nova, não a de meses atrás");
+    igual(eu?.privacidade_versao, "privacidade-2026-10-v1",
+      "e carimbado com a VERSÃO do texto — o que não existia antes de hoje");
+  }
+}
+
+secao("Se a gravação do aceite falhar, NÃO se cria vínculo — o fail-open morreu");
+{
+  // Três guardiões acharam o mesmo defeito, independentemente, em 12/10/2026
+  // (Confiabilidade F1, Segurança A1, Regulamento C2): a escrita do aceite era
+  // `await ... .update(...)` SEM ler o erro, seis linhas acima de um insert que
+  // confere. O comentário do bloco prometia "sem aceite declarado não se cria
+  // vínculo" — e se a escrita falhasse, o vínculo era criado e a resposta era
+  // sucesso: o atleta lê "aceito", o clube não tem prova.
+  //
+  // E compunha com a ordem de publicação: enquanto a coluna `privacidade_versao`
+  // não existir no banco, essa escrita falha SEMPRE.
+  //
+  // Esta asserção força a falha em vez de supor que ela não acontece.
+  const { motor, banco } = await cenario();
+  banco.recusar("atletas", "update", { message: 'column "privacidade_versao" does not exist' }, 99);
+  const r = await motor.chamar(pedido());
+  igual(r.status, 500, "a gravação do aceite falhando derruba a ação, em vez de seguir");
+  igual(r.corpo?.erro, "falha_aceite_privacidade", "e diz o que falhou");
+  igual(banco.linhas("circuito_atletas").filter(l => l.circuito_id === CIRC).length, 0,
+    "e NENHUM vínculo é criado — era isto que o fail-open deixava passar");
 }
 
 secao("O atleta declara QUAL versão aceitou, e ela tem de ser a do circuito");

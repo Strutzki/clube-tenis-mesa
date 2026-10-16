@@ -83,6 +83,17 @@ const TIBHAR_LOGO = "https://acdn-us.mitiendanube.com/stores/003/539/065/themes/
 
 // ── CPF (identidade nacional) — Fatia 4 front: máscara + DV no cliente. O servidor SEMPRE revalida. ──
 const CPF_CONSENT_VERSAO = "cpf-2026-08-v1";
+// Versão do texto de PRIVACIDADE exibido por este app. Espelho da constante
+// `PRIVACIDADE_VERSAO` do `athlete-action` e do `login-atleta` — quem carimba é
+// o SERVIDOR (um recibo que o cliente escolhe não é recibo).
+// ⚠️ HOJE ESTA CONSTANTE NÃO É USADA PARA NADA no app além de existir e ser
+// comparada com as do motor pela bateria. Eu havia escrito que ela "serve para a
+// tela saber se o que a pessoa já aceitou é o texto que está na frente dela" —
+// FALSO: nenhuma tela compara, e `privacidadeVersao` é mapeado do banco e nunca
+// lido. O recibo foi construído; o mecanismo de re-aceite não.
+// (Guardião Jurídico, C7, 12/10/2026 — regra 6.)
+// AO MUDAR O TEXTO DA POLÍTICA, mude as três no mesmo commit.
+const PRIVACIDADE_VERSAO = "privacidade-2026-10-v1";
 function cpfDVFront(cpf) {
   const d = String(cpf || "").replace(/\D/g, "");
   if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
@@ -278,7 +289,26 @@ const db = {
   // `pg_get_functiondef` antes. (Guardião de Confiabilidade, 27/09/2026.)
   // Fatia 6: mesma lista de abertos, porém com info de vagas (ativos, max, cheio) via RPC seguro.
   getCircuitosAbertosVagas: () => supaFetch(`rpc/circuitos_abertos_vagas`, { method: "POST", body: "{}" }),
-  getVersoesRegulamento: () => supaFetch(`circuitos?select=id,regulamento_versao&ativo=eq.true&inscricoes_abertas=eq.true&publico=eq.true`),
+  // ALARGADA EM 11/10/2026 para carregar o PREÇO no caminho PÚBLICO.
+  //
+  // O atleta decidia se inscrever sem ver valor nenhum: o RPC `circuitos_abertos_vagas`
+  // devolve 14 colunas e nenhuma é financeira, e esta leitura pedia só duas. O preço
+  // existia apenas depois do login — e o login, só depois da aprovação. Quem é novo
+  // desistia antes de chegar lá; no piloto do 1º circuito pago, ZERO atletas novos
+  // completaram a inscrição em uma semana. E o regulamento que ele assina promete,
+  // no capítulo do valor, que "o valor da temporada é informado na inscrição".
+  //
+  // ⚠️ AS COLUNAS SÃO NOMEADAS, UMA A UMA, E ISTO NÃO É ESTILO. Esta leitura roda
+  // com a chave do VISITANTE (`anon`): um `select=*` devolveria toda coluna que a
+  // chave possa ler hoje e no futuro, e a consulta INTEIRA quebra no dia em que
+  // existir uma coluna sem permissão para o `anon` — é a armadilha nº 1 do
+  // CLAUDE.md, que já tirou o app do ar em 07/09/2026, e foi exatamente o que
+  // derrubou a produção em 03/10/2026.
+  // Conferido em `information_schema.column_privileges` antes de acrescentar:
+  // `anon` já tem SELECT nestas cinco. Nenhuma migração foi necessária.
+  // `pix_chave` NÃO entra: a chave do organizador não tem por que ficar numa
+  // página pública, e ela só é útil depois da aprovação.
+  getVersoesRegulamento: () => supaFetch(`circuitos?select=id,regulamento_versao,financeiro_ativo,valor_temporada,desconto_global_pct,rodadas_por_temporada,data_inicio_temporada&ativo=eq.true&inscricoes_abertas=eq.true&publico=eq.true`),
 
   // Histórico de mensagens de WhatsApp enviadas
   getMensagensEnviadas: () => supaFetch("mensagens_enviadas?order=enviado_em.desc&limit=200"),
@@ -423,6 +453,11 @@ function mapAtletaFromDb(a) {
     posicaoHistorico: a.posicao_historico || [],
     woCulpososTemporada: a.wo_culposos_temporada || 0,
     exclusaoSolicitadaEm: a.exclusao_solicitada_em || null,
+    // Qual VERSÃO do texto de privacidade esta pessoa aceitou. `null` significa
+    // "aceitou antes de a política ter versão" (antes de 11/10/2026) — e é
+    // informação verdadeira, não dado faltando: não há como saber qual texto ela
+    // leu, porque o texto mudou sem versão.
+    privacidadeVersao: a.privacidade_versao || null,
     bioCredIds: Array.isArray(a.bio_cred_ids) ? a.bio_cred_ids : [],
   };
 }
@@ -592,10 +627,18 @@ async function buscarAdminBioCredIds() {
 // vindo do cliente. Fecha o vazamento (dado financeiro individual não fica mais acessível
 // a qualquer anônimo que saiba um id público do ranking). Sem sessão → null (não expõe).
 // Devolve { isento, valor_base_cent, preco_final_cent } ou null.
-async function buscarPrecoTemporada() {
+// O preço é SEMPRE do circuito que está sendo olhado. A assinatura exige o
+// circuito porque, até 11/10/2026, esta função não mandava nenhum — e o servidor
+// respondia com o preço da configuração legada do BH: "R$ 0,00 (100% off)" para
+// atletas de um circuito que custa R$ 50,00.
+//
+// `CIRCUITO_ATIVO` não entra como padrão de propósito. Um padrão silencioso é o
+// que transformava a ausência de circuito num preço errado em vez de num erro.
+async function buscarPrecoTemporada(circuitoId) {
   try {
     const cred = getAtletaCred();
     if (!cred || !cred.token) return null;
+    if (!circuitoId) return null;
     const res = await fetch(`${SUPA_URL}/functions/v1/login-atleta`, {
       method: "POST",
       headers: {
@@ -603,7 +646,7 @@ async function buscarPrecoTemporada() {
         "Authorization": `Bearer ${SUPA_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ acao: "PRECO", token: cred.token }),
+      body: JSON.stringify({ acao: "PRECO", token: cred.token, circuitoId: String(circuitoId) }),
     });
     if (!res.ok) return null;
     const data = await res.json().catch(() => ({}));
@@ -1945,8 +1988,14 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
         try {
           const versoes = rVersoes.status === "fulfilled" ? rVersoes.value : null;
           if (Array.isArray(versoes)) {
-            const porId = Object.fromEntries(versoes.map(v => [v.id, v.regulamento_versao]));
-            arr = arr.map(c => ({ ...c, regulamento_versao: porId[c.id] || null }));
+            // Casa pelo id e traz também o financeiro. O espalhamento do `extra`
+            // vem DEPOIS do `...c` de propósito: estes campos são os desta
+            // leitura, não do RPC, e o RPC não os devolve.
+            const porId = Object.fromEntries(versoes.map(v => [v.id, v]));
+            arr = arr.map(c => {
+              const extra = porId[c.id] || null;
+              return extra ? { ...c, ...extra } : { ...c, regulamento_versao: null };
+            });
           }
         } catch (e) { console.warn("Versão do regulamento indisponível:", e.message); }
         if (!vivo) return;
@@ -1996,8 +2045,13 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
             <div style={{fontSize:12,color:"rgba(240,234,224,0.55)",marginTop:8}}>{sl.desc}</div>
             {escolhido.cheio && <div style={{fontSize:11.5,color:"#e8b04a",marginTop:8,fontWeight:700}}>🎟️ Fila de espera — circuito cheio. Sua inscrição entra na fila; você é chamado se abrir vaga.</div>}
           </div>
-          {lista && lista.length > 1 && (escolhido.cidade || escolhido.uf) && (
-            <div style={{background:"rgba(156,111,62,0.12)",border:"1px solid rgba(156,111,62,0.4)",borderRadius:10,padding:"10px 12px",marginBottom:14}}>
+          {/* A condição era `lista.length > 1`: com UM circuito aberto este aviso
+              nunca aparecia — e é justamente o caso do piloto. Quem é de fora da
+              cidade se inscrevia às cegas e só descobria na reprovação. Ter um
+              circuito só não torna a informação menos necessária; torna MAIS,
+              porque não há outro na lista para comparar. */}
+          {(escolhido.cidade || escolhido.uf) && (
+            <div style={{background:"rgba(240,234,224,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"10px 12px",marginBottom:14}}>
               <div style={{fontSize:12.5,color:T.offwhite,fontWeight:700,marginBottom:3}}>📍 Jogos presenciais em {[escolhido.cidade, escolhido.uf].filter(Boolean).join("/")}</div>
               <div style={{fontSize:11.5,color:T.cinza,lineHeight:1.5}}>As partidas deste circuito são disputadas pessoalmente nessa região. Confirme que você consegue jogar aí antes de continuar — se a região não for a sua, o organizador não vai aprovar a inscrição.</div>
             </div>
@@ -2008,6 +2062,41 @@ function SelecaoCircuitoInscricao({ onBack, onSubmit, athletes }) {
               <div style={{fontSize:11.5,color:T.cinza,lineHeight:1.5}}>{av.texto}</div>
             </div>
           ) : null; })()}
+          {/* O PREÇO, NA TELA ONDE ELE DECIDE — 11/10/2026.
+              Antes disto o valor não aparecia em tela nenhuma antes do
+              compromisso: a consulta de preço exige sessão, e a sessão exige
+              aprovação. O atleta assinava um regulamento que promete "o valor da
+              temporada é informado na inscrição" sem receber valor nenhum.
+              Dado vem da leitura pública alargada (`getVersoesRegulamento`), que
+              lê a MESMA coluna que o painel do organizador. */}
+          {(() => {
+            if (!escolhido.financeiro_ativo) return null;
+            const base = escolhido.valor_temporada;
+            // Sem valor configurado a tela fica CALADA sobre dinheiro em vez de
+            // dizer "R$ 0,00": afirmar gratuidade por falta de dado é promessa.
+            if (base == null) return null;
+            const pct = Math.min(100, Math.max(0, escolhido.desconto_global_pct || 0));
+            const final = Math.round(base * (1 - pct / 100));
+            const fmtP = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
+            const rodadas = escolhido.rodadas_por_temporada || 6;
+            return (
+              <div style={{background:"rgba(106,157,122,0.12)",border:"1px solid rgba(106,157,122,0.4)",borderRadius:10,padding:"11px 13px",marginBottom:14}}>
+                <div style={{fontSize:12.5,color:T.offwhite,fontWeight:800,marginBottom:4}}>
+                  💵 Inscrição da temporada: {pct > 0 && base > 0
+                    ? <>de <span style={{textDecoration:"line-through",color:T.cinza}}>{fmtP(base)}</span> por {final === 0 ? "nada" : fmtP(final)} ({pct}% off)</>
+                    : (final === 0 ? "grátis" : fmtP(final))}
+                </div>
+                <div style={{fontSize:11.5,color:T.cinza,lineHeight:1.55}}>
+                  {final === 0
+                    ? <>Esta temporada não tem custo de inscrição.</>
+                    : <>Valor único da temporada inteira — {rodadas} rodadas. Sem mensalidade e sem parcelamento.
+                       {" "}Você paga por PIX <b style={{color:T.offwhite}}>depois</b> que o organizador aprovar
+                       sua inscrição: a chave chega no WhatsApp e fica no app.
+                       {" "}<b style={{color:T.offwhite}}>Sua vaga nos confrontos vale a partir do momento em que ele confirma o pagamento.</b></>}
+                </div>
+              </div>
+            );
+          })()}
           <button onClick={() => setVerReg(true)} style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>📋 Ver regulamento ({String(escolhido.regulamento_versao || "").trim() || "versão não confirmada"} · {escolhido.sistema === "B" ? "pontos" : "rating"})</button>
           <button onClick={() => setConfirmado(true)} style={{width:"100%",background:T.terracota,color:T.verde,border:"none",borderRadius:12,padding:14,fontSize:15,fontWeight:800,cursor:"pointer"}}>Continuar para inscrição →</button>
         </div>
@@ -2084,6 +2173,25 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
   const bloqueado = semVersao || semSistema; // sem saber o texto OU o sistema, ninguém confirma
   const [verReg, setVerReg] = useState(false);
   const [aceiteReg, setAceiteReg] = useState(false);
+  const [aceitePriv, setAceitePriv] = useState(false);
+  // PORTÃO DE LEITURA DA POLÍTICA, igual ao do regulamento (15/10/2026).
+  // A caixa dizia "li e aceito a política de privacidade em vigor" e não havia
+  // neste caminho nem o texto nem link — o servidor carimbava a versão como
+  // prova de consentimento a um documento que a pessoa não podia abrir. Dois
+  // guardiões acharam separadamente (Atleta M9, Regulamento C10), e o segundo
+  // observou que é pior que o `lerReg`, "porque ali o texto ao menos está na
+  // tela". A caixa só existe depois de abrir.
+  const [lerPriv, setLerPriv] = useState(false);
+  const estilosPriv = {
+    box: (cor) => ({ background:`${cor}11`, border:`1px solid ${cor}33`, borderLeft:`3px solid ${cor}`, borderRadius:8, padding:"10px 12px", marginTop:10, fontSize:12, color:"#9db3a8", lineHeight:1.6 }),
+    secaoBtn: (cor) => ({ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10,
+      width:"100%", background:"none", border:"none", padding:"10px 0", cursor:"pointer", textAlign:"left",
+      font:"inherit", fontSize:13, fontWeight:700, color:cor }),
+    chevron: { fontSize:16, lineHeight:1, color:"#9db3a8", flexShrink:0 },
+    secaoCorpo: { marginTop:10 },
+  };
+  const [secoesPriv, setSecoesPriv] = useState([]);
+  const alternaSecaoPriv = (k) => setSecoesPriv(a => a.includes(k) ? a.filter(x => x !== k) : [...a, k]);
   const [tel, setTel] = useState(telefoneInicial);
   const [pin, setPin] = useState("");
   const [cpf, setCpf] = useState("");
@@ -2135,7 +2243,12 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
         // literalmente o defeito que esta fatia veio consertar (o servidor cravava
         // `aceite_regulamento: true`). O botão desabilitado já impede o clique, mas
         // confiar nisso é apostar que nenhum refactor futuro vai contorná-lo.
-        aceiteRegulamento: aceiteReg, versaoRegulamento: versaoReg };
+        aceiteRegulamento: aceiteReg, versaoRegulamento: versaoReg,
+        // Entrar num 2º circuito é tratamento NOVO de dado pessoal, e até
+        // 11/10/2026 este caminho não colhia aceite de privacidade nenhum: a
+        // pessoa carregava o recibo da inscrição original, de outro texto e de
+        // meses antes. O servidor agora recusa sem isto (400).
+        aceiteLGPD: aceitePriv };
       if (comCpf) {
         payload.cpf = cpf.replace(/\D/g,"");
         payload.cpfConsent = true;
@@ -2238,19 +2351,42 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
                 <div style={{width:20,height:20,borderRadius:5,border:`1px solid ${aceiteReg?T.terracota:"rgba(255,255,255,0.4)"}`,background:aceiteReg?T.terracota:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{aceiteReg && <span style={{color:T.offwhite,fontSize:12,fontWeight:800}}>✓</span>}</div>
                 <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>Li e aceito o regulamento <span style={{fontFamily:T.mono,color:T.offwhite}}>{versaoReg}</span> do {circuitoNome}.</div>
               </div>
+              {/* O ACEITE DE PRIVACIDADE, novo em 11/10/2026.
+                  Este caminho colhia só o aceite do REGULAMENTO. O recibo de
+                  privacidade vinha da inscrição original — que, nos 3 atletas do
+                  1º circuito pago, era de JULHO, de um texto que dizia "não
+                  coletamos CPF", e eles deram CPF em outubro por aqui.
+                  (Guardião Jurídico, D4.) */}
+              {!lerPriv ? (
+                <button type="button" onClick={()=>setLerPriv(true)}
+                  style={{width:"100%",background:"transparent",color:T.offwhite,border:"1px solid rgba(255,255,255,0.4)",borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:10}}>
+                  🔒 Ler a política de privacidade
+                </button>
+              ) : (
+                <div style={{marginTop:10}}>
+                  <PoliticaPrivacidade estilos={estilosPriv} ehB={sistemaCirc === "B"}
+                    secoesAbertas={secoesPriv} alternaSecao={alternaSecaoPriv} setSecoesAbertas={setSecoesPriv} />
+                </div>
+              )}
+              {lerPriv && <div onClick={()=>setAceitePriv(!aceitePriv)} role="checkbox" aria-checked={aceitePriv} tabIndex={0}
+                onKeyDown={e=>{ if (e.key === " " || e.key === "Enter") { e.preventDefault(); setAceitePriv(!aceitePriv); } }}
+                style={{display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer",marginTop:10}}>
+                <div style={{width:20,height:20,borderRadius:5,border:`1px solid ${aceitePriv?T.terracota:"rgba(255,255,255,0.4)"}`,background:aceitePriv?T.terracota:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{aceitePriv && <span style={{color:T.offwhite,fontSize:12,fontWeight:800}}>✓</span>}</div>
+                <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>Li e aceito a <strong style={{color:T.offwhite}}>política de privacidade</strong> acima, e consinto com o uso dos meus dados conforme ela descreve.</div>
+              </div>}
             </>
           )}
         </div>
         <label style={label}>WhatsApp (com DDD)</label>
         <input style={input} value={tel} onChange={e=>setTel(e.target.value)} placeholder="31999999999" type="tel"/>
         <label style={label}>Seu PIN</label>
-        <input style={input} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="••••" type="password" inputMode="numeric"/>
+        <input style={input} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="••••" type="tel" inputMode="numeric" autoComplete="off"/>
 
         {/* Jogos presenciais: quem usa ESTE fluxo já está estabelecido em outro
             circuito, ou seja, é justamente a população com mais chance de estar em
             outra cidade — e era a única que não recebia este aviso. */}
         {(circ && (circ.cidade || circ.uf)) && (
-          <div style={{background:"rgba(156,111,62,0.12)",border:"1px solid rgba(156,111,62,0.4)",borderRadius:10,padding:"10px 12px",marginTop:14}}>
+          <div style={{background:"rgba(240,234,224,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"10px 12px",marginTop:14}}>
             <div style={{fontSize:12.5,color:T.offwhite,fontWeight:700,marginBottom:3}}>📍 Jogos presenciais em {[circ.cidade, circ.uf].filter(Boolean).join("/")}</div>
             <div style={{fontSize:11.5,color:T.cinzaSuave,lineHeight:1.5}}>As partidas deste circuito são disputadas pessoalmente nessa região. Confirme que você consegue jogar aí antes de continuar — se a região não for a sua, o organizador não vai aprovar a inscrição.</div>
           </div>
@@ -2267,10 +2403,10 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
         ) : null; })()}
 
         {erro && <div style={{fontSize:12,color:"#f8c4b4",marginTop:10}}>{erro}</div>}
-        {(() => { const dis = bloqueado||!aceiteReg||!tel.trim()||pin.length<4||enviando; return (
+        {(() => { const dis = bloqueado||!aceiteReg||!aceitePriv||!tel.trim()||pin.length<4||enviando; return (
           <button style={btn(dis)} disabled={dis} onClick={()=>enviar(false)}>{enviando?"Confirmando…":"Participar →"}</button>
         ); })()}
-        {!bloqueado && !aceiteReg && <div style={{fontSize:11,color:T.cinzaSuave,marginTop:8,textAlign:"center"}}>Confirme o aceite do regulamento para continuar.</div>}
+        {!bloqueado && (!aceiteReg || !aceitePriv) && <div style={{fontSize:11,color:T.cinzaSuave,marginTop:8,textAlign:"center"}}>Confirme os dois aceites para continuar.</div>}
       </>}
 
       {fase === "cpf" && <>
@@ -2287,7 +2423,10 @@ function ParticiparFlow({ circuitoId, circuitoNome, telefoneInicial = "", onFech
           <input style={input} value={respCpf} onChange={e=>setRespCpf(cpfMascara(e.target.value))} placeholder="000.000.000-00" inputMode="numeric"/>
           {respCpf.replace(/\D/g,"").length===11 && !respCpfOk && <div style={{fontSize:11,color:"#c25a45",marginTop:4}}>CPF do responsável inválido.</div>}
         </>}
-        <div onClick={()=>setAceiteCpf(v=>!v)} style={{display:"flex",gap:10,alignItems:"flex-start",marginTop:14,cursor:"pointer"}}>
+        <div onClick={()=>setAceiteCpf(v=>!v)}
+          role="checkbox" aria-checked={aceiteCpf} tabIndex={0}
+          onKeyDown={e=>{ if (e.key === " " || e.key === "Enter") { e.preventDefault(); setAceiteCpf(v=>!v); } }}
+          style={{display:"flex",gap:10,alignItems:"flex-start",marginTop:14,cursor:"pointer"}}>
           <div style={{width:20,height:20,borderRadius:5,border:`1px solid ${aceiteCpf?T.terracota:"rgba(255,255,255,0.3)"}`,background:aceiteCpf?T.terracota:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{aceiteCpf && <span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}</div>
           <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>{ehMenor?<>Como responsável legal, consinto com o uso do CPF do menor como identidade única na plataforma.</>:<>Consinto com o uso do meu CPF como identidade única na plataforma.</>}</div>
         </div>
@@ -2353,6 +2492,125 @@ function ParticiparOutroCircuito({ athlete }) {
   );
 }
 
+// ── A POLÍTICA DE PRIVACIDADE, EM UM LUGAR SÓ ──────────────────────────────
+//
+// Extraída em 15/10/2026. Ela vivia dentro do passo 2 da inscrição, e o fluxo
+// "participar de outro circuito" tinha uma caixa dizendo "li e aceito a política
+// de privacidade em vigor" SEM nenhum jeito de lê-la — o servidor carimbava a
+// versão como prova de consentimento a um texto que a pessoa não podia abrir.
+// É o mesmo defeito que esta onda veio consertar do outro lado (os 3 atletas com
+// recibo de julho). Achado pelo Guardião do Atleta (M9) e pelo de Regulamento
+// (C10), independentemente.
+//
+// ⚠️ UM LUGAR SÓ, DE PROPÓSITO. Duplicar o texto criaria duas cópias de um
+// documento JÁ CONSENTIDO, que divergiriam no primeiro conserto — exatamente a
+// doença da regra 7 do CLAUDE.md. Quem mudar este texto muda os dois caminhos,
+// e a bateria congela as frases aqui.
+//
+// Nenhuma palavra mudou na extração: o corpo é o mesmo que o passo 2 já exibia.
+function PoliticaPrivacidade({ estilos, ehB, secoesAbertas, alternaSecao, setSecoesAbertas }) {
+  const s = estilos;
+  return (
+    <>
+        {/* O RESUMO. Texto NOVO e ADITIVO: ele não substitui a política nem é o
+        que se consente — a caixa de aceite continua apontando para o texto
+        completo, que está logo abaixo e não mudou uma palavra. É a forma
+        em camadas que a ANPD recomenda: o essencial primeiro, o detalhe
+        inteiro a um toque. */}
+      <div style={{...s.box("#7FAE8F"), marginTop:8}}>
+        <strong style={{color:"#7FAE8F", fontSize:13}}>Em resumo</strong><br/><br/>
+        • Pedimos <strong style={{color:"#F0EAE0"}}>nome, WhatsApp, CPF e data de nascimento</strong> — e, se você for menor de 18, o nome e o CPF do seu responsável.<br/>
+        • Seu nome e seus resultados <strong style={{color:"#F0EAE0"}}>aparecem no ranking</strong> — no app, no grupo e no Instagram.<br/>
+        • Seu <strong style={{color:"#F0EAE0"}}>CPF nunca é exibido</strong> a ninguém: serve só para não haver cadastro duplicado.<br/>
+        • Seus dados <strong style={{color:"#F0EAE0"}}>não são vendidos</strong> nem compartilhados com terceiros.<br/>
+        • Você pode pedir <strong style={{color:"#F0EAE0"}}>acesso, correção ou exclusão</strong>, e <strong style={{color:"#F0EAE0"}}>retirar seu consentimento</strong>, quando quiser — no app, em Editar perfil. Como esses dados são necessários para jogar, isso implica sair do circuito.<br/>
+        • Guardamos enquanto você joga e por até <strong style={{color:"#F0EAE0"}}>2 anos</strong> depois; cópias de segurança, até 6 meses.<br/><br/>
+        <span style={{color:"#7d9188"}}>Isto é um resumo. A política completa está abaixo — é ela que você aceita.</span><br/><br/>
+        {/* Art. 9º §2º da LGPD: quando o tratamento é CONDIÇÃO para a prestação
+            do serviço, o titular tem de ser informado disso COM DESTAQUE. É o
+            que legitima um botão único para três consentimentos — sem a frase,
+            o agrupamento fica sem a informação que o autoriza.
+            (Guardião Jurídico, C8, 12/10/2026.) */}
+        <strong style={{color:"#F0EAE0"}}>Os três aceites abaixo são condição para participar do circuito</strong> — não há como marcar só parte deles.
+      </div>
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14,marginBottom:2,gap:10}}>
+        <div style={{fontSize:11,fontFamily:T.mono,letterSpacing:1,textTransform:"uppercase",color:"#7d9188"}}>Política completa</div>
+        <button type="button"
+        onClick={()=>setSecoesAbertas(a => a.length === 4 ? [] : ["coleta","uso","direitos","retencao"])}
+        style={{background:"none",border:"none",color:"#9db3a8",fontSize:11.5,cursor:"pointer",padding:"4px 2px",textDecoration:"underline"}}>
+        {secoesAbertas.length === 4 ? "Fechar tudo" : "Abrir tudo"}
+        </button>
+      </div>
+
+      <div style={{...s.box("#D85A30"), marginTop:8}}>
+        <button type="button" onClick={()=>alternaSecao("coleta")} aria-expanded={secoesAbertas.includes("coleta")} aria-controls="pol-coleta" style={s.secaoBtn(T.offwhite)}>
+        <span>Quais dados coletamos</span><span style={s.chevron}>{secoesAbertas.includes("coleta") ? "−" : "+"}</span>
+        </button>
+        {secoesAbertas.includes("coleta") && <div id="pol-coleta" style={s.secaoCorpo}>
+        <strong style={{color:"#F0EAE0"}}>Nome completo e WhatsApp</strong> — para identificação, comunicação sobre suas partidas e publicação no ranking oficial do Circuito (no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa).<br/><br/>
+        {ehB ? (
+        <><strong style={{color:"#F0EAE0"}}>Situação federativa</strong> — apenas informativa. No Sistema B você entra com 0 pontos, sem rating.<br/><br/></>
+        ) : (
+        <><strong style={{color:"#F0EAE0"}}>Situação federativa e rating CBTM</strong> — para definir seu rating de entrada e garantir a integridade competitiva do Circuito.<br/><br/></>
+        )}
+        <strong style={{color:"#F0EAE0"}}>Histórico de partidas e resultados</strong> — para cálculo do ranking {ehB ? "por pontos" : "Rating"} e publicação no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa.
+        </div>}
+      </div>
+
+      <div style={{...s.box("#6a9d7a"), marginTop:8}}>
+        <button type="button" onClick={()=>alternaSecao("uso")} aria-expanded={secoesAbertas.includes("uso")} aria-controls="pol-uso" style={s.secaoBtn(T.offwhite)}>
+        <span>Como usamos seus dados</span><span style={s.chevron}>{secoesAbertas.includes("uso") ? "−" : "+"}</span>
+        </button>
+        {secoesAbertas.includes("uso") && <div id="pol-uso" style={s.secaoCorpo}>
+        ✅ Gestão do Circuito (inscrições, partidas, ranking)<br/>
+        ✅ Comunicação via WhatsApp e Instagram<br/>
+        ✅ Publicação do ranking, histórico de partidas e pontuação — dados não sensíveis, mostrados no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa<br/>
+        ❌ Seus dados <strong style={{color:"#F0EAE0"}}>não são vendidos</strong> nem compartilhados com terceiros<br/>
+        🔐 Coletamos seu <strong style={{color:"#F0EAE0"}}>CPF apenas como identidade</strong> — guardado de forma protegida (cifrada), nunca exibido a ninguém (detalhes abaixo)<br/>
+        ❌ <strong style={{color:"#F0EAE0"}}>Não coletamos</strong> endereço, e-mail ou dados financeiros
+        </div>}
+      </div>
+
+      <div style={{...s.box("#9C6F3E"), marginTop:8}}>
+        <button type="button" onClick={()=>alternaSecao("direitos")} aria-expanded={secoesAbertas.includes("direitos")} aria-controls="pol-direitos" style={s.secaoBtn(T.offwhite)}>
+        <span>Seus direitos (Lei 13.709/2018 — LGPD)</span><span style={s.chevron}>{secoesAbertas.includes("direitos") ? "−" : "+"}</span>
+        </button>
+        {secoesAbertas.includes("direitos") && <div id="pol-direitos" style={s.secaoCorpo}>
+        Você pode a qualquer momento solicitar ao administrador:<br/>
+        📋 Acesso aos seus dados armazenados<br/>
+        ✏️ Correção de dados incorretos<br/>
+        🗑️ Exclusão dos seus dados (implica saída do Circuito)<br/>
+        📤 Portabilidade dos seus dados<br/><br/>
+        Contato: @clubedotenisdemesa no Instagram ou WhatsApp do grupo oficial.
+        </div>}
+      </div>
+
+      <div style={{...s.box("#c25a45"), marginTop:8}}>
+        <button type="button" onClick={()=>alternaSecao("retencao")} aria-expanded={secoesAbertas.includes("retencao")} aria-controls="pol-retencao" style={s.secaoBtn(T.offwhite)}>
+        <span>Retenção de dados e cópias de segurança</span><span style={s.chevron}>{secoesAbertas.includes("retencao") ? "−" : "+"}</span>
+        </button>
+        {secoesAbertas.includes("retencao") && <div id="pol-retencao" style={s.secaoCorpo}>
+        <strong style={{color:"#c25a45", fontSize:12}}>Retenção de dados</strong><br/>
+        Seus dados são mantidos enquanto você estiver ativo no Circuito e por até 2 anos após o encerramento da sua participação, para fins de histórico e auditoria de resultados.
+        {/* ⚠️ A FRASE DOS BACKUPS, e ela existe porque a exclusão NÃO os alcança.
+          Redação do Guardião Jurídico, e o prazo (6 meses) é decisão do Juliano
+          de 29/09/2026.
+          ATENÇÃO: este número só é verdade porque a função de backup passou a
+          APAGAR o que vence — ela não tinha regra de retenção nenhuma até hoje
+          (109 arquivos, 80 dias, crescendo sem limite). Se alguém tirar a
+          retenção da `backup-clube-tenis-mesa`, esta frase volta a ser falsa.
+          Os dois andam juntos. */}
+        <br/><br/>
+        <strong style={{color:"#c25a45", fontSize:12}}>Cópias de segurança</strong><br/>
+        Mantemos cópias de segurança do banco de dados por até <strong style={{color:"#F0EAE0"}}>6 meses</strong>, para conseguir restaurar o sistema em caso de falha. Quando você pede a exclusão dos seus dados, nós os apagamos do sistema em uso imediatamente; as cópias de segurança feitas antes do seu pedido ainda contêm esses dados até serem substituídas pelo ciclo normal, e <strong style={{color:"#F0EAE0"}}>não são usadas para restaurar cadastros individuais</strong>.
+        </div>}
+      </div>
+    </>
+  );
+}
+
+
 function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, circuitoNome, circ }) {
   const ehB = sistema === "B";
   // Vem do circuito, não do sistema. Cravada, a frase de aceite dizia "v03-12"
@@ -2407,6 +2665,56 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
   const [apelido, setApelido] = useState("");
   const [fed, setFed] = useState("nao"), [rating, setRating] = useState("");
   const [aceiteLGPD, setAceiteLGPD] = useState(false);
+  // Quais seções da política estão abertas (passo 2 de 3).
+  //
+  // O TEXTO NÃO MUDOU — NENHUMA PALAVRA. E isso é obrigação, não escolha: o
+  // consentimento de privacidade não tinha versão no banco quando este texto foi
+  // escrito (só `aceite_lgpd` e `data_aceite_lgpd`, ao contrário do regulamento,
+  // que tem `versao_regulamento`) — a coluna `privacidade_versao` nasceu na
+  // migração desta mesma onda, mas os 15 que já aceitaram, entre 29/06 e
+  // 09/08/2026, ficam com ela NULA de propósito: eles não leram este texto.
+  // Reescrever as palavras mudaria retroativamente o que essas 15 consentiram,
+  // sem que exista versão para distinguir um texto do outro — é a regra 7 do
+  // CLAUDE.md, decidida duas vezes pelo mesmo raciocínio.
+  //
+  // O que mudou é a ENTREGA: um resumo em cima (texto novo, que não substitui
+  // nada e não é o que se consente) e a política inteira logo abaixo, em seções
+  // que abrem e fecham. Era um muro de 427 palavras — mais de duas telas de
+  // rolagem num celular — no meio da inscrição.
+  const [secoesAbertas, setSecoesAbertas] = useState([]);
+  // O PIN, criado NO FIM DA INSCRIÇÃO — 11/10/2026.
+  //
+  // Antes, a pessoa enviava a inscrição, saía do app, esperava o WhatsApp,
+  // voltava, achava "Sou atleta", digitava o telefone de novo e só então
+  // descobria que precisava criar um PIN. Cinco toques e uma descoberta que
+  // ninguém adivinha — e no piloto do 1º circuito pago NENHUM atleta novo
+  // chegou ao fim em uma semana.
+  //
+  // Dá para fazer aqui porque a linha do atleta JÁ EXISTE quando a inscrição é
+  // enviada (nasce com `status: "pendente"`), e o `DEFINIR_PIN` do
+  // `login-atleta` não confere status — só exige que ainda não haja PIN.
+  // Conferido no fonte antes de construir, não suposto.
+  const [pinNovo, setPinNovo] = useState("");
+  const [pinNovo2, setPinNovo2] = useState("");
+  const [pinSalvando, setPinSalvando] = useState(false);
+  const [pinErro, setPinErro] = useState("");
+  const [pinPronto, setPinPronto] = useState(false);
+  async function criarPinAgora() {
+    if (pinSalvando) return;
+    const limpo = pinNovo.replace(/\D/g, "");
+    if (!/^\d{4,6}$/.test(limpo)) { setPinErro("O PIN deve ter de 4 a 6 números."); return; }
+    if (limpo !== pinNovo2.replace(/\D/g, "")) { setPinErro("Os dois PINs não são iguais."); return; }
+    setPinSalvando(true); setPinErro("");
+    try {
+      await chamarLoginAtleta("DEFINIR_PIN", phone.replace(/\D/g, ""), limpo);
+      setPinPronto(true);
+    } catch (e) {
+      // A recusa do servidor vem escrita para o atleta ler ("Você já tem um
+      // PIN...") — passar pela lista branca a trocaria por um genérico.
+      setPinErro(String(e?.message || "Não deu para criar o PIN agora."));
+    } finally { setPinSalvando(false); }
+  }
+  const alternaSecao = (k) => setSecoesAbertas(a => a.includes(k) ? a.filter(x => x !== k) : [...a, k]);
   const [aceiteReg, setAceiteReg] = useState(false);
   const [lerReg, setLerReg] = useState(false);
   // CPF (Fatia 4): identidade nacional. DV no cliente; o servidor revalida e guarda só o hash.
@@ -2446,19 +2754,39 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
     label: { fontSize:11, fontWeight:700, color:"#9db3a8", textTransform:"uppercase", letterSpacing:0.8, display:"block", marginBottom:5, marginTop:14 },
     input: { background:"#1C2B27", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:"#F0EAE0", padding:"11px 12px", fontSize:16, width:"100%", outline:"none", boxSizing:"border-box" },
     select: { background:"#1C2B27", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, color:"#F0EAE0", padding:"11px 12px", fontSize:16, width:"100%", outline:"none" },
-    btn: (dis) => ({ background: dis?"#223330":T.terracotaBtn, color: dis?"#7d9188":"#fff", border:"none", borderRadius:11, padding:"13px", fontSize:14, fontWeight:700, cursor: dis?"default":"pointer", width:"100%", marginTop:16 }),
+    // ⚠️ DESABILITADO TEM DE PARECER BOTÃO. Antes o fundo era `#223330` —
+    // EXATAMENTE o do cartão, sem borda: o "✅ Confirmar inscrição" desabilitado
+    // não tinha superfície nenhuma, era texto cinza flutuando. E é nesse estado
+    // que ele passa quase toda a vida, porque só acende com os três aceites.
+    // Borda a 3,3:1 e rótulo a 5,96:1, medidos pelo Designer (B4).
+    // E `T.offwhite`, não `#fff`: o manual da marca substitui o branco puro em
+    // todas as aplicações, e o mesmo ✓ do `ParticiparFlow` já usava o token (B2).
+    btn: (dis) => ({ background: dis?"transparent":T.terracotaBtn, color: dis?"#9db3a8":T.offwhite, border: dis?"1.5px solid rgba(255,255,255,0.4)":"none", borderRadius:11, padding:"13px", fontSize:14, fontWeight:700, cursor: dis?"default":"pointer", width:"100%", marginTop:16 }),
     back: { background:"none", border:"none", color:"#7d9188", cursor:"pointer", fontSize:13, marginBottom:16, display:"flex", alignItems:"center", gap:4 },
     steps: { display:"flex", gap:6, marginBottom:20, justifyContent:"center" },
     stepDot: (ativo, feito) => ({ width:28, height:4, borderRadius:2, background: feito?"#6a9d7a": ativo?"#D85A30":"rgba(255,255,255,0.1)" }),
     checkRow: { display:"flex", gap:12, alignItems:"flex-start", padding:"14px", background:"rgba(255,255,255,0.03)", borderRadius:10, border:"1px solid rgba(255,255,255,0.07)", marginTop:10, cursor:"pointer" },
     checkBox: (checked) => ({ width:20, height:20, borderRadius:5, border:`2px solid ${checked?"#D85A30":"rgba(255,255,255,0.2)"}`, background: checked?"#D85A30":"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, marginTop:1 }),
     box: (cor) => ({ background:`${cor}11`, border:`1px solid ${cor}33`, borderLeft:`3px solid ${cor}`, borderRadius:8, padding:"10px 12px", marginTop:10, fontSize:12, color:"#9db3a8", lineHeight:1.6 }),
+    // Cabeçalho clicável de uma seção da política. É `<button>` de verdade (não
+    // uma div com onClick) para funcionar por teclado e ser anunciado como
+    // controle por leitor de tela — é consentimento, e o caminho não pode
+    // depender de mouse.
+    secaoBtn: (cor) => ({ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10,
+      width:"100%", background:"none", border:"none", padding:"10px 0", cursor:"pointer", textAlign:"left",
+      font:"inherit", fontSize:13, fontWeight:700, color:cor }),
+    chevron: { fontSize:16, lineHeight:1, color:"#9db3a8", flexShrink:0 },
+    secaoCorpo: { marginTop:10 },
   };
 
   // Passos de progresso
+  // DOIS passos, não três (11/10/2026). O passo do regulamento virou uma seção
+  // do passo de aceites: as três caixas de consentimento passaram a conviver na
+  // mesma tela, cada uma com o texto dela recolhido. Eram três telas para três
+  // caixas, e o atleta do piloto chamou o conjunto de "burocrático".
   const Steps = () => (
     <div style={s.steps}>
-      {[1,2,3].map(n => <div key={n} style={s.stepDot(step===n, step>n)}/>)}
+      {[1,2].map(n => <div key={n} style={s.stepDot(step===n, step>n)}/>)}
     </div>
   );
 
@@ -2484,7 +2812,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
         {onBack && <button style={s.back} onClick={onBack}>← Voltar</button>}
         <Steps/>
         <div style={s.title}>📝 Inscrição — Dados Pessoais</div>
-        <div style={s.sub}>Passo 1 de 3 · Seus dados de cadastro</div>
+        <div style={s.sub}>Passo 1 de 2 · Seus dados de cadastro</div>
 
         <div style={{...s.box(ehB?"#6a9d7a":"#D85A30"), marginTop:2, marginBottom:6}}>
           {ehB ? (<>
@@ -2591,104 +2919,16 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
     </div>
   );
 
-  // ── STEP 2: LGPD ───────────────────────────────────────────────────────────
-  if (step === 2) return (
+  // MOVIDO DO PASSO 3 PARA O 2 (11/10/2026), junto com o aceite do regulamento.
+  // A regra não mudou: sem saber a versão não se colhe aceite — é melhor barrar a
+  // inscrição do que registrar que alguém aceitou um texto que talvez não seja o
+  // que leu. O que mudou é onde o aceite acontece.
+  if (step === 2 && versaoDesconhecida) return (
     <div style={s.wrap}>
       <div style={{...s.card, marginTop:20}}>
         <button style={s.back} onClick={()=>setStep(1)}>← Voltar</button>
-        <Steps/>
-        <div style={s.title}>🔒 Privacidade & LGPD</div>
-        <div style={s.sub}>Passo 2 de 3 · Consentimento sobre seus dados</div>
-
-        <div style={{...s.box("#D85A30"), marginTop:8}}>
-          <strong style={{color:"#D85A30", fontSize:13}}>Quais dados coletamos</strong><br/><br/>
-          <strong style={{color:"#F0EAE0"}}>Nome completo e WhatsApp</strong> — para identificação, comunicação sobre suas partidas e publicação no ranking oficial do Circuito (no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa).<br/><br/>
-          {ehB ? (
-            <><strong style={{color:"#F0EAE0"}}>Situação federativa</strong> — apenas informativa. No Sistema B você entra com 0 pontos, sem rating.<br/><br/></>
-          ) : (
-            <><strong style={{color:"#F0EAE0"}}>Situação federativa e rating CBTM</strong> — para definir seu rating de entrada e garantir a integridade competitiva do Circuito.<br/><br/></>
-          )}
-          <strong style={{color:"#F0EAE0"}}>Histórico de partidas e resultados</strong> — para cálculo do ranking {ehB ? "por pontos" : "Rating"} e publicação no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa.
-        </div>
-
-        <div style={{...s.box("#6a9d7a"), marginTop:8}}>
-          <strong style={{color:"#6a9d7a", fontSize:13}}>Como usamos seus dados</strong><br/><br/>
-          ✅ Gestão do Circuito (inscrições, partidas, ranking)<br/>
-          ✅ Comunicação via WhatsApp e Instagram<br/>
-          ✅ Publicação do ranking, histórico de partidas e pontuação — dados não sensíveis, mostrados no app, no grupo de WhatsApp e no Instagram @clubedotenisdemesa<br/>
-          ❌ Seus dados <strong style={{color:"#F0EAE0"}}>não são vendidos</strong> nem compartilhados com terceiros<br/>
-          🔐 Coletamos seu <strong style={{color:"#F0EAE0"}}>CPF apenas como identidade</strong> — guardado de forma protegida (cifrada), nunca exibido a ninguém (detalhes abaixo)<br/>
-          ❌ <strong style={{color:"#F0EAE0"}}>Não coletamos</strong> endereço, e-mail ou dados financeiros
-        </div>
-
-        <div style={{...s.box("#9C6F3E"), marginTop:8}}>
-          <strong style={{color:"#9C6F3E", fontSize:13}}>Seus direitos (Lei 13.709/2018 — LGPD)</strong><br/><br/>
-          Você pode a qualquer momento solicitar ao administrador:<br/>
-          📋 Acesso aos seus dados armazenados<br/>
-          ✏️ Correção de dados incorretos<br/>
-          🗑️ Exclusão dos seus dados (implica saída do Circuito)<br/>
-          📤 Portabilidade dos seus dados<br/><br/>
-          Contato: @clubedotenisdemesa no Instagram ou WhatsApp do grupo oficial.
-        </div>
-
-        <div style={{...s.box("#c25a45"), marginTop:8}}>
-          <strong style={{color:"#c25a45", fontSize:12}}>Retenção de dados</strong><br/>
-          Seus dados são mantidos enquanto você estiver ativo no Circuito e por até 2 anos após o encerramento da sua participação, para fins de histórico e auditoria de resultados.
-          {/* ⚠️ A FRASE DOS BACKUPS, e ela existe porque a exclusão NÃO os alcança.
-              Redação do Guardião Jurídico, e o prazo (6 meses) é decisão do Juliano
-              de 29/09/2026.
-              ATENÇÃO: este número só é verdade porque a função de backup passou a
-              APAGAR o que vence — ela não tinha regra de retenção nenhuma até hoje
-              (109 arquivos, 80 dias, crescendo sem limite). Se alguém tirar a
-              retenção da `backup-clube-tenis-mesa`, esta frase volta a ser falsa.
-              Os dois andam juntos. */}
-          <br/><br/>
-          <strong style={{color:"#c25a45", fontSize:12}}>Cópias de segurança</strong><br/>
-          Mantemos cópias de segurança do banco de dados por até <strong style={{color:"#F0EAE0"}}>6 meses</strong>, para conseguir restaurar o sistema em caso de falha. Quando você pede a exclusão dos seus dados, nós os apagamos do sistema em uso imediatamente; as cópias de segurança feitas antes do seu pedido ainda contêm esses dados até serem substituídas pelo ciclo normal, e <strong style={{color:"#F0EAE0"}}>não são usadas para restaurar cadastros individuais</strong>.
-        </div>
-
-        <div style={s.checkRow} onClick={()=>setAceiteLGPD(v=>!v)}>
-          <div style={s.checkBox(aceiteLGPD)}>
-            {aceiteLGPD && <span style={{color:"#fff", fontSize:12, fontWeight:800}}>✓</span>}
-          </div>
-          <div style={{fontSize:12, color:"#9db3a8", lineHeight:1.6}}>
-            Li e compreendo a política de privacidade acima. <strong style={{color:"#F0EAE0"}}>Consinto com a coleta e uso dos meus dados</strong> conforme descrito, de acordo com a Lei Geral de Proteção de Dados (LGPD — Lei 13.709/2018).
-          </div>
-        </div>
-
-        <div style={{...s.box("#D85A30"), marginTop:14}}>
-          <strong style={{color:"#D85A30", fontSize:13}}>CPF — identidade única na plataforma</strong><br/><br/>
-          Usamos seu CPF <strong style={{color:"#F0EAE0"}}>só para identificar você de forma única</strong> (evitar cadastro duplicado e manter a integridade do ranking). Ele é guardado de forma <strong style={{color:"#F0EAE0"}}>protegida (cifrada)</strong>, <strong style={{color:"#F0EAE0"}}>nunca é exibido</strong> a outros atletas nem ao organizador, e não é usado para nenhum outro fim.<br/><br/>
-          Controlador dos dados: <strong style={{color:"#F0EAE0"}}>Juliano Strutzki</strong> (pessoa física). Direitos (acesso, correção, exclusão): pelos canais do Clube — Instagram/WhatsApp @clubedotenisdemesa.
-        </div>
-
-        <div style={s.checkRow} onClick={()=>setAceiteCpf(v=>!v)}>
-          <div style={s.checkBox(aceiteCpf)}>
-            {aceiteCpf && <span style={{color:"#fff", fontSize:12, fontWeight:800}}>✓</span>}
-          </div>
-          <div style={{fontSize:12, color:"#9db3a8", lineHeight:1.6}}>
-            {ehMenor
-              ? <>Na condição de <strong style={{color:"#F0EAE0"}}>responsável legal</strong>, consinto com o uso do CPF do menor como identidade única na plataforma, conforme descrito.</>
-              : <><strong style={{color:"#F0EAE0"}}>Consinto</strong> com o uso do meu CPF como identidade única na plataforma, conforme descrito acima.</>}
-          </div>
-        </div>
-
-        <button style={s.btn(!aceiteLGPD||!aceiteCpf)} onClick={()=>{ if(aceiteLGPD&&aceiteCpf) setStep(3); }} disabled={!aceiteLGPD||!aceiteCpf}>
-          Continuar →
-        </button>
-      </div>
-    </div>
-  );
-
-  // ── STEP 3: Aceite do regulamento ───────────────────────────────────────────
-  // Sem saber a versão, não se colhe aceite. Melhor barrar a inscrição do que
-  // registrar que o atleta aceitou um documento que talvez não seja o que ele leu.
-  if (step === 3 && versaoDesconhecida) return (
-    <div style={s.wrap}>
-      <div style={{...s.card, marginTop:20}}>
-        <button style={s.back} onClick={()=>setStep(2)}>← Voltar</button>
-        {/* O atleta continua NO passo 3 — só não pode concluir ainda. Sem os
-            pontinhos, esta era a única das quatro telas do fluxo sem bússola. */}
+        {/* O atleta continua NO passo de aceites — só não pode concluir ainda.
+            Sem os pontinhos, esta era a única tela do fluxo sem bússola. */}
         <Steps/>
         <div style={s.title}>📋 Regulamento indisponível</div>
         <div style={s.sub}>Não foi possível carregar o regulamento deste circuito</div>
@@ -2704,14 +2944,72 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
       </div>
     </div>
   );
-  if (step === 3) return (
+
+  // ── STEP 2: LGPD ───────────────────────────────────────────────────────────
+  if (step === 2) return (
     <div style={s.wrap}>
       <div style={{...s.card, marginTop:20}}>
-        <button style={s.back} onClick={()=>setStep(2)}>← Voltar</button>
+        <button style={s.back} onClick={()=>setStep(1)}>← Voltar</button>
         <Steps/>
-        <div style={s.title}>📋 Regulamento Oficial</div>
-        <div style={s.sub}>Passo 3 de 3 · Leitura e aceite obrigatórios</div>
+        <div style={s.title}>✍️ Aceites</div>
+        <div style={s.sub}>Passo 2 de 2 · Privacidade, CPF e regulamento</div>
 
+        <PoliticaPrivacidade estilos={s} ehB={ehB} secoesAbertas={secoesAbertas}
+          alternaSecao={alternaSecao} setSecoesAbertas={setSecoesAbertas} />
+
+        {/* CONSENTIMENTO TEM DE FUNCIONAR POR TECLADO — 12/10/2026.
+            Era `<div onClick>`: o passo 2 tinha 8 controles focáveis e NENHUM
+            era caixa de aceite, então quem navega por teclado ou leitor de tela
+            chegava ao fim com o botão permanentemente desabilitado. Consentimento
+            da LGPD é ato afirmativo DO TITULAR — sem isto, um atleta cego precisa
+            de outra pessoa operando o aparelho, e o recibo dirá que foi ele.
+            O padrão já existia três vezes no mesmo arquivo (`ParticiparFlow` e
+            `ReAceiteRegulamentoCard`); era só alinhar.
+            (Guardião do Atleta A1 + Designer visual, achado em paralelo.) */}
+        <div style={s.checkRow} onClick={()=>setAceiteLGPD(v=>!v)}
+          role="checkbox" aria-checked={aceiteLGPD} tabIndex={0}
+          onKeyDown={e=>{ if (e.key === " " || e.key === "Enter") { e.preventDefault(); setAceiteLGPD(v=>!v); } }}>
+          <div style={s.checkBox(aceiteLGPD)}>
+            {aceiteLGPD && <span style={{color:T.offwhite, fontSize:12, fontWeight:800}}>✓</span>}
+          </div>
+          <div style={{fontSize:12, color:"#9db3a8", lineHeight:1.6}}>
+            {/* Das três caixas, só a do CPF se adaptava ao menor. O art. 14 §1º
+                pede consentimento específico e em destaque do RESPONSÁVEL, e ele
+                cobre o tratamento TODO, não só o CPF. (Jurídico, C9.) */}
+            {ehMenor
+              ? <>Li e compreendo a política de privacidade acima. Na condição de <strong style={{color:"#F0EAE0"}}>responsável legal</strong>, <strong style={{color:"#F0EAE0"}}>consinto com a coleta e uso dos dados do menor</strong> conforme descrito, de acordo com a Lei Geral de Proteção de Dados (LGPD — Lei 13.709/2018).</>
+              : <>Li e compreendo a política de privacidade acima. <strong style={{color:"#F0EAE0"}}>Consinto com a coleta e uso dos meus dados</strong> conforme descrito, de acordo com a Lei Geral de Proteção de Dados (LGPD — Lei 13.709/2018).</>}
+          </div>
+        </div>
+
+        <div style={{...s.box("#D85A30"), marginTop:14}}>
+          <strong style={{color:"#D85A30", fontSize:13}}>CPF — identidade única na plataforma</strong><br/><br/>
+          Usamos seu CPF <strong style={{color:"#F0EAE0"}}>só para identificar você de forma única</strong> (evitar cadastro duplicado e manter a integridade do ranking). Ele é guardado de forma <strong style={{color:"#F0EAE0"}}>protegida (cifrada)</strong>, <strong style={{color:"#F0EAE0"}}>nunca é exibido</strong> a outros atletas nem ao organizador, e não é usado para nenhum outro fim.<br/><br/>
+          Controlador dos dados: <strong style={{color:"#F0EAE0"}}>Juliano Strutzki</strong> (pessoa física). Direitos (acesso, correção, exclusão): pelos canais do Clube — Instagram/WhatsApp @clubedotenisdemesa.
+        </div>
+
+        <div style={s.checkRow} onClick={()=>setAceiteCpf(v=>!v)}
+          role="checkbox" aria-checked={aceiteCpf} tabIndex={0}
+          onKeyDown={e=>{ if (e.key === " " || e.key === "Enter") { e.preventDefault(); setAceiteCpf(v=>!v); } }}>
+          <div style={s.checkBox(aceiteCpf)}>
+            {aceiteCpf && <span style={{color:T.offwhite, fontSize:12, fontWeight:800}}>✓</span>}
+          </div>
+          <div style={{fontSize:12, color:"#9db3a8", lineHeight:1.6}}>
+            {ehMenor
+              ? <>Na condição de <strong style={{color:"#F0EAE0"}}>responsável legal</strong>, consinto com o uso do CPF do menor como identidade única na plataforma, conforme descrito.</>
+              : <><strong style={{color:"#F0EAE0"}}>Consinto</strong> com o uso do meu CPF como identidade única na plataforma, conforme descrito acima.</>}
+          </div>
+        </div>
+
+        {/* O REGULAMENTO, que era o passo 3 — 11/10/2026.
+            Veio para cá inteiro, com o mesmo portão: o resumo só aparece depois
+            de tocar em "Ler o Regulamento", e a caixa de aceite só existe depois
+            do resumo. Nenhuma palavra mudou e nenhuma trava afrouxou; o que
+            mudou é que as três caixas de consentimento agora convivem na mesma
+            tela, cada uma com o texto dela recolhido. */}
+        <div style={{height:1,background:"rgba(255,255,255,0.08)",margin:"18px 0 14px"}}/>
+        <div style={{fontSize:13,fontWeight:800,color:T.offwhite,marginBottom:2}}>📋 Regulamento Oficial</div>
+        <div style={{fontSize:11.5,color:T.cinza,marginBottom:4}}>Leitura e aceite obrigatórios</div>
         {!lerReg ? (
           <>
             <div style={{...s.box("#D85A30"), marginTop:8, fontSize:11}}>
@@ -2767,14 +3065,23 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
         )}
 
         {lerReg && (
-          <div style={s.checkRow} onClick={()=>setAceiteReg(v=>!v)}>
+          <div style={s.checkRow} onClick={()=>setAceiteReg(v=>!v)}
+            role="checkbox" aria-checked={aceiteReg} tabIndex={0}
+            onKeyDown={e=>{ if (e.key === " " || e.key === "Enter") { e.preventDefault(); setAceiteReg(v=>!v); } }}>
             <div style={s.checkBox(aceiteReg)}>
               {aceiteReg && <span style={{color:"#fff",fontSize:12,fontWeight:800}}>✓</span>}
             </div>
             <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.6}}>
               {ehB
-                ? <>Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do regulamento de pontos do <strong style={{color:"#F0EAE0"}}>{circuitoNome || "circuito"}</strong> (versão vB-01).</>
-                : <>Li o regulamento na íntegra e declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong> do regulamento de rating do <strong style={{color:"#F0EAE0"}}>{circuitoNome || "circuito"}</strong> (versão {versaoReg}). Estou ciente do aviso sobre atletas federados pela CBTM.</>
+                /* ⚠️ A VERSÃO VEM DO DADO, não cravada. Dizia "(versão vB-01)"
+                   à mão: num circuito que declarasse outra versão, a caixa de
+                   aceite afirmaria a errada — e é ela que vira recibo.
+                   E o ramo do menor existe porque isto é CONTRATO, não só
+                   consentimento: menor se obrigando sozinho a um valor com
+                   penalidade é anulável (CC arts. 3º, 4º, 171), e aceite que não
+                   se sustenta não protege o clube. (Jurídico, C9.) */
+                ? <>Li o regulamento na íntegra e {ehMenor ? <>, na condição de <strong style={{color:"#F0EAE0"}}>responsável legal</strong>, declaro que o menor <strong style={{color:"#F0EAE0"}}>aceita todas as regras, prazos e penalidades</strong></> : <>declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong></>} do regulamento de pontos do <strong style={{color:"#F0EAE0"}}>{circuitoNome || "circuito"}</strong> (versão {versaoReg}).</>
+                : <>Li o regulamento na íntegra e {ehMenor ? <>, na condição de <strong style={{color:"#F0EAE0"}}>responsável legal</strong>, declaro que o menor <strong style={{color:"#F0EAE0"}}>aceita todas as regras, prazos e penalidades</strong></> : <>declaro que <strong style={{color:"#F0EAE0"}}>aceito todas as regras, prazos e penalidades</strong></>} do regulamento de rating do <strong style={{color:"#F0EAE0"}}>{circuitoNome || "circuito"}</strong> (versão {versaoReg}). Estou ciente do aviso sobre atletas federados pela CBTM.</>
               }
             </div>
           </div>
@@ -2785,7 +3092,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
             {erroSubmit}
           </div>
         )}
-        <button style={s.btn(!aceiteReg||!lerReg||enviando)} disabled={!aceiteReg||!lerReg||enviando} onClick={async ()=>{
+        <button style={s.btn(!aceiteLGPD||!aceiteCpf||!aceiteReg||!lerReg||enviando)} disabled={!aceiteLGPD||!aceiteCpf||!aceiteReg||!lerReg||enviando} onClick={async ()=>{
           if (enviando) return;
           setErroSubmit(""); setEnviando(true);
           const agora = new Date().toISOString();
@@ -2833,7 +3140,7 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
                 // porque aqui é mesmo "não sei o que houve".
                 : "Não foi possível enviar sua inscrição. Verifique sua conexão e tente de novo."
             );
-            return; // permanece no passo 3
+            return; // permanece no passo de aceites
           }
           setStep(4);
         }}>
@@ -2843,6 +3150,14 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
     </div>
   );
 
+  // ── FIM DO PASSO 2 ──────────────────────────────────────────────────────────
+  // Marco de fim de seção. NÃO APAGUE: a bateria ancora aqui o fim da janela de
+  // asserções do passo de aceites (`testes/regulamento-por-circuito.mjs`). Sem
+  // ele, `indexOf` devolve -1, `slice(i, -1)` alarga a janela de 2% para 71% do
+  // arquivo — e as asserções do consentimento passam a casar com qualquer lugar,
+  // VERDES e sem proteger nada. O teste agora recusa isso alto, mas o marco é o
+  // que mantém a janela honesta. (Guardião de Regulamento, C8, 12/10/2026.)
+
   // ── STEP 4: Sucesso / Duplicata ─────────────────────────────────────────────
   return (
     <div style={s.wrap}>
@@ -2850,7 +3165,27 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
         <div style={{fontSize:48, marginBottom:16}}>✅</div>
         <div style={{fontSize:16, fontWeight:800, color:"#F0EAE0", marginBottom:8}}>Inscrição enviada!</div>
         <div style={{fontSize:13, color:"#9db3a8", marginBottom:16, lineHeight:1.6}}>
-          O administrador vai revisar seu cadastro e entrar em contato pelo WhatsApp em breve.
+          O organizador vai conferir seu cadastro e te chamar no WhatsApp.
+        </div>
+        {/* OS PRÓXIMOS PASSOS, NUMERADOS — 11/10/2026.
+            Esta tela era o fim do caminho: ela dizia "entra em contato em breve"
+            e acabava. O que vinha depois (esperar o WhatsApp, voltar ao app em
+            "Sou atleta", criar um PIN, pagar por PIX, e só então entrar nos
+            confrontos) não estava escrito em lugar nenhum — o atleta tinha de
+            adivinhar quatro passos, e no piloto do 1º circuito pago nenhum
+            atleta novo chegou ao fim em uma semana.
+            Sem prazo prometido aqui de propósito: a aprovação é ato humano do
+            organizador, e prometer "24h" em nome dele seria inventar. */}
+        <div style={{background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, padding:"12px 14px", marginBottom:16, textAlign:"left"}}>
+          <div style={{fontSize:11.5, fontWeight:800, color:"#F0EAE0", marginBottom:7}}>O que acontece agora</div>
+          <div style={{fontSize:11.5, color:"#9db3a8", lineHeight:1.75}}>
+            <b style={{color:"#F0EAE0"}}>1.</b> Você recebe a aprovação no WhatsApp — com o valor e a chave PIX.<br/>
+            <b style={{color:"#F0EAE0"}}>2.</b> {pinPronto
+              ? <>Entra no app em <b style={{color:"#F0EAE0"}}>Sou atleta</b>, com este WhatsApp e o PIN que você acabou de criar.</>
+              : <>Entra no app em <b style={{color:"#F0EAE0"}}>Sou atleta</b>, com este mesmo WhatsApp, e cria seu PIN.</>}<br/>
+            <b style={{color:"#F0EAE0"}}>3.</b> Paga a inscrição por PIX e manda o comprovante ao organizador.<br/>
+            <b style={{color:"#F0EAE0"}}>4.</b> Assim que ele confirmar o pagamento, você entra nos confrontos.
+          </div>
         </div>
         <div style={{background:"rgba(74,222,128,0.08)", border:"1px solid rgba(74,222,128,0.2)", borderRadius:10, padding:"12px 14px", marginBottom:16, textAlign:"left"}}>
           <div style={{fontSize:11, fontWeight:700, color:"#6a9d7a", marginBottom:8}}>✓ Registrado com sucesso</div>
@@ -2860,7 +3195,49 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
             📅 Data/hora: {new Date().toLocaleString("pt-BR")}
           </div>
         </div>
-        {onBack && <button style={s.btn(false)} onClick={onBack}>Voltar ao início</button>}
+        {/* CRIAR O PIN AGORA — enquanto ele ainda está aqui.
+            Este é o passo que a volta ao app escondia. Fazer agora não adianta a
+            aprovação (o organizador ainda decide), mas transforma o retorno em
+            "digita o telefone e o PIN que eu já escolhi" em vez de uma descoberta. */}
+        {pinPronto ? (
+          <div style={{...s.box("#7FAE8F"), marginTop:4, textAlign:"left"}}>
+            <strong style={{color:"#7FAE8F", fontSize:13}}>✓ PIN criado</strong><br/><br/>
+            Guarde seu PIN. Quando o organizador aprovar, é só entrar em <strong style={{color:"#F0EAE0"}}>Sou atleta</strong> com
+            este WhatsApp e ele — não precisa criar nada de novo.
+          </div>
+        ) : (
+          <div style={{...s.box("#D85A30"), marginTop:4, textAlign:"left"}}>
+            <strong style={{color:"#D85A30", fontSize:13}}>Crie seu PIN agora</strong><br/><br/>
+            É com ele que você vai entrar no app depois da aprovação. Faça agora e não
+            precisa criar nada quando voltar.
+            <label style={{...s.label, marginTop:10}}>PIN (4 a 6 números)</label>
+            {/* ⚠️ `type="tel"` e `autoComplete="off"`, IGUAIS aos da tela de PIN que
+                já está no ar — não `type="password" autoComplete="new-password"`.
+                O `new-password` aciona a sugestão de Senha Forte do iOS: ela
+                preenche OS DOIS campos com a mesma string, o `onChange` abaixo
+                corta os dois para 6 dígitos, eles CONFEREM, e o PIN é criado
+                mascarado, sem a pessoa nunca o ter visto. E o servidor recusa um
+                segundo PIN ("peça um reset ao administrador") — o passo que veio
+                tirar atrito trancaria o atleta no dia 1.
+                O app tinha TRÊS variantes do mesmo campo; esta é a do ar, que é a
+                segura. (Guardião do Atleta, A2, 12/10/2026.) */}
+            <input style={s.input} value={pinNovo} inputMode="numeric" type="tel" autoComplete="off"
+              onChange={e=>{ setPinNovo(e.target.value.replace(/\D/g,"").slice(0,6)); setPinErro(""); }} placeholder="••••"/>
+            <label style={s.label}>Repita o PIN</label>
+            <input style={s.input} value={pinNovo2} inputMode="numeric" type="tel" autoComplete="off"
+              onChange={e=>{ setPinNovo2(e.target.value.replace(/\D/g,"").slice(0,6)); setPinErro(""); }} placeholder="••••"/>
+            {pinErro && <div style={{fontSize:12,color:"#f8c4b4",marginTop:8,lineHeight:1.5}}>{pinErro}</div>}
+            <button style={{...s.btn(pinSalvando), marginTop:10}} disabled={pinSalvando} onClick={criarPinAgora}>
+              {pinSalvando ? "Criando…" : "Criar meu PIN"}
+            </button>
+            {/* Pular é permitido de propósito: o caminho antigo continua valendo,
+                e travar a tela de sucesso numa inscrição já gravada seria pior. */}
+            <div style={{fontSize:11,color:T.cinza,marginTop:8,textAlign:"center"}}>
+              Pode deixar para depois — dá para criar na hora de entrar.
+            </div>
+          </div>
+        )}
+        {onBack && <button style={{...s.btn(false), marginTop:10}} onClick={onBack}>Voltar ao início</button>}
       </div>
     </div>
   );
@@ -4227,7 +4604,24 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
     }
 
     case "backlog": {
-      const emBacklog = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito);
+      // QUEM PRECISA RECEBER ISTO: o aprovado esperando vaga E quem já está no
+      // roster e ainda não pagou (16/10/2026).
+      //
+      // O filtro era só `pendenteCircuito`, ou seja o backlog. No 1º circuito
+      // pago os 3 atletas estão no ROSTER (`pendente_circuito = false`), então
+      // esta categoria gerava ZERO mensagens — e o painel ainda dizia
+      // "✓ tudo enviado", porque o contador é `msgs.length - enviados`.
+      // A peça central desta onda (valor + PIX + prazo) não alcançava ninguém
+      // do piloto. (Operações, A3, 12/10/2026.)
+      //
+      // O conjunto novo é exatamente o que o MOTOR retém: `promoverBacklog` e
+      // `getAtivosNoCircuito` filtram por `pagamento_confirmado`, então quem não
+      // pagou não é pareado — seja ele do backlog ou do roster. A mensagem passa
+      // a falar com quem a trava de fato segura.
+      const emBacklog = state.athletes.filter(a => a.status === "ativo" && (
+        a.pendenteCircuito ||
+        (state.financeiroAtivo && !a.pagamentoConfirmado)
+      ));
       // Onde o aprovado vai estrear, conforme o regulamento (regra do último terço):
       // - fora de temporada / antes da Rodada 1 → próxima temporada (Rodada 1);
       // - em temporada, próximo par fora do último terço → próxima etapa;
@@ -4250,9 +4644,49 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
       } else {
         fraseEntrada = "O circuito já está na reta final desta temporada, e pelo regulamento não há novas entradas nas últimas rodadas. Então sua estreia fica *para a próxima temporada* — e você já entra desde a primeira rodada dela.";
       }
+      // A MENSAGEM DE APROVAÇÃO PASSA A FALAR DE DINHEIRO (11/10/2026).
+      //
+      // Pedido do Juliano, nas palavras dele: "quero que ele receba a informação
+      // do pix quando o admin manda a mensagem que a inscrição foi pré aprovada
+      // e precisa fazer o pix para confirmar a inscrição, como prazo máximo para
+      // realizar o pagamento para poder entrar na primeira rodada".
+      //
+      // Até aqui esta mensagem — a ÚNICA que o aprovado recebe, e no canal que
+      // ele de fato lê — não dizia uma palavra sobre valor nem sobre PIX. O
+      // atleta descobria o preço no app, no passo 10 de 10, depois de criar PIN.
+      // E o regulamento que ele assina promete, no capítulo do valor, que "o
+      // valor da temporada é informado na inscrição".
+      //
+      // O vocabulário abaixo é o mesmo do `case "renovacao"`, de propósito: o
+      // valor formatado e a linha do PIX já existiam ali, e duas formas de dizer
+      // preço no mesmo app é como se produz divergência.
+      const fmtB = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
+      // `valorTemporada` vem de `circuitos` — a MESMA casa que o painel do
+      // organizador lê. Era a divergência de casas que fazia a tela do atleta
+      // dizer R$ 0,00 enquanto o painel dizia R$ 50,00 (migração de 11/10/2026).
+      const valorB = state.valorTemporada;
+      const pctOffB = state.descontoGlobalPct || 0;
+      const finalB = (valorB == null) ? null
+        : Math.round(valorB * (1 - Math.min(100, Math.max(0, pctOffB)) / 100));
+      // Sem valor configurado a mensagem fica CALADA sobre dinheiro, em vez de
+      // dizer "R$ 0,00" — afirmar gratuidade por omissão de dado é promessa.
+      let blocoPagar = "";
+      if (state.financeiroAtivo && finalB != null) {
+        const linhaValor = (pctOffB > 0 && valorB > 0)
+          ? `💵 Inscrição da temporada: de ${fmtB(valorB)} por *${fmtB(finalB)}* (${pctOffB}% de desconto).`
+          : `💵 Inscrição da temporada: *${fmtB(finalB)}* — valor único da temporada inteira, sem mensalidade.`;
+        const linhaPix = state.pixChave ? `\n🔑 PIX: *${state.pixChave}*` : "";
+        // O PRAZO é o que o Juliano pediu que fosse dito, e é a regra que o motor
+        // já cumpre: `promoverBacklog` e `getAtivosNoCircuito` filtram por
+        // `pagamento_confirmado`, então sem pagamento confirmado o atleta não sai
+        // da fila e não é pareado. Até hoje só o organizador era avisado disso.
+        blocoPagar = `\n\n${linhaValor}${linhaPix}\n\n`
+          + `⚠️ *O pagamento é o que confirma sua vaga.* Faça o PIX e me manda o comprovante `
+          + `aqui mesmo — eu confirmo no app. *Enquanto não estiver confirmado, você não entra no sorteio dos confrontos.*`;
+      }
       return emBacklog.map(a => ({
         atleta: a,
-        msg: `🏓 *${nomeCircuito} — Inscrição Aprovada!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Sua inscrição foi *aprovada*! 🎉\n\n${fraseEntrada}\n\nEnquanto isso, você já pode entrar no app, completar seu perfil e colocar sua foto. 📲\n\nQualquer dúvida, é só chamar. Bem-vindo(a) ao Clube! 🏆`,
+        msg: `🏓 *${nomeCircuito} — Inscrição Aprovada!*\n\nOlá ${nomeExibicao(a).split(" ")[0]}! Sua inscrição foi *aprovada*! 🎉\n\n${fraseEntrada}${blocoPagar}\n\nVocê já pode entrar no app em *Sou atleta*, com este mesmo WhatsApp, criar seu PIN e completar seu perfil. 📲\n\nQualquer dúvida, é só chamar. Bem-vindo(a) ao Clube! 🏆`,
       }));
     }
 
@@ -4838,11 +5272,17 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsSta
                 )}
               </div>
               <div style={{
-                background: !historicoPronto ? "rgba(255,255,255,0.05)" : pendentes > 0 ? "rgba(216,90,48,0.15)" : "rgba(127,174,143,0.15)",
-                color: !historicoPronto ? T.cinza : pendentes > 0 ? "#D85A30" : T.verde2,
+                background: !historicoPronto ? "rgba(255,255,255,0.05)" : msgs.length === 0 ? "rgba(255,255,255,0.05)" : pendentes > 0 ? "rgba(216,90,48,0.15)" : "rgba(127,174,143,0.15)",
+                color: !historicoPronto ? T.cinza : msgs.length === 0 ? T.cinza : pendentes > 0 ? "#D85A30" : T.verde2,
                 borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,flexShrink:0
               }}>
-                {!historicoPronto ? "···" : pendentes > 0 ? `${pendentes} pendente(s)` : "✓ tudo enviado"}
+                {/* ZERO ELEGÍVEIS NÃO É "TUDO ENVIADO". O selo era
+                    `pendentes > 0 ? N : "✓ tudo enviado"`, e `pendentes` é
+                    `msgs.length - enviados` — com a lista vazia dava zero, e o
+                    painel anunciava sucesso de uma categoria da qual nunca saiu
+                    nada. Era assim que a mensagem de PIX parecia entregue sem
+                    ter destinatário. (Operações, C4.) */}
+                {!historicoPronto ? "···" : msgs.length === 0 ? "ninguém elegível" : pendentes > 0 ? `${pendentes} pendente(s)` : "✓ tudo enviado"}
               </div>
             </div>
           </div>
@@ -9886,21 +10326,54 @@ function RenovacaoCard({ state, dispatch, athlete }) {
   const [copiado, setCopiado] = useState(false);
   const naProxima = state.proximaAberta;
   const inscricoes = state.phase === "inscricoes" || naProxima;
-  const elegivel = inscricoes && eu && eu.status === "ativo";
+  // QUEM DEVE E PRECISA SABER DISSO EM QUALQUER FASE — 11/10/2026.
+  //
+  // `elegivel` exigia `fase` de inscrições ou pré-abertura. No dia em que a
+  // temporada começa (`fase = "etapa"`) o card inteiro desaparecia: sumia o
+  // preço, sumia a chave PIX, sumia o aviso. E o motor, nessa hora, ainda está
+  // filtrando o atleta por `pagamento_confirmado` — `promoverBacklog` e
+  // `getAtivosNoCircuito` — então ele CONTINUA fora dos confrontos e a única
+  // coisa que lê na tela é "Nenhuma partida em aberto."
+  //
+  // Ou seja: exatamente quando a pendência passa a ter consequência, o app
+  // parava de explicá-la. Quem deve continua vendo o card, em qualquer fase.
+  const devendo = !!eu && eu.status === "ativo" && !eu.pendenteCircuito
+    && !!state.financeiroAtivo && !eu.pagamentoConfirmado;
+  const elegivel = (inscricoes || devendo) && eu && eu.status === "ativo";
   useEffect(() => {
     let vivo = true;
-    // Fora da pré-abertura (fase inscrições pós-virada) busca o preço individual.
+    // Fora da pré-abertura busca o preço individual — inclusive com a temporada
+    // já em curso, que é quando o atleta que não pagou mais precisa do número.
     if (elegivel && !naProxima && state.financeiroAtivo && eu?.id) {
-      buscarPrecoTemporada(eu.id).then(p => { if (vivo) setPreco(p); });
+      buscarPrecoTemporada(CIRCUITO_ATIVO).then(p => { if (vivo) setPreco(p); });
     } else { setPreco(null); }
     return () => { vivo = false; };
-  }, [elegivel, naProxima, state.financeiroAtivo, eu?.id]);
+  }, [elegivel, naProxima, state.financeiroAtivo, eu?.id, state.nomeCircuito]);
   if (!elegivel) return null;
   const fmt = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
   // Valores: na pré-abertura são uniformes (cheio → desconto); pós-virada, individuais (RPC).
   const cheioC = naProxima ? state.proximaValorCheio : (preco ? preco.valor_base_cent : null);
   const finalC = naProxima ? state.proximaValorDesconto : (preco ? preco.preco_final_cent : null);
   const isentoInd = !naProxima && preco && preco.isento;
+  // NADA A PAGAR É DIFERENTE DE ISENTO, E DIFERENTE DE NÃO SABER.
+  //
+  // `isentoInd` é dirigido por `preco.isento`, que é a isenção INDIVIDUAL. Um
+  // preço que dá zero por desconto global (temporada gratuita, por exemplo) tem
+  // `isento: false` — então o card mostrava "R$ 0,00" E O BLOCO DO PIX, com o
+  // texto novo mandando "faça o PIX e mande o comprovante". Mandar pagar zero.
+  //
+  // É o caso ao vivo na janela entre o app e o motor: enquanto o `login-atleta`
+  // velho estiver no ar, o preço volta zero para os atletas do 1º circuito pago,
+  // e eles leriam uma ordem de pagar em cima de um valor nulo.
+  // A tela PÚBLICA já tratava este mesmo zero corretamente ("Esta temporada não
+  // tem custo de inscrição") — o app tinha dois tratamentos do zero e o de
+  // dentro era o errado. (Guardião de Regulamento, C3a, 12/10/2026.)
+  //
+  // Os três casos são distintos de propósito:
+  //   preco === null  -> não sabemos (sem vínculo, ou servidor fora) -> card calado
+  //   final === 0     -> não há o que pagar -> diz isso, e SEM PIX
+  //   final > 0       -> cobra, com PIX
+  const nadaAPagar = !naProxima && preco && preco.preco_final_cent === 0;
   const pctOff = (cheioC && finalC != null && cheioC > 0) ? Math.round((1 - finalC/cheioC)*100) : 0;
   const nomeCirc = (naProxima ? state.proximaNome : null) || state.nomeCircuito || "Clube do Tênis de Mesa";
   const dataIni = naProxima ? state.proximaDataInicio : state.dataInicioTemporada;
@@ -9915,7 +10388,14 @@ function RenovacaoCard({ state, dispatch, athlete }) {
   const copiarPix = () => { try { navigator.clipboard.writeText(pix.trim()); setCopiado(true); setTimeout(()=>setCopiado(false),1500); } catch(e){} };
   return (
     <Card style={{marginBottom:12,border:"1px solid rgba(106,157,122,0.35)"}}>
-      <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>🎟️ Inscrições abertas — {nomeCirc}</div>
+      {/* O título seguia "Inscrições abertas" mesmo quando o card está na tela
+          porque o atleta DEVE, com a temporada já rodando (A7) — e aí a frase
+          anuncia a coisa errada. */}
+      <div style={{fontSize:13,fontWeight:700,color:"#F0EAE0",marginBottom:6}}>
+        {(!naProxima && state.phase !== "inscricoes")
+          ? <>💵 Pagamento da inscrição — {nomeCirc}</>
+          : <>🎟️ Inscrições abertas — {nomeCirc}</>}
+      </div>
       {/* ⚠️ O PRAZO NUNCA APARECIA AQUI até 01/10/2026. O `janelaRenovacao` era chamado
           em três lugares — as duas mensagens de WhatsApp e o painel do admin — e em
           NENHUM na tela do atleta. A mensagem mandava ele "abrir o app para garantir a
@@ -9941,14 +10421,42 @@ function RenovacaoCard({ state, dispatch, athlete }) {
         <div style={{fontSize:13,color:"#c9d4ce",marginBottom:4}}>Sua temporada: {cheioC && pctOff>0 ? <span style={{textDecoration:"line-through",color:"#7d9188",marginRight:6}}>{fmt(cheioC)}</span> : null}<b style={{color:"#F0EAE0"}}>{fmt(finalC)}</b>{pctOff>0 ? <span style={{color:"#6a9d7a"}}> ({pctOff}% off)</span> : null}</div>
       ) : null}
       {inicioTxt && <div style={{fontSize:11,color:"#9db3a8",marginBottom:8}}>Início previsto: {inicioTxt}</div>}
-      {!pagoEfetivo && pix && !isentoInd && (
+      {nadaAPagar && !isentoInd && (
+        <div style={{fontSize:12,color:T.verde2,fontWeight:600,marginBottom:8}}>
+          ✅ Nada a pagar nesta temporada — sua vaga não depende de pagamento.
+        </div>
+      )}
+      {!pagoEfetivo && pix && !isentoInd && !nadaAPagar && (
         <div style={{display:"flex",alignItems:"center",gap:8,background:"rgba(0,0,0,0.18)",borderRadius:9,padding:"7px 10px",marginBottom:8}}>
           <div style={{flex:1,minWidth:0,fontSize:12,color:"#c9d4ce",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>PIX: <b style={{color:"#F0EAE0"}}>{pix}</b></div>
           <button onClick={copiarPix} style={{flexShrink:0,padding:"6px 10px",borderRadius:8,border:"1px solid rgba(255,255,255,0.14)",background:copiado?"#6a9d7a":"transparent",color:"#F0EAE0",cursor:"pointer",fontSize:11,fontWeight:700}}>{copiado?"✓ copiado":"📋 copiar"}</button>
         </div>
       )}
+      {/* "RENOVAR" SÓ FAZ SENTIDO NA PRÉ-ABERTURA — 11/10/2026.
+          `naProxima` é `state.proximaAberta`: quando é false, este card fala da
+          temporada ATUAL. Mas o texto e o botão falavam da PRÓXIMA de qualquer
+          jeito, então um atleta de PRIMEIRA VIAGEM, recém-aprovado no circuito
+          novo, lia "Quer jogar a próxima temporada?" e "Quero renovar" — para a
+          temporada que ele está entrando agora, e sem nunca ter renovado nada.
+          E a ação `RENOVAR` grava `quer_renovar`, que a virada zera: na temporada
+          corrente ela não é o que libera a vaga. O que libera é o organizador
+          confirmar o pagamento.
+          Achado pelo Guardião da Experiência do Atleta no piloto. */}
       {pagoEfetivo ? (
         <div style={{fontSize:12,color:"#6a9d7a",fontWeight:600}}>✅ Pagamento confirmado — sua vaga está garantida.</div>
+      ) : nadaAPagar ? (
+        // Sem isto, a frase abaixo manda fazer PIX de R$ 0,00 — foi o defeito
+        // que o Guardião de Regulamento mediu ao vivo nos 2 atletas do 1º
+        // circuito pago, na janela entre o app e o motor.
+        <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.55}}>
+          Não há valor a pagar nesta temporada. Sua vaga nos confrontos não depende de pagamento.
+        </div>
+      ) : !naProxima ? (
+        <div style={{fontSize:12,color:"#9db3a8",lineHeight:1.55}}>
+          ⚠️ <b style={{color:T.offwhite}}>Sua vaga nos confrontos entra depois que o organizador confirmar o pagamento.</b>
+          {" "}Faça o PIX e mande o comprovante para ele — é ele que confirma aqui no app.
+          {" "}Se o sorteio do mês já tiver saído, você entra no próximo par de rodadas.
+        </div>
       ) : eu.querRenovar ? (
         <>
           <div style={{fontSize:12,color:"#6a9d7a",fontWeight:600,marginBottom:8}}>✅ Renovação sinalizada — combine o pagamento com o admin para garantir a vaga.</div>
@@ -10004,7 +10512,7 @@ function IniciarEtapaPanel({ state, dispatch }) {
       </div>
       {naoPagaram.length > 0 && (
         <div style={{background:"rgba(216,90,48,0.12)",borderLeft:"3px solid #c25a45",borderRadius:8,padding:"9px 11px",marginBottom:10,fontSize:11.5,color:"#f8c4b4",lineHeight:1.6}}>
-          💵 <strong style={{color:"#F0EAE0"}}>{naoPagaram.length} atleta(s) sem pagamento confirmado ficam de fora desta rodada</strong> — a cobrança está ligada, e o pareamento é tirado agora. Quem pagar depois entra só na rodada seguinte.
+          💵 <strong style={{color:"#F0EAE0"}}>{naoPagaram.length} atleta(s) sem pagamento confirmado ficam de fora desta rodada</strong> — a cobrança está ligada, e o pareamento é tirado agora. Quem pagar depois entra só no próximo par de rodadas.
           <div style={{color:"#e8c9a0",marginTop:6}}>{naoPagaram.map(a=>nomeExibicao(a)).join(", ")}</div>
           <div style={{color:"#9db3a8",marginTop:6}}>Registre os pagamentos antes de iniciar, ou siga — eles entram no próximo par de rodadas.</div>
         </div>

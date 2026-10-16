@@ -1,6 +1,9 @@
 # Roadmap — a fonte de verdade sobre o que fazer a seguir
 
 Estado: **07/09/2026** no corpo, com revisões datadas depois — a última pelo
+**Curador em 12/10/2026, árvore `0cdb524` + 6 modificados**, que abriu a seção de
+itens **1.1–1.10** da Onda 1 (o piloto real **começou**) e corrigiu o "Onde estamos",
+que afirmava que nenhum 2º circuito havia rodado. A revisão anterior foi do
 **Supervisor de Curadoria em 29/09/2026 (noite), commit `60ccc86`**, que atualizou a
 contagem da bateria, marcou **duas** decisões pendentes como **resolvidas** (o desempate
 do Cap. 09 e o pareamento do Sistema B) e acrescentou **oito** pendências novas em
@@ -8,6 +11,9 @@ do Cap. 09 e o pareamento do Sistema B) e acrescentou **oito** pendências novas
 este está certo — ou este precisa ser corrigido. Consulte antes de propor
 qualquer coisa, inclusive a seção **Fora do escopo** no fim, que registra o que
 já foi decidido *não* fazer, e por quê.
+
+⛔ **LEIA ANTES DE EDITAR QUALQUER REGULAMENTO:** o **`vB-01` saiu da janela de
+edição** — 3 atletas reais o aceitaram. Detalhe e a consulta obrigatória em **1.2**.
 
 Os planos das fases já concluídas estão em `historico/`, com o motivo de terem
 saído de cena. Eles continuam valendo como registro de *por que* cada decisão
@@ -17,11 +23,22 @@ foi tomada.
 
 O multi-circuito **está funcional de ponta a ponta no código** — criar circuito,
 inscrever, parear, processar rodada, virar temporada, organizador com login
-próprio, atleta em mais de um circuito. Mas **nenhum segundo circuito real
-rodou ainda**: existe 1 circuito no banco (o BH), com 15 atletas.
+próprio, atleta em mais de um circuito.
 
-Pronto tecnicamente, não validado em campo. Essa distinção importa em tudo que
-for comunicado como pronto.
+⚠️ **ATUALIZADO PELO CURADOR EM 12/10/2026 — O PARÁGRAFO ANTIGO FICOU FALSO.** Ele
+dizia *"nenhum segundo circuito real rodou ainda: existe 1 circuito no banco (o BH),
+com 15 atletas"*. Hoje, conferido por mim no banco: existem **2 circuitos** — o
+**`bh`** (legado, **encerrado**, ver topo do `CLAUDE.md`) e o **`bh2`** (*CIRCUITO
+BH 2*, Sistema B, `vB-01`, R$ 50,00, fase `inscricoes`, **3 atletas reais**, **1ª
+etapa em 01/11/2026**). O total de atletas segue **15** na tabela global `atletas`,
+porque identidade é global e os 3 do `bh2` já existiam.
+
+**O piloto deixou de ser plano e virou operação.** A distinção "pronto tecnicamente,
+não validado em campo" continua valendo, mas agora com dado: a validação em campo
+**começou** e já derrubou um defeito de **dinheiro** (preço R$ 0,00 para quem devia
+pagar R$ 50,00, 2 de 3 atletas sem pagar por causa dele), um de **consentimento**
+(texto de privacidade alterado em produção sem versão nem re-aceite) e um de
+**calendário** que **ainda está no ar** (item **1.3**). Ver a Onda 1.
 
 ---
 
@@ -31,9 +48,11 @@ Não estavam em plano nenhum; apareceram ao mapear o banco e o repositório em
 07/09/2026. Nenhuma é urgente hoje; todas cobram juros.
 
 - **0.1 — A bateria cobre o motor e começou a cobrir o front.** ⚠️ **O número
-  desta linha é histórico, de 07/09/2026: eram 154 asserções. Hoje são 1357**
-  (conferido em 29/09/2026, noite, no commit `60ccc86` — rode `npm run teste` e some
-  as seções, não cite daqui; esta linha dizia 1149 por algumas horas).
+  desta linha é histórico, de 07/09/2026: eram 154 asserções. Hoje são 1930**
+  (conferido pelo Curador em 12/10/2026, árvore `0cdb524` + 6 modificados, somando
+  as **18 seções** que a bateria imprime — rode `npm run teste` e some as seções,
+  não cite daqui; esta linha dizia 1149 por algumas horas, e **1357 por treze
+  dias**, enquanto a onda do piloto a levava a 1930).
   Ligadas ao `atualizar.sh`. O `src/App.jsx` saiu do zero: `pacote.mjs` e
   `erros-na-tela.mjs` leem o fonte e travam decisões.
   **Do "falta cobrir" original, já foi coberto:** o `athlete-action` (executado),
@@ -2028,6 +2047,216 @@ estão destravados.
 
 É o teste que nenhum harness substitui: descobre o que quebra na operação, não
 no cálculo. Tudo na Onda 2 fica melhor decidido depois dele.
+
+### ✅ O PILOTO COMEÇOU — e já cobrou o que nenhuma auditoria tinha cobrado
+
+**Atualizado pelo Curador em 12/10/2026.** O 2º circuito **existe e tem gente
+dentro**: `slug` **`bh2`**, nome **CIRCUITO BH 2**, **Sistema B**, regulamento
+**`vB-01`**, `valor_temporada` **R$ 50,00**, `desconto_global_pct` **0**, fase
+**`inscricoes`**, **3 atletas** inscritos — conferido por mim no banco nesta data.
+**1ª etapa em 01/11/2026.** O texto acima ("nenhum segundo circuito real rodou
+ainda", "existe 1 circuito no banco") estava escrito para o mundo de 07/09 e
+**ficou falso**; fica como registro.
+
+⚠️ **E a lição transversal do piloto, em uma linha:** os três defeitos de maior
+consequência desta fase — o botão de criar circuito mudo (`7f8a42f`), os dois cards
+que se contradiziam (`696b220`) e o **preço R$ 0,00** — foram achados **em uso real
+pelo Juliano**, *depois* de oito duplas de guardião e supervisor passarem pelas
+mesmas telas. **Auditoria lê o que está escrito; uso descobre o que não está.**
+Nenhum dos três exigia cálculo: exigia alguém tentando usar.
+
+Os itens abaixo são o que o piloto abriu. Numeração **1.x**, livre de colisão
+(conferido: nenhum `1.x` existia neste arquivo — a colisão de 19/09 não se repete).
+
+- **1.1 — ⚖️ Direito de arrependimento (CDC art. 49) não existe no `vB-01`.**
+  **Com gente pagando e 1ª etapa em 01/11/2026, este é o item mais urgente da
+  lista.** A inscrição é contratada **a distância** (pelo app), o que dá ao atleta
+  **7 dias corridos** para desistir e receber **todo** o valor de volta, inclusive
+  o que já foi pago. O `vB-01` **não tem cláusula de reembolso nenhuma** e o app
+  **não tem caminho de estorno para o atleta** — o `ESTORNAR_PAGAMENTO` existe no
+  `admin-action`, mas é ação do organizador, sem prazo, sem registro de motivo e
+  sem nada na tela do atleta que prometa o direito.
+  ⚠️ **E o conserto NÃO é editar o `vB-01`** — ver 1.2 e a regra 7: o `vB-01`
+  **já tem 3 aceites gravados**. Direito do CDC **vale mesmo sem estar escrito**
+  (é lei, não contrato), então o risco imediato é de **operação** (não saber o que
+  fazer se alguém pedir), não de nulidade. Precisa de: decisão do Juliano sobre o
+  procedimento, texto numa **versão nova** (`vB-02`) com re-aceite, e um caminho na
+  tela. **Guardião Jurídico obrigatório.**
+
+- **1.2 — ⛔ O `vB-01` SAIU DA JANELA DE EDIÇÃO — a regra 7 agora morde.**
+  **Isto não é uma tarefa, é uma TRAVA, e está aqui para ninguém tropeçar nela.**
+  Conferido por mim no banco em 12/10/2026, com a consulta que o `CLAUDE.md` torna
+  obrigatória antes de editar qualquer regulamento:
+
+  ```
+  select c.slug, ca.versao_regulamento, count(*) from circuito_atletas ca
+    join circuitos c on c.id = ca.circuito_id group by 1,2;
+  ```
+  | slug | versão | qtd |
+  |---|---|---|
+  | bh | v03-3 | 8 |
+  | bh | **v03-13** | **4** |
+  | bh | v03-12 | 1 |
+  | bh | v03-11 | 1 |
+  | bh | v03-5 | 1 |
+  | bh2 | **vB-01** | **3** |
+
+  O acervo afirmava, em `docs/curadoria-indice-app-tenis-de-mesa.md`, que *"o
+  `vB-01` tem **ZERO** aceites gravados … e é por isso que aquela edição pôde ser
+  feita **no lugar**, sem versão nova — regra 7"*. **Isso venceu.** Três atletas
+  reais seguram o recibo do `vB-01`. ⇒ **`docs/REGULAMENTO_vB-01.md` e o texto do
+  Sistema B na `RegulamentoView` estão CONGELADOS.** Correção de conteúdo entra em
+  **`vB-02`**, com aviso prévio e re-aceite. *(E note o efeito colateral do
+  gerador: como o `.md` é **gerado** da tela, editar a tela "só para melhorar o
+  texto" muda retroativamente o que 3 recibos provam.)*
+  **Também venceu:** a `v03-13` **foi carimbada** no BH (`circuitos.bh.
+  regulamento_versao = v03-13`, 4 aceites) — o acervo dizia "ainda não é a versão
+  do BH". O **0.10.15** pode ser revisitado como concluído na parte do carimbo.
+
+- **1.3 — ⛔ A TELA DOS MESES ESTÁ NO AR FALANDO COM UM MOTOR QUE NÃO ENTENDE O
+  CAMPO — e ela diz "✓ Meses salvos".** O Juliano **acredita** ter configurado
+  novembro, dezembro e fevereiro para o `bh2`. **`circuitos.meses_temporada` do
+  `bh2` está `null`** (conferido por mim no banco, 12/10). **Com a 1ª etapa em
+  01/11, isto desloca o prazo de rodadas de atletas reais.**
+
+  **É a armadilha "o fonte pode não ser o que está no ar", com uma vítima nova.**
+  A cadeia, medida e não deduzida:
+  1. `admin-action` **v65** foi publicada em **03/10/2026 07:27:49**;
+  2. o commit que ensina o motor a ler `mesesTemporada` (`9da18e4`) é de
+     **03/10/2026 20:55:39** — **13h28 DEPOIS** — e **nunca foi publicado**;
+  3. **prova direta, não inferência:** o corpo da função **no ar** (lido via
+     `get_edge_function`) tem **ZERO** ocorrências de `mesesTemporada` e de
+     `meses_temporada`, contendo `escalaCirculo` 3× (o que prova que é a v65
+     íntegra, da onda de 29/09, e não um arquivo truncado);
+  4. o **app** da tela dos meses (`0cdb524`) **está no ar** — `origin/main` =
+     `HEAD`, e `git push` é publicar;
+  5. o motor velho **ignora campos que não conhece** ⇒ grava nada e **responde
+     sucesso**;
+  6. **e o `catch` da tela é CÓDIGO MORTO:** `salvar()` faz
+     `try { await dispatch(...) } catch { setMsg("✗ …") }`, mas
+     **`dispatchAndSync` NUNCA lança** — ele captura e **devolve**
+     `{ ok: false, erro }`. O ramo de erro é inalcançável, então
+     `setMsg("✓ Meses salvos.")` roda **sempre**. *(O próprio `App.jsx` já
+     documenta isso em outro ponto, `:10089`: "`dispatchAndSync` NUNCA lança".
+     O conhecimento existia no arquivo e não chegou a esta tela.)*
+
+  **Conserto:** publicar `admin-action` **v65 → v66** (o código já está commitado)
+  **e** fazer a tela ler o `{ ok }` que `dispatchAndSync` devolve, em vez de
+  esperar uma exceção. **Decisão do Juliano** — ver o aviso no fim da entrada de
+  rascunho do `docs/CHANGELOG.md`.
+  ⚠️ **Lição de método, e é a parte que escala:** as **14 asserções** de `0cdb524`
+  dizem cobrir *"o caminho inteiro — banco → leitura → estado → reducer → tela →
+  ação do motor"*, incluindo *"o nome do campo bate dos dois lados"*. **Todas
+  verdes, e todas sobre o FONTE.** Asserção de paridade entre app e motor compara
+  dois arquivos do repositório — **ela não sabe qual versão está no ar.** Ver
+  `docs/GOVERNANCA_AGENTES.md`.
+
+- **1.4 — ⚖️ "Não coletamos dados financeiros" é impreciso.** A tela de
+  consentimento promete isso, e o app **guarda** `pagamentos.valor`,
+  `pagamentos.metodo` (`pix`), `pagamentos.status`, `confirmado_em` e
+  `pagamentos.observacao` (texto livre do organizador) — além de exibir a chave
+  PIX. Não é dado de **cartão**, e a promessa provavelmente **quis** dizer isso;
+  mas quem lê não tem como saber. **Esta é a mesma família do defeito que originou
+  a onda** (a palavra "CPF" apagada da mesma frase quando o app passou a coletar
+  CPF) — a frase lista dados e a lista envelhece com o produto.
+  **Conserto já disponível e sem efeito jurídico:** o texto correto **já existe**
+  em `docs/POLITICA_PRIVACIDADE.md` — ver 1.6. Entra em versão nova de
+  `PRIVACIDADE_VERSAO` (hoje `privacidade-2026-10-v1`), não por edição no lugar.
+  **Convenção que nasceu aqui e vale para tudo: o resumo pode prometer MENOS que
+  a política, nunca MAIS.** *(Guardião Jurídico, 11/10/2026 — registrada em
+  `docs/GOVERNANCA_AGENTES.md`.)*
+
+- **1.5 — ⚖️ A anonimização não alcança a tabela `pagamentos` — e o buraco é maior
+  que `observacao`.** Medido por mim no fonte da `anonimizar-atleta` em 12/10: ela
+  toca `atleta_documento` (delete), `atleta_sessao` (delete), `mensagens_enviadas`,
+  `solicitacoes_wo`, `circuito_atletas` e `atletas` — e **`pagamentos` não aparece
+  nenhuma vez**. Sobrevivem à exclusão pedida pelo titular:
+  - **`pagamentos.observacao`** — **texto livre digitado pelo organizador**
+    (`App.jsx:8313`/`:8320`), **exibido na tela** (`:8454`). Texto livre sobre uma
+    pessoa é o pior caso: ninguém sabe o que tem dentro;
+  - **`pagamentos.comprovante_url`** — um comprovante de PIX carrega **nome
+    completo e dados bancários** do pagador (ver 1.7).
+
+  Agravantes: `LISTAR_PAGAMENTOS` faz **`select("*")`** (`admin-action:2667`), ou
+  seja devolve as duas colunas inteiras; e o `backup-clube-tenis-mesa` copia
+  `pagamentos` com **`colunas: "*"`** ⇒ o texto livre **também vai para o backup**,
+  onde a anonimização não chega de jeito nenhum. **Decisão de conteúdo:** apagar,
+  pseudonimizar, ou declarar retenção por obrigação fiscal/contábil (que é uma base
+  legal legítima e **pode** justificar manter o registro financeiro — mas não o
+  texto livre). **Guardião Jurídico + Segurança.**
+
+- **1.6 — 📄 A `POLITICA_PRIVACIDADE.md` é MAIS CORRETA que a tela e não está
+  servida em lugar nenhum do app.** Conferido por mim em 12/10:
+  `grep -rn 'POLITICA_PRIVACIDADE\|politica-privacidade' src/ supabase/ index.html
+  public/` devolve **zero**. O documento existe (`docs/POLITICA_PRIVACIDADE.md`,
+  08/09/2026), é o texto que a Onda 4 manda revisar juridicamente, e **nenhum
+  atleta tem como chegar nele** — o que o atleta lê é o **resumo** da tela de
+  inscrição, que é justamente o texto impreciso do 1.4.
+  **Situação a corrigir:** o app faz o atleta aceitar um resumo e **não oferece** a
+  política inteira. Com a `PRIVACIDADE_VERSAO` nascendo agora, este é o momento de
+  decidir **o que exatamente a versão versiona** — o resumo da tela, a política, ou
+  os dois travados juntos. Se forem os dois, eles passam a **não poder divergir**,
+  e isso é a única forma de a convenção do 1.4 ser verificável em vez de combinada.
+  Pede decisão do Juliano + **Jurídico**.
+
+- **1.7 — `pagamentos.comprovante_url` não tem tela de nenhum dos dois lados.**
+  A coluna é **escrita** por `admin-action:2608` e `athlete-action:643`, e:
+  - **o atleta não tem como enviar** o comprovante pelo app — as três telas
+    mandam ele "fazer o PIX e mandar o comprovante **ao organizador**"
+    (`App.jsx:3076`, `:4547`, `:10283`), ou seja por fora, no WhatsApp;
+  - **o organizador não tem como ver** — o `ComprovanteBotao`/`JustificativaWo`
+    (`:11079`/`:11105`) servem o comprovante de **W.O.**, não o de pagamento; e a
+    função `comprovante-url`, que assina as URLs, **só** atende o bucket do W.O. e
+    **só** autoriza contra `solicitacoes_wo` (`comprovante-url:175`).
+
+  ⇒ a coluna é **inalcançável pelas duas pontas**. Consequência prática no piloto:
+  a prova de pagamento vive no WhatsApp do organizador, fora do app e fora de
+  qualquer controle de retenção — e é exatamente o dado que o 1.5 diz que a
+  anonimização não alcança. Decidir: **construir as duas telas** (com o `comprovante
+  -url` ganhando escopo de pagamento) **ou remover a coluna** e assumir que o
+  comprovante é extra-app. Não deixar escrita sem leitura.
+
+- **1.8 — O atleta não consegue reler o regulamento depois de aceitar.**
+  ⚠️ **NÃO é item novo:** isto é o **`0.10.22`**, aberto desde 16/09/2026 — não o
+  duplique. O que o piloto acrescenta é **urgência e um fato novo**: os **3 atletas
+  do `bh2`** aceitaram o `vB-01` e, estando logados, **não têm porta nenhuma** para
+  reler o texto; e como o `vB-01` agora está congelado (1.2), o único caminho que o
+  `0.10.15(b)` abriu — o botão **dentro** do card de re-aceite — não serve, porque
+  o card só aparece para quem está **fora** de dia. Quem está em dia precisa
+  **deslogar** para ler o que aceitou. Ver `0.10.22` para os três pontos de entrada
+  e os números de linha.
+
+- **1.9 — A coluna `circuitos.meses_temporada` entrou em produção sem arquivo de
+  migração.** Conferido por mim no banco em 12/10: a coluna **existe**, o `anon`
+  **tem** SELECT nela (o grant de emergência das 20:58 de 03/10), e existe o CHECK
+  `meses_temporada_valido` — **e não há nenhum `.sql` em `docs/migracoes/` sobre
+  nada disso** (a pasta tem 3 arquivos: dado de saúde, preço por circuito, versão
+  do consentimento). Quem reconstruir o banco do zero pelos arquivos **não terá a
+  coluna**, e o CHECK e o grant não aparecem em diff nenhum.
+  ⚠️ **E o CHECK não faz o que o commit promete.** `9da18e4` afirma: *"recusa …
+  mês repetido … O banco tem a mesma guarda em CHECK"*. O CHECK real, lido por mim,
+  valida **só** `array_length = 3` e cada mês em `1..12` — **não há nada sobre
+  repetição**. `[3,3,3]` passa pelo banco. A guarda de repetição existe **só na
+  aplicação** (o motor, no fonte não publicado). É afirmação de documento sem a
+  linha que a sustenta (regra 6); escrever o `.sql` é a hora de decidir se o CHECK
+  ganha o `cardinality(distinct)` ou se a frase do commit é corrigida.
+
+- **1.10 — Nasce o carimbo de privacidade, mas ninguém pede o re-aceite dos 15 —
+  e o campo é lido em lugar nenhum.** Medido por mim no fonte em 12/10:
+  `privacidadeVersao` entra no estado do app em `App.jsx:456`
+  (`mapAtletaFromDb`) e **não é lido em nenhum outro ponto do arquivo**. Não existe
+  card de re-aceite de privacidade, nem ação `ACEITAR_PRIVACIDADE` em motor nenhum.
+  A migração `2026-10-11-versao-do-consentimento.sql` **promete** este laço nas
+  próprias palavras — *"é o que permite o app pedir o re-aceite de quem está sem
+  carimbo, em vez de presumir que está em dia"* — e ele **não está construído**.
+  ⇒ Depois desta onda: **15 pessoas com `privacidade_versao = NULL`**, segurando um
+  recibo sem versão, enquanto o texto **acabou de mudar outra vez** (ganhou *"não
+  são vendidos nem compartilhados com terceiros"* e virou acordeão). A infraestrutura
+  do recibo nasce certa; o **laço que a torna útil** fica aberto. Sem ele, o
+  `privacidade_versao` é um carimbo que ninguém confere — exatamente o que o
+  comentário do motor diz que não quer ("a versão viraria enfeite em vez de
+  recibo"). **Gatilho: junto com 1.4/1.6**, que são as mudanças de texto que
+  tornariam o re-aceite necessário de qualquer forma. **Jurídico + Atleta.**
 
 ## Onda 2 — Pagamento (o que destrava a venda)
 

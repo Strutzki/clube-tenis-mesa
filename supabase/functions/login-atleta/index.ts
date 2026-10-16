@@ -13,6 +13,36 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+// A VERSÃO DO TEXTO DE PRIVACIDADE QUE ESTE SERVIDOR CONSIDERA CORRENTE.
+//
+// Nasceu em 11/10/2026, condição C5 do Guardião Jurídico. Até aqui a política
+// não tinha versão nenhuma — o regulamento tem (`versao_regulamento`), o CPF tem
+// (`cpf_consent_versao`), e a política, que é a que fala de TODOS os dados, não
+// tinha. Os 15 recibos existentes apontam para "o texto que estiver na tela".
+//
+// E o texto já mudou sem aviso: em 05/08/2026 ele dizia "Não coletamos CPF,
+// endereço, e-mail ou dados financeiros", e a palavra CPF foi apagada quando o
+// app passou a coletar CPF.
+//
+// QUEM CARIMBA É O SERVIDOR, não o cliente — ao contrário do `cpfConsentVersao`,
+// que vem no payload. O motivo: o texto de privacidade mora no código do app, e
+// o servidor não tem como conferir uma versão que o cliente declare. Um recibo
+// que o cliente escolhe não é recibo. O que o servidor afirma é verificável:
+// "esta é a versão que o sistema considerava corrente no instante do aceite".
+//
+// ⚠️ O QUE ESTA CONSTANTE FAZ HOJE, E O QUE ELA AINDA NÃO FAZ.
+// FAZ: carimbar no recibo qual texto a pessoa aceitou. Isso passou a existir.
+// NÃO FAZ: pedir re-aceite de ninguém. Não há tela que compare a versão
+// gravada com a corrente, e o campo não é lido em lugar nenhum do app — então
+// mudar o texto da política continua NÃO gerando re-aceite.
+// Construir o recibo antes do mecanismo é a ordem certa; afirmar que o
+// mecanismo existe é que era falso, e três comentários meus afirmavam isso
+// (Guardião Jurídico, C7, 12/10/2026 — regra 6 do CLAUDE.md).
+// AO MUDAR O TEXTO DA POLÍTICA, mude esta constante no MESMO commit: é o que
+// permitirá distinguir quem aceitou o quê, no dia em que a tela de re-aceite
+// existir. A bateria exige que o app e as duas funções concordem.
+const PRIVACIDADE_VERSAO = "privacidade-2026-10-v1";
+
 const ALLOWED_ORIGINS = [
   "https://clubedotenisdemesabh.com.br",
   "https://www.clubedotenisdemesabh.com.br",
@@ -44,7 +74,7 @@ const ITERACOES = 100000;
 // ⚠️ ORDEM DE SUBIDA: o servidor passou a DEVOLVER mais, entao ele vai primeiro
 // (regra da casa no CLAUDE.md). O app tolera a ausencia do campo -- se ele vier
 // vazio a frase cai no texto sem motivo, nunca em "undefined".
-const COLS = "id,nome,telefone,apelido,federado,rating,rating_inicial,saldo_temp,status,chave,vitorias,derrotas,vitorias_total,derrotas_total,inscrito_em,pendente_circuito,ultima_recusa_circuito_em,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,wo_culposos_temporada,exclusao_solicitada_em,motivo_reprovacao";
+const COLS = "id,nome,telefone,apelido,federado,rating,rating_inicial,saldo_temp,status,chave,vitorias,derrotas,vitorias_total,derrotas_total,inscrito_em,pendente_circuito,ultima_recusa_circuito_em,foto_url,estilo_jogo,historico,rating_pico,rating_historico,posicao_historico,wo_culposos_temporada,exclusao_solicitada_em,motivo_reprovacao,privacidade_versao";
 
 function normTel(t: unknown): string {
   return String(t ?? "").replace(/\D/g, "");
@@ -445,6 +475,45 @@ Deno.serve(async (req) => {
         }
       }
 
+      // 5a) RECOLHE O ACEITE DE PRIVACIDADE — novo em 11/10/2026.
+      //
+      // O PARTICIPAR não colhia nenhum: `grep aceite_lgpd` nesta função dava
+      // ZERO. Quem entrava num 2º circuito por aqui carregava o recibo da
+      // inscrição original, que podia ser de meses antes e de outro texto.
+      // Foi exatamente o que aconteceu com os 3 atletas do 1º circuito pago:
+      // recibo de JULHO, colhido quando o texto dizia "não coletamos CPF", e
+      // deram CPF em outubro por este caminho.
+      //
+      // Fail-closed: sem aceite declarado não se cria vínculo. Entrar num
+      // circuito novo é tratamento novo de dado pessoal, e o consentimento tem
+      // de ser do texto de agora, não de um texto que a pessoa leu em julho.
+      if (!p.aceiteLGPD) {
+        return jsonResponse({ sucesso: false, erro: "aceite_privacidade_obrigatorio" }, 400);
+      }
+      // ⚠️ O ERRO É LIDO, e a recusa vem ANTES de criar o vínculo.
+      //
+      // A primeira versão desta escrita era `await ... .update(...)` sem
+      // `const { error }` — fail-OPEN seis linhas acima de um insert que confere
+      // (`if (eMem)`), e no mesmo bloco cujo comentário promete "sem aceite
+      // declarado não se cria vínculo". Se a escrita falhasse (esquema
+      // divergente, cache frio do PostgREST, RLS), o vínculo era criado e o
+      // RECIBO SE PERDIA EM SILÊNCIO — no artefato que esta onda existe para
+      // criar. Três guardiões acharam o mesmo defeito, independentemente
+      // (Confiabilidade F1, Segurança A1, Regulamento C2).
+      //
+      // E compõe com a ordem de publicação: enquanto a coluna não existir, esta
+      // escrita falha SEMPRE. Sem checar o erro, todo PARTICIPAR responderia
+      // sucesso sem carimbar nada.
+      const { error: eAceite } = await supabase.from("atletas").update({
+        aceite_lgpd: true,
+        data_aceite_lgpd: now,
+        privacidade_versao: PRIVACIDADE_VERSAO,
+      }).eq("id", a.id);
+      if (eAceite) {
+        console.error("PARTICIPAR: falha ao gravar o aceite de privacidade", eAceite);
+        return jsonResponse({ sucesso: false, erro: "falha_aceite_privacidade" }, 500);
+      }
+
       // 5) Cria o vínculo no circuito (pendente de inclusão pelo admin). NUNCA toca no rating nacional.
       const { error: eMem } = await supabase.from("circuito_atletas").insert({
         circuito_id: circuitoId, atleta_id: a.id,
@@ -528,8 +597,26 @@ Deno.serve(async (req) => {
     if (acao === "PRECO") {
       const atletaId = await atletaPorToken(body?.token);
       if (!atletaId) return jsonResponse({ sucesso: false, erro: "sessao_invalida" }, 401);
-      const { data: preco, error: ePreco } = await supabase.rpc("preco_temporada_atleta", { p_id: atletaId });
+      // O CIRCUITO É OBRIGATÓRIO, e fail-closed de propósito.
+      //
+      // Até 11/10/2026 esta ação não mandava circuito nenhum, e a função do banco
+      // não recebia — ela lia a `configuracao` legada do BH. Com o
+      // `desconto_global_pct = 100` que sobrou da temporada de teste gratuita, TODO
+      // atleta de TODO circuito via "R$ 0,00 (100% off)" enquanto o painel do
+      // organizador mostrava o valor de verdade. Dois dos três atletas do 1º
+      // circuito pago não pagaram, porque o app disse que não havia o que pagar.
+      //
+      // Sem circuito não se responde preço: inventar um (o do BH, como antes)
+      // é exatamente o defeito. 400 em vez de palpite.
+      const circuitoIdPreco = body?.circuitoId ? String(body.circuitoId) : "";
+      if (!circuitoIdPreco) return jsonResponse({ sucesso: false, erro: "circuitoId é obrigatório" }, 400);
+      const { data: preco, error: ePreco } = await supabase.rpc("preco_temporada_atleta", {
+        p_id: atletaId, p_circuito: circuitoIdPreco,
+      });
       if (ePreco) return jsonResponse({ sucesso: false, erro: "erro_preco" }, 500);
+      // `preco` vem null quando o atleta não tem vínculo com este circuito — a
+      // função não acha linha. A tela trata null ficando calada, que é o certo:
+      // quem não é do circuito não tem preço nele.
       return jsonResponse({ sucesso: true, dados: preco });
     }
 

@@ -12,7 +12,7 @@ Este arquivo é o **mapa do que existe**. Como mexer sem quebrar está no
 ```bash
 npm install          # só na primeira vez
 npm run dev          # abre o app na sua máquina, em localhost
-npm run teste        # a bateria: 1357 asserções sobre 6 Edge Functions de verdade
+npm run teste        # a bateria: 1930 asserções sobre 7 Edge Functions de verdade
 npm run build        # verifica se o app compila
 npm run lint         # confere o estilo do código
 ```
@@ -52,20 +52,31 @@ no mesmo projeto.** São dois produtos dividindo um banco.
 
 | Função | No ar | O que faz |
 |---|---|---|
-| `admin-action` | v62 | **O motor.** 46 ações do organizador — ver tabela abaixo. |
-| `athlete-action` | v21 | O que o atleta faz: `ENVIAR_PLACAR`, `INSCREVER`, `RENOVAR`, `ATUALIZAR_PERFIL`, `SOLICITAR_WO`, `CANCELAR_WO`, `SALVAR_BIO_CRED`, `SOLICITAR_EXCLUSAO`, `ACEITAR_REGULAMENTO`. |
-| `login-atleta` | v9 | Entrada e sessão: `LOGIN`, `LOGIN_ORGANIZADOR`, `DEFINIR_PIN`, `SESSAO`, `LOGOUT_SESSAO`, `PARTICIPAR` (entrar num 2º circuito), `PRECO`. |
-| `circuito-dados` | v4 | Porteiro de leitura de um circuito. Aberto serve a qualquer um; privado exige provar vínculo (PIN ou token). Devolve só colunas de exibição. |
+| `admin-action` | **v65** | **O motor.** **47** ações do organizador — ver tabela abaixo. ⚠️ **A v65 NÃO conhece `meses_temporada`**, e a tela que escolhe os meses **já está no ar** ⇒ ela responde "✓ Meses salvos" sem salvar. Defeito ativo; ver `CLAUDE.md` (Armadilhas) e `docs/ROADMAP.md` **1.3**. |
+| `athlete-action` | **v23** | O que o atleta faz: `ENVIAR_PLACAR`, `INSCREVER`, `RENOVAR`, `ATUALIZAR_PERFIL`, `SOLICITAR_WO`, `CANCELAR_WO`, `SALVAR_BIO_CRED`, `SOLICITAR_EXCLUSAO`, `ACEITAR_REGULAMENTO`. |
+| `login-atleta` | **v11** | Entrada e sessão: `LOGIN`, `LOGIN_ORGANIZADOR`, `DEFINIR_PIN`, `SESSAO`, `LOGOUT_SESSAO`, `PARTICIPAR` (entrar num 2º circuito), `PRECO`. |
+| `circuito-dados` | **v5** | Porteiro de leitura de um circuito. Aberto serve a qualquer um; privado exige provar vínculo (PIN ou token). Devolve só colunas de exibição. |
 | `despachos-do-dia` | v6 | Tela única de "o que fazer hoje" por papel. |
-| `comprovante-url` | v3 | Link assinado temporário para o comprovante de W.O. (bucket privado). Desde 27/09/2026 aceita o organizador do circuito, não só o super-admin. |
-| `anonimizar-atleta` | v1 | Direito de exclusão (LGPD). |
-| `resetar-pin-atleta` | v1 | Reset do PIN do atleta. |
-| `backup-clube-tenis-mesa` | v5 | Backup dos dados. |
+| `comprovante-url` | v3 | Link assinado temporário para o comprovante de W.O. (bucket privado). Desde 27/09/2026 aceita o organizador do circuito, não só o super-admin. ⚠️ **Só atende o bucket do W.O.** — o comprovante de **pagamento** não tem caminho (ROADMAP **1.7**). |
+| `anonimizar-atleta` | **v3** | Direito de exclusão (LGPD). ⚠️ **Não alcança a tabela `pagamentos`** (ROADMAP **1.5**). |
+| `resetar-pin-atleta` | v2 | Reset do PIN do atleta. |
+| `backup-clube-tenis-mesa` | **v7** | Backup dos dados. É a função que **apaga arquivos** (retenção de 6 meses). |
+| `arte` | v1 | ⚠️ **Órfã.** Apareceu no projeto em 29/09/2026 **sem pasta neste repositório** e sem dono documentado. Presumivelmente de outro produto — **confirmar antes de qualquer `--prune`**. |
 
 **Confira sempre com `npm run motor:listar`** — a coluna "no ar" acima é de
-**27/09/2026** (conferida ao vivo), e o código no repositório **rotineiramente** está
-à frente do que está rodando: o rito de subida roda com o código já commitado, antes
-de publicar. O `docs/CHANGELOG.md` diz o que está pendente de subir, e por quê.
+**12/10/2026** (conferida ao vivo pelo Curador), e o código no repositório
+**rotineiramente** está à frente do que está rodando: o rito de subida roda com o
+código já commitado, antes de publicar. O `docs/CHANGELOG.md` diz o que está pendente
+de subir, e por quê.
+
+⚠️ **E esta tabela é prova de que a frase acima não é teoria.** Até 12/10/2026 ela
+dizia **v62 / v21 / v9 / v4 / v1 / v1 / v5** e *"46 ações"* — ou seja **sete** números
+errados de uma vez, porque a publicação de 03/10/2026 (sete peças, ver
+`docs/CHANGELOG.md`) foi registrada **só na mensagem do commit `cdf8372`** e não
+chegou a documento nenhum. **O README é a porta de entrada do projeto**, então aqui o
+número velho custa mais caro que em qualquer outro lugar: quem fosse investigar um bug
+do motor começaria pela v62, três deploys atrás. **Não atualize esta tabela de
+memória — rode o comando.**
 
 ### As ações do `admin-action`
 
@@ -130,9 +141,12 @@ atleta paga para quem soubesse o id. Hoje a consulta passa pela ação `PRECO` d
 
 O `sistema` trava na criação do circuito e não muda depois.
 
-- **A — rating/CBTM** (o do BH, regulamento **v03-12** — existe uma versão
-  nova, **v03-13**, que tira o desconto de 80% na 2ª etapa; só passa a valer
-  no BH depois de carimbada na próxima virada, ver `docs/ROADMAP.md` 0.10.15).
+- **A — rating/CBTM** (o do BH, regulamento **v03-13** — ⛔ **corrigido em
+  12/10/2026**: esta linha dizia **v03-12** e que a v03-13 *"só passa a valer no BH
+  depois de carimbada na próxima virada"*. **O carimbo aconteceu**:
+  `circuitos.bh.regulamento_versao = v03-13`, com **4 aceites** no banco. A v03-13
+  tirou o desconto de 80% na 2ª etapa. ⇒ **v03-12 e v03-13 estão as duas congeladas**
+  pela regra 7. E o BH **encerrou** — ver o topo do `CLAUDE.md`).
   Rating permanente, ganho e perda pela tabela da CBTM conforme a diferença
   entre favorito e azarão. W.O. a favor rende **+8** ao beneficiado e o
   culposo custa **-15** ao faltoso — `admin-action/index.ts:805` e `:815`, no
@@ -154,7 +168,8 @@ tem rating.
 | Quem revisa o quê antes de publicar, e os vereditos passados | `docs/GOVERNANCA_AGENTES.md` |
 | O que já foi ao ar, com a versão da função | `docs/CHANGELOG.md` |
 | O que falta, e o que foi decidido não fazer | `docs/ROADMAP.md` |
-| As regras da competição | `docs/REGULAMENTO_TENIS_DE_MESA_v03-12.md` (BH, vigente) + `v03-13.md` (BH, próxima temporada); `docs/REGULAMENTOS_NOVOS_CIRCUITOS.md` (circuitos novos, A e B) |
+| As regras da competição | `docs/REGULAMENTO_TENIS_DE_MESA_v03-13.md` (**BH, vigente** — carimbada, 4 aceites) + `v03-12.md` (**histórico**, intocado de propósito); `docs/REGULAMENTO_vB-01.md` (Sistema B, **gerado** do app, **congelado**: 3 aceites); `docs/REGULAMENTOS_NOVOS_CIRCUITOS.md` (texto de `vA-nc-01`) |
+| ⛔ **Antes de editar QUALQUER regulamento** | `CLAUDE.md`, regra 7 — rode a consulta de aceites e **recuse** mexer em versão que apareça. Hoje **v03-12, v03-13 e vB-01 estão todas congeladas** |
 
 ## Pontas soltas conhecidas
 
@@ -173,19 +188,25 @@ Levantadas ao mapear o banco em 07/09/2026, sem decisão tomada:
 - **`partidas_historico` sem chave primária** — nada impede a mesma partida
   arquivada duas vezes.
 - **A bateria cobre o servidor, não o front.** `npm run teste` carrega e executa
-  **SEIS Edge Functions de verdade** — `admin-action` (o grosso),
+  **SETE Edge Functions de verdade** — `admin-action` (o grosso),
   `athlete-action`, `comprovante-url`, `login-atleta` (este no
   `PARTICIPAR` e, desde 29/09/2026, no `SESSAO`; `LOGIN` e `RENOVAR` seguem
-  descobertos), `circuito-dados` e `anonimizar-atleta` (as duas passaram a rodar
-  de verdade em 29/09/2026, nas rodadas de guardiões). São **1357 asserções** em
-  29/09/2026, noite — **confira rodando, não cite
-  de memória**: este número mudou em **quatorze** ondas seguidas, e ficou errado por
-  9 vezes aqui (esta linha dizia **627** enquanto a bateria já passava de mil, e
-  dizia **1149** algumas horas depois de a bateria chegar a 1357). Ver
-  `testes/README.md`.
+  descobertos), `circuito-dados`, `anonimizar-atleta` (as duas passaram a rodar
+  de verdade em 29/09/2026, nas rodadas de guardiões) e **`backup-clube-tenis-mesa`**
+  (desde 01/10/2026, 31 asserções — é a que **apaga arquivos**). São **1930
+  asserções** em **18 seções**, conferidas em 12/10/2026 — **confira rodando, não
+  cite de memória**: este número mudou em **quinze** ondas seguidas, e ficou errado
+  **10** vezes aqui (esta linha dizia **627** enquanto a bateria já passava de mil,
+  **1149** horas depois de ela chegar a 1357, e **1357** por treze dias enquanto ela
+  ia a 1930). *(E "SEIS" também estava errado: o commit que acrescentou a
+  `backup-clube-tenis-mesa` a chamou de "a sexta função", contando as da onda e não
+  as da bateria.)* Ver `testes/README.md` — ⚠️ **cuja tabela está incompleta**: lista
+  17 dos 23 arquivos (ver `docs/curadoria-log.md`, 12/10, com o texto pronto).
   **O front (`src/App.jsx`) quase não é executado por teste**: o que existe são
   checagens por regex no texto fonte, que registram que um trecho está lá e **não**
-  provam comportamento. As **duas** exceções são funções **puras** extraídas do
-  fonte e executadas de verdade — `janelaRenovacao` (a conta da janela de renovação)
-  e `circuitoTemTorneio` (a versão do regulamento decide se há torneio). As quatro
-  condições para repetir a técnica estão no `CLAUDE.md`.
+  provam comportamento. As **três** exceções são funções **puras** extraídas do
+  fonte e executadas de verdade — `janelaRenovacao` (a conta da janela de renovação),
+  `circuitoTemTorneio` (a versão do regulamento decide se há torneio) e o par de
+  tradutores `mapAtletaFromDb` + `mapAtletaFromCircuito` (que o pedido de exclusão
+  LGPD chegue à tela). As quatro condições para repetir a técnica estão no
+  `CLAUDE.md`. Conte os recortes com `grep -n 'new Function' testes/*.mjs`.

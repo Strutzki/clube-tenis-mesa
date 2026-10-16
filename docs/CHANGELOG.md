@@ -5,7 +5,199 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-10-11/12 — 🟡 **RASCUNHO, NÃO PUBLICADA** — a onda da INSCRIÇÃO (piloto real do CIRCUITO BH 2)
+
+> 🟡 **ESTA ENTRADA É RASCUNHO. NADA DELA ESTÁ NO AR.** Ela existe para o Juliano
+> **só datar no dia** em que autorizar a subida. Enquanto este aviso estiver aqui,
+> o que os atletas usam é o que está na entrada **2026-10-03** abaixo.
+> Ao publicar: trocar este bloco pela data real, conferir cada versão com
+> `npm run motor:listar` e **colar o número que o comando devolveu**, não o esperado.
+
+**Árvore medida por mim (Curador) em 12/10/2026**, sobre `HEAD 0cdb524`, 6 arquivos
+modificados + 2 migrações novas. **Bateria: 1930 asserções, 0 falhas, 18 seções,
+saída 0** — somada seção a seção por mim (8+57+27+45+35+24+11+16+24+559+36+210+658
++31+36+63+59+31), não copiada do resumo. `npm run build` ✓ (`index-CzwbsHYY.js`,
+754,67 kB).
+
+#### O QUE MUDA
+
+1. **O defeito de dinheiro.** `preco_temporada_atleta` não recebia circuito e lia a
+   `configuracao` **legada do BH** — com o `desconto_global_pct = 100` que sobrou da
+   temporada de teste gratuita. Todo atleta de todo circuito via **R$ 0,00 (100% off)**
+   com a chave PIX abaixo, enquanto o painel do organizador mostrava **R$ 50,00**. A
+   mesma tela de pagamento, dois números. **2 dos 3 atletas do bh2 não pagaram** — não
+   ignoraram o pedido, o app disse que não havia o que pagar.
+2. **O texto de consentimento já tinha sido alterado em produção sem versão e sem
+   re-aceite.** Em 05/08/2026 (`git show 2a8938d`, o último commit a tocar o `App.jsx`
+   antes do último aceite) ele dizia *"Não coletamos **CPF**, endereço, e-mail ou dados
+   financeiros"*; hoje diz *"Não coletamos endereço, e-mail ou dados financeiros"*. A
+   palavra **CPF foi apagada quando o app passou a coletar CPF**. **15 pessoas seguram
+   esse recibo**, e ele resolve para um texto oposto ao que leram, justamente sobre o
+   dado mais sensível. *(Atenuante conferido por mim no banco: nenhum dos 15 tem CPF
+   guardado; os 3 que deram CPF têm consentimento específico versionado, com data e IP.
+   O incoerente é o recibo, não a prática.)*
+3. **Nasce `atletas.privacidade_versao`** + a constante `PRIVACIDADE_VERSAO =
+   "privacidade-2026-10-v1"` nas **três** pontas (`src/App.jsx:92`,
+   `athlete-action`, `login-atleta`), **carimbada pelo servidor** — não pelo cliente,
+   ao contrário do `cpfConsentVersao`. Os 15 antigos **ficam NULL de propósito**:
+   preenchê-los seria inventar um fato.
+4. **`PARTICIPAR` passa a colher aceite de privacidade** — antes não colhia **nenhum**
+   (`grep aceite_lgpd` no `login-atleta` dava zero). Quem entrava num 2º circuito
+   carregava o recibo da inscrição original. Foi o que aconteceu com os 3 atletas do
+   bh2: recibo de **julho**, e CPF dado em **outubro** por este caminho. Agora é
+   **fail-closed** (400 `aceite_privacidade_obrigatorio`).
+5. **A inscrição vai de 3 passos para 2**, e o **PIN passa a ser criado no fim**, com
+   os próximos passos numerados na tela.
+
+#### O QUE ELE VAI NOTAR
+
+O atleta do bh2 passa a ver **R$ 50,00**, o mesmo número do painel. A inscrição tem
+**um passo a menos** e termina criando o PIN. Quem entra num 2º circuito passa a ver
+**uma caixa de aceite de privacidade** e não consegue concluir sem marcá-la.
+**No BH nada muda** — ele encerrou, e `meses_temporada` dele segue `null`.
+
+#### O QUE SOBE — QUATRO PEÇAS, NESTA ORDEM
+
+| # | Peça | De → Para | Por que nesta posição |
+|---|---|---|---|
+| 1 | `docs/migracoes/2026-10-11-preco-por-circuito.sql` | cria `preco_temporada_atleta(uuid,uuid)`; **mantém** a de 1 arg | Puramente **aditiva**. A de 1 argumento fica de pé porque o `login-atleta` v11 no ar a chama — apagá-la aqui derrubaria o preço de todos até a v12 subir |
+| 2 | `docs/migracoes/2026-10-11-versao-do-consentimento.sql` | `alter table atletas add column privacidade_versao` | **Tem de preceder os dois edges**: o `COLS` do `login-atleta` v12 **nomeia** a coluna, e o `INSCREVER` do `athlete-action` v24 **escreve** nela. Subir o edge antes da coluna quebra a leitura do login |
+| 3 | **APP** (`git push` → Vercel, ~1 min) | `0cdb524` + estes 6 arquivos → commit novo | **O servidor passou a EXIGIR mais** ⇒ app primeiro (regra do `CLAUDE.md`). Conferido por mim, não presumido: a v12 recusa `PRECO` sem `circuitoId` (400) e `PARTICIPAR` sem `aceiteLGPD` (400) — e o app `0cdb524` que está no ar **não manda nenhum dos dois**. Subir a v12 antes do app quebraria a tela de preço e o `PARTICIPAR` |
+| 4 | `npm run motor:publicar -- login-atleta` | **v11 → v12** | Último dos que exigem. O app novo já manda `circuitoId` e `aceiteLGPD`; o motor v11 **ignora** campos que não conhece, então o app novo tolera o motor velho (inerte: o preço segue errado até este passo) |
+| 5 | `npm run motor:publicar -- athlete-action` | **v23 → v24** | Tolera os dois lados: só acrescenta o carimbo ao `insert` do `INSCREVER`. Pode ir junto com o 4 |
+
+Depois de **cada** função: `npm run motor:conferir` (tem de dar `0 divergencias`).
+
+⚠️ **ANTES DO PASSO 1, salvar o fonte do ar** de `login-atleta` e `athlete-action` em
+`docs/backups/motor-no-ar-2026-10-12/` — **não há rollback de Edge Function**, e a
+`login-atleta` v11 **nunca foi publicada deste repositório** (ver a entrada de 03/10:
+o `entrypoint_path` dela aponta para este repo desde 29/09, mas a v11 é de 28/09).
+
+#### CONFERÊNCIA DEPOIS DE SUBIR (o número tem de bater com o do painel)
+
+```sql
+select ca.circuito_id,
+       preco_temporada_atleta(ca.atleta_id, ca.circuito_id) as atleta_ve,
+       (select valor_temporada from circuitos where id = ca.circuito_id) as admin_ve
+from circuito_atletas ca
+where ca.circuito_id = (select id from circuitos where slug = 'bh2');
+-- esperado: preco_final_cent = 5000 nos três, admin_ve = 5000
+
+select privacidade_versao, count(*) from atletas group by 1;
+-- esperado NO MOMENTO DA SUBIDA: 15 linhas NULL, nenhuma com versão
+```
+
+#### RISCO E VOLTA ATRÁS
+
+- A migração 1 é aditiva: reverter é `drop function preco_temporada_atleta(uuid,uuid)`.
+- A migração 2 é aditiva e **sem grant ao `anon`** — medido: `atletas` tem grant
+  **coluna a coluna**, então coluna nova **não** é herdada pelo visitante e **não**
+  dispara a armadilha nº 1. Reverter é `alter table atletas drop column
+  privacidade_versao` (perde os carimbos novos).
+- App: `git revert` do commit e novo push.
+- Edges: **não há rollback** — "voltar" é republicar o fonte salvo no backup acima,
+  criando v13/v25. O número sempre sobe.
+
+#### ⚠️ DECISÃO QUE PRECISA DO JULIANO, E NÃO ESTÁ NAS QUATRO PEÇAS
+
+O **`admin-action` fica em v65** nesta onda — e a v65 **é a que ignora
+`meses_temporada`** (ver o episódio na entrada de 03/10 abaixo e em `CLAUDE.md`,
+Armadilhas). O conserto já está **commitado no fonte** desde `9da18e4` e **nunca foi
+publicado**. Enquanto o `admin-action` não for a **v66**, a tela de meses que já está
+no ar continua respondendo **"✓ Meses salvos"** sem salvar nada. **Com a 1ª etapa em
+01/11/2026, isto desloca o prazo de rodadas de atletas reais.** Subir junto é uma
+peça a mais na ordem (pode ser a de nº 5, pois o app no ar já manda o campo e a v66
+passa a **aceitá-lo** — o servidor passa a *aceitar* mais, não a exigir), e é decisão
+dele, não minha.
+
+---
+
+### 2026-10-03 — ✅ **NO AR**: os 7 passos da onda do 2º circuito, a queda de 9 minutos, e a tela dos meses
+
+> 📌 **Entrada escrita retroativamente pelo Curador em 12/10/2026.** Ela **faltava**:
+> a publicação de 03/10 vivia só na **mensagem do commit `cdf8372`** e no
+> `docs/ROTEIRO-PUBLICAR-onda-2o-circuito.md`, e **não** neste arquivo — enquanto a
+> entrada de 29/09 (então a do topo) seguia afirmando *"⛔ NADA DISTO ESTÁ NO AR …
+> admin-action v64, athlete-action v22, circuito-dados v4, anonimizar-atleta v2"*.
+> Quem abrisse o CHANGELOG entre 03/10 e 12/10 lia as **versões erradas** do que está
+> no ar. É a regra 5 do `CLAUDE.md` (*"registrar no `docs/CHANGELOG.md` com a versão
+> da função que subiu"*) não cumprida. Corrigido aqui.
+
+**PUBLICADO EM 03/10/2026** (declarado em `cdf8372`, e **reconferido ao vivo por mim
+em 12/10/2026** com `npm run motor:listar`):
+
+| Função | Subiu | Conferido ao vivo 12/10 | `updated_at` real |
+|---|---|---|---|
+| `circuito-dados` | v4 → **v5** | **v5** ✓ | 03/10 07:26:39 |
+| `anonimizar-atleta` | v2 → **v3** | **v3** ✓ | 03/10 07:26:54 |
+| `admin-action` | v64 → **v65** | **v65** ✓ | 03/10 **07:27:49** |
+| `athlete-action` | v22 → **v23** | **v23** ✓ | 03/10 07:28:24 |
+| `backup-clube-tenis-mesa` | v6 → **v7** | **v7** ✓ | 03/10 07:29:38 |
+| APP | `4b4b740..fe6f921` (Vercel) | hoje em **`0cdb524`** (`origin/main` = `HEAD`) | — |
+| migração | `2026-10-01-fechar-acesso-dado-saude.sql` aplicada | — | — |
+
+`npm run motor:conferir` deu `0 divergencias` depois de **cada** função. Produção
+intacta: 15 atletas, 15 vínculos, 34 partidas, 12 pagamentos, 5 solicitações,
+**0 linhas com texto de saúde**. O pacote no ar foi conferido por **identidade de
+conteúdo**, não por inferência de versão.
+
+**O passo 7 do roteiro estava errado, e o erro é instrutivo:** `revoke select
+(coluna)` **não** remove um grant de **TABELA**. O `anon` tinha SELECT na tabela
+inteira ⇒ o SQL **reportou sucesso e não fez nada** (`has_column_privilege` seguiu
+`true`). *Sucesso sem efeito, em produção* — pego pela conferência, não pelo retorno
+do comando. É a mesma família do "verde vazio" que a onda inteira perseguiu, agora do
+lado do banco. O que funcionou: tirar o grant de **tabela** e devolver só as 14
+colunas que o app lê.
+
+#### ⛔ PRODUÇÃO FORA DO AR POR 9 MINUTOS — 03/10/2026, 20:55
+
+Não estava registrado em lugar nenhum além da mensagem de `43a55f8`. **A armadilha
+nº 1 do `CLAUDE.md` disparou de verdade, pela segunda vez** (a 1ª foi 07/09/2026):
+acrescentar a coluna `circuitos.meses_temporada` fez **toda** tela responder
+`permission denied for table circuitos` (42501), porque `db.getConfig()` lia
+`circuitos?id=eq.X` **sem lista de colunas** ⇒ `SELECT *` ⇒ o `anon` tem grant **por
+coluna** nessa tabela ⇒ coluna nova nasce sem grant ⇒ o PostgREST recusa a leitura
+**inteira**.
+
+**O Supervisor do Admin apontou exatamente este ponto em 29/09** — *"o `db.getConfig()`
+é o último `circuitos?id=eq.X` sem lista de colunas"* — e a resposta de então foi
+*"não consegui demonstrar quebra, então classifico como endurecimento, não como
+defeito"*. Foi demonstrado quatro dias depois, em produção. **Lição registrada em
+`docs/GOVERNANCA_AGENTES.md`:** *"não consegui demonstrar" mede a sonda, não a
+ausência do defeito.*
+
+**Consertos (`43a55f8`, no ar):** `getConfig` passou a **nomear as 25 colunas**;
+grant imediato em `meses_temporada` às **20:58**; as três escritas de
+`solicitacoes_wo` ganharam `return=minimal`.
+
+⚠️ **E o grant das 20:58 não tem arquivo de migração.** Conferido por mim no banco em
+12/10: a coluna `circuitos.meses_temporada` existe, o `anon` **tem** SELECT nela, e
+existe o CHECK `meses_temporada_valido` — **mas não há nenhum `.sql` em
+`docs/migracoes/` que registre nada disso** (a pasta tem 3 arquivos, nenhum sobre
+meses). Mudança de schema em produção sem registro versionado; ver ROADMAP **1.9**.
+
+**Depois de `fe6f921` o app ainda andou e foi empurrado** (`origin/main` = `HEAD` =
+`0cdb524`, conferido por mim): `7f8a42f` (o botão de criar circuito passa a dizer o
+que falta — **achado em uso real pelo Juliano**, não pela auditoria, depois de 8
+duplas passarem pela tela), `696b220` (os dois cards do Painel que se contradiziam),
+`43a55f8` (acima) e `0cdb524` (a tela dos três meses). **`git push` é publicar** ⇒
+**tudo isso está no ar.**
+
+⚠️ **E é aí que nasce o episódio dos meses** — detalhe completo em `CLAUDE.md`,
+Armadilhas, e no ROADMAP **1.3**. Em uma linha: o **app** da tela dos meses está no
+ar; o **motor** que entende o campo (`9da18e4`, 03/10 **20:55:39**) é **13h28
+posterior** ao deploy da `admin-action` v65 (03/10 **07:27:49**) e **nunca subiu**.
+
+---
+
 ### 2026-09-29 (noite) — ⛔ NO FONTE, **NÃO NO AR**: as quatro rodadas de guardiões, os dois NO-GO e as decisões do Juliano
+
+> ⚠️ **CORREÇÃO DO CURADOR, 12/10/2026 — O PARÁGRAFO ABAIXO FICOU FALSO EM 03/10.**
+> **Tudo isto FOI PARA O AR em 03/10/2026** (ver a entrada de 2026-10-03 acima), e
+> este bloco seguiu nove dias afirmando o contrário, no **topo** do arquivo. As
+> versões citadas abaixo (**v64 / v22 / v4 / v2 / v6**) são as de **antes** de 03/10:
+> hoje são **v65 / v23 / v5 / v3 / v7**, conferidas ao vivo por mim. O texto fica
+> como registro do que era verdade em 29/09 — **não o leia como o estado de hoje.**
 
 ⛔ **NADA DISTO ESTÁ NO AR.** Declarado em todos os oito commits ("Nada no ar") e
 inalterado desde a entrada anterior: o que os atletas usam agora é **`admin-action` v64**,

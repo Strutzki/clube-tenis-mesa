@@ -2,6 +2,149 @@
 
 Regra permanente: **nenhuma fase do desenvolvimento do multi-circuito vai a produção sem a revisão supervisionada do(s) agente(s) relevante(s), com veredito documentado, ANTES do OK do Juliano e do deploy.** Esta é a disciplina que o Juliano cobrou; vale daqui pra frente.
 
+## REGRAS NOVAS, 11-12/10/2026 — a onda da INSCRIÇÃO (piloto real do `bh2`)
+
+*(Registradas pelo Curador. As três primeiras são de método de **asserção**; a
+quarta é de **conteúdo** e foi formulada pelo Guardião Jurídico; a quinta é a
+lição que a queda de produção de 03/10 cobrou.)*
+
+### (a) Asserção cuja janela abrange o texto DUAS vezes passa pelo motivo errado
+
+**O caso.** A asserção da frase *"não são vendidos nem compartilhados **com
+terceiros**"* da tela de privacidade. A janela do recorte pegava um trecho do fonte
+onde a expressão aparecia **duas vezes** — na frase nova e em outro ponto. A
+asserção ficava **verde** mesmo removendo a frase que ela existia para proteger,
+porque a **outra** ocorrência a satisfazia. **Foi pega por MUTAÇÃO, não por
+leitura** — ler a asserção não revela o problema; só sabotar a linha revela.
+
+**A regra:** *antes de confiar numa asserção de fonte, conte quantas vezes o padrão
+ocorre DENTRO da janela.* Se ocorrer mais de uma, a asserção não aponta para o que
+você pensa. Duas saídas: estreitar a janela até a ocorrência ser única, ou afirmar
+**a contagem** (`=== 2`) em vez da presença. Presença (`indexOf !== -1`) num texto
+com repetição é a asserção mais fácil de escrever e a mais fácil de passar pelo
+motivo errado.
+
+⚠️ Isto é o **sétimo** episódio da mesma família no projeto — depois de "a asserção
+casava a frase do regulamento, não a do card" (28/09), "casava uma referência dentro
+do `.map()`" (29/09), "olhava os pontos de chamada e a sabotagem morava dentro da
+função" (29/09) e "a regex negativa proibia uma redação que não existia" (29/09).
+**O padrão é sempre o mesmo: a asserção estava verde por um motivo diferente do que
+o autor acreditava.** A única defesa que funcionou em todos os sete foi a mutação.
+
+### (b) Mover uma guarda de passo pode deixá-la DEPOIS do `return` que ela deveria preceder
+
+**O caso.** A inscrição foi de 3 passos para 2, e uma guarda viajou junto com o
+código. Na posição nova ela ficou **depois** do `return` que deveria proteger — ou
+seja, inalcançável. **Pega por asserção de ORDEM**, não por asserção de presença: a
+guarda continuava **existindo** no arquivo (toda asserção de presença seguia verde)
+e simplesmente não rodava mais.
+
+**A regra:** *refatoração que move passos de fluxo exige asserção de ORDEM, não de
+presença.* Quando o que protege é a **posição** de uma linha, a asserção tem de
+afirmar a posição — `indexOf(guarda) < indexOf(return)` — e não que a linha está
+lá. É a mesma lição que o projeto já aprendeu em `INICIAR_ETAPA`, onde a mutação
+"a guarda migra para DEPOIS de o motor saber o sistema" derruba **10** asserções
+justamente porque *"é a posição dela que a torna transversal aos dois sistemas"*
+(`testes/README.md`). A lição existia e não foi aplicada a uma refatoração de tela.
+
+### (c) Medidor de mutação que conta linhas de falha reporta "0" quando a bateria ABORTA
+
+**O caso.** Uma sabotagem quebrava o arquivo de teste antes de ele imprimir
+qualquer "Falhas:". O aferidor contava **linhas de falha**, achava zero, e reportava
+**verde** — para um arquivo que nem rodou.
+
+**A regra:** *o veredito de uma mutação é o CÓDIGO DE SAÍDA, não a contagem de
+linhas de falha.* Saída ≠ 0 é **vermelho**, inclusive (e principalmente) quando
+nenhuma falha foi impressa: leitura vazia é **falha de medição**, não resultado.
+
+⚠️ **Esta é a TERCEIRA vez que o projeto registra esta mesma regra**, e é por isso
+que ela está aqui em vez de numa tabela de teste: (1) 27/09 — o portão do
+`atualizar.sh` cego para 68% da bateria, porque `placar()` **devolve** e não sai do
+processo; (2) 28/09 — duas sabotagens verdes no aferidor velho pelo mesmo mecanismo,
+consertadas "nos dois lados"; (3) agora. **E é a mesma família do `curl` sem `-L`**
+(que trata string vazia como "é a versão antiga") e do `revoke select (coluna)` de
+03/10 (que **reportou sucesso e não fez nada**). Toda vez o erro é **tratar ausência
+de sinal como sinal de ausência**. Qualquer instrumento novo deste projeto — aferidor,
+verificador de deploy, script de migração — nasce com a pergunta: *o que este
+instrumento responde quando não conseguiu medir?* Se a resposta for igual à do caso
+bom, o instrumento está errado.
+
+### (d) O resumo pode prometer MENOS que a política, nunca MAIS
+
+*(Guardião Jurídico, 11/10/2026. Convenção de conteúdo, não de teste.)*
+
+O app mostra ao atleta um **resumo** de privacidade na tela de inscrição, e existe
+uma **política** completa (`docs/POLITICA_PRIVACIDADE.md`). Os dois podem divergir
+em **extensão** — o resumo é resumo — mas **nunca em força da promessa**. Resumo que
+promete mais que a política é promessa que a política não sustenta, e é o atleta
+que leu o resumo.
+
+**Por que isto nasceu como regra:** o defeito que originou a onda foi exatamente
+este. A frase *"Não coletamos CPF, endereço, e-mail ou dados financeiros"* prometia
+**mais** do que o produto cumpria, e o conserto aplicado em 05/08/2026 foi **apagar
+a palavra CPF** do resumo — em produção, sem versão nova e sem re-aceite, com 15
+pessoas segurando o recibo. Ver ROADMAP **1.4** (a promessa "dados financeiros"
+ainda é imprecisa hoje) e **1.6** (a política mais correta não está servida em lugar
+nenhum do app).
+
+**Corolário verificável:** enquanto os dois textos não estiverem travados por
+asserção, esta convenção é **combinada, não verificada** — e o projeto já sabe o que
+acontece com regra combinada. Ver ROADMAP **1.6**.
+
+### (e) "Não consegui demonstrar" mede a SONDA, não a ausência do defeito
+
+*(Lição cobrada em produção. Registrada aqui porque é de governança: ela diz o que
+um coordenador deve fazer com o achado de um supervisor.)*
+
+**O caso.** Em **29/09/2026** o **Supervisor do Admin** apontou: *"o `db.getConfig()`
+é o último `circuitos?id=eq.X` sem lista de colunas, ou seja um `SELECT *` na tabela
+da armadilha nº 1"*. A resposta do coordenador, nestas palavras: *"Não consegui
+demonstrar quebra, então classifico como endurecimento, não como defeito."*
+
+**Em 03/10/2026, às 20:55, isso derrubou a produção inteira por 9 minutos** — toda
+tela respondendo `permission denied for table circuitos` —, disparado por
+acrescentar a coluna `meses_temporada`.
+
+**A regra:** quando um supervisor aponta um **mecanismo** e o coordenador não
+consegue dispará-lo, o resultado da tentativa é informação sobre a **tentativa**.
+Rebaixar o achado de "defeito" para "endurecimento" por falha de reprodução é
+inverter o ônus. **Mecanismo nomeado + armadilha conhecida e já realizada uma vez
+(07/09/2026) = defeito**, até que alguém prove o contrário. "Não reproduzi" vai no
+parecer como **limite da medição**, não como veredito.
+
+### (f) Asserção de PARIDADE entre app e motor não sabe qual versão está no ar
+
+*(Formulada pelo Curador em 12/10/2026, ao rastrear o episódio dos meses.)*
+
+**O caso.** O commit `0cdb524` acrescentou **14 asserções** que, segundo ele mesmo,
+cobrem *"o CAMINHO INTEIRO — banco → leitura → estado → reducer → tela → ação do
+motor"*, incluindo *"a asserção de que o nome do campo bate dos dois lados: se a
+tela mandar `mesesTemporada` e o motor ler outro nome, ela salva no vazio e ninguém
+percebe"*. O raciocínio está certo e a asserção está certa. **Todas as 14 estão
+verdes.** E a tela **salva no vazio** hoje, em produção, dizendo "✓ Meses salvos".
+
+**Por quê.** A asserção compara `src/App.jsx` com
+`supabase/functions/admin-action/index.ts` — **dois arquivos do repositório**. O que
+está no ar é a **v65**, publicada **13h28 antes** do commit que ensinou o motor a
+ler o campo, e o corpo dela não contém a string `meses_temporada` nenhuma vez
+(verificado via `get_edge_function`). A asserção provou paridade **fonte-fonte** e
+foi lida como paridade **app-no-ar ↔ motor-no-ar**.
+
+**A regra:** *asserção de paridade prova que os dois LADOS DO REPOSITÓRIO
+concordam — nunca que o que está no ar concorda com eles.* Ela é necessária e não é
+suficiente. Quando uma mudança depende das duas metades, o parecer tem de carregar
+**a versão no ar da metade que não sobe no mesmo comando**, obtida de
+`npm run motor:listar` (ou do corpo da função), e dizer explicitamente: *"esta
+asserção cobre o fonte; no ar a função é vXX e ela [conhece / não conhece] o campo"*.
+
+**Corolário operacional, que é o que faz esta regra valer a pena:** o `atualizar.sh`
+publica o **app** e **não** publica Edge Function. Logo **toda** mudança que
+atravessa app↔motor tem uma janela em que as duas metades discordam — e o motor
+velho **ignora campos que não conhece em silêncio**, o que torna essa janela
+**invisível na tela**. Antes de fechar o parecer de qualquer fatia app↔motor,
+responda a pergunta do `CLAUDE.md` com o código **que está no ar**, não com o do
+repositório: *o que acontece se esta subir e a outra ainda não?*
+
 ## REGRA NOVA, 29/09/2026 — a MEDIÇÃO também pode rodar o motor de verdade e medir a coisa errada
 
 *(Redação do Guardião de Regulamento, adotada.)*

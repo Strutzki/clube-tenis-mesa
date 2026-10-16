@@ -13,6 +13,220 @@
 > a cópia original (mais abaixo, sob "2026-09-05 — Bootstrap da curadoria...")
 > é a que fica.
 
+## 2026-10-12 — A onda da INSCRIÇÃO (piloto real do `bh2`), e o buraco de 13 dias no acervo
+
+**Árvore:** `HEAD 0cdb524` + 6 modificados + 2 migrações novas. **Os 8 hashes md5
+batem** com a lista do coordenador, conferidos no início e **reconferidos no fim**.
+**Editei apenas `docs/` e `CLAUDE.md`** — `src/`, `supabase/` e `testes/` estavam
+congelados como prova da rodada e **não foram tocados** (`git status` no fim confirma).
+
+**Medido por mim, não citado:** bateria **1930 asserções / 0 falhas / 18 seções /
+saída 0**, somando seção a seção (8+57+27+45+35+24+11+16+24+559+36+210+658+31+36+63
++59+31). `npm run build` ✓. Versões no ar por `npm run motor:listar`. Corpo da
+`admin-action` **no ar** lido por `get_edge_function`. Aceites, colunas, grants,
+CHECK e `meses_temporada` lidos do banco.
+
+### ⛔ O buraco: a curadoria parou em 29/09 e o projeto não
+
+A entrada anterior deste log é de **29/09**. Entre ela e hoje: a onda de 01/10, **a
+publicação de 03/10** (7 passos, **foram ao ar**), **uma queda de produção de 9
+minutos**, quatro commits de app **empurrados** e a onda da inscrição. **Nada disso
+estava no acervo.** O efeito prático é o pior possível para um índice: o
+`CHANGELOG.md` tinha no **topo** um bloco afirmando *"⛔ NADA DISTO ESTÁ NO AR …
+admin-action v64, athlete-action v22, circuito-dados v4, anonimizar-atleta v2"* —
+**nove dias depois de tudo isso ter subido**. Quem consultasse para investigar um
+bug do motor começaria pela versão errada, que é exatamente o que a armadilha "o
+fonte pode não ser o que está no ar" exige evitar.
+
+**Causa, e ela não é esquecimento:** a publicação de 03/10 **foi** registrada — na
+**mensagem do commit `cdf8372`** e no `docs/ROTEIRO-PUBLICAR-onda-2o-circuito.md`.
+Só não foi para o `CHANGELOG.md`, que é o lugar que a regra 5 do `CLAUDE.md` nomeia.
+Registro em mensagem de commit **não é** registro no acervo: ninguém abre `git log`
+para saber o que está no ar.
+
+### Drift corrigido (rotina de baixo risco — feito)
+
+| # | O que estava escrito | A verdade de hoje | Onde |
+|---|---|---|---|
+| 1 | "NADA ESTÁ NO AR: v64/v22/v4/v2/v6" (topo do CHANGELOG) | **subiu tudo em 03/10**; v65/v23/v5/v3/v7 | `CHANGELOG.md` (entrada nova + aviso no bloco de 29/09) |
+| 2 | *nenhuma entrada* para a publicação de 03/10 | 7 passos no ar + **queda de 9 min** | `CHANGELOG.md` (entrada retroativa) |
+| 3 | "admin-action v64 … circuito-dados v4" | 8 funções reconferidas ao vivo, com `updated_at` | índice §2 |
+| 4 | "o `vB-01` tem **ZERO** aceites ⇒ pode editar **no lugar**" | **3 aceites reais** ⇒ CONGELADO | índice, `CLAUDE.md` regra 7, ROADMAP 1.2 |
+| 5 | "a v03-13 **ainda não é** a versão do BH" | **é**, com 4 aceites | índice |
+| 6 | bateria "1357, **13** seções" | **1930, 18** seções | `CLAUDE.md`, índice, ROADMAP 0.1 |
+| 7 | "**SEIS** Edge Functions" | **SETE** (faltava `backup-clube-tenis-mesa`) | `CLAUDE.md`, índice |
+| 8 | "**DUAS** funções puras do app" | **três recortes** (`new Function` ×3) | `CLAUDE.md`, índice |
+| 9 | "São **46** ações no `switch`" | **47** — a nova é `LER_JUSTIFICATIVA_WO` | `CLAUDE.md` |
+| 10 | "nenhum 2º circuito real rodou; 1 circuito no banco" | **2 circuitos**, `bh2` com 3 atletas reais | ROADMAP "Onde estamos" |
+| 11 | `docs/migracoes/` fora do inventário | 3 arquivos, **1 aplicada / 2 não** | índice |
+| 12 | `POLITICA_PRIVACIDADE.md` listada como referência viva | existe e **não é servida pelo app** | índice, ROADMAP 1.6 |
+| 13 | `files.zip` "sinalizado 3ª vez" | **4ª vez**, e está **versionado** no git | índice |
+
+### ⛔ Drift que eu NÃO podia corrigir — `testes/README.md`
+
+**Fui incumbido de conferir a contagem E a tabela, que são duas verificações — e as
+duas falharam.** Não apliquei o conserto: o arquivo está em `testes/`, fora do meu
+mandato nesta rodada. **Texto pronto para quem puder aplicar:**
+
+1. **A tabela lista 17 arquivos; existem 23.** Fora dela: `ataques.mjs`,
+   `ataques2.mjs`, `ataques3.mjs`, `ataques4.mjs`, `backup.mjs`, `mutar.mjs`.
+   Reproduza com:
+   `for f in testes/*.mjs; do grep -q "\`$(basename $f)\`" testes/README.md || echo "FORA: $f"; done`
+   Os cinco primeiros valem **189 + 31 = 220 asserções** — as quatro seções de
+   ataque dos Guardiões de Segurança **e** a sétima Edge Function
+   (`backup-clube-tenis-mesa`, a que **apaga arquivos**). O `mutar.mjs` é o
+   **aferidor de mutação**: a ferramenta de que depende a regra "todo teste novo
+   nasce com teste de mutação" está **indocumentada**.
+   **Linhas a acrescentar:**
+   - `` | `ataques.mjs` … `ataques4.mjs` | As quatro rodadas de ataque dos Guardiões de Segurança (36 + 63 + 59 + 31 = 189 asserções): escopo de circuito na escrita e na leitura, o `DELETE` do `INSCREVER`, `APLICAR_WO` com `faltosoId` arbitrário, a projeção de colunas, a ordem e o escopo da anonimização, e o escopo do `remove` do bucket | ``
+   - `` | `backup.mjs` | A **sétima** Edge Function: `backup-clube-tenis-mesa` rodando de verdade (31 asserções) — cobertura do Modelo B e a retenção de 6 meses. É a função que **apaga arquivos** | ``
+   - `` | `mutar.mjs` | O **aferidor de mutação**: sabota uma linha, roda a bateria e exige vermelho. Três portões (ambiguidade, barra-n, mostrar o diff) e — desde 28/09 — **saída ≠ 0 conta como vermelho**, porque contar linhas de falha dava "0" para arquivo que abortava | ``
+2. **O cabeçalho diz "1357 asserções … 13 seções".** São **1930** e **18**.
+3. **"SEIS" Edge Functions → SETE.** O commit `5d19c6e` (01/10) chamou a
+   `backup-clube-tenis-mesa` de *"a sexta função"* — contando as da onda, não as da
+   bateria. O README copiou a contagem antiga e nunca ganhou a sétima.
+4. **Os números DENTRO da tabela venceram, e a ordem se inverteu.** A linha do
+   `segundo-circuito.mjs` diz **426** asserções e o chama de *"a 2ª maior seção"*;
+   são **658**, e ele é **a maior**. O `regulamento-por-circuito.mjs`, descrito como
+   *"a maior seção da bateria"*, tem **559**. **Os dois trocaram de lugar.** ⚠️ É
+   exatamente o aviso que o próprio README dá sobre si mesmo — *"conferir a tabela
+   não é conferir os números dentro dela"* — aplicado a ele uma segunda vez.
+
+### Drift que precisa do Juliano (conteúdo com efeito real — sinalizado, não aplicado)
+
+Abri **10 itens** no ROADMAP (**1.1–1.10**, numeração livre de colisão — conferi que
+nenhum `1.x` existia, lição da colisão de 19/09). Os de maior consequência:
+
+- **1.3 — defeito ATIVO em produção**, e o único que corre contra uma data
+  (01/11/2026): a tela dos meses no ar + motor v65 que **não conhece o campo** +
+  `catch` que é **código morto** ⇒ **"✓ Meses salvos" sem salvar**. `meses_temporada`
+  do `bh2` está `null` e o Juliano acredita tê-lo configurado. Prova direta: o corpo
+  da função no ar tem **zero** ocorrências de `meses_temporada`.
+- **1.1 — reembolso (CDC art. 49)**: 7 dias, com gente pagando. E o conserto **não é
+  editar o `vB-01`** (regra 7) — vai em `vB-02`.
+- **1.2 — a trava da regra 7** no `vB-01`. Não é tarefa, é um portão.
+- **1.4 / 1.6 / 1.10** — o trio da privacidade: a promessa imprecisa, a política não
+  servida, e **ninguém pedindo o re-aceite dos 15**.
+- **1.5** — a anonimização não alcança `pagamentos` (e o buraco é maior que
+  `observacao`: `comprovante_url` também, e o **backup** copia as duas).
+- **1.7** — `pagamentos.comprovante_url` escrito pelos dois motores e **inalcançável
+  pelas duas pontas**.
+- **1.8** — ⚠️ **era duplicata.** Fui incumbido de "abrir" o item do atleta que não
+  consegue reler o regulamento; ele **já existe** como **`0.10.22`**, aberto desde
+  16/09. **Não criei número novo** — agravei o existente com o fato novo (os 3
+  atletas do `bh2`) e deixei `1.8` apontando para ele. Criar um item novo teria
+  produzido o drift que eu existo para evitar.
+- **1.9** — schema em produção sem arquivo de migração, **e** o CHECK que não valida
+  o que o commit `9da18e4` afirma validar (mês repetido: `[3,3,3]` passa).
+
+### Lições de método registradas em `GOVERNANCA_AGENTES.md`
+
+Seis, sob "REGRAS NOVAS, 11-12/10/2026": **(a)** janela que abrange o texto duas
+vezes passa pelo motivo errado — **sétimo** episódio da família, e só a mutação pega;
+**(b)** mover guarda de passo exige asserção de **ordem**, não de presença;
+**(c)** o veredito de mutação é o **código de saída** — **terceira** vez que esta
+regra é registrada, e irmã do `curl` sem `-L` e do `revoke` que reportou sucesso sem
+efeito; **(d)** *o resumo pode prometer MENOS que a política, nunca MAIS* (Jurídico);
+**(e)** *"não consegui demonstrar" mede a sonda, não a ausência do defeito* — a frase
+exata que precedeu a queda de produção de 03/10 por quatro dias; **(f)** asserção de
+**paridade** app↔motor prova fonte-fonte e **não sabe qual versão está no ar** — foi
+o que deixou as 14 asserções de `0cdb524` verdes sobre um defeito ativo.
+
+### ✅ Prova que fechou a lacuna principal: o app no ar É o `0cdb524`
+
+Na 1ª versão desta entrada eu declarei **não ter confirmado** que o pacote no ar
+corresponde a `0cdb524` — tinha só a inferência `origin/main` = `HEAD`. **Fechei por
+identidade de conteúdo**, que é o padrão que `cdf8372` estabeleceu: criei um
+*worktree* separado em `0cdb524` (sem tocar a árvore congelada), buildei e comparei
+com o que a produção serve.
+
+| | nome do pacote | bytes | md5 |
+|---|---|---|---|
+| build de `0cdb524` | `index-CYNqh9Jp.js` | 743.946 | `f2f3285b7d5a922dd561951c2711a116` |
+| servido em produção | `index-CYNqh9Jp.js` | 743.946 | `f2f3285b7d5a922dd561951c2711a116` |
+
+**Idênticos.** E, dentro do pacote **baixado do ar**: `mesesTemporada` aparece **2×**
+e `Meses salvos` **1×**. ⇒ **a tela dos meses está em produção**, provada pelo
+artefato servido, não pelo git. Isso eleva o item **1.3** de "provável" a **medido nas
+duas pontas**: o app no ar **tem** a tela; o motor no ar (v65) **não tem** o campo.
+*(Usei `curl -sL` — com o `-L` que o `CLAUDE.md` exige, porque o domínio responde 308
+para o `www` e um `curl` sem `-L` devolve string vazia.)*
+
+### Honestidade — o que eu NÃO confirmei
+
+*(Seção ampliada depois do **REVISAR** do Supervisor de Curadoria, que pegou um drift
+real: eu havia **perdido o `README.md`** — a porta de entrada do projeto — e ele não
+estava nem entre os revisados nem entre os declarados não-revisados. A omissão
+**parecia cobertura**. Corrigido, e a lista abaixo agora nomeia **todos** os
+documentos.)*
+
+**Revisei e corrigi:** `CHANGELOG.md`, `ROADMAP.md`, `GOVERNANCA_AGENTES.md`,
+`curadoria-indice-*.md`, `curadoria-log.md`, `ESTADO-DEV-*.md`, **`README.md`**,
+`PLANO_PAGAMENTOS.md`, `CLAUDE.md`.
+
+**Varredura por PADRÃO, não leitura** — rodei `grep -cE 'v5[0-9]|v6[0-9]|1357|1149|46
+ações|SEIS|v03-12'` nestes seis e deu **zero** em todos:
+`ESPEC_CPF_SEGURANCA.md`, `TERMOS_ORGANIZADOR.md`, `LEIA-ME.md`,
+`PLANO_DESFAZER_PROCESSAMENTO.md`, `PLANO_PAGAMENTOS_FATIA5_INTEGRACAO.md`,
+`SEGURANCA_RPC_AUDIT.md`.
+⚠️ **Zero hit NÃO quer dizer "limpos".** Eu procurei **esses** padrões; **não li** os
+documentos. É a mesma distinção que este projeto aprendeu do jeito caro: *regex
+registra que um trecho está lá, não que a regra vale* — e "não achei" mede a sonda,
+não a ausência do defeito (`GOVERNANCA_AGENTES.md`, regra (e)). O retrato deles segue
+o de datas anteriores.
+
+**Encontrado na varredura e tratado:**
+- `PLANO_PAGAMENTOS.md:154` — *"Edge a deployar (v55) quando houver o 1º circuito
+  vendido"*: **TODO resolvido lido como aberto**. **Corrigido**, e verifiquei no
+  **corpo da v65 em produção** (não inferi da versão) que
+  `LER_COBRANCA_PLATAFORMA` e `DEFINIR_COBRANCA_PLATAFORMA` **já estão no ar**.
+- `ORGANIZADOR_ACESSO_COMPARATIVO.md:41` — *"no ar na v62"*: **correto como carimbo
+  de data** (o `DESARQUIVAR_ATLETA` de fato entrou na v62), mas envelhece se lido
+  como estado atual. **Não alterei** — é registro datado, não afirmação de presente.
+  Prioridade baixa.
+
+**Não confirmei / não fiz:**
+- **As 3 pendências de pagamento** da temporada 1/2026 (item antigo 0.10.15(b2)) —
+  não reverificadas.
+- **A função `arte` v1**, órfã no projeto desde 29/09 — **sinalizada pela 2ª vez**
+  (agora também no `README.md`), **não investigada**. Não sei de quem é.
+- **`docs/historico/`** — não auditei. É registro de fase concluída por definição,
+  mas não verifiquei se algum arquivo ativo foi parar lá, ou o contrário.
+- **Não revisei** o texto dos regulamentos em si quanto a conteúdo — só o **status**
+  deles (quais estão congelados por aceite). Conteúdo é mandato do Guardião de
+  Regulamento.
+- **Não apliquei** nada em `testes/README.md` (fora do mandato nesta rodada); o texto
+  pronto está acima.
+- **Não toquei** `src/`, `supabase/` nem `testes/` — os 8 hashes congelados foram
+  reconferidos no fim e **batem**.
+
+### ⚖️ Procedência das medições — quem mediu o quê
+
+*(Acrescentado a pedido do Supervisor de Curadoria, e é a observação
+metodologicamente mais importante do parecer dele.)*
+
+O supervisor **não refez** as minhas medições. Ele conferiu a árvore
+(`git status`, `git diff --stat`) e fez `grep` em pontos específicos; o que pôde
+confirmar bateu com o que eu relatei. Logo, **as medições abaixo são MINHAS,
+reportadas e não reconferidas por ele** — quem for citá-las como prova deve
+**rodar de novo**, não copiar deste log:
+
+- bateria **1930 asserções / 18 seções / saída 0** e `npm run build` ✓;
+- as versões no ar (**v65 / v23 / v11 / v3 / v5 / v3 / v7 / v6**) e os `updated_at`;
+- as **47** ações do `switch` e a identificação de `LER_JUSTIFICATIVA_WO` como a nova;
+- o corpo da `admin-action` **no ar** sem `meses_temporada` (via `get_edge_function`);
+- as leituras de banco (3 aceites do `vB-01`, 4 da `v03-13`, `privacidade_versao`
+  inexistente, 1 assinatura de `preco_temporada_atleta`, `meses_temporada` nulo,
+  colunas de `pagamentos`, grant e CHECK);
+- o **md5 do pacote** (`f2f3285b7d5a922dd561951c2711a116`, 743.946 bytes) igual nos
+  dois lados, e o `mesesTemporada` dentro do pacote baixado do ar;
+- a leitura do corpo da v65 que sustenta a correção do `PLANO_PAGAMENTOS.md`.
+
+⚠️ **E isto é a regra (f) da governança aplicada a mim mesmo:** quem lê um parecer
+precisa saber **qual metade foi medida por quem**. Veredito que absorve as medições
+do auditado como se fossem próprias é a mesma família de verde vazio que esta onda
+perseguiu — a diferença entre "está provado" e "foi afirmado por quem fez".
+
 ## 2026-09-29 (noite) — SUPERVISÃO da curadoria de `707c40f`: boa, e vencida em horas
 
 **Quem escreve:** `supervisor-curador`, não o curador. Esta entrada **julga** a de baixo e

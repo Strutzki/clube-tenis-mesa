@@ -3679,4 +3679,28 @@ secao("O atleta sabe quanto, quando e como pagar — antes de se comprometer");
     "e o motor confirma que são duas rodadas por avanço — é o que sustenta a frase");
 }
 
+secao("Aprovado e pago são coisas diferentes, e a tela diz isso");
+{
+  // 16/10/2026. Pedido do Juliano, com as palavras dele: "quando um atleta se
+  // inscreve e eu aprovo, não tem a opção aprovado aguardando pagamento ou algo
+  // parecido, já vai como ativo, e isso me confunde para saber quem pagou ou não".
+  //
+  // O dado sempre existiu; o que faltava era o ESTADO ser legível. Tudo caía sob
+  // "✅ Aprovados", com o pagamento num selo de 9px — e é justamente essa a
+  // distinção que decide se o atleta joga: `promoverBacklog` e
+  // `getAtivosNoCircuito` filtram por `pagamento_confirmado`.
+  ok(/const aguardandoPgto = cobrando \? aprovados\.filter\(a => !a\.pagamentoConfirmado\) : \[\];/.test(fonte),
+    "o painel separa quem está aprovado e ainda não pagou");
+  ok(/const prontos = cobrando \? aprovados\.filter\(a => a\.pagamentoConfirmado\) : aprovados;/.test(fonte),
+    "e quem já pagou — com o financeiro desligado, não há o que separar");
+  ok(/⏳ Aprovados — aguardando pagamento \(\{aguardandoPgto\.length\}\)/.test(fonte),
+    "o TÍTULO carrega o estado, em vez de escondê-lo num selo");
+  ok(/não entram no sorteio dos confrontos<\/strong> enquanto/.test(fonte),
+    "e diz a consequência: sem pagamento, não entra no sorteio");
+  // A trava do motor é a razão de a separação existir — se ela sumir, a tela
+  // passa a prometer uma distinção que o servidor não faz mais.
+  ok(/pagamento_confirmado/.test(motorFonte),
+    "e o motor de fato retém quem não pagou — é o que a tela está refletindo");
+}
+
 process.exit(placar("O segundo circuito"));

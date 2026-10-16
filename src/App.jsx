@@ -10571,6 +10571,23 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
   const pendentes = state.athletes.filter(a => a.status === "pendente");
   const backlog = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito);
   const aprovados = state.athletes.filter(a => a.status === "ativo" && !a.pendenteCircuito);
+  // APROVADO E PAGO SÃO COISAS DIFERENTES, E A TELA PASSA A DIZER ISSO (16/10/2026).
+  //
+  // Pedido do Juliano, nas palavras dele: "quando um atleta se inscreve e eu
+  // aprovo, não tem a opção aprovado aguardando pagamento ou algo parecido, já
+  // vai como ativo, e isso me confunde para saber quem pagou ou não".
+  //
+  // O dado sempre existiu (`pagamentoConfirmado`), mas aparecia como um selo de
+  // 9px dentro de uma seção chamada "✅ Aprovados" — que lê como "pronto". E é
+  // justamente a distinção que o motor usa para parear: `promoverBacklog` e
+  // `getAtivosNoCircuito` filtram por `pagamento_confirmado`, então quem não
+  // pagou NÃO JOGA. A tela mostrava os dois juntos sob o mesmo título.
+  //
+  // Com o financeiro desligado não há o que separar: todo aprovado joga.
+  const cobrando = !!state.financeiroAtivo;
+  const aguardandoPgto = cobrando ? aprovados.filter(a => !a.pagamentoConfirmado) : [];
+  const prontos = cobrando ? aprovados.filter(a => a.pagamentoConfirmado) : aprovados;
+  const fmtValor = (c) => c == null ? null : `R$ ${(c/100).toFixed(2).replace(".",",")}`;
   const reprovados = state.athletes.filter(a => a.status === "reprovado");
   const suspensos = state.athletes.filter(a => a.status === "suspenso");
   const arquivados = state.athletes.filter(a => a.status === "arquivado");
@@ -10865,9 +10882,41 @@ function AdminInscricoes({ state, dispatch, telefones, garantirTelefones }) {
         ))}
       </>}
 
-      {aprovados.length > 0 && <>
-        <SecTitle>✅ Aprovados ({aprovados.length})</SecTitle>
-        {aprovados.map(a => (
+      {/* DUAS LISTAS, não uma. O título carrega o estado que decide se o atleta
+          joga — em vez de escondê-lo num selo de 9px. */}
+      {aguardandoPgto.length > 0 && <>
+        <SecTitle>⏳ Aprovados — aguardando pagamento ({aguardandoPgto.length})</SecTitle>
+        <div style={{fontSize:11.5,color:T.cinzaSuave,lineHeight:1.6,marginBottom:8}}>
+          Estão no circuito, mas <strong style={{color:T.offwhite}}>não entram no sorteio dos confrontos</strong> enquanto
+          você não confirmar o pagamento{state.valorTemporada != null ? <> de <strong style={{color:T.offwhite}}>{fmtValor(state.valorTemporada)}</strong></> : null}.
+          Use o botão de mensagem para cobrar.
+        </div>
+        {aguardandoPgto.map(a => (
+          <Card key={a.id}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:14,fontWeight:700,color:"#F0EAE0"}}>{nomeComApelido(a)}</div>
+                <div style={{fontSize:11,color:"#9db3a8"}}>{telefones[a.id] || "···"} · {pontuacaoDoAtleta(a).rotulo}: {pontuacaoDoAtleta(a).valor}</div>
+                <div style={{display:"flex",gap:4,marginTop:3}}>
+                  {a.aceiteRegulamento && <span style={{fontSize:9,background:"rgba(74,222,128,0.15)",color:"#6a9d7a",padding:"1px 6px",borderRadius:8,fontWeight:700}}>📋 Reg. aceito</span>}
+                  {a.aceiteLGPD && <span style={{fontSize:9,background:"rgba(77,163,255,0.15)",color:"#D85A30",padding:"1px 6px",borderRadius:8,fontWeight:700}}>🔒 LGPD</span>}
+                  {state.financeiroAtivo && (a.pagamentoConfirmado
+                    ? <span style={{fontSize:9,background:"rgba(106,157,122,0.18)",color:"#6a9d7a",padding:"1px 6px",borderRadius:8,fontWeight:700}}>💵 Pago</span>
+                    : <span style={{fontSize:9,background:"rgba(216,90,48,0.15)",color:"#D85A30",padding:"1px 6px",borderRadius:8,fontWeight:700}}>💵 Sem pgto</span>)}
+                  {state.proximaAberta && a.pagamentoProximaConfirmado && <span style={{fontSize:9,background:"rgba(139,92,246,0.18)",color:"#a78bfa",padding:"1px 6px",borderRadius:8,fontWeight:700}}>💵 Próxima paga</span>}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <MsgBtn ath={a}/>
+                <Btn small color="#D85A30" onClick={()=>abrirEditar(a)}>✏️</Btn>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </>}
+      {prontos.length > 0 && <>
+        <SecTitle>{cobrando ? `✅ Pagos — vão jogar (${prontos.length})` : `✅ Aprovados (${prontos.length})`}</SecTitle>
+        {prontos.map(a => (
           <Card key={a.id}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{flex:1}}>

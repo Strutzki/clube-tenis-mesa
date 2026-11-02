@@ -2806,6 +2806,37 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
     circ={{ ...(circ || {}), regulamento_versao: versaoReg, sistema: (circ && circ.sistema) || sistema }} />;
 
   // ── STEP 1: Dados pessoais ──────────────────────────────────────────────────
+  // O PREÇO ACOMPANHA O FORMULÁRIO — 01/11/2026.
+  // Ele JÁ aparecia, com a explicação inteira, na tela de confirmação que vem
+  // ANTES deste formulário (11/10/2026). O que não existia era a lembrança: o
+  // atleta via o número uma vez e depois atravessava dois passos, três textos
+  // legais e a criação do PIN sem ele na frente — e a tela de sucesso ainda
+  // dizia "você recebe o valor no WhatsApp", como se nunca tivesse sido dito.
+  // Era a pergunta que o Juliano ouviu dos atletas do piloto, nas palavras
+  // dele: "quanto vai custar, quando tem que pagar e como pagar". A resposta
+  // existia no app e sumia no meio do caminho.
+  // Mesma leitura pública (colunas de `circuitos` liberadas ao `anon`) e MESMA
+  // conta da tela de confirmação. Se as duas divergirem, uma delas tem bug —
+  // por isso a conta é copiada linha a linha, e não reinventada aqui.
+  const LinhaPreco = () => {
+    if (!circ || !circ.financeiro_ativo) return null;
+    const base = circ.valor_temporada;
+    // Sem valor configurado a tela fica CALADA sobre dinheiro, nunca "R$ 0,00":
+    // afirmar gratuidade por falta de dado é promessa, não informação.
+    if (base == null) return null;
+    const pct = Math.min(100, Math.max(0, circ.desconto_global_pct || 0));
+    const final = Math.round(base * (1 - pct / 100));
+    const fmtP = c => `R$ ${(c/100).toFixed(2).replace(".",",")}`;
+    return (
+      <div style={{background:"rgba(106,157,122,0.12)",border:"1px solid rgba(106,157,122,0.4)",borderRadius:10,padding:"9px 12px",marginBottom:10,fontSize:11.5,color:T.cinza,lineHeight:1.55}}>
+        {final === 0
+          ? <><b style={{color:T.offwhite}}>Sem custo de inscrição</b> nesta temporada.</>
+          : <><b style={{color:T.offwhite}}>{fmtP(final)} pela temporada inteira.</b>{" "}
+              Nada é cobrado agora — você paga por PIX <b style={{color:T.offwhite}}>depois</b> que o organizador aprovar.</>}
+      </div>
+    );
+  };
+
   if (step === 1) return (
     <div style={s.wrap}>
       <div style={{...s.card, marginTop:20}}>
@@ -2813,6 +2844,8 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
         <Steps/>
         <div style={s.title}>📝 Inscrição — Dados Pessoais</div>
         <div style={s.sub}>Passo 1 de 2 · Seus dados de cadastro</div>
+
+        <LinhaPreco/>
 
         <div style={{...s.box(ehB?"#6a9d7a":"#D85A30"), marginTop:2, marginBottom:6}}>
           {ehB ? (<>
@@ -2851,8 +2884,6 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
               : <> Se for você, volte e use “Sou atleta” para entrar.</>}
           </div>
         )}
-        <label style={s.label}>Apelido (opcional)</label>
-        <input style={s.input} value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="Como você gostaria de ser chamado?"/>
 
         <label style={s.label}>CPF *</label>
         <input style={s.input} value={cpf} onChange={e=>setCpf(cpfMascara(e.target.value))} placeholder="000.000.000-00" inputMode="numeric"/>
@@ -2876,6 +2907,12 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
           )}
         </>}
 
+        {/* O ÚNICO campo que dá para pular vem DEPOIS dos obrigatórios, e não
+            plantado entre o WhatsApp e o CPF como estava: no meio da corrida
+            ele faz o atleta parar para decidir algo que não precisa decidir. */}
+        <label style={s.label}>Apelido (opcional)</label>
+        <input style={s.input} value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="Como você gostaria de ser chamado?"/>
+
         {!ehB && <>
         <label style={s.label}>É federado pela CBTM?</label>
         <select style={s.select} value={fed} onChange={e=>setFed(e.target.value)}>
@@ -2897,10 +2934,15 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
         </>}
         </>}
 
-        <div style={{...s.box("#9C6F3E"), marginTop:14}}>
+        {/* DENTRO do gate de sistema, e não ao lado dele: a pergunta "é federado
+            pela CBTM?" só existe no Sistema A, mas este aviso ficava de fora e
+            aparecia para TODO mundo. O atleta de circuito por pontos lia um
+            alerta sobre a Nota CBTM 183/2025 sem nunca ter sido perguntado nada
+            sobre federação. Achado medindo a tela do bh2 em 01/11/2026. */}
+        {!ehB && <div style={{...s.box("#9C6F3E"), marginTop:14}}>
           <strong style={{color:"#9C6F3E"}}>⚠️ Atletas federados CBTM</strong><br/>
           Verifique com sua federação e com o clube ao qual é filiado se a participação em eventos não-oficiais é permitida conforme a Nota CBTM 183/2025.
-        </div>
+        </div>}
 
         {(() => {
           const telDupl = telDuplStatus === "duplicado";
@@ -2953,6 +2995,8 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
         <Steps/>
         <div style={s.title}>✍️ Aceites</div>
         <div style={s.sub}>Passo 2 de 2 · Privacidade, CPF e regulamento</div>
+
+        <LinhaPreco/>
 
         <PoliticaPrivacidade estilos={s} ehB={ehB} secoesAbertas={secoesAbertas}
           alternaSecao={alternaSecao} setSecoesAbertas={setSecoesAbertas} />
@@ -3176,10 +3220,16 @@ function InscricaoForm({ onBack, onSubmit, athletes = [], sistema, circuitoId, c
             atleta novo chegou ao fim em uma semana.
             Sem prazo prometido aqui de propósito: a aprovação é ato humano do
             organizador, e prometer "24h" em nome dele seria inventar. */}
+        <div style={{textAlign:"left"}}><LinhaPreco/></div>
         <div style={{background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:10, padding:"12px 14px", marginBottom:16, textAlign:"left"}}>
           <div style={{fontSize:11.5, fontWeight:800, color:"#F0EAE0", marginBottom:7}}>O que acontece agora</div>
           <div style={{fontSize:11.5, color:"#9db3a8", lineHeight:1.75}}>
-            <b style={{color:"#F0EAE0"}}>1.</b> Você recebe a aprovação no WhatsApp — com o valor e a chave PIX.<br/>
+            {/* O valor por extenso, e não "com o valor": o app sabe o número
+                desde a tela de escolha do circuito, e mandar o atleta esperar
+                pelo WhatsApp para saber quanto custa é esconder o que já está
+                na mão. A chave PIX continua vindo pelo organizador — essa parte
+                é dele mesmo. */}
+            <b style={{color:"#F0EAE0"}}>1.</b> Você recebe a aprovação no WhatsApp, com a chave PIX.<br/>
             <b style={{color:"#F0EAE0"}}>2.</b> {pinPronto
               ? <>Entra no app em <b style={{color:"#F0EAE0"}}>Sou atleta</b>, com este WhatsApp e o PIN que você acabou de criar.</>
               : <>Entra no app em <b style={{color:"#F0EAE0"}}>Sou atleta</b>, com este mesmo WhatsApp, e cria seu PIN.</>}<br/>
@@ -7307,8 +7357,14 @@ export default function App() {
           solicitação de W.O., cards de histórico) — onde o aviso ficava
           desenhado ATRÁS do modal — e abaixo dos portões de confirmação de
           1400/1500/2000 (novo circuito, boas-vindas, PIN, virada de temporada),
-          que não devem ser encobertos por aviso nenhum. */}
-      <div style={{position:"sticky", top:0, zIndex:1200}}>
+          que não devem ser encobertos por aviso nenhum.
+          O fundo OPACO (o mesmo #1C2B27 do app, logo acima) não é decoração:
+          as duas barras pintam com rgba de 10% e 15%, e `sticky` significa que
+          o conteúdo da página passa POR BAIXO delas ao rolar. Sem base opaca o
+          texto da tela atravessava o aviso e os dois ficavam ilegíveis,
+          empilhados — foi assim que o Juliano recebeu "o servidor recusou"
+          sobreposto ao regulamento, em 30/10/2026. */}
+      <div style={{position:"sticky", top:0, zIndex:1200, background:"#1C2B27"}}>
         <DbBar/>
         <AcaoErroBar/>
       </div>

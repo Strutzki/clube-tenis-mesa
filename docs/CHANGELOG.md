@@ -5,13 +5,89 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
-### 2026-10-11/12 — 🟡 **RASCUNHO, NÃO PUBLICADA** — a onda da INSCRIÇÃO (piloto real do CIRCUITO BH 2)
+### 2026-11-02 — a inscrição deixa de esconder o preço no meio do caminho (só app)
 
-> 🟡 **ESTA ENTRADA É RASCUNHO. NADA DELA ESTÁ NO AR.** Ela existe para o Juliano
-> **só datar no dia** em que autorizar a subida. Enquanto este aviso estiver aqui,
-> o que os atletas usam é o que está na entrada **2026-10-03** abaixo.
-> Ao publicar: trocar este bloco pela data real, conferir cada versão com
-> `npm run motor:listar` e **colar o número que o comando devolveu**, não o esperado.
+**Nada de motor e nada de banco.** `admin-action` segue **v67**, `athlete-action`
+**v24**, `login-atleta` **v12** — conferido com `npm run motor:listar` antes de
+subir, não presumido. Nenhuma migração.
+
+**Bateria: 2007 asserções, 0 falhas, saída 0.** `npm run build` ✓.
+14 asserções novas, **7 sabotagens de mutação, as 7 vermelhas** (restaurado:
+verde, arquivo byte-idêntico ao original).
+
+#### O QUE MUDA
+
+1. **O preço sumia dentro do formulário.** Medido antes de mexer: a palavra
+   `R$` aparecia **zero vez** dentro do `InscricaoForm`. O valor existia na tela
+   de escolha do circuito (onda de 11/10) e depois desaparecia — o atleta
+   atravessava dois passos, três textos legais e a criação do PIN sem o número na
+   frente, e a tela de sucesso ainda dizia *"você recebe o valor no WhatsApp"*,
+   como se nunca tivesse sido dito. Era a queixa do Juliano em 11/10, nas
+   palavras dele: *"não está muito claro a questão do pagamento, quanto vai
+   custar, quando tem que pagar e como pagar"* — metade da resposta estava no app
+   e se perdia no caminho. Nasce o `LinhaPreco`, renderizado nos **três** pontos
+   (passo 1, passo 2, sucesso), com a **mesma conta** da tela de escolha. A
+   asserção **conta os pontos de chamada** e exige três: é a lição da fatia
+   0.6.21, em que uma prop faltando num ponto de chamada deixou a bateria inteira
+   verde.
+2. **A regra do dinheiro vai junto:** sem `valor_temporada` configurado a linha
+   fica **calada**, nunca anuncia "R$ 0,00". Afirmar gratuidade por falta de dado
+   é promessa — e foi por essa família de defeito que 2 dos 3 atletas do piloto
+   não pagaram em 11/10.
+3. **O aviso da CBTM entra no portão `!ehB`.** A pergunta *"é federado pela
+   CBTM?"* já era escondida nos circuitos por pontos; o **aviso** sobre a Nota
+   CBTM 183/2025 tinha ficado **do lado de fora** e alcançava todo mundo. No
+   `bh2` (Sistema B) o atleta lia um alerta sobre federação sem nunca ter sido
+   perguntado nada.
+4. **O "Apelido (opcional)" sai do meio da corrida** de campos obrigatórios
+   (estava entre o WhatsApp e o CPF) e vai para depois deles.
+5. **A barra de aviso ganha fundo opaco.** Ela é `sticky` e pintava com rgba de
+   10%/15% sem base: o conteúdo da página rolava **por baixo** e as duas camadas
+   ficavam visíveis ao mesmo tempo. O Juliano mandou a foto em 30/10/2026 —
+   *"🚫 Não foi salvo — o servidor recusou"* desenhado por cima do regulamento,
+   nenhum dos dois legível. Não era z-index (já estava certo, 1200): era falta de
+   fundo.
+
+#### O QUE **NÃO** MUDA, E POR QUÊ
+
+**Nenhum texto versionado foi tocado, e nenhum re-aceite é necessário.** O portão
+obrigatório do CLAUDE.md foi rodado antes de encostar em qualquer tela:
+
+| texto | recibos em 01/11/2026 |
+|---|---|
+| `privacidade-2026-10-v1` | **7** |
+| `cpf-2026-08-v1` | **11** |
+| `vB-01` | **11** |
+
+Os três estão **congelados**. O peso da tela de aceites é justamente esse texto, e
+encurtá-lo exigiria versão nova + aviso prévio + re-aceite dos 11 — mais
+burocracia, não menos, na semana de início da temporada. Levado ao Juliano como
+decisão dele; a resposta, em 02/11/2026, foi **"pode subir, mas não precisa pegar
+aceite dos atletas"**. Esta onda já não pedia nenhum: o que mudou é moldura de
+tela, não corpo de consentimento.
+
+#### ESTADO MEDIDO DO `bh2` NO DIA
+
+`fase: inscricoes`, `inscricoes_abertas: true`, sistema **B**,
+`valor_temporada: 5000`, **11 atletas, 11 ativos, 0 pendentes** (eram 4 em
+28/10). Acima do mínimo de 8 para iniciar a etapa.
+⚠️ Continuam de pé: `data_inicio_temporada` **null** e `meses_temporada`
+**`[11,12,1]`** (janeiro, enquanto o Juliano disse fevereiro) — e o primeiro mês
+da lista **nunca é lido**, porque o 1º par de rodadas vem da data do clique em
+"Iniciar Etapa". Ver ROADMAP.
+
+### 2026-10-11/12 — a onda da INSCRIÇÃO (piloto real do CIRCUITO BH 2) — **PUBLICADA EM 16/10/2026**
+
+> ✅ **ESTA ENTRADA ESTÁ NO AR.** O aviso de rascunho ("NADA DELA ESTÁ NO AR")
+> ficou aqui **17 dias depois da subida** e foi corrigido em 02/11/2026, com os
+> números lidos de `npm run motor:listar` na hora — não os esperados:
+> **`admin-action` v67, `athlete-action` v24, `login-atleta` v12**, as três
+> ACTIVE. É exatamente a armadilha que o `LEIA-ME` do backup de 12/10 descreve:
+> quem fosse investigar um bug do motor com este aviso na frente começaria a
+> procurar três deploys atrás, e o rollback depende desta memória.
+> *(A ordem real da subida de 16/10: migrações → app `eb79d4b` → `login-atleta`
+> v12 → `athlete-action` v24 → app `f4ab7a1` → app `bf4e98c` + `admin-action`
+> v67. `npm run motor:conferir`: 9 funções, 0 divergências.)*
 
 **Árvore medida por mim (Curador) em 12/10/2026**, sobre `HEAD 0cdb524`, 6 arquivos
 modificados + 2 migrações novas. **Bateria: 1930 asserções, 0 falhas, 18 seções,

@@ -175,4 +175,40 @@ secao("O passo 3 da inscrição não culpa a internet do atleta");
     "a lista branca é consultada ANTES do texto genérico, não depois");
 }
 
+// ── A barra de aviso precisa de fundo OPACO, porque ela é sticky ────────────
+secao("O aviso não deixa a página atravessar por baixo dele");
+{
+  // 30/10/2026. O Juliano mandou a foto da tela: "🚫 Não foi salvo — o servidor
+  // recusou" desenhado POR CIMA do texto do regulamento, as duas camadas
+  // visíveis ao mesmo tempo e nenhuma das duas legível.
+  //
+  // A causa não é o z-index — ele já estava certo, em 1200. É que `sticky`
+  // significa que o conteúdo rola POR BAIXO do elemento, e as duas barras
+  // pintam com rgba de 10% e 15%. Transparência de 85% sobre o que estiver
+  // passando embaixo não é um fundo: é um vidro. O wrapper precisa da base
+  // opaca para as barras terem sobre o que compor.
+  //
+  // Sabote trocando a cor por `background:"transparent"` (ou apagando a chave)
+  // e esta asserção fica vermelha.
+  const iSticky = fonte.indexOf('position:"sticky", top:0, zIndex:1200');
+  ok(iSticky > 0, "o wrapper sticky das duas barras foi encontrado");
+
+  // Janela até o fim do objeto de estilo — fronteira sintática, não contagem
+  // de caracteres: o `}}>` fecha o style e a tag na mesma marca.
+  const fimEstilo = fonte.indexOf("}}>", iSticky);
+  ok(fimEstilo > iSticky, "o fim do objeto de estilo do wrapper foi encontrado");
+  const estilo = fonte.slice(iSticky, fimEstilo);
+
+  ok(/background:\s*"#1C2B27"/.test(estilo),
+    "o wrapper sticky tem fundo opaco — sem ele o texto da página atravessa o aviso");
+
+  // As duas barras têm de estar DENTRO desse wrapper: uma que ficasse de fora
+  // perderia a base opaca e repetiria o defeito sozinha.
+  const fimWrapper = fonte.indexOf("</div>", fimEstilo);
+  ok(fimWrapper > fimEstilo, "o fechamento do wrapper sticky foi encontrado");
+  const dentro = fonte.slice(fimEstilo, fimWrapper);
+  ok(dentro.includes("<DbBar/>"), "a DbBar está dentro do wrapper de fundo opaco");
+  ok(dentro.includes("<AcaoErroBar/>"), "a AcaoErroBar está dentro do wrapper de fundo opaco");
+}
+
 process.exit(placar("Erros na tela"));

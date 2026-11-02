@@ -3742,4 +3742,64 @@ secao("Aprovado e pago são coisas diferentes, e a tela diz isso");
     "e o motor de fato retém quem não pagou — é o que a tela está refletindo");
 }
 
+// ── O PREÇO NÃO SOME NO MEIO DO FORMULÁRIO — 01/11/2026 ─────────────────────
+secao("O valor acompanha o atleta pelos dois passos da inscrição");
+{
+  // O Juliano, 01/11/2026: "o processo para o atleta se inscrever continua muito
+  // confuso, quero simplificar o máximo".
+  //
+  // Medido antes de mexer: a palavra "R$" não aparecia NENHUMA vez dentro do
+  // `InscricaoForm`. O valor existia na tela de confirmação, logo ANTES do
+  // formulário (onda de 11/10), e depois sumia — o atleta atravessava dois
+  // passos, três textos legais e a criação do PIN sem o número na frente, e a
+  // tela de sucesso ainda dizia "você recebe o valor no WhatsApp", como se nunca
+  // tivesse sido dito. A resposta para "quanto custa" estava no app e se perdia
+  // no caminho.
+  ok(/const LinhaPreco = \(\) => \{/.test(fonte),
+    "existe uma linha de preço própria do formulário de inscrição");
+
+  // A REGRA DO DINHEIRO, e a única aqui que não é cosmética: sem valor
+  // configurado a tela cala a boca. Anunciar "R$ 0,00" porque o dado falta é
+  // prometer gratuidade — foi o defeito que custou 2 dos 3 pagamentos do piloto
+  // em 11/10/2026, pela outra ponta (a função de preço lia a config do BH).
+  const iLinha = fonte.indexOf("const LinhaPreco = () => {");
+  ok(iLinha > 0, "o corpo da LinhaPreco foi encontrado");
+  const fimLinha = fonte.indexOf("\n  };", iLinha);
+  ok(fimLinha > iLinha, "o fim da LinhaPreco foi encontrado");
+  const corpo = fonte.slice(iLinha, fimLinha);
+
+  ok(/if \(base == null\) return null;/.test(corpo),
+    "a linha fica CALADA quando não há valor configurado, nunca anuncia R$ 0,00");
+  ok(/if \(!circ \|\| !circ\.financeiro_ativo\) return null;/.test(corpo),
+    "e não fala de dinheiro em circuito com cobrança desligada, nem sem o circuito");
+  ok(/Nada é cobrado agora/.test(corpo),
+    "ela responde QUANDO se paga: nada agora");
+  ok(/depois<\/b> que o organizador aprovar/.test(corpo),
+    "dizendo que o pagamento vem depois da aprovação");
+  ok(/por PIX/.test(corpo), "e COMO se paga");
+
+  // CONTE OS PONTOS DE CHAMADA, não a existência da função. A lição é do
+  // CLAUDE.md, aprendida na fatia 0.6.21: a janela ancorada no corpo é fiel ao
+  // corpo e CEGA para quem invoca — o defeito mais grave daquela onda era uma
+  // prop faltando num ponto de chamada 300 linhas adiante, e a bateria inteira
+  // ficou verde. São três telas e têm de ser as três: passo 1, passo 2 e
+  // sucesso. Apague qualquer uma e esta asserção fica vermelha.
+  const chamadas = (fonte.match(/<LinhaPreco\/>/g) || []).length;
+  ok(chamadas === 3,
+    `a linha de preço é renderizada nos TRÊS passos do formulário (achei ${chamadas})`);
+
+  // ── O aviso da CBTM não aparece para quem nunca foi perguntado sobre a CBTM ──
+  // A pergunta "é federado pela CBTM?" já vivia dentro de `{!ehB && ...}`; o
+  // AVISO ficava do lado de fora e alcançava todo mundo. No bh2, que é Sistema B,
+  // o atleta lia um alerta sobre a Nota CBTM 183/2025 sem ter sido perguntado
+  // nada. Ruído numa tela cuja queixa é justamente ser longa demais.
+  const iAviso = fonte.indexOf("⚠️ Atletas federados CBTM");
+  ok(iAviso > 0, "o aviso da CBTM foi encontrado");
+  // Janela para TRÁS até a abertura da div — fronteira sintática, não contagem.
+  const aberturaAviso = fonte.lastIndexOf("{!ehB && <div", iAviso);
+  const divAnterior = fonte.lastIndexOf("<div", iAviso);
+  ok(aberturaAviso > 0 && aberturaAviso === divAnterior - 9,
+    "o aviso da CBTM está DENTRO do gate !ehB — circuito por pontos não o recebe");
+}
+
 process.exit(placar("O segundo circuito"));

@@ -5,6 +5,79 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-11-07 — o card dos meses para de mentir "✓ Meses salvos" (só app)
+
+**Nada de motor e nada de banco.** `admin-action` segue **v67**, `athlete-action`
+**v24**, `login-atleta` **v12** — conferido com `npm run motor:listar` antes de
+subir, não presumido. Nenhuma migração.
+
+**Bateria: 2013 asserções em 18 seções, 0 falhas, saída 0.** `npm run build` ✓.
+6 asserções novas, **3 sabotagens de mutação, as 3 vermelhas** (restaurado:
+verde, arquivo byte-idêntico).
+
+#### O QUE MUDA
+
+**Fecha a metade pendente do 3º episódio de "o fonte não é o que está no ar"** —
+a armadilha que o CLAUDE.md descreve e que custou ao Juliano a crença, por três
+semanas, de ter configurado novembro/dezembro/fevereiro no `bh2` enquanto
+`circuitos.meses_temporada` estava `null`.
+
+O `salvar()` do card "🗓️ Meses em que o circuito roda" fazia
+`try { await dispatch(...) } catch { setMsg("✗ …") }`. Mas **`dispatchAndSync`
+nunca lança** — ele captura o erro e **devolve** `{ ok: false, erro }`
+(`App.jsx:6879`, conferido: `try { … return r ?? { ok: true } } catch (e) {
+return { ok: false, erro: e.message } }`). O ramo de erro era **inalcançável**,
+então `setMsg("✓ Meses salvos.")` rodava **sempre**, inclusive quando nada tinha
+sido salvo.
+
+Agora a tela lê a resposta: `const r = await dispatch(...)`, e
+`if (!r || r.ok === false)` imprime
+*"✗ Não foi possível salvar — os meses continuam como estavam"* e **sai** antes
+do visto. O idioma correto já existia no arquivo (`:10303`, o `NOVA_TEMPORADA`);
+só não tinha chegado a esta tela.
+
+**A metade do motor subiu em 03/10 → v66/v67; a da tela ficou pendente desde
+então** e estava anotada no ROADMAP **1.3**. É este item.
+
+#### O QUE **NÃO** MUDA
+
+- **Nenhum caminho de dado.** O que muda é a leitura da resposta, não o que é
+  enviado nem o que é gravado. O `payload` do `DEFINIR_CONFIG_CIRCUITO` é
+  idêntico.
+- **Nenhum texto versionado foi tocado** — o portão da regra 7 não se aplica:
+  esta onda não encosta em `REGULAMENTO_*.md`, na `RegulamentoView` nem no texto
+  de consentimento.
+- **Dando certo, a tela é a mesma.** O "✓" aparece como antes. A diferença só
+  aparece quando o servidor recusa — e aí o organizador passa a ver a recusa em
+  vez de um visto falso.
+- **O atleta não vê nada.** É card de configuração do organizador.
+
+#### AS 6 ASSERÇÕES NOVAS
+
+Em `testes/erros-na-tela.mjs`, seção *"O visto de Meses salvos só aparece quando
+foi salvo de verdade"*. Elas provam, no fonte: que o `salvar()` guarda o retorno
+numa variável; que confere `ok === false`; que o `return` antecede o
+`setMsg("✓ …")`; e que **não** há `try/catch` em volta do `dispatch`.
+
+⚠️ **Armadilha que elas pisaram e de que escaparam:** o comentário novo que
+explica o defeito **cita** a string `"✓ Meses salvos."`, e vem **antes** do
+código. As duas asserções de ordenação casaram com o **comentário** e ficaram
+vermelhas sem defeito nenhum presente. Conserto: `semComentarios(corpo)` — que
+apaga comentários **preservando o comprimento e as quebras de linha**, mantendo
+os índices válidos. É a mesma família de erro de sempre nesta casa: **a asserção
+mediu o texto que explica a regra, não a regra**.
+
+#### RISCO E VOLTA ATRÁS
+
+Risco baixo: uma leitura de retorno, num card só. Para reverter:
+
+```bash
+git revert --no-edit <sha> && git push origin main
+curl -sL https://clubedotenisdemesabh.com.br/ | grep -oE 'index-[A-Za-z0-9_-]+\.js'
+```
+
+---
+
 ### 2026-11-02 — a inscrição deixa de esconder o preço no meio do caminho (só app)
 
 **Nada de motor e nada de banco.** `admin-action` segue **v67**, `athlete-action`

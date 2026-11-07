@@ -9210,9 +9210,30 @@ function MesesTemporadaCard({ state, dispatch }) {
   async function salvar(valor) {
     setSalvando(true); setMsg("");
     try {
-      await dispatch({ type: "DEFINIR_CONFIG_CIRCUITO", payload: { mesesTemporada: valor } });
+      // ⚠️ CONFERIR O `{ ok }` QUE ELE DEVOLVE — `dispatchAndSync` NUNCA LANÇA.
+      // Ele captura o erro e DEVOLVE `{ ok: false, erro }`. O `catch` abaixo era
+      // código morto, e por isso o "✓ Meses salvos." rodava SEMPRE, inclusive
+      // quando nada tinha sido salvo.
+      //
+      // Isto não é hipótese: em 03/10/2026 o Juliano escolheu os meses do bh2,
+      // leu "✓ Meses salvos" e `circuitos.meses_temporada` ficou `null` — o
+      // motor no ar era a v65, que ainda não sabia ler `mesesTemporada` e
+      // ignorava o campo em silêncio. Ele seguiu semanas acreditando ter
+      // configurado novembro/dezembro/fevereiro. O conserto do motor subiu
+      // (v66); ESTA METADE, a tela ler a resposta, ficou pendente desde então —
+      // está no CLAUDE.md ("Conserto pendente: … + a tela ler o { ok }") e no
+      // ROADMAP 1.3.
+      //
+      // Mesmo padrão da virada de temporada (:10303) e do envio de placar.
+      const r = await dispatch({ type: "DEFINIR_CONFIG_CIRCUITO", payload: { mesesTemporada: valor } });
+      if (!r || r.ok === false) {
+        setMsg("✗ " + (r?.erro || "Não foi possível salvar — os meses continuam como estavam."));
+        return;
+      }
       setMsg(valor ? "✓ Meses salvos." : "✓ Voltou ao automático.");
     } catch (e) {
+      // Mantido por cinto e suspensório: se um dia `dispatchAndSync` passar a
+      // lançar, o erro aparece em vez de sumir. Hoje este ramo não roda.
       setMsg("✗ " + (e?.message || "Não foi possível salvar."));
     } finally { setSalvando(false); }
   }

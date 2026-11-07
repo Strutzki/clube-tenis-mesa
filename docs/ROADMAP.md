@@ -38,7 +38,8 @@ não validado em campo" continua valendo, mas agora com dado: a validação em c
 **começou** e já derrubou um defeito de **dinheiro** (preço R$ 0,00 para quem devia
 pagar R$ 50,00, 2 de 3 atletas sem pagar por causa dele), um de **consentimento**
 (texto de privacidade alterado em produção sem versão nem re-aceite) e um de
-**calendário** que **ainda está no ar** (item **1.3**). Ver a Onda 1.
+**calendário** — este **fechado em 07/11/2026**, nas duas metades (item **1.3**).
+Ver a Onda 1.
 
 ---
 
@@ -2113,8 +2114,10 @@ Os itens abaixo são o que o piloto abriu. Numeração **1.x**, livre de colisã
   regulamento_versao = v03-13`, 4 aceites) — o acervo dizia "ainda não é a versão
   do BH". O **0.10.15** pode ser revisitado como concluído na parte do carimbo.
 
-- **1.3 — ⛔ A TELA DOS MESES ESTÁ NO AR FALANDO COM UM MOTOR QUE NÃO ENTENDE O
-  CAMPO — e ela diz "✓ Meses salvos".** O Juliano **acredita** ter configurado
+- **1.3 — ✅ RESOLVIDO EM 07/11/2026 (o relato abaixo é o diagnóstico de 12/10,
+  mantido como registro; a resolução está no fim do item). A TELA DOS MESES
+  ESTAVA NO AR FALANDO COM UM MOTOR QUE NÃO ENTENDIA O CAMPO — e ela dizia
+  "✓ Meses salvos".** O Juliano **acredita** ter configurado
   novembro, dezembro e fevereiro para o `bh2`. **`circuitos.meses_temporada` do
   `bh2` está `null`** (conferido por mim no banco, 12/10). **Com a 1ª etapa em
   01/11, isto desloca o prazo de rodadas de atletas reais.**
@@ -2150,6 +2153,24 @@ Os itens abaixo são o que o piloto abriu. Numeração **1.x**, livre de colisã
   verdes, e todas sobre o FONTE.** Asserção de paridade entre app e motor compara
   dois arquivos do repositório — **ela não sabe qual versão está no ar.** Ver
   `docs/GOVERNANCA_AGENTES.md`.
+
+  ✅ **FECHADO EM 07/11/2026, nas duas metades — e elas levaram 25 dias de
+  diferença.** A do **motor** subiu em 16/10 (`admin-action` v65 → v66 → **v67**,
+  que é a versão no ar hoje, conferida com `npm run motor:listar`, não presumida):
+  o motor passou a ler `mesesTemporada`. A da **tela** é de hoje: o `salvar()` do
+  card agora faz `const r = await dispatch(...)` e, em `!r || r.ok === false`,
+  escreve *"✗ Não foi possível salvar — os meses continuam como estavam"* e
+  **sai** antes do visto. 6 asserções novas em `testes/erros-na-tela.mjs`, 3
+  sabotagens, as 3 vermelhas. Ver `docs/CHANGELOG.md` 07/11/2026.
+  ⚠️ **O que NÃO foi fechado junto, e é decisão dele:** `circuitos.meses_temporada`
+  do `bh2` hoje é `[11, 12, 1]` — a 1ª etapa começou em **01/11** e as rodadas 1 e
+  2 **já carregam prazo próprio gravado** (15/11 e 27/11), então o campo não
+  afeta nada já jogado. Mas o Juliano disse em 07/11 que **não haverá rodada em
+  janeiro**, e o `AVANCAR_RODADA` tira o mês **desta lista** (`mesDoPar`,
+  `admin-action:1021`), não da data do clique — ou seja, trocar para
+  `[11, 12, 2]` é o que faz a rodada 5 cair em fevereiro. **Não mexi no banco por
+  fora de propósito:** agora que a tela diz a verdade, o lugar certo de fazer
+  isso é o card, e o "✓" passa a valer como prova.
 
 - **1.4 — ⚖️ "Não coletamos dados financeiros" é impreciso.** A tela de
   consentimento promete isso, e o app **guarda** `pagamentos.valor`,

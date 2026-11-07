@@ -20,7 +20,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ok, secao, placar } from "./ferramentas.mjs";
+import { ok, secao, placar, semComentarios } from "./ferramentas.mjs";
 
 const RAIZ = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const FONTE = path.join(RAIZ, "src", "App.jsx");
@@ -209,6 +209,52 @@ secao("O aviso não deixa a página atravessar por baixo dele");
   const dentro = fonte.slice(fimEstilo, fimWrapper);
   ok(dentro.includes("<DbBar/>"), "a DbBar está dentro do wrapper de fundo opaco");
   ok(dentro.includes("<AcaoErroBar/>"), "a AcaoErroBar está dentro do wrapper de fundo opaco");
+}
+
+// ── O card dos meses confere a RESPOSTA do servidor ─────────────────────────
+secao("O visto de Meses salvos só aparece quando foi salvo de verdade");
+{
+  // A armadilha do CLAUDE.md, metade pendente desde 12/10/2026: o motor foi
+  // consertado (v65 → v66), a TELA não. `dispatchAndSync` NUNCA lança — captura
+  // o erro e DEVOLVE `{ ok: false, erro }` —, então o `try/catch` em volta dele
+  // é teatro e o `setMsg("✓ Meses salvos.")` rodava SEMPRE.
+  //
+  // O custo real: em 03/10/2026 o Juliano escolheu os três meses do bh2, leu o
+  // "✓" e `circuitos.meses_temporada` ficou `null`. Ele seguiu semanas
+  // acreditando ter configurado novembro/dezembro/fevereiro.
+  const i = fonte.indexOf("async function salvar(valor) {");
+  ok(i > 0, "o salvar() do card dos meses foi encontrado");
+  // Janela até o fim da função — fronteira sintática (o `finally` fecha), não
+  // contagem de caracteres.
+  const fim = fonte.indexOf("finally { setSalvando(false); }", i);
+  ok(fim > i, "o fim do salvar() foi encontrado");
+  const corpo = fonte.slice(i, fim);
+
+  ok(/const r = await dispatch\(\{ type: "DEFINIR_CONFIG_CIRCUITO"/.test(corpo),
+    "o salvar() GUARDA o retorno do dispatch, em vez de um await seco");
+  ok(/if \(!r \|\| r\.ok === false\)/.test(corpo),
+    "e confere o { ok } que dispatchAndSync devolve");
+
+  // A ORDEM é a regra: a conferência tem de vir ANTES do "✓", senão o sucesso é
+  // anunciado e só depois desmentido — que é o defeito, não o conserto.
+  //
+  // ⚠️ `semComentarios` AQUI NÃO É ENFEITE, e eu caí nisto escrevendo esta
+  // própria seção: o comentário do conserto CITA a frase "✓ Meses salvos." para
+  // explicar o defeito, e ele vem ANTES do código. O `indexOf` cru achava a
+  // citação, não a linha — e as duas asserções abaixo ficaram vermelhas sem
+  // haver defeito nenhum. É a mesma armadilha registrada no CLAUDE.md ("a
+  // asserção casava com o comentário que explicava por que aquilo saiu").
+  // `semComentarios` preserva tamanho e quebras, então os índices seguem válidos.
+  const codigo = semComentarios(corpo);
+  const iConfere = codigo.indexOf("r.ok === false");
+  const iSucesso = codigo.indexOf("✓ Meses salvos.");
+  ok(iConfere > 0 && iSucesso > 0 && iConfere < iSucesso,
+    "a conferência vem ANTES de anunciar o sucesso");
+
+  // E o ramo de recusa tem de SAIR, senão cai no "✓" logo abaixo assim mesmo.
+  const trechoRecusa = codigo.slice(iConfere, iSucesso);
+  ok(/return;/.test(trechoRecusa),
+    "e a recusa interrompe, em vez de seguir para a mensagem de sucesso");
 }
 
 process.exit(placar("Erros na tela"));

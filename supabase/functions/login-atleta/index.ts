@@ -178,6 +178,88 @@ async function circuitosDoAtleta(atletaId: string): Promise<any[]> {
     .map((c: any) => ({ id: c.id, slug: c.slug, nome: c.nome_circuito, sistema: c.sistema, publico: c.publico }));
 }
 
+// ── A PORTA DO APP ────────────────────────────────────────────────────────────
+// Ate 15/11/2026 a porta era `atletas.status === "ativo"`: um campo GLOBAL, da
+// PESSOA, escrito por uma SEGUNDA gravacao (`promoverIdentidadeGlobal`, em
+// admin-action) que roda depois da aprovacao e pode falhar sozinha. Quando ela
+// falha o atleta fica aprovado no circuito e trancado para fora do app, e nada
+// na tela do organizador mostra a contradicao.
+// NAO e hipotese: aconteceu com um atleta real do bh2 entre 31/10 e 15/11/2026.
+// Ele estava `circuito_atletas.status = 'ativo'`, pareado nas rodadas 1 e 2, com
+// os R$ 50 confirmados, e a tela dizia "seu cadastro ainda esta em analise".
+// Ficou 15 dias assim, perdeu o prazo da rodada 1, e so se soube porque reclamou.
+//
+// Agora a porta E a participacao: quem e membro ATIVO de algum circuito entra.
+// A aprovacao no circuito passa a SER o acesso -- uma escrita so, sem segunda
+// metade para falhar em silencio.
+//
+// DUAS DECISOES QUE PARECEM DETALHE E NAO SAO:
+//
+// 1. NAO filtra por `circuitos.ativo`. Encerrar um circuito nao pode trancar o
+//    atleta para fora do proprio historico. Quem monta a lista do hub e
+//    `circuitosDoAtleta`, e ESSA sim filtra -- sao perguntas diferentes:
+//    "pode entrar?" nao e "o que ele ve quando entra?".
+//
+// 2. FAIL-CLOSED. Se a consulta falhar, `throw` -- o chamador devolve 500 e a
+//    porta fica FECHADA. Duvida nao abre porta. E o mesmo principio do
+//    `getSistema` do admin-action, que prefere quebrar a assumir "A".
+//
+// O que continua fora daqui, de proposito: o `LOGIN_ORGANIZADOR`. Organizador
+// pode nao ser atleta de circuito nenhum (hoje nao ha nenhum cadastrado, mas o
+// caso e legitimo), e trocar a porta dele por esta trancaria o painel.
+//
+// 3. O VINCULO ATIVO NAO BASTA SOZINHO -- e eu quase subi assim.
+//    `atletas.status = "arquivado"` + telefone "removido:" e a LAPIDE de um
+//    cadastro ANONIMIZADO (a `anonimizar-atleta` termina a exclusao gravando os
+//    dois). E o `INSCRICAO_VALIDAR` pode reativar o VINCULO de alguem nesse
+//    estado, porque ele escreve em `circuito_atletas` e a promocao global se
+//    recusa, de proposito, a ressuscitar quem ja foi anonimizado. Resultado: so
+//    com "tem vinculo ativo", aprovar um anonimizado na fila reabria a porta dele.
+//    Pego pela bateria antes de subir (`segundo-circuito.mjs`, "as duas portas da
+//    LGPD"), e a assercao que pegou ja existia desde 29/09/2026.
+//    Por isso a porta tem DUAS perguntas: o vinculo ABRE, a lapide FECHA.
+//    Pedido de exclusao ainda EM ABERTO (`exclusao_solicitada_em`) NAO fecha --
+//    a pessoa precisa entrar para poder cancelar o proprio pedido.
+async function temAcessoAoApp(atletaId: string): Promise<boolean> {
+  const { data: ident, error: eIdent } = await supabase.from("atletas")
+    .select("status,telefone").eq("id", atletaId).maybeSingle();
+  if (eIdent) throw eIdent;
+  if (!ident) return false;
+  if (ident.status === "arquivado") return false;
+  if (String(ident.telefone || "").startsWith("removido:")) return false;
+
+  const { data, error } = await supabase.from("circuito_atletas")
+    .select("atleta_id").eq("atleta_id", atletaId).eq("status", "ativo").limit(1);
+  if (error) throw error;
+  return (data ?? []).length > 0;
+}
+
+// Por que a porta se fechou -- para a tela poder explicar em vez de chutar
+// "em analise pelo organizador" para todo mundo.
+// O motivo vem do VINCULO (circuito_atletas), nao de `atletas`: num circuito que
+// nao e o BH o `writeAtleta` manda `status` para o vinculo, entao suspender ou
+// reprovar alguem no bh2 NUNCA encostou em `atletas.status`. A tela lia o campo
+// global e por isso explicava errado -- quando explicava.
+// Ordem de precedencia: o pior motivo ganha, porque e o que a pessoa precisa
+// resolver primeiro.
+const PESO_MOTIVO: Record<string, number> = {
+  arquivado: 4, reprovado: 3, suspenso: 2, pendente: 1,
+};
+async function motivoDoBloqueio(atletaId: string): Promise<{ motivo: string; detalhe: string | null }> {
+  const { data } = await supabase.from("circuito_atletas")
+    .select("status,motivo_reprovacao").eq("atleta_id", atletaId);
+  const linhas = data ?? [];
+  if (linhas.length === 0) return { motivo: "sem_circuito", detalhe: null };
+  let melhor = linhas[0];
+  for (const l of linhas) {
+    if ((PESO_MOTIVO[String(l.status)] ?? 0) > (PESO_MOTIVO[String(melhor.status)] ?? 0)) melhor = l;
+  }
+  return {
+    motivo: String(melhor.status || "pendente"),
+    detalhe: melhor.motivo_reprovacao ? String(melhor.motivo_reprovacao) : null,
+  };
+}
+
 // ── CPF backfill (reusa a fundação da spec de CPF; hash no edge, pepper no Vault) ──
 function cpfNormaliza(s: unknown): string | null {
   const d = String(s ?? "").replace(/\D/g, "");
@@ -257,7 +339,16 @@ Deno.serve(async (req) => {
       const { data: full } = await supabase.from("atletas").select(COLS).eq("id", a.id).single();
       const circuitosLogin = await circuitosDoAtleta(a.id);
       const tokenLogin = await emitirSessao(a.id);
-      return jsonResponse({ sucesso: true, dados: { encontrado: true, ok: true, atleta: full, circuitos: circuitosLogin, token: tokenLogin } });
+      // `acesso` e o veredito da porta, dito pelo servidor. A tela nao deduz mais de
+      // `atleta.status`: aquele campo e GLOBAL e, num circuito que nao e o BH, nunca
+      // recebe "reprovado" nem "suspenso" -- eles vao para o vinculo. Ou seja, a tela
+      // explicava errado quando explicava. Ver `temAcessoAoApp` e `motivoDoBloqueio`.
+      // O app ANTIGO ignora este campo e segue pelo caminho velho: por isso o motor
+      // sobe primeiro (ele passou a DEVOLVER mais, nao a EXIGIR mais).
+      const acessoLogin = await temAcessoAoApp(a.id);
+      const porqueLogin = acessoLogin ? null : await motivoDoBloqueio(a.id);
+      return jsonResponse({ sucesso: true, dados: { encontrado: true, ok: true, atleta: full, circuitos: circuitosLogin, token: tokenLogin,
+        acesso: { ok: acessoLogin, motivo: porqueLogin?.motivo ?? null, detalhe: porqueLogin?.detalhe ?? null } } });
     }
 
     if (acao === "DEFINIR_PIN") {
@@ -277,7 +368,12 @@ Deno.serve(async (req) => {
       const { data: full } = await supabase.from("atletas").select(COLS).eq("id", a.id).single();
       const circuitosNovo = await circuitosDoAtleta(a.id);
       const tokenNovo = await emitirSessao(a.id);
-      return jsonResponse({ sucesso: true, dados: { ok: true, atleta: full, circuitos: circuitosNovo, token: tokenNovo } });
+      // Mesmo veredito do LOGIN. E por aqui que passa o PRIMEIRO acesso -- a tela
+      // "Crie seu PIN", que foi exatamente onde o atleta do bh2 ficou preso.
+      const acessoNovo = await temAcessoAoApp(a.id);
+      const porqueNovo = acessoNovo ? null : await motivoDoBloqueio(a.id);
+      return jsonResponse({ sucesso: true, dados: { ok: true, atleta: full, circuitos: circuitosNovo, token: tokenNovo,
+        acesso: { ok: acessoNovo, motivo: porqueNovo?.motivo ?? null, detalhe: porqueNovo?.detalhe ?? null } } });
     }
 
     // PARTICIPAR — atleta EXISTENTE entra num 2º circuito (Bloqueador estrutural 1).
@@ -305,7 +401,8 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: false, erro: "pin_incorreto" }, 401);
       }
       await supabase.from("atletas").update({ pin_tentativas: 0, pin_bloqueado_ate: null }).eq("id", a.id);
-      if (a.status !== "ativo") return jsonResponse({ sucesso: false, erro: "cadastro_inativo" }, 403);
+      // A porta: ser membro ativo de ALGUM circuito. Ver `temAcessoAoApp`.
+      if (!(await temAcessoAoApp(a.id))) return jsonResponse({ sucesso: false, erro: "cadastro_inativo" }, 403);
 
       // 2) Valida o circuito alvo (existe, ativo, inscrições abertas, não é o BH).
       const circuitoId = p.circuitoId ? String(p.circuitoId) : "";
@@ -550,6 +647,14 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: false, erro: "pin_incorreto" }, 401);
       }
       await supabase.from("atletas").update({ pin_tentativas: 0, pin_bloqueado_ate: null }).eq("id", a.id);
+      // ⚠️ ESTA PORTA CONTINUA NO STATUS GLOBAL, DE PROPOSITO -- nao "esqueceram" dela
+      // em 15/11/2026, quando o LOGIN e o SESSAO passaram a perguntar pelo vinculo.
+      // Organizador NAO precisa ser atleta de circuito nenhum: ele administra, pode
+      // nao jogar. Trocar esta linha por `temAcessoAoApp` trancaria o painel de quem
+      // so organiza. Hoje nao ha nenhum organizador cadastrado (medido em 15/11), mas
+      // o caso e legitimo e a trava e barata. Se um dia precisar mudar, a pergunta
+      // certa e "esta pessoa tem papel neste circuito?", que e o `vinc` logo abaixo --
+      // nao "ela e membro de algum circuito?".
       if (a.status !== "ativo") return jsonResponse({ sucesso: false, erro: "cadastro_inativo" }, 403);
 
       const { data: vinc } = await supabase.from("circuito_organizadores")
@@ -576,7 +681,19 @@ Deno.serve(async (req) => {
       const atletaId = await atletaPorToken(body?.token);
       if (!atletaId) return jsonResponse({ sucesso: false, erro: "sessao_invalida" }, 401);
       const { data: full } = await supabase.from("atletas").select(COLS).eq("id", atletaId).single();
-      if (!full || full.status !== "ativo") return jsonResponse({ sucesso: false, erro: "cadastro_inativo" }, 403);
+      // A porta: ser membro ativo de ALGUM circuito. Ver `temAcessoAoApp`.
+      // O `LOGIN` nao recusa ninguem (ele devolve o atleta e o veredito `acesso`
+      // para a tela poder EXPLICAR), entao e aqui que a sessao guardada e barrada.
+      // ⚠️ MAS NAO CHAME ISTO DE "o portao de verdade" -- eu chamei, e e falso.
+      // Ele barra a REIDRATACAO, nao as sessoes ja vivas: `athlete-action` e
+      // `circuito-dados` validam o token por conta propria e NAO consultam esta
+      // porta, e a tela, quando o SESSAO falha, preserva a lista guardada em vez de
+      // deslogar (App.jsx, no tratamento do SESSAO). O login por biometria tambem
+      // entra pelo roster local sem perguntar aqui. Ou seja: a porta decide QUEM
+      // ENTRA, nao expulsa quem ja esta dentro. Revogar sessao de quem perdeu
+      // acesso e trabalho separado, e nao foi feito -- ver ROADMAP 1.3c.
+      // (Supervisor de Confiabilidade, 15/11/2026.)
+      if (!full || !(await temAcessoAoApp(atletaId))) return jsonResponse({ sucesso: false, erro: "cadastro_inativo" }, 403);
       const circs = await circuitosDoAtleta(atletaId);
       return jsonResponse({ sucesso: true, dados: { ok: true, atleta: full, circuitos: circs } });
     }

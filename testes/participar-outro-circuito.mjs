@@ -33,6 +33,22 @@ const CPF_OK = "52998224725";
 const CPF_RESP = "11144477735";
 
 // O `login-atleta` chama estas funções do banco. O banco em memória as serve.
+// ⚠️ DATA DE NASCIMENTO SE MONTA EM **UTC**, porque é em UTC que o motor a lê
+// (`idadeDeISO`, no `athlete-action` e no `login-atleta`:
+// `getUTCFullYear`/`getUTCMonth`/`getUTCDate`).
+// Até 15/11/2026 este arquivo tinha QUATRO cópias do cálculo, todas montando a
+// data no fuso LOCAL e convertendo com `toISOString()` (que é UTC). Em parte do
+// dia os dois discordavam em UM DIA e as asserções da FRONTEIRA DOS 18 ficavam
+// vermelhas sozinhas — aconteceu às 21:04 de 15/11 (00:04 UTC do dia seguinte),
+// no meio de outra onda, e custou tempo procurando defeito onde não havia.
+// É a mesma família do `neq`/`is` do banco falso: o instrumento discordando do
+// motor em silêncio. Teste que depende da hora do dia não é teste.
+const nascComIdade = (anos, diasExtra = 0) => {
+  const h = new Date();
+  const d = new Date(Date.UTC(h.getUTCFullYear() - anos, h.getUTCMonth(), h.getUTCDate() + diasExtra));
+  return d.toISOString().slice(0, 10);
+};
+
 const FUNCOES_DO_BANCO = {
   get_cpf_pepper: () => "pimenta-de-teste",
   // Sem duplicata em nenhum cenário deste arquivo: o CPF é novo.
@@ -236,9 +252,7 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
 {
   // A tela desabilita o botão; mas a tela não é o portão. Antes de 27/09/2026 o
   // servidor aceitava um menor sem responsável se o pedido viesse sem os campos.
-  const menor = new Date();
-  menor.setFullYear(menor.getFullYear() - 15);
-  const nascMenor = menor.toISOString().slice(0, 10);
+  const nascMenor = nascComIdade(15);
 
   const { motor, banco } = await cenario();
   const r = await motor.chamar(pedido({ dataNascimento: nascMenor }));
@@ -277,14 +291,8 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
   // A FRONTEIRA. Os fixtures acima são 15 e 36 anos — nenhum encosta nos 18, e o
   // Guardião de Confiabilidade provou que trocar `idade < 18` por `idade < 17`
   // deixava a bateria VERDE. O jovem de 17 é o caso real mais provável.
-  const menosUmDia = (anos) => {
-    const d = new Date(); d.setFullYear(d.getFullYear() - anos); d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
-  };
-  const maisUmDia = (anos) => {
-    const d = new Date(); d.setFullYear(d.getFullYear() - anos); d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
-  };
+  const menosUmDia = (anos) => nascComIdade(anos, 1);
+  const maisUmDia  = (anos) => nascComIdade(anos, -1);
   const { motor } = await cenario();
   const dezessete = await motor.chamar(pedido({ dataNascimento: menosUmDia(18) }));
   igual(dezessete.status, 400, "faltando UM DIA para 18, ainda é menor: recusa sem responsável");
@@ -332,7 +340,7 @@ secao("Menor de 18 não entra sem responsável legal, nem por fora da tela");
   // O 2º buraco: quem JÁ TEM documento não passava pelo backfill, então a idade
   // dele nunca era conferida. Agora é lida do arquivo.
   const hash = await pinGuardado(PIN);
-  const nascMenor = (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 15); return d.toISOString().slice(0, 10); })();
+  const nascMenor = nascComIdade(15);
   async function comDocumento(docExtra) {
     return montarMotor({
       funcao: "login-atleta",
@@ -984,21 +992,33 @@ secao("O app manda o PIN do super-admin ao porteiro — a linha de que tudo depe
   // A asserção cobre os QUATRO de propósito. Consertar um e deixar os outros é
   // literalmente como este defeito nasceu — eu tinha consertado o caso pendente
   // nesta mesma onda e regredido os outros três.
+  //
+  // ⚠️ 15/11/2026 — A GUARDA MUDOU DE PERGUNTA, e estas asserções mudaram com ela.
+  // Ela não lê mais `found.status` (o status GLOBAL, da pessoa): lê `d.acesso`, o
+  // veredito que o servidor passou a mandar, calculado sobre o VÍNCULO com o
+  // circuito. O motivo é que num circuito não-BH o status global NUNCA recebe
+  // "reprovado" nem "suspenso" — o `writeAtleta` manda `status` para o vínculo —
+  // então estes três ramos eram inalcançáveis no bh2. As quatro frases continuam
+  // sendo quatro, e continuam sendo o que esta seção protege; o que mudou é de
+  // onde vem a resposta. Ver `segundo-circuito.mjs`, seção "A PORTA DO APP".
   {
-    const iG = fonteApp.indexOf('if (found.status !== "ativo")');
-    const fimG = fonteApp.indexOf("\n      }", iG) + 8;
+    const iG = fonteApp.indexOf("const acessoSrv = d.acesso");
+    const fimG = fonteApp.indexOf("\n      }", fonteApp.indexOf("if (bloqueado) {", iG)) + 8;
     ok(iG > 0 && fimG > iG, "a guarda de status do login foi localizada");
     const guarda = semComentarios(fonteApp.slice(iG, fimG));
 
+    ok(/const bloqueado = acessoSrv \? !acessoSrv\.ok : found\.status !== "ativo"/.test(guarda),
+      "a guarda pergunta ao SERVIDOR (`d.acesso`) e só cai no status global se o motor for antigo");
+
     for (const st of ["reprovado", "suspenso", "arquivado"]) {
-      ok(new RegExp(`found\\.status === "${st}"`).test(guarda),
+      ok(new RegExp(`razao === "${st}"`).test(guarda),
         `o status «${st}» tem ramo próprio na guarda do login`);
     }
     ok(/não foi aprovada/.test(guarda),
       "o reprovado lê que NÃO foi aprovado — não «está em análise»");
     ok(/Motivo: \$\{motivo\}/.test(guarda),
       "e recebe o MOTIVO que o organizador escreveu, quando existe");
-    ok(/String\(found\.motivo \|\| ""\)/.test(guarda),
+    ok(/String\(\(acessoSrv \? acessoSrv\.detalhe : found\.motivo\) \|\| ""\)/.test(guarda),
       "com tolerância à ausência do campo — o motor sobe primeiro, mas a frase nunca mostra «undefined»");
     ok(/suspensa nesta temporada/.test(guarda),
       "o suspenso lê que está suspenso");

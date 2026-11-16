@@ -2172,6 +2172,317 @@ Os itens abaixo são o que o piloto abriu. Numeração **1.x**, livre de colisã
   fora de propósito:** agora que a tela diz a verdade, o lugar certo de fazer
   isso é o card, e o "✓" passa a valer como prova.
 
+- **1.3b — ⛔ O `RENOVAR` FICOU PARA TRÁS NA TROCA DA PORTA.** Em 15/11/2026 a
+  porta do app passou a ser o VÍNCULO com o circuito (`temAcessoAoApp`, no
+  `login-atleta`). O `RENOVAR` do `athlete-action` **não** acompanhou: ele ainda
+  faz `select("status").from("atletas")` e recusa com *"Apenas atletas ativos
+  podem renovar"* (`athlete-action:631-634`). **Achado pelo Guardião de
+  Confiabilidade na revisão da própria onda**, e registrado aqui porque sem isto
+  a frase "a porta passou a ser o vínculo" promete mais do que o conjunto cumpre.
+  **O efeito concreto:** se a promoção da identidade global falhar de novo — que
+  é exatamente o defeito que a onda existe para neutralizar — o atleta passa a
+  CONSEGUIR entrar no app e continua travado na renovação da temporada.
+  **E tem um segundo defeito no mesmo lugar, que eu vi ao conferir:** o `RENOVAR`
+  pergunta pelo status GLOBAL e **não confere vínculo com o circuito** em que a
+  renovação está sendo pedida — ao contrário do `ACEITAR_REGULAMENTO`, dez linhas
+  acima, que confere (`:615-618`). A pergunta certa é a mesma das duas: *esta
+  pessoa é membro ativo DESTE circuito?*
+  **Por que não entrou na onda:** consertar obriga a publicar o `athlete-action`
+  (v24 → v25), que é a função do **ENVIAR_PLACAR** — em uso agora, com a rodada 2
+  do bh2 aberta até 27/11. A onda da porta sobe só o `login-atleta`. **Decisão do
+  Juliano.**
+  **Janela natural:** antes da virada de temporada, que é quando o `RENOVAR` passa
+  a ser chamado. Hoje ele não é usado: o BH encerrou e o bh2 está no meio da 1ª.
+  *(Vizinhos medidos na mesma revisão, SEM impacto para o atleta, porque vivem no
+  caminho do organizador: `circuito-dados:160` e `comprovante-url:57` também leem
+  o status global.)*
+
+- **1.3c — ⚠️ A PORTA NOVA DECIDE QUEM ENTRA; ELA NÃO EXPULSA QUEM JÁ ESTÁ
+  DENTRO.** Levantado pelo Supervisor de Confiabilidade em 15/11/2026, ao revisar
+  a própria onda que trocou a porta. **Não é regressão** — já era assim antes —,
+  mas eu tinha escrito no código que o `SESSAO` era *"o portão DE VERDADE"*, e
+  isso é falso. Está corrigido no comentário; fica aqui o que ainda não existe:
+  1. **Sessão viva não é revogada.** Quem perde acesso (vínculo suspenso,
+     reprovado ou arquivado) continua com o token valendo: `athlete-action` e
+     `circuito-dados` validam o token por conta própria e **não** consultam a
+     porta. E quando o `SESSAO` falha, a tela **preserva** a lista guardada em vez
+     de deslogar — de propósito, para falha transitória de rede não derrubar
+     ninguém. Conserto certo: apagar as linhas de `atleta_sessao` do atleta no
+     momento em que o vínculo deixa de ser ativo (`INSCRICAO_VALIDAR` reprovando,
+     `ARQUIVAR_ATLETA`, suspensão pelo `EDITAR_ATLETA`).
+  2. **O login por biometria não pergunta à porta.** Ele entra pelo roster local.
+  3. **O `PARTICIPAR` concede a própria porta.** Ele insere o vínculo já com
+     `status: "ativo"` (e `pendente_circuito: true`), então quem entra num 2º
+     circuito por ali ganha acesso ao app **na hora**, sem aprovação de ninguém.
+     Não é laço — a guarda da porta roda **antes** do insert (`:405` antes de
+     `:615`), então quem não tinha acesso não chega a criar o vínculo. Mas é
+     **decisão de regra de negócio**: hoje, quem for suspenso no bh2 e entrar num
+     3º circuito reabre o próprio acesso. **Decisão do Juliano.**
+  4. **A porta nova depende do espelho `circuito_atletas`, e no BH ele é
+     *best-effort*** (ver "escrita dupla" no CLAUDE.md). Se o espelho falhar, um
+     atleta aprovado no BH fica trancado para fora. **Medido em 15/11/2026: 15
+     atletas, 25 vínculos, nenhum sem espelho** — risco hoje é zero, mas é o
+     mesmo formato de defeito que esta onda existe para matar, agora do outro
+     lado. Vale uma asserção de consistência, ou tornar o espelho obrigatório.
+
+- **1.3d — 🔴 TRÊS PORTAS DO `athlete-action` E DO `circuito-dados` ACEITAM
+  `circuitoId` DO CLIENTE SEM CONFERIR VÍNCULO — e duas delas sem credencial
+  nenhuma.** Achado pelo **Guardião de Segurança em 15/11/2026**, rodando as Edge
+  Functions de verdade, ao auditar a troca da porta. **Nenhuma é introduzida por
+  aquela onda** — todas são anteriores. Estão aqui porque ele as mediu e porque
+  a onda muda o **peso** da primeira.
+  1. **`RENOVAR` fabrica vínculo em circuito alheio, por anônimo.**
+     `POST athlete-action {"acao":"RENOVAR","payload":{"athleteId":"<id público>",
+     "circuitoId":"<circuito alheio>","quer":true}}` — **sem token e sem PIN** —
+     responde **200** e **cria** uma linha em `circuito_atletas`. A única guarda é
+     `atletas.status !== "ativo"` (`athlete-action:634`), que é o status global de
+     quem o chamador escolher; os ids dos atletas são **públicos no ranking**. O
+     mecanismo é o `upsert` com `onConflict` do `mirrorSazonal` — o mesmo que o
+     `admin-action:517-521` já descreve por escrito e que foi consertado **só** no
+     `APLICAR_WO`.
+     ⚠️ **Por que não é crítico hoje, e por que virou urgente mesmo assim:** o
+     atacante **não controla o `status`** (o objeto é montado no servidor e passa
+     pelo `seasonalOnly`), então a linha nasce no **DEFAULT da coluna**, que é
+     **`'pendente'`** — medido em produção. E `pendente` **não abre a porta**.
+     Mas a onda de 15/11 promoveu `circuito_atletas.status` a **estado de
+     autenticação do app**: a porta está **a um `DEFAULT` de distância** de ser
+     forçável por anônimo.
+     ⚠️ **EU ESCREVI AQUI QUE "a bateria passou a prender esse default" E ERA
+     FALSO** — o Supervisor de Segurança mediu e devolveu. A asserção que eu
+     tinha escrito guardava só o lado **consumidor**; o **produtor** ficava solto,
+     e acrescentar `status: "ativo"` ao `RENOVAR` deixava a bateria **verde**. Era
+     a 17ª mutação da onda e a única verde. O que prende agora (`5bis-B`) é o
+     invariante de que a mitigação de fato depende: **o `RENOVAR` nunca escreve
+     `status`** — mutação conferida, vermelha. O `DEFAULT` em si continua
+     **não** modelado pelo banco de teste: ver **1.3e**.
+     **Conserto:** exigir token + vínculo neste circuito, no molde do
+     `ACEITAR_REGULAMENTO` (`athlete-action:615-618`), que faz certo dez linhas
+     acima. E `grep -rn RENOVAR testes/*.mjs` dá 3 linhas, **todas comentário ou
+     fatia de fonte**: o `RENOVAR` não tem teste de comportamento nenhum.
+  2. **`CANCELAR_WO` apaga pedido de W.O. de qualquer circuito, por anônimo.**
+     `athlete-action:695-708`: sem token, sem `athleteId`, com o `circuitoId`
+     vindo do payload. **Destruição silenciosa de dado alheio, alcançável hoje.**
+  3. **`circuito-dados` deixa entrar com vínculo de QUALQUER status.**
+     `ehMembroOuOrg` (`:80-85`) seleciona `atleta_id` e faz `if (mem) return true`
+     — **ignora o `status`**. Serve linha `pendente`, `reprovado`, `suspenso`.
+     Combinado com (1): fabrica-se a linha `'pendente'` num circuito **privado** e
+     lê-se o ranking inteiro e todas as partidas dele.
+  *(E um quarto, menor, no mesmo relatório: `circuito-dados:160` ficou com a porta
+  VELHA — gateia em `atletas.status` global no caminho telefone+PIN, e responde
+  `circuito_privado`, que é a explicação errada. Falha para o lado fechado. Inerte
+  hoje porque os 15 atletas estão `'ativo'` e os dois circuitos são públicos.)*
+
+- **1.3e — 🧪 DUAS DÍVIDAS QUE A AUDITORIA DA PORTA DEIXOU MEDIDAS.** Ambas do
+  Supervisor de Segurança, 15/11/2026, e ambas deliberadamente **fora** daquela
+  onda.
+  1. **O banco de teste não modela `circuito_atletas.status DEFAULT 'pendente'`.**
+     Tentei acrescentar `status: () => "pendente"` a `PADROES_DO_BANCO`
+     (`testes/ferramentas.mjs:117`) e **6 asserções do rodízio de bye ficaram
+     vermelhas** — fixtures antigas dependem de `status` indefinido. O default
+     está **certo** (é o mesmo espírito do `rejeitado`/`validado`/`calculado` que
+     já mora ali pelo mesmo motivo); o que ele desmascara é fixture incompleta.
+     Reverti e protegi o invariante por outro caminho. **Fazer com calma**, porque
+     mexe no instrumento de que toda a bateria depende, e não na véspera de uma
+     subida com rodada aberta.
+  2. **Não existe banimento de plataforma acionável por organizador.** `status`
+     está em `SEASONAL_COLS`, então o `ARQUIVAR_ATLETA` (`admin-action:1625`)
+     roteia pelo `writeAtleta` e, **fora do BH, escreve só o vínculo** —
+     `atletas.status` fica `'ativo'`. Ele provou rodando: arquivar num circuito
+     devolve 200, o global não muda, e com um segundo vínculo ativo a pessoa
+     entra. Com o BH encerrado e **10 dos 15 atletas em dois circuitos**, a única
+     coisa que tranca alguém da plataforma inteira é a **anonimização LGPD**, que
+     é apagamento irreversível — não sanção. **Decisão do Juliano:** se precisar
+     de "banido da plataforma", ele quer campo próprio, e não reaproveitar
+     `suspenso` nem forçar o `arquivado`.
+
+- **1.3f — 📊 O `despachos-do-dia` subconta rodada com W.O. duplo.** Achado pelo
+  Guardião de Confiabilidade em 15/11/2026, auditando a onda do W.O. duplo. As
+  três listas `in("wo_tipo", ["culposo","a_favor","justificado"])` dessa função
+  (`:147-172`) **não** incluem `duplo_culposo`, então o selo "processar" do painel
+  multi-circuito conta a menos numa rodada que tenha duplos. **É cosmético** — não
+  grava nada, não calcula ponto, só informa. Não bloqueou a subida.
+  ⚠️ **Mas ela é a função do episódio nº 2 de "o fonte não é o que está no ar"**:
+  roda a partir de uma pasta de rascunho do **projeto de torneios**
+  (`entrypoint_path` aponta para lá, medido), está na **v6**, e não tem fonte
+  fiel neste repositório. Consertar exige primeiro resolver essa procedência —
+  e é por isso que não foi consertado junto.
+
+- **1.3g — 🔴 O `ENVIAR_PLACAR` NÃO RECUSA PARTIDA QUE JÁ TEM W.O. — e isso pode
+  CONTAR A MESMA PARTIDA DUAS VEZES.** Achado pelo Guardião de Confiabilidade em
+  15/11/2026, auditando a onda do W.O. duplo. **É anterior à onda** — já valia
+  para `culposo` e `a_favor` —, mas **o duplo agrava**.
+  **A cadeia:** `athlete-action:491-498` só recusa partida `validado` ou
+  `rejeitado`. Ele até **lê** `wo_tipo`, mas só para decidir a auto-validação. Então
+  depois de um W.O. registrado um dos atletas ainda consegue mandar placar; se o
+  organizador validar, a partida fica `validado: true` **e** com `wo_tipo`
+  preenchido. E o `PROCESSAR_RODADA` monta **dois conjuntos** — `pendentes`
+  (validadas) e `wos` — e a partida entra **nos dois**: pontua pelo placar **e**
+  pelo W.O.
+  **Por que o duplo agrava:** no duplo a segunda contagem soma **derrota aos
+  dois**, além dos pontos do placar. Nos tipos antigos a sobreposição já existia,
+  mas com um beneficiário só.
+  ⚠️ **Honestidade sobre a medição:** o guardião mediu o `ENVIAR_PLACAR` (ele
+  aceita). **Não** rodou a validação de ponta a ponta até ver a dupla contagem —
+  essa parte é leitura do código, não medição. Quem for consertar **mede primeiro**.
+  **Conserto:** guarda `if (partida.wo_tipo) → 409 "W.O. já registrado"` no
+  `ENVIAR_PLACAR`, com asserção e mutação.
+  ⚠️ **A CONSEQUÊNCIA GRAVE DISTO JÁ ESTÁ FECHADA** — ver **1.3i**: o
+  `PROCESSAR_RODADA` não conta mais a partida duas vezes. O que resta aqui é o
+  atleta ainda **conseguir enviar** placar numa partida já decidida por W.O.: o
+  envio é inerte (o W.O. manda), mas a tela do atleta o deixa achar que o placar
+  dele vale alguma coisa.
+  ⛔ **E ESTE ITEM CHEGOU A DAR UM CONSELHO QUE DISPARAVA O DEFEITO.** A versão
+  anterior dizia que a saída para um W.O. registrado por engano "seria o
+  organizador imputar o resultado à mão" — que era **exatamente o gatilho** da
+  dupla contagem do 1.3i. **Removido.** (Supervisor de Confiabilidade, 15/11/2026.)
+  **Por que NÃO entrou nesta onda:** obriga a publicar o `athlete-action`
+  (v24 → v25), a função do **lançamento de placar**, em uso com a rodada 2 aberta
+  até 27/11. E falta decidir o que acontece com um W.O. registrado por engano —
+  **hoje não existe forma de DESFAZER um W.O.**, só de reclassificá-lo.
+  **Decisão do Juliano.**
+
+- **1.3h — 🔴 "AMBOS JUSTIFICADOS" DÁ RESULTADO ERRADO, CALADO — e a linha existe
+  no regulamento.** Achado pelo Guardião de Regulamento em 15/11/2026, **rodando o
+  motor**, ao auditar a onda do W.O. duplo. **É anterior à onda.**
+  O `vB-01` Cap. 07 prevê `| Ambos justificados | 1 | 1 |`. Com dois pedidos de
+  W.O. na mesma partida e os dois aprovados, o segundo `RESPONDER_WO`
+  **sobrescreve** o primeiro (`admin-action:1925` grava o faltoso/beneficiário da
+  solicitação respondida). Medido:
+
+  ```
+  AMBOS JUSTIFICADOS aprovados: 200 200
+  a1  saldo= 2  V= 1  D= 0
+  a2  saldo= 1  V= 0  D= 1
+  ESPERADO pelo Cap. 07: 1 e 1, sem vitória
+  ```
+
+  Ou seja: **uma vitória fabricada** para quem teve o pedido aprovado por último.
+  ⚠️ Isto muda o enquadramento que eu tinha dado: a tabela do Cap. 07 não está
+  "meio implementada" — ela tem **uma linha certa e uma linha errada**.
+  **Conserto barato:** o `RESPONDER_WO` recusar (ou avisar) quando a partida já
+  tem um `justificado` com o OUTRO atleta como faltoso.
+  **E falta a rota na tela:** o organizador não tem botão para "os dois tinham
+  motivo", e a pergunta do duplo ("Nenhum dos dois jogou?") é a que ele
+  responderia SIM. O aviso do duplo é honesto sobre a consequência, mas falta uma
+  linha mandando usar o fluxo de justificativa quando os dois tiverem motivo.
+
+- **1.3i — ✅ CONSERTADO EM 15/11/2026 (na própria onda). A mesma partida era
+  contada DUAS VEZES quando tinha placar validado E W.O.** Mesmo
+  guardião, mesma auditoria, **também anterior à onda** — ele mediu com o
+  `culposo` simples, então não é o duplo que cria:
+  jogo normal `A1=2 / A2=1` → aplica culposo → reprocessa → **`A1=4, A2=4`**.
+  A linha continua `validado: true` com placar e volta a `calculado: false`, então
+  o `PROCESSAR_RODADA` a pega nas **duas** varreduras (`pendentes` **e** `wos`).
+  Com o duplo daria `A1=4, A2=2` em vez de `0/0`.
+  **É irmão do 1.3g** (o `ENVIAR_PLACAR` que não recusa partida com W.O.): os dois
+  produzem a mesma dupla contagem por caminhos diferentes.
+  ✅ **CONSERTADO na onda do W.O. duplo**, depois de o **Supervisor de
+  Confiabilidade MEDIR** o que o guardião tinha só lido — e a medição mostrou que
+  era pior: alcançável **só com o `admin-action`**, porque `VALIDATE_RESULT` e
+  `ADMIN_IMPUTAR_RESULTADO` também não olham `wo_tipo`. Ou seja, **não** dependia
+  de publicar o `athlete-action`, como eu tinha escrito.
+  **O conserto:** o `pendentes` do `PROCESSAR_RODADA` ganhou `.is("wo_tipo", null)`.
+  A regra, em uma linha: **partida com W.O. registrado tem o resultado decidido
+  pelo W.O., nunca pelo placar.** Duas asserções rodando o motor (duplo e culposo
+  sobre partida validada) e duas mutações vermelhas.
+  *(Menor, do mesmo relatório: `APLICAR_WO` sobre partida **rejeitada** responde
+  200 e grava o `wo_tipo` na linha rejeitada. Sem efeito — recontagem e
+  processamento filtram `rejeitado` —, e é padrão pré-existente dos outros tipos.)*
+
+- **1.3j — 🟡 QUATRO LUGARES DA TELA IGNORAM O W.O. — anteriores à onda.**
+  Achados pelo Supervisor de Confiabilidade em 15/11/2026, ao procurar um "sexto
+  ponto de uso" que eu pedi:
+  - **`AthleteDashboard:12816`** — `open = myMatches.filter(!validated && !rejeitado)`:
+    a partida com W.O. continua "em aberto" para os **dois atletas**, que seguem
+    vendo a ação de enviar placar. É o que alimenta o **1.3g**;
+  - **`saudeDaRodada` (`:9864-9876`)**, **`allCurrentValidated` (`:9805`)** e
+    **`lembretes` (`:4630`)** — tratam `culposo`/`a_favor` como pendência.
+  Nenhum é desta onda (os três últimos já ignoravam os W.O. antigos) e nenhum
+  calcula ponto — são contagem e aviso. **Não bloqueiam.** O conserto natural é o
+  mesmo `ehWo`, que já existe e já está protegido por asserção que o executa.
+
+- **1.3k — 🔴 REAPLICAR W.O. NUMA PARTIDA JÁ PROCESSADA CONTA EM DOBRO.**
+  Achado e **medido** pelo Supervisor de Confiabilidade em 15/11/2026, rodando o
+  motor, ao responder a pergunta "o conserto do 1.3i deixa algum caminho de pé?".
+  **É anterior à onda** e vale para os quatro tipos de W.O.
+  **A cadeia:** o `APLICAR_WO` regrava `calculado: false` e **não tem guarda
+  nenhuma sobre `calculado`**. Então: aplica W.O. → processa a rodada → corrige o
+  W.O. → processa de novo, e os pontos/derrotas entram **outra vez**.
+  **Medido:** duplo no Sistema B, processa, reaplica, processa → `processadas: 1`,
+  mas os dois ficam com **2 derrotas** em vez de 1. Com os tipos antigos, o
+  beneficiário levaria **+2 de novo**.
+  **Hoje é INALCANÇÁVEL no `bh2`:** nenhum W.O. foi registrado e nenhuma rodada
+  foi processada. Só morde depois que uma rodada **com** W.O. for processada e
+  alguém corrigir o W.O. depois.
+  ⚠️ **Não medido:** se a tela oferece o botão de correção numa partida já
+  calculada. Se não oferecer, só se chega por chamada direta ao motor. **Quem for
+  consertar mede isso primeiro** — foi o que separou o 1.3i de "leitura" para
+  "defeito ativo".
+  **Conserto:** recusar `APLICAR_WO` em partida `calculado: true`, ou estornar os
+  efeitos antes de reaplicar. **Precisa de medição antes**, não de palpite.
+
+- **1.3l — 🔴 O APP PROMETE A SUSPENSÃO DO CAP. 07 E NÃO A EXECUTA.** Achado pelo
+  Supervisor de Regulamento em 15/11/2026. **Anterior à onda**, mas é a onda que o
+  torna visível e que **o dispara em dupla**.
+  `wo_culposos_temporada` é lido em **exatamente dois** lugares: o desempate
+  (`cmpRankingB:591`) e a tela do organizador. **Não existe suspensão automática
+  em lugar nenhum**, nem o *"aviso formal no 1º injustificado"* que o Cap. 07
+  promete. Na prática a suspensão é ato manual do organizador — e nada no app o
+  avisa de que chegou a hora.
+  ⚠️ **Por que a onda do W.O. duplo muda o peso disto:** um único duplo leva
+  **DOIS** atletas de 1 para 2 ao mesmo tempo — duas suspensões simultâneas. E a
+  tela nova **diz** *"no 2º, suspensão"*. O texto está certo quanto à **regra**
+  (é o que o regulamento manda), mas o app não executa nem avisa.
+  **Conserto:** marcar quem atingiu 2 na lista do organizador (já existe
+  `>= 2` em `App.jsx:11541`) e gerar o aviso do 1º. Decidir se a suspensão é
+  automática ou continua ato do organizador — **decisão do Juliano**, porque
+  suspender atleta é decisão de clube, não de software.
+
+- **1.3m — 🧪 MAIS DOIS OPERADORES DO BANCO FALSO DIVERGEM DO POSTGRES EM NULL
+  — e um deles PIOROU com o conserto do `neq`.** Auditoria completa dos nove
+  comparadores feita pelo Supervisor de Regulamento em 15/11/2026, depois de eu
+  perguntar se havia um terceiro operador com o mesmo problema. Havia dois:
+
+  | operador | campo NULL → banco falso | → Postgres | |
+  |---|---|---|---|
+  | `eq(col, null)` | **MANTÉM** (`null===null`) | descarta | ❌ |
+  | `not(col, op, v)` | **MANTÉM** (nega ingenuamente) | descarta | ❌ |
+  | `ilike(col,'%')` | MANTÉM (`?? ""`) | descarta | ❌ (canto) |
+  | `gte/lte/gt/lt` e `in` | descartam | descartam | ✅ **por acidente** |
+  | `is` e `neq` | corretos | | ✅ |
+
+  ⚠️ **E A HONESTIDADE QUE VALE REGISTRAR: o conserto do `neq` MOVEU
+  `.not(col,"neq",v)` de acidentalmente-correto para incorreto.** Antes,
+  `!comparar(null,"neq",v)` = `!true` = descarta (certo por acaso); depois,
+  `!false` = mantém (errado). **Quem apontou foi o próprio supervisor que exigiu
+  o conserto.** É a 5ª repetição da lição da casa, agora com o revisor no papel
+  de quem a causou: **conserto de instrumento também é conserto de UM caminho.**
+
+  **Por que NÃO bloqueou — medido, não suposto:** os **três** `.not()` vivos são
+  todos `.not(col,"is",null)`, que é o caso modelado certo
+  (`athlete-action:805`, `despachos-do-dia:106`×2 e `:164`); e `.neq` tem só
+  **dois** pontos de uso, ambos sobre `atletas.status`, onde produção tem **zero**
+  NULL. **Nada está quebrado hoje.**
+  ⚠️ **Mas o que protege é o `DEFAULT`, não o esquema:** todas essas colunas são
+  `is_nullable = YES`. Um `UPDATE ... SET rejeitado = null` passa.
+  **Conserto:** no `not`, devolver `false` quando o campo for nulo **antes** de
+  negar; guarda equivalente no `eq(col, null)`; asserção e mutação para cada. O
+  `default: throw` do `comparar()` já é o instinto certo — vale estendê-lo.
+
+- **1.3n — 📚 DÍVIDAS DE DOCUMENTO que esta onda deixou (para o Curador).**
+  1. O `CLAUDE.md` manda contar os recortes executados com
+     `grep -n 'new Function' testes/*.mjs` e afirma que dá **três**. Agora dá
+     **seis linhas** e os recortes são **quatro**: `janelaRenovacao`,
+     `circuitoTemTorneio`, o par de tradutores e agora **`aproveitamentoB`** (a
+     conta de aproveitamento do Sistema B, extraída nesta onda — e ela satisfaz
+     as quatro condições, conferido pelo supervisor).
+  2. A bateria imprime **`ROLLBACK FALHOU — atleta orfao em 'atletas'` numa
+     corrida VERDE** — é saída de um teste que afirma o caminho de relatório de
+     falha, idêntica na corrida limpa. Palavra vermelha em corrida verde treina
+     quem lê a pular linha: vale prefixar como esperado.
+  3. **2119 asserções / 18 seções** — `testes/README.md` e `CLAUDE.md` seguem com
+     números velhos, e a dívida da tabela de 12/10 (6 arquivos fora) continua.
+
 - **1.4 — ⚖️ "Não coletamos dados financeiros" é impreciso.** A tela de
   consentimento promete isso, e o app **guarda** `pagamentos.valor`,
   `pagamentos.metodo` (`pix`), `pagamentos.status`, `confirmado_em` e

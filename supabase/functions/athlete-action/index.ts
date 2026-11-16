@@ -434,7 +434,18 @@ Deno.serve(async (req) => {
         // a linha de `circuito_atletas` e o UNICO registro de que este atleta e
         // deste circuito. No BH o roster ainda e lido pelo jeito antigo
         // (`atletas` com status='ativo'), entao uma falha ali degrada mas nao
-        // apaga ninguem. Num circuito novo ela apaga: o atleta fica existindo
+        // apaga ninguem.
+        // ⚠️ ESSA ULTIMA FRASE DEIXOU DE SER VERDADE EM 15/11/2026, e esta aqui
+        // corrigida em vez de apagada, porque alguem a leu para decidir. Naquele dia
+        // a PORTA DO APP passou a ser o vinculo (`temAcessoAoApp`, no login-atleta):
+        // o espelho `circuito_atletas` nao e mais so "o roster do circuito novo", ele
+        // e o que decide QUEM ENTRA -- inclusive para o BH. Uma falha do espelho
+        // agora TRANCA a pessoa para fora do app, nao so a some de um roster.
+        // Mitigado por o `mirrorSazonal` ser upsert (qualquer escrita sazonal
+        // posterior conserta a linha) e por nao haver hoje ninguem nesse estado
+        // (medido em 15/11: 15 atletas, 25 vinculos, divergencia zero). Registrado em
+        // ROADMAP 1.3c. (Guardiao de Seguranca.)
+        // Num circuito novo ela apaga: o atleta fica existindo
         // globalmente e membro de circuito nenhum -- invisivel no roster, fora do
         // pareamento, com o recibo de regulamento sem circuito a que se referir --
         // e o app responderia "inscricao feita".

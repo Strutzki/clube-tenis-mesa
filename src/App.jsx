@@ -5902,8 +5902,10 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
       // ficou. (Guardião do Atleta, 29/09/2026.)
       // ⚠️ UMA FRASE PARA QUATRO SITUAÇÕES DIFERENTES, até 30/09/2026.
       //
-      // A guarda é `status !== "ativo"` e engloba pendente, reprovado, suspenso e
-      // arquivado. Todos liam "ainda está em análise… ele avisa assim que aprovar".
+      // A guarda ERA `status !== "ativo"` (hoje é `d.acesso`, ver mais abaixo) e
+      // engloba pendente, reprovado, suspenso e arquivado — os quatro casos
+      // continuam existindo, só mudou quem os responde.
+      // Todos liam "ainda está em análise… ele avisa assim que aprovar".
       // Para o pendente estava certo. Para os outros três era falso:
       //   · o REPROVADO esperava para sempre por uma aprovação já negada, com o
       //     motivo existindo no banco e nunca chegando nele;
@@ -5918,15 +5920,32 @@ function AthleteLoginBiometria({ s, LOGO, athletes, onAthleteLogin, onBack }) {
       // passou a devolver `motivo_reprovacao` na mesma leva, e a regra da casa manda
       // subir o motor primeiro. Se por qualquer razão o campo não vier, a frase cai
       // na versão sem motivo — nunca em "undefined".
-      if (found.status !== "ativo") {
-        const motivo = String(found.motivo || "").trim(); // `mapAtletaFromDb` chama de `motivo`
-        if (found.status === "reprovado") {
+      // ⚠️ 15/11/2026 — A PORTA MUDOU DE LUGAR, E ESTA TELA DEIXOU DE DEDUZI-LA.
+      // `found.status` e o status GLOBAL, da PESSOA (`atletas.status`). Num circuito
+      // que nao e o BH ele NUNCA recebe "reprovado" nem "suspenso": o `writeAtleta`
+      // manda `status` para o VINCULO (`circuito_atletas`), porque ele esta em
+      // SEASONAL_COLS. Ou seja, as tres frases especificas abaixo eram inalcancaveis
+      // no bh2 — e, pior, suspender alguem la nao o impedia de entrar.
+      // E o defeito simetrico tambem era real: aprovado no circuito e `pendente` no
+      // global, o atleta lia "ainda esta em analise" com a inscricao paga e os jogos
+      // ja pareados. Aconteceu com um atleta do bh2, 31/10 a 15/11/2026, 15 dias.
+      // Agora quem decide e o servidor, em `d.acesso` — ele olha o VINCULO.
+      // O `acessoSrv ? ... : ...` nao e decoracao: enquanto o motor novo nao estiver
+      // no ar o campo nao vem, e a tela TEM de continuar funcionando pelo caminho
+      // velho. Por isso o motor sobe primeiro (passou a DEVOLVER mais, nao a exigir).
+      const acessoSrv = d.acesso && typeof d.acesso.ok === "boolean" ? d.acesso : null;
+      const bloqueado = acessoSrv ? !acessoSrv.ok : found.status !== "ativo";
+      if (bloqueado) {
+        // "razao" vem do vinculo quando o motor novo responde; do status global senao.
+        const razao = String((acessoSrv ? acessoSrv.motivo : found.status) || "");
+        const motivo = String((acessoSrv ? acessoSrv.detalhe : found.motivo) || "").trim();
+        if (razao === "reprovado") {
           setErr(motivo
             ? `Sua inscrição não foi aprovada pelo organizador. Motivo: ${motivo}. Se quiser conversar sobre isso, fale com ele direto — o PIN que você criou continua salvo.`
             : "Sua inscrição não foi aprovada pelo organizador. Fale com ele para entender o motivo — o PIN que você criou continua salvo.");
-        } else if (found.status === "suspenso") {
+        } else if (razao === "suspenso") {
           setErr("Sua participação está suspensa nesta temporada. Fale com o organizador para saber o que fazer — o PIN que você criou continua salvo.");
-        } else if (found.status === "arquivado") {
+        } else if (razao === "arquivado") {
           setErr("Seu cadastro está arquivado. Para voltar a jogar você precisa se inscrever de novo — o PIN que você criou continua salvo.");
         } else {
           setErr("Seu cadastro ainda está em análise pelo organizador. Ele avisa assim que aprovar — o PIN que você criou já fica salvo.");
@@ -9819,7 +9838,10 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
   // ── Lembrete por calendário (Fase 2a): destaca quando o prazo de uma rodada
   //    fechou e ela precisa ser processada. SÓ informa — nunca processa sozinho.
   //    Pega a menor rodada que ainda tem partida não-calculada (a próxima a processar).
-  const ehWoCal = m => m.woTipo === "culposo" || m.woTipo === "a_favor";
+  // Mesma lista do `ehWo` — e são DUAS cópias da mesma regra, de propósito
+  // nenhum: elas vivem em componentes diferentes. Ao acrescentar tipo, mude AS
+  // DUAS. A bateria exige que estejam idênticas (seção do W.O. duplo).
+  const ehWoCal = m => m.woTipo === "culposo" || m.woTipo === "a_favor" || m.woTipo === "duplo_culposo" || m.woTipo === "justificado";
   const hojeStrCal = new Date().toISOString().slice(0, 10);
   let calRodada = null;
   {
@@ -11335,8 +11357,50 @@ function RegistrarWoInline({ m, p1, p2, dispatch }) {
             <Btn small color="#6a9d7a" onClick={() => setTipo("justificado")}>{SISTEMA_ATIVO === "B" ? "Justificado (1 × 2)" : "Justificado (anula)"}</Btn>
             <Btn small color="#c25a45" onClick={() => setTipo("culposo")}>Culposo</Btn>
             <Btn small color="#9C6F3E" onClick={() => setTipo("a_favor")}>A Favor</Btn>
+            {/* W.O. DUPLO — pedido do Juliano, 15/11/2026, e NÃO é regra nova: o
+                vB-01 Cap. 07 já prevê "Ambos injustificados | 0 | 0", e ainda diz
+                que partida sem registro no prazo e sem comprovação "vira duplo
+                injustificado (0/0)". Faltava no app, não no regulamento.
+                Só no Sistema B — e NÃO porque o Sistema A seja omisso: eu
+                afirmei isso e era falso. O v03-13 DEFINE o caso (`:194`, `:200`,
+                `:202`, `:205`) e responde de outro jeito — "a rodada é anulada
+                para os dois (ninguém pontua)", sem ponto e sem rating, contra o
+                0/0 COM falta injustificada do Sistema B. Lá o caminho certo é o
+                botão "Justificado (anula)", que já existe e faz exatamente isso.
+                O motor recusa o duplo no A com 409 e diz isso na mensagem.
+                (Guardião de Regulamento, 15/11/2026.) */}
+            {SISTEMA_ATIVO === "B" &&
+              <Btn small color="#c25a45" onClick={() => setTipo("duplo_culposo")}>Os dois faltaram</Btn>}
           </div>
           <button onClick={() => setAberto(false)} style={{ marginTop: 8, fontSize: 11, color: "#7d9188", background: "none", border: "none", cursor: "pointer" }}>cancelar</button>
+        </>
+      ) : tipo === "duplo_culposo" ? (
+        <>
+          <div style={{ fontSize: 11, color: "#9db3a8", marginBottom: 8, lineHeight: 1.5 }}>
+            Nenhum dos dois jogou <b style={{color:T.offwhite}}>e nenhum dos dois tinha motivo</b>?
+            {" "}<b style={{color:T.offwhite}}>{primeiro(p1)} e {primeiro(p2)} ficam com 0 ponto</b> — ninguém ganha a partida.
+            {" "}Conta como W.O. injustificado <b style={{color:T.offwhite}}>para os dois</b> — no 2º, suspensão.
+          </div>
+          {/* ⚠️ A ROTA PARA NÃO PUNIR QUEM TINHA MOTIVO. Exigida como condição de
+              GO pelo Supervisor de Regulamento, 15/11/2026, e a razão é um atleta
+              real: a rodada 1 do bh2 tem uma partida em aberto, e a pergunta
+              acima ("nenhum dos dois jogou?") é exatamente a que o organizador
+              responde SIM quando os dois tinham motivo — levando os dois a 0
+              ponto E a uma falta injustificada.
+              O vB-01 Cap. 07 prevê `Ambos justificados | 1 | 1` para esse caso.
+              O app ainda não entrega esse 1|1 por nenhum caminho (ROADMAP 1.3h,
+              defeito ANTERIOR a esta onda), então o melhor que a tela pode fazer
+              hoje é NÃO deixar o organizador cair aqui sem saber. Honestidade
+              sobre a punição não substitui a rota para não punir. */}
+          <div style={{fontSize:10.5, color:"#9C6F3E", marginBottom:8, lineHeight:1.5,
+                       borderLeft:"2px solid rgba(156,111,62,0.5)", paddingLeft:8}}>
+            Se <b>algum dos dois tinha motivo</b> (doença, viagem, imprevisto), <b>não use este botão</b>:
+            volte e registre pelo <b>Justificado</b>, para não lançar falta em quem não faltou por descaso.
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Btn small color="#c25a45" onClick={() => aplicar(null, null)}>Confirmar: os dois faltaram</Btn>
+            <Btn small color={T.borda} onClick={() => setTipo(null)}>Voltar</Btn>
+          </div>
         </>
       ) : tipo === "justificado" ? (
         // ⚠️ NO SISTEMA B O "JUSTIFICADO" NÃO ANULA — ele PONTUA (ausente 1,
@@ -11474,7 +11538,23 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
   const [motivoRecusaWo, setMotivoRecusaWo] = useState({});
   const [notificados, setNotificados] = useState({});   // marca visual local de "já cliquei em notificar"
   const [finalizExcl, setFinalizExcl] = useState({});   // { [atletaId]: bool } — confirmação de finalizar exclusão
-  const ehWo = m => m.woTipo === "culposo" || m.woTipo === "a_favor";
+  // ⚠️ ESTA LINHA É O QUE DIZ "a partida está RESOLVIDA". Quem não está aqui
+  // continua em "Resultado Incompleto" E ENTRA NA CONTA que TRAVA o botão de
+  // processar a rodada (`naoResolvidos`, abaixo). Ou seja: esquecer um tipo aqui
+  // não deixa um W.O. "meio registrado" — deixa a RODADA INTEIRA travada.
+  //
+  // `duplo_culposo` entrou em 15/11/2026, com a funcionalidade. O Guardião de
+  // Confiabilidade deu NO-GO na tela por isto: o motor gravava certo, a tela
+  // continuava mostrando o jogo como pendente, e o organizador não conseguia
+  // processar a rodada. Feature que parece pronta e não termina o trabalho.
+  //
+  // `justificado` entrou JUNTO, e é conserto de um defeito IRMÃO, anterior: no
+  // Sistema A o justificado grava `rejeitado: true` e some por outro caminho
+  // (`!m.rejeitado`, nos filtros abaixo), mas no Sistema B ele NÃO rejeita
+  // (`admin-action` do ramo B) — então caía na mesma armadilha. Nunca mordeu
+  // porque o bh2 não teve W.O. nenhum até hoje. Acrescentá-lo é inócuo no A,
+  // justamente porque lá a partida já saiu por `rejeitado`.
+  const ehWo = m => m.woTipo === "culposo" || m.woTipo === "a_favor" || m.woTipo === "duplo_culposo" || m.woTipo === "justificado";
   const waiting = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado && !ehWo(m));
   const incomplete = state.matches.filter(m => !m.validated && !m.rejeitado && !(m.p1Submitted && m.p2Submitted) && !ehWo(m));
   const calculoPendente = state.matches.filter(m => m.validated && !m.calculado && !m.rejeitado);
@@ -11722,9 +11802,22 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
               <div style={{fontFamily:T.mono, fontSize:10, color:T.cinza, letterSpacing:1, textTransform:"uppercase", marginBottom:6}}>Rodada {m.round}</div>
               <div style={{fontSize:13, color:"#F0EAE0", marginBottom:4}}>{p1?.name} vs {p2?.name}</div>
               <div style={{fontSize:11, color:"#9db3a8"}}>
-                {m.woTipo === "culposo"
-                  ? `Culposo — ${falt?.name?.split(" ")[0]} −15 · ${benef?.name?.split(" ")[0]} +8`
-                  : `A Favor — ${benef?.name?.split(" ")[0]} +8`}
+                {/* O duplo NÃO TEM beneficiário nem faltoso — os dois ids são
+                    nulos de propósito. Sem este ramo próprio ele cairia no "A
+                    Favor" e imprimiria "A Favor — undefined +8", que é número de
+                    rating num circuito de pontos, inventado, sobre uma pessoa que
+                    não existe. (Guardião de Confiabilidade, 15/11/2026.) */}
+                {m.woTipo === "duplo_culposo"
+                  ? `Os dois faltaram — 0 ponto para ${p1?.name?.split(" ")[0]} e ${p2?.name?.split(" ")[0]}`
+                  : m.woTipo === "justificado"
+                  ? `Justificado — ${falt?.name?.split(" ")[0]} 1 · ${benef?.name?.split(" ")[0]} 2`
+                  : m.woTipo === "culposo"
+                  ? (SISTEMA_ATIVO === "B"
+                      ? `Culposo — ${falt?.name?.split(" ")[0]} 0 · ${benef?.name?.split(" ")[0]} 2`
+                      : `Culposo — ${falt?.name?.split(" ")[0]} −15 · ${benef?.name?.split(" ")[0]} +8`)
+                  : (SISTEMA_ATIVO === "B"
+                      ? `A Favor — ${benef?.name?.split(" ")[0]} 2 · ${falt?.name?.split(" ")[0]} 0`
+                      : `A Favor — ${benef?.name?.split(" ")[0]} +8`)}
                 <span style={{color:"#7d9188"}}> · aplica no processamento da rodada</span>
               </div>
             </Card>

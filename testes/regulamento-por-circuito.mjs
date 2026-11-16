@@ -2774,8 +2774,21 @@ secao("A PORTA DA FRENTE: o INSCREVER passa a exigir responsável de menor (0.6.
     });
     return { banco, r };
   };
+  // ⚠️ ESTA CONTA É EM **UTC**, e não por preciosismo: até 15/11/2026 ela montava
+  // a data no fuso LOCAL (`new Date()` + `setFullYear`/`setDate`) e depois a
+  // convertia com `toISOString()`, que é UTC. O motor (`idadeDeISO`, no
+  // `athlete-action` e no `login-atleta`) lê a data inteiramente em UTC
+  // (`getUTCFullYear`/`getUTCMonth`/`getUTCDate`).
+  // Resultado: em parte do dia os dois discordavam em UM DIA, e a asserção da
+  // FRONTEIRA DOS 18 — "faltando um dia para 18, ainda é menor" — ficava
+  // VERMELHA sozinha, sem ninguém ter mexido em nada. Foi o que aconteceu no meio
+  // da onda do W.O. duplo: a bateria virou vermelha pela passagem do relógio e eu
+  // perdi tempo procurando o defeito no meu código.
+  // É a mesma família do `neq`/`is` do banco falso: **o instrumento discordando
+  // do motor em silêncio**. Teste que depende da hora do dia não é teste, é moeda.
   const anosAtras = (anos, diasExtra = 0) => {
-    const d = new Date(); d.setFullYear(d.getFullYear() - anos); d.setDate(d.getDate() + diasExtra);
+    const h = new Date();
+    const d = new Date(Date.UTC(h.getUTCFullYear() - anos, h.getUTCMonth(), h.getUTCDate() + diasExtra));
     return d.toISOString().slice(0, 10);
   };
 

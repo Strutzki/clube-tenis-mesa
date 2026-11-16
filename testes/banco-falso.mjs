@@ -69,7 +69,24 @@ function comparar(campo, op, valor) {
   const b = valor === null || valor === undefined ? valor : String(valor);
   switch (op) {
     case "eq": return a === b;
-    case "neq": return a !== b;
+    // ⚠️ NULL NUNCA SATISFAZ `neq` -- e ate 15/11/2026 este banco dizia o
+    // CONTRARIO do Postgres. `a !== b` com `a` nulo devolvia `true` e MANTINHA a
+    // linha; no Postgres `coluna <> 'x'` com a coluna NULL avalia NULL, e a linha
+    // e DESCARTADA. Achado pelo Supervisor de Regulamento, que pegou a arvore viva
+    // com `.neq("wo_tipo", "duplo_culposo")` numa consulta do PROCESSAR_RODADA.
+    //
+    // O estrago que isto permitia e total e silencioso: a bateria ficaria VERDE
+    // (partida normal mantida) e em PRODUCAO nenhuma partida normal pontuaria
+    // nunca mais, em circuito nenhum -- porque `wo_tipo` e NULL nas 44 partidas
+    // que existem. O instrumento aprovaria a mudanca que derruba o ranking.
+    //
+    // E a lição e que esta mesma familia ja tinha sido achada e consertada no
+    // `is`, trinta linhas abaixo, em 29/09/2026 -- e o `neq` ficou de fora.
+    // Conserto de instrumento tambem e conserto de UM caminho, e e a quinta vez
+    // que isso morde este projeto.
+    case "neq":
+      if (campo === null || campo === undefined) return false;
+      return a !== b;
     case "gte": return a >= b;
     case "lte": return a <= b;
     case "gt": return a > b;

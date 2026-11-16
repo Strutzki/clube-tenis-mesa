@@ -5,6 +5,499 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-11-15 (b) — W.O. DUPLO: ninguém jogou, ninguém ganha
+
+**Motor: `admin-action` v67 → v68.** `login-atleta` sobe na mesma leva (v12 → v13,
+a onda da porta — entrada própria acima). `athlete-action` segue **v24**: a
+alteração dele é **só de comentário** e não sobe. **Nenhuma migração.**
+
+**Bateria: 2119 asserções em 18 seções, 0 falhas, saída 0.** `npm run build` ✓,
+pacote `index-vpcEF87E.js`.
+**25 sabotagens de mutação nesta onda, as 25 vermelhas**, arquivos restaurados
+byte-idênticos (`shasum -a 256` conferido antes e depois).
+⚠️ **CINCO delas ficaram VERDES na primeira tentativa** — duas minhas, três
+achadas pelos guardiões — e cada uma obrigou a escrever asserção nova. A pior
+não era asserção faltando: era **defeito meu**, ver o NO-GO abaixo.
+
+#### O PEDIDO, E POR QUE ELE NÃO PRECISOU DE RE-ACEITE
+
+Juliano, 15/11/2026: *"quero poder marcar W.O duplo e os dois atletas ficar com
+zero pontos em uma rodada"*, e depois, precisando o caso: *"no circuito por
+pontos, quando não acontece o jogo e não tem nenhuma justificativa"*. O gatilho foi a rodada 1 do `bh2` vencer com jogo em aberto.
+⚠️ **Correção de um número que eu dei errado:** escrevi "4 dos 5 jogos sem
+placar". Medido no banco em 15/11, depois de o Guardião de Regulamento apontar a
+inversão: a rodada 1 tem **4 de 5 jogos JOGADOS e validados — falta UM**. O
+número que citei era o de **14/11**; os atletas jogaram no intervalo. O raio é de
+um jogo, não de quatro — e isso **aumenta** a chance de o defeito do NO-GO abaixo
+ser exercitado, porque com uma partida só a correção é o movimento natural.
+
+**Rodei o portão da regra 7 antes de qualquer coisa — e o achado foi o oposto do
+esperado: a regra JÁ EXISTE.** O `vB-01` Cap. 07 traz a tabela de pontos inteira:
+
+| Situação | Ausente | Adversário |
+|---|---|---|
+| W.O. injustificado | 0 | 2 |
+| W.O. justificado | 1 | 2 |
+| **Ambos injustificados** | **0** | **0** |
+| Ambos justificados | 1 | 1 |
+
+E o texto ainda diz: *"Partida não registrada no prazo: sem comprovação vira
+duplo injustificado (0/0)"*. Ou seja, **o app estava atrás do regulamento que 11
+atletas assinaram**, e os três tipos de W.O. que existiam **exigem um
+beneficiário** — não havia como registrar que ninguém apareceu. A tela refletia a
+limitação do motor, não uma decisão.
+
+#### O QUE MUDA
+
+- **`APLICAR_WO` aceita `tipo: "duplo_culposo"`.** Grava `wo_faltoso_id` e
+  `wo_beneficiario_id` **NULOS**, de propósito: apontar um dos dois seria mentira.
+  Quem precisa saber quem faltou lê os atletas da própria partida.
+- **Os dois ficam com 0 ponto e 1 derrota.** Ninguém recebe vitória.
+- **Os dois contam W.O. injustificado.** `recontarWoCulposos` ganhou uma segunda
+  consulta, pelos `atleta1_id`/`atleta2_id`. **Sem isso o duplo sairia de graça:**
+  zero ponto para os dois, mas nenhum dos dois acumulando o injustificado que leva
+  à suspensão (Cap. 07) e que é o 2º critério de desempate (Cap. 09) — faltar os
+  dois viraria a jogada barata, o oposto do que o regulamento premia.
+- **Na tela:** botão "Os dois faltaram", **só no Sistema B**, com a consequência
+  escrita antes de confirmar.
+
+#### ⚖️ DECISÃO DO JULIANO — CASO OMISSO, vB-01 Cap. 13
+
+**A derrota conta para os dois.** Perguntado em 15/11/2026, respondeu **"sim,
+conta derrota"**.
+
+**Por que precisou dele, e não do motor:** o `vB-01` diz que os dois ficam com
+**0 ponto** (Cap. 07), e **não diz** se um jogo que não aconteceu conta como
+"jogo". O Cap. 09 usa *"vitórias ÷ **jogos**"* no 4º critério de desempate. Caso
+omisso é do **administrador** (Cap. 13), não do motor — levantado pelo Guardião
+de Regulamento e endossado pelo supervisor dele.
+
+**Os dois lados foram apresentados a ele, não só o que eu tinha implementado:**
+- **a favor de contar** — o motor **já** trata W.O. como jogo nas duas pontas
+  (`vitorias+1` ao beneficiário, `derrotas+1` ao faltoso); o duplo só aplica a
+  convenção existente;
+- **contra** — a leitura mais literal do Cap. 09 é "ninguém **jogou**", e o
+  `v03-13:194`, no caso equivalente do Sistema A, chama de *"Partida não
+  computada"*.
+
+**O efeito foi medido antes de perguntar**, e dito a ele em números: a derrota
+move o 4º critério (exemplo dado: 3V/2D = 60% contra 3V/1D = 75%), entra no
+histórico arquivado da temporada, vira `derrotas_total` **vitalício** e aparece
+na ficha do atleta.
+
+⚠️ **Perguntado ANTES de a rodada ser processada, de propósito** — condição do
+Guardião de Regulamento: depois do processamento, mudar de ideia deixa de ser uma
+linha de código e vira **reparo de dado**, porque as derrotas já estarão gravadas
+e a virada de temporada as acumula.
+
+#### O QUE **NÃO** MUDA
+
+- **O Sistema A recusa com 409 — e a razão que eu dei estava ERRADA.**
+  Escrevi, em quatro lugares, que o `v03-13` "não define ambos ausentes".
+  **Define, em três trechos** (`:194`, `:200`, `:202`, `:205`); o mais literal:
+  *"se nenhum dos dois procurou o outro para marcar … é responsabilidade
+  compartilhada e a rodada é anulada para os dois (ninguém pontua)"*.
+  **A recusa continua certa, por uma razão mais forte:** o Sistema A tem resposta
+  **própria e diferente** — *anular* (sem ponto e sem rating) contra o *0/0 com
+  falta injustificada* do Sistema B. Copiar o B para o A inventaria penalidade.
+  **E a mensagem de erro mudou:** diz o que o regulamento manda fazer e **aponta
+  o botão que já faz isso** ("Justificado (anula)", que no Sistema A grava
+  `rejeitado: true`). Recusa que não nomeia o remédio é beco sem saída. Há
+  asserção exigindo que a mensagem diga "anular", aponte o botão e **não** afirme
+  que o regulamento é omisso — mutação vermelha nas três.
+  *(Regra 6 do CLAUDE.md: comentário que afirma fato do regulamento é pior que
+  comentário nenhum, porque o próximo o cita em vez de abrir o documento.)*
+- **A linha "ambos justificados (1/1)" NÃO foi implementada.** Ela depende das
+  duas justificativas aprovadas, que é outro fluxo (`RESPONDER_WO`), não um botão
+  nesta tela. Meia tabela, e dito em voz alta em vez de escondido.
+- **Nenhuma coluna nova.** `partidas.wo_tipo` já é `text` e passa a receber um
+  valor novo. Medido: a coluna **não tem CHECK nem trigger**, e as 44 partidas
+  existentes estão todas com `wo_tipo` nulo.
+
+#### O NO-GO QUE ESTA ONDA LEVOU, E É A LIÇÃO
+
+**O Guardião de Confiabilidade aprovou o motor e BARROU a tela.** O `ehWo` dela
+listava só `culposo` e `a_favor` — então a partida gravada como duplo voltava do
+banco, caía em **"Resultado Incompleto"** e entrava no `naoResolvidos`, que é a
+conta que **TRAVA o botão de processar a rodada**. O motor gravava certo e o
+organizador não conseguia fechar a rodada.
+
+**E o motivo de ninguém ter visto:** as 8 sabotagens daquela leva eram **todas no
+motor**. Nenhuma asserção tocava o `ehWo`, então sabotá-lo não deixava nada
+vermelho. É a mesma família da fatia 0.6.21 — *a janela ancorada na função é cega
+para quem a invoca*, agora na forma "a onda inteira testou um lado só".
+
+Consertado, e a asserção nova **EXTRAI o `ehWo` e o EXECUTA** (4ª vez que a casa
+usa a técnica; as quatro condições do CLAUDE.md estão satisfeitas: função pura,
+sem fechar sobre nada, âncora na declaração, sem global a estubar). Foram
+**4 sabotagens de tela**, as 4 vermelhas.
+
+**De brinde, um defeito IRMÃO e anterior:** o `justificado` do Sistema B também
+não estava na lista, e ele **não rejeita** a partida (ao contrário do Sistema A),
+então cairia na mesma armadilha. Nunca mordeu porque o `bh2` não teve W.O. nenhum
+até hoje. Entrou no mesmo conserto.
+
+#### ⛔ O SEGUNDO NO-GO, E ESTE ERA DEFEITO MEU
+
+**O Guardião de Regulamento achou a mutação verde que eu pedi que ele procurasse
+— e ela era um defeito introduzido por esta onda.**
+
+**Corrigir um W.O. duplo de volta para um W.O. simples deixava uma falta
+FANTASMA** no atleta que deixou de ser faltoso. Causa: a recontagem **perseguia**
+o `wo_faltoso_id` anterior, e o duplo grava esse campo como `null` de propósito.
+Medido nas três transições:
+
+| transição | esperado | obtido |
+|---|---|---|
+| duplo → `culposo` | A1=1, A2=**0** | A1=1, **A2=1** |
+| duplo → `justificado` | A1=0, A2=**0** | A1=0, **A2=1** |
+| duplo → `a_favor` | A1=1, A2=**0** | A1=1, **A2=1** |
+
+Esse número **suspende** (Cap. 07) e **ordena o desempate** (Cap. 09). E era
+alcançável em um clique: a rodada 1 do `bh2` tem **uma** partida sem placar.
+
+É a mesma classe que o comentário de `admin-action:2221` diz ter consertado em
+29/09/2026 — *"idempotente POR ATLETA, mas nao POR PARTIDA"* — **reintroduzida
+pela porta nova, no sentido inverso.**
+
+**Consertado pela regra que esta casa tirou da onda da porta, horas antes:
+DERIVAR, NÃO ENUMERAR.** A recontagem não persegue mais o estado anterior: semeia
+com **os dois atletas da partida**, sempre. `recontarWoCulposos` é derivado das
+partidas e idempotente — recontar a mais nunca erra, recontar a menos erra
+sempre. E sumiu a cópia duplicada da recontagem que havia no bloco do duplo, com
+uma linha morta dentro. **A asserção é de INVARIANTE**: o contador de cada atleta
+tem de bater com o que as **partidas** dizem, qualquer que seja a transição.
+
+#### VEREDITOS
+
+- **Guardião de Regulamento: NO-GO → condições atendidas.** Ele **confirmou** que
+  a regra já existe no vB-01 — e achou a prova que eu não tinha citado: o mesmo
+  texto está na `RegulamentoView`, que é o que o atleta de fato leu, o que fecha a
+  regra 7 pelos dois lados. **Confirmou** que os dois contam injustificado pelos
+  Cap. 07 e 09; **confirmou** a derrota +1 por coerência interna (o W.O. simples
+  já dá `D+1`/`V+1`, logo partida de W.O. já conta como jogo), com uma ressalva
+  que virou pergunta ao Juliano; **derrubou** a minha razão para recusar no
+  Sistema A; e **achou o defeito do fantasma**.
+  Conferiu também, e está certo: a fronteira entre sistemas (409 no A, 403 em
+  circuito alheio, sem gravar metade); que não há `CHECK` em `partidas.wo_tipo`
+  nem em `partidas_historico.wo_tipo`, e que a virada de temporada **copia** o
+  `wo_tipo` escopado por circuito; que quem só tem duplo **entra** no ranking com
+  0 ponto; que o duplo não pode ser aplicado a bye (409); e que a contabilidade
+  fecha — na forma do `bh2`, a soma distribuída cai exatamente os 3 pontos que a
+  partida distribuiria, nada criado e nada sumido.
+- **Guardião de Confiabilidade: motor GO, app NO-GO → condições atendidas.**
+  `ehWo`/`ehWoCal` corrigidos e idênticos; terceiro ramo no cartão de W.O.
+  aguardando cálculo (sem ele o duplo imprimia *"A Favor — undefined +8"*, número
+  de rating num circuito de pontos, sobre pessoa que não existe); asserção
+  executando o `ehWo` com mutação; **backup da v67 criado** — ele achou que a
+  pasta de hoje só tinha o `login-atleta`, e que a cópia antiga do `admin-action`
+  é a **v65**, não a v67.
+
+#### 🔴 DOIS DEFEITOS NO **INSTRUMENTO**, e eles valem mais que esta onda
+
+Os dois foram achados **durante** a auditoria, e nenhum é código de produção —
+são o banco em memória e os auxiliares da bateria. Os dois são da mesma família,
+a que este projeto persegue desde 29/09: **o instrumento discordando do motor em
+silêncio**.
+
+**1. `neq` e NULL, invertidos** (`testes/banco-falso.mjs`). Achado pelo Supervisor
+de Regulamento, que pegou a árvore viva no meio de uma sabotagem minha com
+`.neq("wo_tipo", "duplo_culposo")`. No banco falso, `a !== b` com a coluna nula
+devolvia `true` e **mantinha** a linha; no Postgres, `coluna <> 'x'` com NULL
+avalia NULL e a linha é **descartada**.
+**O estrago que isso permitia era total e calado:** se alguém escrevesse `.neq`
+naquela consulta — que é a forma natural de tentar consertar a contagem dupla —,
+a bateria ficaria **VERDE** e, em produção, **nenhuma partida normal pontuaria
+nunca mais, em circuito nenhum**, porque `wo_tipo` é NULL nas 44 partidas que
+existem. O instrumento aprovaria a mudança que derruba o ranking.
+⚠️ E esta **mesma família já tinha sido achada e consertada no `is`**, trinta
+linhas abaixo, em 29/09/2026. O `neq` ficou de fora. **Conserto de instrumento
+também é conserto de UM caminho** — é a quinta vez que isso morde o projeto.
+
+**2. A bateria ficou VERMELHA sozinha, pela passagem do relógio.** No meio desta
+onda, sem ninguém tocar em nada, a asserção *"faltando UM DIA para 18, ainda é
+menor"* virou vermelha. Causa: os auxiliares de data dos testes montavam a data
+no fuso **LOCAL** e a convertiam com `toISOString()` (que é **UTC**), enquanto o
+motor (`idadeDeISO`) lê tudo em UTC. Às **21:04 de 15/11** aqui já eram **00:04
+de 16/11** em UTC, e os dois passaram a discordar em um dia.
+Eram **cinco cópias** do cálculo em dois arquivos; viraram **duas funções, em
+UTC**, com o porquê escrito. **Teste que depende da hora do dia não é teste.**
+*(E custou tempo: procurei o defeito no meu código antes de medir que o mesmo
+teste falhava no `HEAD`.)*
+
+#### ⛔ O TERCEIRO ACHADO: A MESMA PARTIDA CONTADA DUAS VEZES — CONSERTADO
+
+**O Supervisor de Confiabilidade MEDIU o que o guardião tinha só lido**, e a
+medição mostrou que era pior. Partida com placar validado **e** W.O. entrava nos
+**dois** conjuntos do `PROCESSAR_RODADA` — `pendentes` (pelo placar) e `wos` (pelo
+W.O.) — e cada um a pontuava:
+
+```
+duplo + validado + placar 3x0  →  processadas: 2
+A1  saldo 2 · 1V · 1D        A2  saldo 1 · 2D
+esperado: 0 e 0, uma derrota para cada
+```
+
+**Duas correções minhas, e as duas importam:**
+1. Eu tinha registrado que consertar **obrigava a publicar o `athlete-action`**.
+   **Não obrigava** — `VALIDATE_RESULT` e `ADMIN_IMPUTAR_RESULTADO` também não
+   olham `wo_tipo`, então o defeito era alcançável **só pelo `admin-action`**, que
+   já ia subir.
+2. **Eu tinha escrito no ROADMAP um conselho que DISPARAVA o defeito**: que a
+   saída para um W.O. registrado por engano "seria o organizador imputar o
+   resultado à mão". Era exatamente o gatilho. Removido e marcado.
+
+**O conserto:** `.is("wo_tipo", null)` no `pendentes`. A regra, em uma linha:
+**partida com W.O. registrado tem o resultado decidido pelo W.O., nunca pelo
+placar.** Escolhido em vez de um 409 no `VALIDATE_RESULT` porque **não existe
+hoje forma de DESFAZER um W.O.** — o 409 criaria beco sem saída. As asserções
+cobrem **os quatro tipos**, não só o que esta onda criou, porque o defeito nasceu
+nos antigos.
+
+#### QUATRO BURACOS ANTIGOS QUE A AUDITORIA ACHOU E NÃO ENTRARAM
+
+Nenhum é desta onda, e o segundo é o que importa:
+
+1. **`despachos-do-dia` subconta rodada com duplo** (ROADMAP **1.3f**).
+   Cosmético.
+2. **O `ENVIAR_PLACAR` não recusa partida que já tem W.O.** (ROADMAP **1.3g**) —
+   então a mesma partida pode ser contada **duas vezes**, pelo placar e pelo W.O.
+   Já valia para `culposo`/`a_favor`; **o duplo agrava**, porque a segunda
+   contagem soma derrota aos dois. Fica de fora porque consertar obriga a publicar
+   a função do **lançamento de placar**, em uso com a rodada 2 aberta — e porque
+   a guarda criaria um efeito a decidir antes: W.O. por engano passaria a impedir
+   o placar de verdade.
+
+#### PONTO CEGO REGISTRADO
+
+O **`despachos-do-dia`** subconta rodada com duplo (ROADMAP **1.3f**). Cosmético,
+não bloqueia — e a função é a do episódio nº 2 de "o fonte não é o que está no
+ar", servida de uma pasta do projeto de torneios.
+
+#### RISCO E VOLTA ATRÁS
+
+Ordem: **os dois motores primeiro** (`login-atleta`, depois `admin-action`),
+`npm run motor:conferir`, e só então o app. Nenhum estado intermediário quebra:
+os motores novos ficam **dormentes** até o app subir.
+Volta atrás e o que acontece com um duplo já gravado: ver o `LEIA-ME.md` de
+`docs/backups/motor-no-ar-2026-11-15/`.
+
+---
+
+### 2026-11-15 — a porta do app deixa de ser o status global e passa a ser o circuito
+
+**Motor: `login-atleta` v12 → v13.** `admin-action` segue **v67** e
+`athlete-action` **v24** — conferido com `npm run motor:listar`, não presumido.
+**Nenhuma migração.** Ordem: **motor primeiro**, app depois.
+
+**Bateria: 2043 asserções em 18 seções, 0 falhas, saída 0** (eram **2013** antes
+desta onda, no commit `87c1e95` — **+30**). `npm run build` ✓.
+`deno check` saída **0** nas duas funções com o deno que vem no **Supabase CLI
+2.117.0**, fixado como dependência do projeto — que é o mais próximo do runtime
+de produção. *(O Supervisor de Segurança viu um `TS2322` em `:95`
+— PBKDF2/`Uint8Array` — rodando `npx deno check`, que lhe deu **deno 2.9.6**. Ele
+mediu de novo e **retirou a cobrança**: é aperto de tipagem do 2.9.x, idêntico no
+HEAD, não é defeito e não é regressão.)*
+
+**19 sabotagens de mutação, as 19 vermelhas**, arquivos restaurados
+byte-idênticos (`shasum -a 256` e `diff -q` a cada rodada). ⚠️ **DUAS delas só são
+vermelhas porque o Supervisor de Segurança as achou VERDES, em duas rodadas
+seguidas** — ver "a lição de método" abaixo.
+*(O aferidor da casa, `testes/mutar.mjs`, **não rodou**: ele recusa árvore suja
+no arquivo alvo, e commits pedem autorização. As 17 foram por harness próprio —
+aplicar, rodar a bateria inteira, restaurar, conferir com `diff -q`. Duas foram
+reproduzidas **independentemente** pelos supervisores, e mais quatro pelo de
+Segurança, todas vermelhas.)*
+
+⚠️ **O `athlete-action` tem alteração SÓ DE COMENTÁRIO nesta onda, e ela NÃO
+sobe.** O comentário de `:436` afirmava que uma falha do espelho *"degrada mas
+não apaga ninguém"* — frase que esta onda **torna falsa**, porque o espelho
+virou a porta. Corrigido no fonte; a função no ar segue **v24**, idêntica em
+comportamento.
+
+#### O QUE ACONTECEU — e esta entrada existe por causa de uma pessoa
+
+O atleta **Fabricio Nunes Paiva**, do `bh2`, ficou **15 dias** aprovado,
+pareado nas rodadas 1 e 2 e com os R$ 50 confirmados, lendo *"Seu cadastro ainda
+está em análise pelo organizador"*. Entre **31/10 e 15/11/2026**. Ele tinha
+**6 sessões** registradas: vinha tentando. **Perdeu o prazo da rodada 1**, que
+venceu em 15/11 — e a culpa foi do app, não dele. Só se soube porque reclamou.
+
+**A causa, medida e não deduzida:** aprovar um atleta são **duas** escritas. A
+do circuito (`circuito_atletas.status = 'ativo'`) e a promoção da identidade
+global (`promoverIdentidadeGlobal`, `admin-action:295`). A primeira pegou; a
+segunda não. Os dois portões de LGPD daquela função não se aplicavam a ele
+(sem pedido de exclusão, telefone normal), e `pendente_circuito` estava `false`
+nas duas tabelas — ou seja, **a promoção nunca rodou**. O motivo exato não é
+recuperável: os logs da Edge Function não alcançam 31/10.
+
+**E o app não tinha como mostrar a contradição:** o painel exibia o atleta
+aprovado e pago. Não havia tela, aviso nem botão para o estado em que ele
+estava. O dado dele foi corrigido em produção em 15/11 (1 linha, autorizada),
+replicando exatamente o que a promoção faria.
+
+#### O QUE MUDA
+
+**A porta do app deixa de ser `atletas.status` e passa a ser a participação.**
+`temAcessoAoApp` (`login-atleta`) pergunta duas coisas:
+1. a identidade **não** está encerrada (status `arquivado` ou telefone
+   `removido:` — a lápide de um cadastro anonimizado); **e**
+2. existe **pelo menos um** `circuito_atletas` com status `ativo`.
+
+A aprovação no circuito passa a **ser** o acesso: uma escrita só, sem segunda
+metade para falhar em silêncio.
+
+**Fecha um buraco simétrico que ninguém tinha visto.** Num circuito que não é o
+BH, `status` é sazonal — o `writeAtleta` manda para o **vínculo**. Então
+suspender ou reprovar alguém no `bh2` **nunca encostava** em `atletas.status`:
+o suspenso continuava entrando, e as três frases específicas da tela de login
+(reprovado / suspenso / arquivado) eram **inalcançáveis** naquele circuito.
+
+**O LOGIN passa a DIZER o veredito.** Campo novo `acesso: { ok, motivo,
+detalhe }` no `LOGIN` e no `DEFINIR_PIN`; a tela obedece em vez de deduzir, e
+**tolera a ausência** dele (motor antigo ⇒ caminho velho). É por isso que o
+motor sobe primeiro: ele passou a **devolver** mais, não a exigir mais.
+
+#### AS RECUSAS NOVAS — e elas existem
+
+Não é verdade que a porta nova só aceite mais. Ela recusa três coisas que a
+velha aceitava, e **as três são fechamento de buraco, não regressão**:
+
+- vínculo **suspenso / reprovado / arquivado** com o global ainda `ativo`;
+- global `ativo` **sem nenhum vínculo ativo**;
+- quem está suspenso num circuito **não entra num terceiro**.
+
+**Medido em produção antes de subir: 15 atletas, 25 vínculos, todos `ativo` dos
+dois lados, 0 lápides, 0 sem vínculo ⇒ ninguém perde acesso hoje.**
+
+#### O QUE **NÃO** MUDA, E PRECISA ESTAR ESCRITO
+
+- **A porta do organizador continua no status global**, de propósito:
+  organizador pode não ser atleta de circuito nenhum. Há asserção e mutação
+  provando que ela **não** foi trocada.
+- **A porta decide quem ENTRA; ela não expulsa quem já está dentro.** Vale no
+  `LOGIN`, no `DEFINIR_PIN` e no `PARTICIPAR`; o `SESSAO` barra a **reidratação**.
+  Sessão viva e login por biometria **não** são revogados. Ver ROADMAP **1.3c**.
+- **O `RENOVAR` ficou para trás** — ainda lê o status global
+  (`athlete-action:631-634`), e nem confere o vínculo do circuito. Não entrou
+  porque consertar obriga a publicar a função do `ENVIAR_PLACAR`, em uso com a
+  rodada 2 aberta. Ver ROADMAP **1.3b**.
+- **Nenhum texto versionado foi tocado**; a regra 7 não se aplica.
+- **Nenhuma coluna nova** ⇒ a armadilha nº 1 do `CLAUDE.md` não se aplica.
+
+- **Supervisor de Segurança: REVISAR (×2) → APROVADO.** Ele mediu tudo de novo e achou
+  o defeito que define esta onda: **a 17ª mutação, verde**. Eu tinha escrito no
+  ROADMAP e num comentário que *"a bateria passou a prender esse `DEFAULT`"* —
+  e **não prendia**. A asserção que escrevi guardava o lado **consumidor** (que a
+  porta exige `'ativo'`) e deixava o **produtor** solto: acrescentar
+  `status: "ativo"` ao `RENOVAR` passava verde. Corrigido prendendo o invariante
+  real (**o `RENOVAR` nunca escreve `status`**), e as duas frases falsas foram
+  corrigidas no lugar em que estavam.
+  Ele também provou que a frase do Guardião *"auto-inscrição não abre a porta"* é
+  verdadeira para o `INSCREVER` e **falsa para o `PARTICIPAR`**, que grava
+  `status:'ativo'` direto; e que a consequência que eu escrevi sobre banimento
+  aponta para uma alavanca que o organizador **não alcança** fora do BH. Os dois
+  viraram ROADMAP **1.3e**, e o caso real (dois circuitos, arquivado num deles)
+  ganhou asserção — ele não tinha nenhuma, e é o estado de 10 dos 15 atletas.
+
+#### A LIÇÃO DE MÉTODO
+
+**O Supervisor de Confiabilidade sabotou a guarda do `PARTICIPAR` e a bateria
+ficou VERDE.** As 11 mutações que eu tinha rodado não tocavam aquela linha — eu
+havia protegido só a metade do `SESSAO` e tratado a onda como coberta. Guarda
+sem mutação vermelha é **guarda sem proteção**, mesmo quando o código está
+certo. São 13 mutações agora, e a que ele usou fica vermelha.
+E o parecer do guardião **não mediu a bateria** — confiou no número que eu dei.
+O supervisor recusou por isso, mediu sozinho, e só então aprovou.
+
+**E aconteceu de novo, comigo, DUAS VEZES, uma camada acima.**
+
+**Primeira:** escrevi que a bateria prendia o `DEFAULT` da coluna sem ter rodado
+a mutação que provaria isso — a mesma falha que eu tinha acabado de cobrar do
+guardião, no mesmo documento. Ele rodou: `status: "ativo"` no `RENOVAR` passava
+**verde**.
+
+**Segunda, e é a que ensina mais:** consertei com uma asserção de **regex** no
+fonte (*"o corpo do `RENOVAR` não contém `status:`"*). Ele devolveu de novo, com
+uma mutação **mais plausível** do que a primeira — um spread do payload,
+`...(payload.camposExtra || {})` — que não escreve `status:` literal nenhum,
+**passava a regex**, e rodava o exploit de ponta a ponta: anônimo, 200, linha com
+`status:"ativo"`, **porta aberta**. Pior que a original, porque entrega o
+`status` **ao atacante** e derruba a premissa em que a severidade estava
+calibrada.
+
+**As duas regras que saem daqui, e valem mais que a onda:**
+1. **Ao afirmar que uma asserção protege algo, diga QUAL mutação fica vermelha.**
+   Condição cumprida sem essa frase é condição cumprida pela letra.
+2. **Não se enumera mutação — asserta-se o invariante contra entrada
+   adversária.** A asserção final manda o payload hostil tentando injetar
+   `status` por três canais e exige que a linha fabricada não tenha a chave. Essa
+   fica vermelha nas duas, e nas que eu não pensei.
+
+Foi assim que uma mutação verde sobreviveu a um guardião, a um supervisor e a
+mim — e depois a segunda sobreviveu ao meu próprio conserto.
+
+**E a prova de que a regra 2 funciona veio dele, não de mim.** Depois do conserto
+o supervisor escreveu uma **terceira** mutação, que eu não tinha escrito e que ele
+não tinha mencionado: injetar `status: "ativo"` **dentro do `mirrorSazonal`** —
+fora do corpo do `RENOVAR`, num arquivo onde nenhuma janela de texto olharia.
+**Vermelha.** Uma asserção que respondesse só às duas primeiras teria passado
+verde nela. É a diferença entre remendar a mutação e asserir o invariante.
+
+**Contagem honesta de quem achou o quê:** 19 sabotagens, todas vermelhas, com
+restauração byte-idêntica conferida. Dessas, **7 foram escritas pelos
+supervisores**, não por mim — 4 na porta do `login-atleta` e 3 no produtor. **Duas
+estavam VERDES quando eles as acharam.** O aferidor da casa (`testes/mutar.mjs`)
+**não rodou**: ele recusa árvore suja no alvo, e commits pedem autorização.
+
+#### O QUE A AUDITORIA ACHOU **FORA** DESTA ONDA
+
+O Guardião de Segurança rodou 14 ataques próprios contra as Edge Functions e
+achou **três buracos pré-existentes**, nenhum introduzido aqui. Registrados em
+**ROADMAP 1.3d**, e o primeiro é o que importa para esta entrada:
+
+- **`RENOVAR` fabrica vínculo em circuito alheio, sem token e sem PIN** (200 +
+  linha criada, provado rodando). Não abre a porta **só** porque
+  `circuito_atletas.status` tem `DEFAULT 'pendente'` em produção. Como esta onda
+  promoveu essa coluna a estado de autenticação, **a bateria passou a prender o
+  default** — é a condição C2, atendida.
+- **`CANCELAR_WO` apaga pedido de W.O. de qualquer circuito, por anônimo.**
+- **`circuito-dados` aceita vínculo de qualquer status** (`ehMembroOuOrg` ignora
+  o `status`), o que combinado com o primeiro permite ler circuito privado.
+
+#### VEREDITOS
+
+- **Guardião de Confiabilidade: GO-com-condições** (supervisor: **APROVADO**,
+  depois de recusar o 1º parecer — ver abaixo).
+  Condições atendidas: backup do v12 criado e conferido; `deno.lock` (artefato de
+  um `deno check` meu) removido; `RENOVAR` registrado como 1.3b; limites da porta
+  registrados como 1.3c; `PARTICIPAR` coberto com asserção e mutação.
+- **Guardião de Segurança: GO-com-condições.** Provou **rodando** (não por
+  leitura): que auto-inscrição não abre a porta; que a lápide fecha pelas duas
+  pernas independentemente; que o fail-closed devolve **500** quando a consulta
+  falha; e que o BH fica intocado (conjuntos de escrita em `atletas` idênticos
+  entre HEAD e a árvore, multiplicidade inclusive). Condições atendidas: C1 (o
+  comentário falso), C2 (o default), C3 (fail-closed virou comportamento), C4 (a
+  decisão do banimento, registrada e asseverada), C6 (backup no commit).
+
+#### RISCO E VOLTA ATRÁS
+
+Voltar o motor **sozinho** basta — o app novo tolera a ausência do campo:
+
+```bash
+cp docs/backups/motor-no-ar-2026-11-15/ar-login-atleta-v12.ts \
+   supabase/functions/login-atleta/index.ts
+npm run motor:publicar -- login-atleta        # vira v14, não v12
+git checkout -- supabase/functions/login-atleta/index.ts
+npm run motor:conferir
+```
+
+⚠️ **Voltar devolve o defeito**: atleta aprovado com o global `pendente` volta a
+ficar trancado. O `LEIA-ME.md` da pasta de backup traz a consulta que lista quem
+está nesse estado antes de reverter.
+
+---
+
 ### 2026-11-07 — o card dos meses para de mentir "✓ Meses salvos" (só app)
 
 **Nada de motor e nada de banco.** `admin-action` segue **v67**, `athlete-action`

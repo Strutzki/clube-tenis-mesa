@@ -760,8 +760,21 @@ async function recontarWoCulposos(circuitoId: string, atletaId: string) {
   if (error) throw error;
   const n = (doAtleta ?? []).filter((m: any) =>
     !m.rejeitado && (m.wo_tipo === "culposo" || m.wo_tipo === "a_favor")).length;
-  await writeAtleta(circuitoId, atletaId, { wo_culposos_temporada: n });
-  return n;
+  // W.O. DUPLO (15/11/2026): nele NAO HA faltoso apontado -- os dois faltaram, e
+  // `wo_faltoso_id` fica `null` de proposito, porque apontar um dos dois seria
+  // mentira. Logo a consulta acima, que filtra por `wo_faltoso_id`, nao o ve.
+  // Sem esta segunda conta o duplo sairia de GRACA: zero ponto para os dois, mas
+  // nenhum dos dois acumulando o injustificado que leva a suspensao (Cap. 07) e
+  // que e o 2o criterio de desempate (Cap. 09). Faltar os dois viraria a jogada
+  // barata -- o oposto do que o regulamento premia, que e presenca.
+  const { data: duplos, error: eDup } = await supabase
+    .from("partidas").select("rejeitado,atleta1_id,atleta2_id")
+    .eq("circuito_id", circuitoId).eq("wo_tipo", "duplo_culposo");
+  if (eDup) throw eDup;
+  const nDup = (duplos ?? []).filter((m: any) =>
+    !m.rejeitado && (m.atleta1_id === atletaId || m.atleta2_id === atletaId)).length;
+  await writeAtleta(circuitoId, atletaId, { wo_culposos_temporada: n + nDup });
+  return n + nDup;
 }
 
 // ── Pareamento do Sistema B (sem rating) ──────────────────────────────────────
@@ -1328,18 +1341,45 @@ Deno.serve(async (req) => {
         const { data: partidasRodadaAnterior } = await supabase
           .from("partidas").select("id").eq("circuito_id", circuitoId).eq("rodada", round - 1).eq("validado", true).eq("calculado", false).eq("rejeitado", false);
         const { data: woRodadaAnterior } = await supabase
-          .from("partidas").select("id").eq("circuito_id", circuitoId).eq("rodada", round - 1).in("wo_tipo", ["culposo", "a_favor", "justificado"]).eq("calculado", false).eq("rejeitado", false);
+          .from("partidas").select("id").eq("circuito_id", circuitoId).eq("rodada", round - 1).in("wo_tipo", ["culposo", "a_favor", "justificado", "duplo_culposo"]).eq("calculado", false).eq("rejeitado", false);
 
         if (round % 2 === 0 && (((partidasRodadaAnterior?.length ?? 0) + (woRodadaAnterior?.length ?? 0)) > 0)) {
           return jsonResponse({ sucesso: false, erro: "A rodada anterior ainda tem resultados sem calcular." }, 409);
         }
 
+        // ⛔ `.is("wo_tipo", null)` IMPEDE QUE A MESMA PARTIDA SEJA CONTADA DUAS
+        // VEZES. Sem isso ela entra nos DOIS conjuntos desta acao -- `pendentes`
+        // (pelo placar) e `wos` (pelo W.O.) -- e cada um a pontua.
+        //
+        // Medido pelo Supervisor de Confiabilidade em 15/11/2026, rodando o motor:
+        // duplo registrado numa partida que ficou `validado: true` com placar 3x0
+        // devolveu `processadas: 2`, com A1 saldo 2 / 1V / 1D e A2 saldo 1 / 2D --
+        // onde o certo era 0/0 e uma derrota para cada. Sem o `validado`, o mesmo
+        // cenario da 0/0. A sobreposicao e a causa.
+        //
+        // NAO e defeito do W.O. duplo: ele existe para `culposo` e `a_favor` desde
+        // sempre (jogo normal 2x1 + culposo depois = A1 4, A2 4). O duplo **agrava**,
+        // porque a segunda contagem soma derrota aos dois. E o caminho e trivial:
+        // `ENVIAR_PLACAR` nao recusa partida com W.O. (ROADMAP 1.3g), e
+        // `VALIDATE_RESULT`/`ADMIN_IMPUTAR_RESULTADO` tambem nao olham `wo_tipo`.
+        //
+        // ⚠️ E O PIOR: o ROADMAP 1.3g chegou a oferecer "o organizador imputa o
+        // resultado a mao" como SAIDA para um W.O. registrado por engano -- que e
+        // exatamente o GATILHO deste defeito. Conselho que dispara o erro que ele
+        // tenta contornar; corrigido la.
+        //
+        // A REGRA, dita em uma linha: **partida com W.O. registrado tem o resultado
+        // decidido pelo W.O., nunca pelo placar.** O placar que porventura exista na
+        // linha fica inerte, e a tela mostra a partida como W.O. (ver `ehWo`), que e
+        // o que de fato esta valendo. Isso tambem torna o conserto independente do
+        // `athlete-action`: nao e preciso publicar a funcao do lancamento de placar
+        // para fechar a contagem dupla.
         const { data: pendentes, error: errPend } = await supabase
-          .from("partidas").select("*").eq("circuito_id", circuitoId).eq("rodada", round).eq("validado", true).eq("calculado", false).eq("rejeitado", false).order("admin_aprovado_em", { ascending: true });
+          .from("partidas").select("*").eq("circuito_id", circuitoId).eq("rodada", round).eq("validado", true).eq("calculado", false).eq("rejeitado", false).is("wo_tipo", null).order("admin_aprovado_em", { ascending: true });
         if (errPend) throw errPend;
 
         const { data: wosRaw, error: errWo } = await supabase
-          .from("partidas").select("*").eq("circuito_id", circuitoId).eq("rodada", round).in("wo_tipo", ["culposo", "a_favor", "justificado"]).eq("calculado", false).eq("rejeitado", false);
+          .from("partidas").select("*").eq("circuito_id", circuitoId).eq("rodada", round).in("wo_tipo", ["culposo", "a_favor", "justificado", "duplo_culposo"]).eq("calculado", false).eq("rejeitado", false);
         if (errWo) throw errWo;
         const wos = wosRaw || [];
         const listaPend = pendentes || [];
@@ -1407,6 +1447,21 @@ Deno.serve(async (req) => {
           if (sistema === "B") {
             // Fatia 5 — W.O. no Sistema B: NÃO anula. Adversário +2 (V+1); ausente +1 (justificado)
             // ou +0 (culposo/a_favor), sempre D+1. O wo_culposos já foi contado no APLICAR/RESPONDER.
+            // W.O. DUPLO: ninguem jogou, ninguem ganha. Os DOIS com zero ponto e
+            // uma derrota, conforme a tabela do vB-01 Cap. 07 ("Ambos
+            // injustificados | 0 | 0"). Nao ha beneficiario nem faltoso apontado,
+            // entao os ids vem da PARTIDA -- e por isso este ramo vem antes, senao
+            // os dois `if` abaixo nao achariam ninguem e a partida sairia sem
+            // efeito nenhum, premiando quem faltou com um jogo que some.
+            if (w.wo_tipo === "duplo_culposo") {
+              for (const idFalt of [w.atleta1_id, w.atleta2_id]) {
+                const aFalt = idFalt ? athletesMap[idFalt] : null;
+                if (!aFalt) continue;
+                athletesMap[idFalt] = { ...aFalt, derrotas: (aFalt.derrotas || 0) + 1 };
+                idsWoB.add(idFalt);
+              }
+              continue;
+            }
             const benefB = w.wo_beneficiario_id ? athletesMap[w.wo_beneficiario_id] : null;
             if (benefB) athletesMap[w.wo_beneficiario_id] = { ...benefB, saldo_temp: (benefB.saldo_temp || 0) + 2, vitorias: (benefB.vitorias || 0) + 1 };
             const faltB = w.wo_faltoso_id ? athletesMap[w.wo_faltoso_id] : null;
@@ -1418,6 +1473,16 @@ Deno.serve(async (req) => {
             if (w.wo_faltoso_id) idsWoB.add(w.wo_faltoso_id);
             continue;
           }
+          // Sistema A: o `duplo_culposo` NAO EXISTE aqui -- o `APLICAR_WO` o recusa
+          // com 409, porque o v03-13 responde a este caso de OUTRO jeito (anular a
+          // rodada, sem ponto e sem rating -- `v03-13:202`), e nao porque ele seja
+          // omisso. Ver o comentario longo no `APLICAR_WO`. Esta guarda e
+          // defesa em profundidade: se uma linha dessas aparecer no A (dado
+          // migrado, escrita manual no banco), ela e IGNORADA em vez de cair no
+          // ramo de baixo e inventar rating -- que e o que aconteceria, porque o
+          // `-15` so olha `wo_tipo === "culposo"` mas o `+8` do beneficiario nao
+          // olha tipo nenhum.
+          if (w.wo_tipo === "duplo_culposo") continue;
           const dataWo = w.admin_aprovado_em || new Date().toISOString();
           const benef = w.wo_beneficiario_id ? athletesMap[w.wo_beneficiario_id] : null;
           if (benef) {
@@ -2181,20 +2246,92 @@ Deno.serve(async (req) => {
       case "APLICAR_WO": {
         const { matchId, tipo, faltosoId, beneficiarioId } = payload || {};
         if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
-        if (!["justificado", "culposo", "a_favor"].includes(tipo)) return jsonResponse({ sucesso: false, erro: "tipo deve ser 'justificado', 'culposo' ou 'a_favor'" }, 400);
+        if (!["justificado", "culposo", "a_favor", "duplo_culposo"].includes(tipo)) return jsonResponse({ sucesso: false, erro: "tipo deve ser 'justificado', 'culposo', 'a_favor' ou 'duplo_culposo'" }, 400);
         // Quem estava marcado como faltoso ANTES desta chamada. Sem isto a
         // recontagem e idempotente POR ATLETA, mas nao POR PARTIDA: o organizador
         // corrigindo quem faltou deixava a falta lancada para os DOIS, e o Cap. 07
         // suspende com duas. Achado do Guardiao de Regulamento em 29/09/2026,
         // medido: F=1 e V=1 depois de um W.O. so.
-        const { data: woAntes } = await supabase.from("partidas").select("wo_faltoso_id").eq("id", matchId).maybeSingle();
+        //
+        // ⛔ E ISTO QUASE VOLTOU A ACONTECER EM 15/11/2026, PELA PORTA NOVA.
+        // O W.O. DUPLO grava `wo_faltoso_id: null` de proposito (nao ha faltoso
+        // apontado), entao PERSEGUIR o faltoso anterior deixava de achar um dos
+        // dois: corrigir um duplo de volta para um W.O. simples deixava um
+        // injustificado FANTASMA no atleta que deixou de ser faltoso. Medido pelo
+        // Guardiao de Regulamento nas TRES transicoes (duplo -> culposo,
+        // -> justificado, -> a_favor): o outro atleta ficava com 1 em vez de 0.
+        // E esse numero e o que SUSPENDE (Cap. 07, dois injustificados) e o que
+        // ordena o 2o criterio de desempate (Cap. 09).
+        //
+        // A correcao e a mesma regra que esta casa aprendeu na onda da porta:
+        // **DERIVAR, NAO ENUMERAR.** Nao se persegue o estado anterior -- semeia-se
+        // com OS DOIS ATLETAS DA PARTIDA, sempre. `recontarWoCulposos` e derivado
+        // das partidas e idempotente, entao recontar a mais nunca erra; recontar
+        // a menos erra sempre. Isso cobre as tres transicoes e as que ninguem pensou.
+        const { data: woAntes } = await supabase.from("partidas")
+          .select("wo_faltoso_id,atleta1_id,atleta2_id").eq("id", matchId).maybeSingle();
         const faltosoAnterior = woAntes?.wo_faltoso_id || null;
         const recontarEnvolvidos = async (novoFaltoso: string | null) => {
           const alvos = new Set<string>();
+          if (woAntes?.atleta1_id) alvos.add(String(woAntes.atleta1_id));
+          if (woAntes?.atleta2_id) alvos.add(String(woAntes.atleta2_id));
           if (faltosoAnterior) alvos.add(faltosoAnterior);
           if (novoFaltoso) alvos.add(novoFaltoso);
           for (const id of alvos) await recontarWoCulposos(circuitoId, id);
         };
+        // W.O. DUPLO — "nenhum dos dois jogou", os DOIS com zero.
+        // NAO e regra nova: o vB-01 Cap. 07 ja a promete na tabela de pontos
+        // ("Ambos injustificados | 0 | 0") e ainda diz que partida nao registrada
+        // no prazo, sem comprovacao, "vira duplo injustificado (0/0)". O app e que
+        // nao cumpria: os tres tipos antigos EXIGEM um beneficiario, entao nao
+        // havia como registrar que ninguem apareceu. Pedido do Juliano, 15/11/2026.
+        //
+        // ⚠️ SO NO SISTEMA B -- mas NAO porque o Sistema A seja omisso.
+        // EU AFIRMEI QUE O v03-13 "NAO DEFINE O CASO DE AMBOS AUSENTES" E ERA
+        // FALSO. O Guardiao de Regulamento abriu o documento e achou a regra em
+        // TRES lugares (`v03-13:194`, `:200`, `:202`, `:205`), a mais literal
+        // sendo: "se nenhum dos dois procurou o outro para marcar ... e
+        // responsabilidade compartilhada e a rodada e anulada para os dois
+        // (ninguem pontua)".
+        // Ou seja: o Sistema A TEM resposta, e ela e DIFERENTE da do B --
+        // **anular** (sem ponto e sem rating) contra **0/0 COM injustificado para
+        // os dois**. Copiar o comportamento do B para o A inventaria penalidade
+        // que o v03-13 nao preve. A recusa continua certa; a razao e que estava
+        // errada, e um comentario que afirma fato do regulamento e pior que
+        // comentario nenhum, porque o proximo o cita em vez de abrir o documento.
+        // E o caminho do A JA EXISTE: `APLICAR_WO tipo="justificado"` no Sistema A
+        // grava `rejeitado: true` -- partida anulada, zero ponto, zero rating,
+        // nenhum W.O. contado. Na tela o botao se chama "Justificado (anula)".
+        if (tipo === "duplo_culposo") {
+          if ((await getSistema(circuitoId)) !== "B") {
+            return jsonResponse({ sucesso: false, erro: "Neste circuito, quando nenhum dos dois jogou, o regulamento manda ANULAR a rodada — sem pontos e sem rating para os dois (v03-13, Cap. 07). Use o botão \"Justificado (anula)\", que faz exatamente isso. O W.O. duplo (0 ponto e falta para os dois) é dos circuitos por pontos." }, 409);
+          }
+          const { data: mD, error: eMD } = await supabase.from("partidas")
+            .select("atleta1_id,atleta2_id").eq("id", matchId).maybeSingle();
+          if (eMD) throw eMD;
+          if (!mD) return jsonResponse({ sucesso: false, erro: "Partida não encontrada." }, 404);
+          if (!mD.atleta1_id || !mD.atleta2_id) {
+            return jsonResponse({ sucesso: false, erro: "Esta partida não tem dois atletas." }, 409);
+          }
+          const nowD = new Date().toISOString();
+          // Os dois ids ficam `null`: nao ha faltoso apontado nem beneficiario, e e
+          // o `wo_tipo` que carrega o significado. Quem precisa saber QUEM faltou le
+          // `atleta1_id`/`atleta2_id` da propria partida -- ver `recontarWoCulposos`
+          // e o processamento de pontos.
+          const { error: eWoD } = await supabase.from("partidas").update({
+            wo_tipo: "duplo_culposo", wo_faltoso_id: null, wo_beneficiario_id: null,
+            admin_aprovado_em: nowD, calculado: false,
+          }).eq("id", matchId);
+          if (eWoD) throw eWoD;
+          // UM caminho so de recontagem, para os quatro tipos. A versao anterior
+          // tinha uma copia aqui (`alvosD`) com uma linha MORTA dentro -- o
+          // `faltosoAnterior` desta partida e sempre um dos dois atletas dela, que
+          // o `recontarEnvolvidos` ja semeia. Regra duplicada e a origem de metade
+          // dos defeitos deste arquivo, e foi por uma copia dessas que o fantasma
+          // do paragrafo la em cima passou. (Guardiao de Regulamento, 15/11/2026.)
+          await recontarEnvolvidos(null);
+          return jsonResponse({ sucesso: true });
+        }
         // Sistema B (Fatia 5): W.O. NÃO anula — vira pontos no processamento (adversário +2; ausente +1 justificado / 0 injustificado).
         if ((await getSistema(circuitoId)) === "B") {
           if (!beneficiarioId) return jsonResponse({ sucesso: false, erro: "beneficiarioId é obrigatório" }, 400);

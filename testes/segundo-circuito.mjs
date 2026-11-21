@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   montarMotor, comoAdmin, circuito, atleta, partida,
-  ok, igual, secao, placar, BH, PIN, semComentarios, pinGuardado} from "./ferramentas.mjs";
+  ok, igual, secao, placar, BH, PIN, semComentarios, pinGuardado, comoOrganizador} from "./ferramentas.mjs";
 import { carregarFuncao } from "./carrega-motor.mjs";
 import { criarBancoFalso, provocandoViolacao } from "./banco-falso.mjs";
 
@@ -4347,6 +4347,14 @@ secao("W.O. DUPLO — ninguém jogou, ninguém ganha (vB-01 Cap. 07) — RODANDO
       "e aponta o botão que já faz isso — recusa sem remédio é beco sem saída");
     ok(!/não prev[êe]/i.test(msg),
       "e NÃO afirma que o regulamento é omisso, porque ele não é (v03-13 :194, :200, :202, :205)");
+    // ⚠️ E AVISA DO BECO. Exigido pelo Supervisor de Regulamento em 18/11/2026: a
+    // mensagem manda usar o "Justificado (anula)", que é justamente o ÚNICO tipo
+    // de W.O. sem botão de desfazer na tela (ROADMAP 1.3o — o botão vive na lista
+    // `woPendente`, que filtra `!rejeitado`). Numa onda cujo título é "agora dá
+    // para desfazer", empurrar alguém para o caminho sem volta sem dizer isso
+    // seria o app prometendo o que não entrega.
+    ok(/desfazer/i.test(msg),
+      "e avisa que a anulação ainda NÃO tem botão de desfazer — senão a recusa empurra o organizador para o único caminho sem volta");
     igual(banco.acha("partidas", x => x.id === "jd")?.wo_tipo, null,
       "e a partida do BH fica intocada — recusa que grava metade é pior que recusa nenhuma");
   }
@@ -4532,6 +4540,341 @@ secao("W.O. DUPLO — ninguém jogou, ninguém ganha (vB-01 Cap. 07) — RODANDO
       "e quem só tem a derrota do duplo fica com 0% — não com divisão por zero");
     igual(aproveitamentoB({ vitorias: 0, derrotas: 0 }), 0,
       "e quem não tem jogo nenhum também não quebra a conta");
+  }
+
+  // ── 7. DESFAZER W.O. — o beco sem saída que o Juliano pediu para fechar ──
+  // 15/11/2026, logo depois de eu avisá-lo de que o W.O. só podia ser
+  // RECLASSIFICADO, nunca removido: "quero poder desfazer um W.O seja de um
+  // atleta ou duplo". O próprio ROADMAP 1.3g citava isso como o problema.
+  {
+    // ── o duplo ──
+    {
+      const { banco, motor } = await cenarioDuplo("B");
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "jd", tipo: "duplo_culposo" });
+      igual(doCirc(banco, A1)?.wo_culposos_temporada, 1, "(antes: o duplo lançou a falta)");
+      const r = await comoAdmin(motor, "DESFAZER_WO", { circuitoId: CD, matchId: "jd" });
+      ok(r.corpo?.sucesso === true, `o organizador desfaz o W.O. duplo (erro: ${JSON.stringify(r.corpo?.erro)})`);
+      const m = banco.acha("partidas", x => x.id === "jd");
+      igual(m?.wo_tipo, null, "a partida volta a não ter W.O.");
+      igual(doCirc(banco, A1)?.wo_culposos_temporada, 0, "e a falta sai do primeiro atleta");
+      igual(doCirc(banco, A2)?.wo_culposos_temporada, 0, "e do segundo — desfazer tem de desfazer para os DOIS");
+    }
+
+    // ── o W.O. de um atleta só ──
+    {
+      const { banco, motor } = await cenarioDuplo("B");
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "jd", tipo: "culposo", faltosoId: A1, beneficiarioId: A2 });
+      await comoAdmin(motor, "DESFAZER_WO", { circuitoId: CD, matchId: "jd" });
+      const m = banco.acha("partidas", x => x.id === "jd");
+      igual(m?.wo_tipo, null, "o W.O. de um atleta só também é desfeito");
+      igual(m?.wo_faltoso_id, null, "e o faltoso apontado é limpo");
+      igual(m?.wo_beneficiario_id, null, "e o beneficiário também");
+      igual(doCirc(banco, A1)?.wo_culposos_temporada, 0, "e a falta sai de quem a tinha");
+    }
+
+    // ── o justificado do Sistema A, que NÃO grava `wo_tipo` ──
+    // Ele anula com `rejeitado: true` + motivo. Se o DESFAZER só olhasse
+    // `wo_tipo`, este caso ficaria sem volta — e é justamente o que o 409 do
+    // Sistema A recomenda ao organizador usar.
+    {
+      const { banco, motor } = await cenarioDuplo("A");
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: BH, matchId: "jd", tipo: "justificado" });
+      igual(banco.acha("partidas", x => x.id === "jd")?.rejeitado, true, "(antes: o justificado anulou a partida)");
+      const r = await comoAdmin(motor, "DESFAZER_WO", { circuitoId: BH, matchId: "jd" });
+      ok(r.corpo?.sucesso === true, `o justificado do Sistema A também se desfaz (erro: ${JSON.stringify(r.corpo?.erro)})`);
+      const m = banco.acha("partidas", x => x.id === "jd");
+      igual(m?.rejeitado, false, "a anulação é revertida");
+      igual(m?.motivo_rejeicao, null, "e o motivo sai junto");
+    }
+
+    // ── ⚠️ UM PLACAR RECUSADO NÃO PODE RESSUSCITAR ──────────────────────
+    // `rejeitado` é o MESMO campo usado para recusar um placar
+    // (`VALIDATE_RESULT` com aprovado:false). Se o DESFAZER limpasse o campo sem
+    // conferir o MOTIVO, ele ressuscitaria um placar que o organizador recusou —
+    // e ninguém saberia.
+    {
+      const { banco, motor } = await cenarioDuplo("B");
+      const pd = banco.tabelas.partidas.find(x => x.id === "jd");
+      pd.placar1 = 3; pd.placar2 = 0; pd.validado = true;
+      await comoAdmin(motor, "VALIDATE_RESULT", { circuitoId: CD, matchId: "jd", approved: false, motivo: "placar inventado" });
+      igual(banco.acha("partidas", x => x.id === "jd")?.rejeitado, true, "(antes: o organizador RECUSOU o placar)");
+      const r = await comoAdmin(motor, "DESFAZER_WO", { circuitoId: CD, matchId: "jd" });
+      ok(r.corpo?.sucesso !== true, "desfazer W.O. numa partida que não tem W.O. é RECUSADO");
+      const m = banco.acha("partidas", x => x.id === "jd");
+      igual(m?.rejeitado, true, "e o placar recusado CONTINUA recusado — o `rejeitado` do W.O. e o da recusa de placar não se confundem");
+      igual(m?.motivo_rejeicao, "placar inventado", "com o motivo que o organizador escreveu, intacto");
+    }
+
+    // ── ⚠️ E O CASO EM QUE A RECUSA **NÃO** PROTEGE: W.O. **E** PLACAR RECUSADO
+    // A asserção acima não bastava — nela o DESFAZER é recusado antes de chegar à
+    // limpeza, então sabotar a limpeza passava VERDE. Medido: a mutação "limpa
+    // `rejeitado` sem conferir o motivo" ficava verde com aquele cenário.
+    // O cenário que morde é a partida que tem AS DUAS COISAS: o organizador
+    // recusou o placar e DEPOIS registrou W.O. Aí o desfazer SUCEDE (há
+    // `wo_tipo`), a limpeza roda, e sem a conferência do motivo ela ressuscitaria
+    // um placar que o organizador recusou — sem ninguém saber.
+    {
+      const { banco, motor } = await cenarioDuplo("B");
+      const pd = banco.tabelas.partidas.find(x => x.id === "jd");
+      pd.placar1 = 3; pd.placar2 = 0; pd.validado = true;
+      await comoAdmin(motor, "VALIDATE_RESULT", { circuitoId: CD, matchId: "jd", approved: false, motivo: "placar inventado" });
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "jd", tipo: "duplo_culposo" });
+      igual(banco.acha("partidas", x => x.id === "jd")?.wo_tipo, "duplo_culposo", "(antes: a partida tem W.O. E placar recusado)");
+      const r = await comoAdmin(motor, "DESFAZER_WO", { circuitoId: CD, matchId: "jd" });
+      ok(r.corpo?.sucesso === true, `o desfazer SUCEDE, porque há W.O. (erro: ${JSON.stringify(r.corpo?.erro)})`);
+      const m = banco.acha("partidas", x => x.id === "jd");
+      igual(m?.wo_tipo, null, "o W.O. sai");
+      igual(m?.rejeitado, true,
+        "MAS o placar recusado CONTINUA recusado — desfazer W.O. não ressuscita placar que o organizador recusou");
+      igual(m?.motivo_rejeicao, "placar inventado", "com o motivo dele intacto");
+    }
+
+    // ── a guarda que protege o ranking ────────────────────────────────────
+    {
+      const { banco, motor } = await cenarioDuplo("B");
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "jd", tipo: "duplo_culposo" });
+      await comoAdmin(motor, "PROCESSAR_RODADA", { circuitoId: CD, round: 1 });
+      const r = await comoAdmin(motor, "DESFAZER_WO", { circuitoId: CD, matchId: "jd" });
+      ok(r.corpo?.sucesso !== true, "depois de a rodada ser PROCESSADA, desfazer é recusado");
+      igual(r.status, 409, "com 409 — os pontos já estão no ranking e limpar a partida não os desfaz");
+      igual(banco.acha("partidas", x => x.id === "jd")?.wo_tipo, "duplo_culposo",
+        "e a partida fica intocada — recusa que grava metade é pior que recusa nenhuma");
+      igual(doCirc(banco, A1)?.derrotas, 1, "a derrota processada continua lá, sem duplicar");
+    }
+
+    // ── o escopo: organizador não desfaz W.O. de outro circuito ───────────
+    {
+      const { banco, motor } = await cenarioDuplo("B");
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "jd", tipo: "duplo_culposo" });
+      const r = await comoAdmin(motor, "DESFAZER_WO", { circuitoId: BH, matchId: "jd" });
+      ok(r.corpo?.sucesso !== true, "desfazer apontando OUTRO circuito é recusado");
+      igual(banco.acha("partidas", x => x.id === "jd")?.wo_tipo, "duplo_culposo", "e o W.O. do circuito certo fica intacto");
+    }
+
+    // ── ⛔ DUAS PARTIDAS: desfazer UMA não apaga a falta da OUTRA ─────────
+    // Esta é A mutação verde que o Guardião de Regulamento achou, e a mais grave
+    // desta onda: trocar a recontagem por um zeramento direto
+    // (`wo_culposos_temporada: 0`) deixava a bateria INTEIRA verde — porque todos
+    // os meus cenários tinham UMA partida só, e com uma partida só o zero é a
+    // resposta certa das duas formas. Com duas, o zeramento apaga a falta de uma
+    // rodada que ninguém desfez.
+    // Esse número SUSPENDE (Cap. 07) e ordena o 2º desempate (Cap. 09).
+    {
+      const { banco, motor } = await montarMotor({
+        circuitos: [circuito(BH), circuito(CD, { slug: "pontos-duplo", sistema: "B", regulamento_versao: "vB-01", fase: "etapa" })],
+        atletas: [atleta(A1), atleta(A2)],
+        circuito_atletas: [
+          { circuito_id: CD, atleta_id: A1, status: "ativo" },
+          { circuito_id: CD, atleta_id: A2, status: "ativo" },
+        ],
+        partidas: [
+          partida("r1", { circuito_id: CD, atleta1_id: A1, atleta2_id: A2, rodada: 1 }),
+          partida("r2", { circuito_id: CD, atleta1_id: A1, atleta2_id: A2, rodada: 2 }),
+        ],
+      });
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "r1", tipo: "duplo_culposo" });
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "r2", tipo: "duplo_culposo" });
+      igual(doCirc(banco, A1)?.wo_culposos_temporada, 2, "(antes: duas rodadas, duas faltas)");
+      await comoAdmin(motor, "DESFAZER_WO", { circuitoId: CD, matchId: "r2" });
+      igual(doCirc(banco, A1)?.wo_culposos_temporada, 1,
+        "desfazer o W.O. da rodada 2 deixa o atleta com UMA falta — a da rodada 1 CONTINUA");
+      igual(doCirc(banco, A2)?.wo_culposos_temporada, 1, "e vale para os dois atletas");
+    }
+
+    // ── ⛔ UM PLACAR RECUSADO NÃO RESSUSCITA, NEM COM A FRASE CERTA ───────
+    // O Guardião de Regulamento provou que a guarda anterior era uma STRING que o
+    // organizador digita: bastava escrever exatamente "W.O. Justificado" ao
+    // RECUSAR um placar, e o desfazer limpava a recusa — o placar voltava e
+    // pontuava. Discriminador que o usuário pode digitar não é discriminador.
+    // Agora a pergunta é sobre o CAMPO `wo_tipo`, que não se digita.
+    {
+      const { banco, motor } = await cenarioDuplo("B");
+      const pd = banco.tabelas.partidas.find(x => x.id === "jd");
+      pd.placar1 = 3; pd.placar2 = 0; pd.validado = true;
+      await comoAdmin(motor, "VALIDATE_RESULT", { circuitoId: CD, matchId: "jd", approved: false, motivo: "W.O. Justificado" });
+      const m0 = banco.acha("partidas", x => x.id === "jd");
+      igual(m0?.rejeitado, true, "(antes: placar RECUSADO, com a frase sentinela como motivo)");
+      igual(m0?.wo_tipo, null, "(e sem W.O. nenhum na partida)");
+      const r = await comoAdmin(motor, "DESFAZER_WO", { circuitoId: CD, matchId: "jd" });
+      ok(r.corpo?.sucesso !== true,
+        "desfazer é RECUSADO — a frase digitada não faz a partida ter W.O.");
+      const m = banco.acha("partidas", x => x.id === "jd");
+      igual(m?.rejeitado, true, "e o placar recusado CONTINUA recusado");
+      igual(m?.motivo_rejeicao, "W.O. Justificado", "com o motivo que o organizador escreveu, intacto");
+    }
+
+    // ── ⛔ A GUARDA DO PROCESSADO NÃO PODE SER CONTORNADA ─────────────────
+    // Medido pelo Guardião de Regulamento: o `DESFAZER_WO` recusava em partida
+    // processada (certo), mas o `APLICAR_WO` não tinha a guarda irmã e regravava
+    // `calculado: false` — então bastava reaplicar o W.O. para destravar o
+    // desfazer. Resultado: partida sem W.O. e sem placar, com os pontos ainda no
+    // atleta. Dois pontos de um jogo que não existe.
+    {
+      const { banco, motor } = await cenarioDuplo("B");
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "jd", tipo: "duplo_culposo" });
+      await comoAdmin(motor, "PROCESSAR_RODADA", { circuitoId: CD, round: 1 });
+      const rA = await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "jd", tipo: "culposo", faltosoId: A1, beneficiarioId: A2 });
+      ok(rA.corpo?.sucesso !== true, "APLICAR_WO numa partida JÁ PROCESSADA é recusado");
+      igual(rA.status, 409, "com 409 — senão ele destrava o desfazer regravando `calculado: false`");
+      igual(banco.acha("partidas", x => x.id === "jd")?.calculado, true,
+        "e a partida continua calculada — a guarda não pode deixar rastro");
+    }
+
+    // ── erro de banco NÃO vira "deu certo" ────────────────────────────────
+    // Três `throw` da ação estavam sem proteção — o Guardião de Confiabilidade
+    // mediu: tirar o `if (eLimp) throw` deixava a ação responder `sucesso: true`
+    // SEM TER LIMPADO NADA. É a família que esta casa mais persegue: o "✓" que o
+    // organizador acredita.
+    {
+      const { banco, motor } = await cenarioDuplo("B");
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "jd", tipo: "duplo_culposo" });
+      banco.recusar("partidas", "update", { message: "connection reset", code: "08006" });
+      const r = await comoAdmin(motor, "DESFAZER_WO", { circuitoId: CD, matchId: "jd" });
+      ok(r.corpo?.sucesso !== true,
+        "se a limpeza FALHA, a ação NÃO responde sucesso — senão o organizador acredita num desfazer que não houve");
+      igual(banco.acha("partidas", x => x.id === "jd")?.wo_tipo, "duplo_culposo",
+        "e o W.O. continua lá, que é a verdade");
+    }
+    {
+      const { banco, motor } = await cenarioDuplo("B");
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "jd", tipo: "duplo_culposo" });
+      banco.recusar("partidas", "select", { message: "connection reset", code: "08006" });
+      const r = await comoAdmin(motor, "DESFAZER_WO", { circuitoId: CD, matchId: "jd" });
+      ok(r.corpo?.sucesso !== true,
+        "e se a LEITURA falha também não — a ação recusa em vez de seguir sem saber o estado da partida");
+      // ⚠️ MEDIDO, porque o Guardião de Regulamento supôs o contrário: tirar o
+      // `if (eMw) throw` deixa esta asserção VERDE — mas NÃO abre buraco. A
+      // leitura falhando faz a guarda de ESCOPO recusar antes, com 403, e a
+      // partida fica intocada (conferido: `wo_tipo` e `calculado` inalterados).
+      // Ou seja, é mutação EQUIVALENTE: falha fechada por outro caminho. O
+      // `throw` fica como defesa em profundidade, e está dito aqui que ele não
+      // é o que segura a porta — para ninguém escrever depois que é.
+      ok(r.status >= 400, `com recusa explícita (veio ${r.status})`);
+    }
+    {
+      const { motor } = await cenarioDuplo("B");
+      const r = await comoAdmin(motor, "DESFAZER_WO", { circuitoId: CD, matchId: "nao-existe" });
+      // Vem 403 ("Partida não é do seu circuito"), não 404: a guarda de ESCOPO
+      // responde antes do 404 da ação. É resposta legítima — partida que não
+      // existe de fato não é do circuito de ninguém — e o que importa aqui é que
+      // NÃO é sucesso. Registrado assim em vez de ajustado o motor, porque mexer
+      // na ordem das guardas por causa de um código de status seria mexer na
+      // blindagem de escopo por motivo cosmético.
+      ok(r.corpo?.sucesso !== true, "partida que não existe é RECUSADA, e não devolve um sucesso vazio");
+      ok(r.status === 404 || r.status === 403, `com recusa explícita (veio ${r.status})`);
+    }
+
+    // ── o ORGANIZADOR (sub-admin) consegue desfazer ───────────────────────
+    // Lacuna medida pelo guardião: tirar `DESFAZER_WO` da allowlist `ACOES_ORG`
+    // deixava a bateria VERDE, e o organizador levaria 403 sem ninguém notar.
+    {
+      const hashOrg = await pinGuardado("7788");
+      const ORG = "organizador-do-cd";
+      const { banco, motor } = await montarMotor({
+        circuitos: [circuito(BH), circuito(CD, { slug: "pontos-duplo", sistema: "B", regulamento_versao: "vB-01", fase: "etapa" })],
+        atletas: [atleta(A1), atleta(A2), atleta(ORG, { telefone: "31977776666", pin_hash: hashOrg })],
+        circuito_atletas: [
+          { circuito_id: CD, atleta_id: A1, status: "ativo" },
+          { circuito_id: CD, atleta_id: A2, status: "ativo" },
+        ],
+        partidas: [partida("jo", { circuito_id: CD, atleta1_id: A1, atleta2_id: A2, rodada: 1 })],
+        outras: { circuito_organizadores: [{ circuito_id: CD, atleta_id: ORG }] },
+      });
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "jo", tipo: "duplo_culposo" });
+      const r = await comoOrganizador(motor, "31977776666", "7788", "DESFAZER_WO", { circuitoId: CD, matchId: "jo" });
+      ok(r.corpo?.sucesso === true,
+        `o ORGANIZADOR do circuito consegue desfazer — não é ação só de super-admin (erro: ${JSON.stringify(r.corpo?.erro)})`);
+      igual(banco.acha("partidas", x => x.id === "jo")?.wo_tipo, null, "e o W.O. sai de verdade");
+    }
+
+    // ── A TELA: ancorada no PONTO DE CHAMADA, não no texto solto ──────────
+    // ⚠️ ESTAS TRÊS NASCERAM DE UMA MUTAÇÃO VERDE. As primeiras eram
+    // `/DESFAZER_WO/`, `/Desfazer W\.O\./` e `/Sim, desfazer/` sobre o fonte — e o
+    // Guardião de Confiabilidade mostrou que apagar o ramo do `syncToSupabase`, OU
+    // tirar o `dispatch` do botão, deixava a bateria VERDE. O efeito seria a tela
+    // mostrando o W.O. sumir (otimismo do reducer) e o SERVIDOR NUNCA SER CHAMADO,
+    // até o próximo recarregamento. É a lição da fatia 0.6.21 outra vez: a janela
+    // ancorada na função é cega para quem a invoca.
+    {
+      const iSync = fonteSemComentario.indexOf('else if (action.type === "DESFAZER_WO")');
+      ok(iSync > 0, "o ramo do DESFAZER_WO existe no despachante");
+      const bloco = fonteSemComentario.slice(iSync, fonteSemComentario.indexOf("\n    }", iSync));
+      ok(/chamarAdminAction\("DESFAZER_WO"/.test(bloco),
+        "e ele CHAMA o motor — sem isto a tela apagaria o W.O. e o servidor nunca saberia");
+      ok(/loadFromSupabase\(\)/.test(bloco),
+        "e recarrega do banco depois, senão o contador de faltas fica velho na tela");
+
+      const iBtn = fonteSemComentario.indexOf("Sim, desfazer");
+      ok(iBtn > 0, "o botão de confirmação existe");
+      const linhaBtn = fonteSemComentario.slice(fonteSemComentario.lastIndexOf("<Btn", iBtn), iBtn);
+      ok(/dispatch\(\{type:"DESFAZER_WO"/.test(linhaBtn),
+        "e o clique dele DESPACHA a ação — não é botão decorativo");
+
+      // ── O PAYLOAD, não só o NOME da ação ──────────────────────────────
+      // ⚠️ Lacuna medida pelo Supervisor de Confiabilidade em 18/11/2026: as
+      // três asserções acima checam o NOME da chamada, e trocar o payload por
+      // `{}` nos DOIS pontos deixava a bateria VERDE. O efeito seria o motor
+      // respondendo 400 "matchId é obrigatório" a cada clique — a tela não
+      // mente (a barra de erro acende), mas o botão nunca desfaz nada, e nada
+      // na bateria acusaria. É a lição da fatia 0.6.21 um passo adiante:
+      // ancorar no ponto de chamada não basta se a asserção não olha o que ele
+      // manda.
+      ok(/chamarAdminAction\("DESFAZER_WO",\s*action\.payload\)/.test(bloco),
+        "e MANDA o payload adiante — sem ele o motor recusa com 400 e o botão nunca desfaz nada");
+      ok(/payload:\s*\{matchId:/.test(linhaBtn),
+        "e o clique diz QUAL partida — sem o matchId não há o que desfazer");
+    }
+
+    // ── O CARIMBO SAI quando a partida NÃO está validada ──────────────────
+    // ⚠️ Lacuna medida pelo Supervisor de Confiabilidade em 18/11/2026: apagar
+    // a linha `if (!mwValidado) limpeza.admin_aprovado_em = null` deixava a
+    // bateria VERDE. É escrita em DADO, e dado sem asserção regride calado.
+    // O carimbo é do próprio W.O. (o `APLICAR_WO` grava `now`), então numa
+    // partida que ninguém validou ele não tem razão de existir depois do
+    // desfazer — e no Sistema A este campo ORDENA o cálculo do rating.
+    {
+      const { banco, motor } = await cenarioDuplo("B");
+      await comoAdmin(motor, "APLICAR_WO", { circuitoId: CD, matchId: "jd", tipo: "duplo_culposo" });
+      ok(!!banco.acha("partidas", x => x.id === "jd")?.admin_aprovado_em,
+        "(antes: o APLICAR_WO carimbou a partida com a hora do W.O.)");
+      await comoAdmin(motor, "DESFAZER_WO", { circuitoId: CD, matchId: "jd" });
+      igual(banco.acha("partidas", x => x.id === "jd")?.admin_aprovado_em, null,
+        "desfazer numa partida NÃO validada apaga também o carimbo que o W.O. deixou");
+    }
+
+    // ── O justificado que nasce do PEDIDO DO ATLETA também se desfaz ──────
+    // ⚠️ Lacuna medida pelos DOIS supervisores em 18/11/2026, e é a mais séria
+    // das quatro: o `wo_tipo: "justificado"` foi gravado em DOIS lugares, e só
+    // um tinha asserção. Remover o do `RESPONDER_WO` deixava a bateria inteira
+    // VERDE — e o `RESPONDER_WO` é o caminho REAL e mais comum do justificado:
+    // o atleta pede, o organizador aprova. Sem o campo ali, o desfazer
+    // responderia "Esta partida não tem W.O." justamente no W.O. que o
+    // organizador acabou de aprovar — o beco sem saída reaberto na porta
+    // principal, com a bateria dizendo que estava tudo bem.
+    {
+      const { banco, motor } = await montarMotor({
+        circuitos: [circuito(BH, { regulamento_versao: "v03-13" })],
+        atletas: [atleta(A1, { rating: 500 }), atleta(A2, { rating: 500 })],
+        circuito_atletas: [
+          { circuito_id: BH, atleta_id: A1, status: "ativo" },
+          { circuito_id: BH, atleta_id: A2, status: "ativo" },
+        ],
+        partidas: [partida("jr", { circuito_id: BH, atleta1_id: A1, atleta2_id: A2, rodada: 1 })],
+        solicitacoes_wo: [{ id: "sr", circuito_id: BH, atleta_id: A1, adversario_id: A2,
+                            partida_id: "jr", status: "pendente" }],
+      });
+      const rA = await comoAdmin(motor, "RESPONDER_WO", { circuitoId: BH, id: "sr", matchId: "jr", aprovado: true });
+      ok(rA.corpo?.sucesso === true,
+        `o organizador aprova a justificativa que o atleta pediu (erro: ${JSON.stringify(rA.corpo?.erro)})`);
+      igual(banco.acha("partidas", x => x.id === "jr")?.rejeitado, true,
+        "(antes: a aprovação anulou a partida, que é o que o Sistema A faz)");
+      const r = await comoAdmin(motor, "DESFAZER_WO", { circuitoId: BH, matchId: "jr" });
+      ok(r.corpo?.sucesso === true,
+        `e esse W.O. também se desfaz (erro: ${JSON.stringify(r.corpo?.erro)})`);
+      const m = banco.acha("partidas", x => x.id === "jr");
+      igual(m?.rejeitado, false, "a partida volta a valer");
+      igual(m?.wo_tipo, null, "e sem W.O. nenhum");
+    }
   }
 
   // ── 6. A TELA: o botão existe e está atrás do portão do Sistema B ────────

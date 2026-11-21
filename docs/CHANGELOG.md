@@ -5,6 +5,70 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-11-20 — O W.O. registrado por engano passa a ter volta
+
+**Motor: `admin-action` v68 → v69** (ação nova `DESFAZER_WO`). **App: sobe junto,
+depois do motor.** `login-atleta` segue **v13**, `athlete-action` segue **v24**.
+**Nenhuma migração.**
+
+**Pedido do Juliano em 15/11/2026**, logo depois de eu avisá-lo de que o W.O. só
+podia ser RECLASSIFICADO, nunca removido: *"quero poder desfazer um W.O seja de
+um atleta ou duplo"*. Era beco sem saída de verdade — registrar por engano não
+tinha volta — e o próprio ROADMAP 1.3g citava isso como o problema a decidir.
+
+**O que o organizador ganha:** o botão "↩️ Desfazer W.O." no painel de
+Pendências, com confirmação de dois cliques, enquanto a rodada **não** foi
+processada. Depois de processada o motor **recusa com 409** e diz por quê.
+
+**Fundamento:** v03-13 Cap. 08 e vB-01 Cap. 08 criam a janela em que o
+organizador confere e aplica W.O. **antes** de processar, e separam registrar de
+computar — corrigir o próprio ato dentro dessa janela não revoga resultado,
+porque resultado ainda não houve. **Depois** do processamento é caso omisso
+(vB-01 Cap. 13, v03-13 Cap. 14), e o app escolheu recusar em vez de limpar a
+partida e deixar os pontos órfãos no ranking.
+
+**Três defeitos de verdade fechados pelo caminho, todos medidos rodando o motor:**
+- **ROADMAP 1.3k — reaplicar W.O. em partida já processada CONTAVA EM DOBRO.**
+  O `APLICAR_WO` ganhou a mesma guarda `calculado`. Sem ela a guarda do
+  `DESFAZER_WO` era **contornável em duas chamadas**: processa → desfazer recusa
+  (certo) → reaplica (o que regravava `calculado: false`) → desfazer passa, e
+  sobram pontos de um jogo que não existe.
+- **O discriminador que o usuário digitava.** O justificado do Sistema A era
+  reconhecido pela frase `motivo_rejeicao === "W.O. Justificado"` — e esse campo
+  é TEXTO LIVRE preenchido pelo organizador ao recusar um placar. O Guardião de
+  Regulamento provou rodando: bastava escrever a frase certa ao recusar, e o
+  desfazer **ressuscitava aquele placar**, que então pontuava. Agora o
+  `APLICAR_WO` e o `RESPONDER_WO` gravam `wo_tipo: "justificado"`, e a pergunta é
+  sobre um **campo**.
+- **O W.O. fantasma**, introduzido pela onda anterior: a recontagem perseguia o
+  `wo_faltoso_id`, que o duplo deixa nulo, então corrigir um duplo para W.O.
+  simples deixava uma falta fantasma no outro atleta. Agora DERIVA dos atletas da
+  própria partida.
+
+**Bateria: 2181 asserções em 18 seções, 0 falhas, saída 0.** `npm run build` ✓.
+**Mutação:** as asserções desta onda nasceram de **cinco verdes achadas pelos
+revisores** — o `wo_tipo` do `RESPONDER_WO` (o caminho mais comum do justificado,
+sem proteção nenhuma), os dois pontos em que a tela mandava o payload, a linha
+que apaga o carimbo da partida não validada, e o aviso novo do 409. As cinco
+ficaram vermelhas depois.
+
+**Vereditos:** `guardiao-regulamento` GO-com-condições e `guardiao-confiabilidade`
+GO-com-condições, as 10 condições atendidas; `supervisor-confiabilidade`
+**APROVADO**; `supervisor-regulamento` devolveu **REVISAR** (quatro pendências) e,
+atendidas, **APROVADO**.
+
+**Dívidas que esta onda abriu no ROADMAP, com medição:**
+- **1.3o** — no Sistema A o desfazer não tem tela, e para as linhas gravadas
+  antes da v69 o servidor também recusa (409), porque o `wo_tipo` delas é nulo.
+  O 409 do W.O. duplo em A passou a **avisar disso na própria mensagem**.
+  Decisão pendente do Juliano: o backfill dos 7 justificados do `bh`
+  (recomendação: não fazer).
+- **1.3p** — a ordem das rodadas do Cap. 08 **não é garantida pelo motor**, e a
+  guarda só é consultada em rodada par. Furo **anterior** à onda; o desfazer
+  acrescenta uma porta. **Invariante 7 passa a ✗ no motor.**
+
+---
+
 ### 2026-11-15 (b) — W.O. DUPLO: ninguém jogou, ninguém ganha
 
 **Motor: `admin-action` v67 → v68.** `login-atleta` sobe na mesma leva (v12 → v13,

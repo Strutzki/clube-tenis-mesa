@@ -468,7 +468,7 @@ async function ehOrganizadorDe(atletaId: string, circuitoId: string): Promise<bo
 const ACOES_ORG = new Set([
   "INICIAR_ETAPA","AVANCAR_RODADA","PROCESSAR_RODADA",
   "VALIDATE_RESULT","ADMIN_IMPUTAR_RESULTADO","DESFAZER_VALIDACAO","MARCAR_RESULTADO_COMUNICADO",
-  "APLICAR_WO","RESPONDER_WO","MARCAR_WO_NOTIFICADO","LER_JUSTIFICATIVA_WO",
+  "APLICAR_WO","DESFAZER_WO","RESPONDER_WO","MARCAR_WO_NOTIFICADO","LER_JUSTIFICATIVA_WO",
   "INSCRICAO_VALIDAR","INCLUIR_NO_CIRCUITO","RECUSAR_CIRCUITO","ARQUIVAR_ATLETA","DESARQUIVAR_ATLETA","DEFINIR_DESCONTO_ATLETA",
   "DEFINIR_INSCRICOES_ABERTAS","DEFINIR_PUBLICO","DEFINIR_AUTO_VALIDAR","DEFINIR_CONFIG_CIRCUITO",
   // Financeiro (config + pagamentos): decisão do Juliano = "depende do financeiro por circuito".
@@ -492,7 +492,7 @@ const FINANCEIRO_ACOES = new Set([
 // recurso pertence ao circuito do organizador (senão ele tocaria outro circuito/BH).
 const ORG_MATCH_FIELD: Record<string, string> = {
   VALIDATE_RESULT: "matchId", ADMIN_IMPUTAR_RESULTADO: "matchId", DESFAZER_VALIDACAO: "matchId",
-  MARCAR_RESULTADO_COMUNICADO: "matchId", APLICAR_WO: "matchId", RESPONDER_WO: "matchId",
+  MARCAR_RESULTADO_COMUNICADO: "matchId", APLICAR_WO: "matchId", DESFAZER_WO: "matchId", RESPONDER_WO: "matchId",
 };
 const ORG_MATCH_OPCIONAL = new Set(["RESPONDER_WO"]); // matchId só quando aprovado
 const ORG_MEMBRO_FIELD: Record<string, string> = {
@@ -1894,6 +1894,99 @@ Deno.serve(async (req) => {
         return jsonResponse({ sucesso: true });
       }
 
+      // DESFAZER_WO — tira o W.O. da partida e devolve tudo ao estado anterior.
+      // Pedido do Juliano em 15/11/2026, logo depois de eu avisa-lo de que o
+      // W.O. so podia ser RECLASSIFICADO, nunca removido: "quero poder desfazer
+      // um W.O seja de um atleta ou duplo". Era beco sem saida de verdade --
+      // registrar por engano nao tinha volta, e o proprio ROADMAP 1.3g citava
+      // isso como o problema a decidir.
+      //
+      // ⚠️ RECUSA SE A RODADA JA FOI PROCESSADA, e e a mesma guarda (e a mesma
+      // razao) do `DESFAZER_VALIDACAO` logo acima: com `calculado: true` os
+      // pontos e as derrotas JA ESTAO nos atletas, e limpar a partida nao os
+      // desfaz -- deixaria o ranking com pontos de uma partida que nao existe
+      // mais. Desfazer depois do processamento exige ESTORNAR os efeitos, que e
+      // trabalho proprio e esta no ROADMAP 1.3k (onde mora o defeito irmao: hoje
+      // reaplicar W.O. em partida processada CONTA EM DOBRO).
+      // Fail-closed: na duvida nao se mexe no ranking.
+      case "DESFAZER_WO": {
+        const { matchId } = payload || {};
+        if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
+        const { data: mw, error: eMw } = await supabase.from("partidas")
+          .select("calculado,validado,wo_tipo,wo_faltoso_id,rejeitado,motivo_rejeicao,atleta1_id,atleta2_id")
+          .eq("id", matchId).maybeSingle();
+        if (eMw) throw eMw;
+        if (!mw) return jsonResponse({ sucesso: false, erro: "Partida não encontrada." }, 404);
+        if (mw.calculado) {
+          return jsonResponse({ sucesso: false, erro: "Não dá para desfazer: a rodada já foi processada e os pontos já estão no ranking." }, 409);
+        }
+        // O `justificado` do Sistema A ANULA a partida (`rejeitado: true` +
+        // `motivo_rejeicao: "W.O. Justificado"`) e, DESDE ESTA ONDA, grava
+        // tambem `wo_tipo: "justificado"` -- nos dois lugares em que ele nasce,
+        // o `APLICAR_WO` e o `RESPONDER_WO`.
+        //
+        // ⚠️ ESTE COMENTARIO DIZIA O CONTRARIO ("o justificado do Sistema A NAO
+        // grava wo_tipo") e ficou falso no instante em que o conserto abaixo
+        // entrou. O Supervisor de Regulamento mediu e devolveu a onda por isso:
+        // e a mesma classe de defeito que a onda acabara de consertar noutro
+        // comentario, reintroduzida pelo proprio conserto.
+        //
+        // Consequencia que importa, e que o ROADMAP 1.3o registra: as linhas
+        // gravadas ANTES desta versao nao tem o campo, entao para elas esta
+        // acao responde 409 "Esta partida nao tem W.O. registrado". Isso e
+        // deliberado e fail-closed -- recusar e melhor do que confiar na frase
+        // de `motivo_rejeicao`, que o organizador DIGITA ao recusar um placar.
+        //
+        // E o segundo termo da guarda abaixo e REDUNDANCIA DELIBERADA: como
+        // `ehWoJustificadoA` exige `wo_tipo === "justificado"`, ele ja implica
+        // `mw.wo_tipo`. Fica porque nomeia a segunda forma para quem le; o
+        // trabalho real dele e mais abaixo, na limpeza do `rejeitado`.
+        const mwValidado = mw.validado === true;
+        // ⚠️ PERGUNTA PELO CAMPO, NAO PELA FRASE. A versao anterior olhava
+        // `motivo_rejeicao === "W.O. Justificado"` -- e esse campo e texto livre
+        // digitado pelo organizador ao recusar um placar. Ver o comentario do
+        // `APLICAR_WO`: o Guardiao de Regulamento ressuscitou um placar recusado
+        // so escrevendo a frase certa. `wo_tipo` nao se digita.
+        const ehWoJustificadoA = mw.rejeitado === true && mw.wo_tipo === "justificado";
+        if (!mw.wo_tipo && !ehWoJustificadoA) {
+          return jsonResponse({ sucesso: false, erro: "Esta partida não tem W.O. registrado." }, 409);
+        }
+        const limpeza: Record<string, unknown> = {
+          wo_tipo: null, wo_faltoso_id: null, wo_beneficiario_id: null,
+        };
+        // O `admin_aprovado_em` foi carimbado pelo `APLICAR_WO`. Se a partida NAO
+        // esta validada, esse carimbo so existe por causa do W.O. que esta sendo
+        // tirado -- entao ele sai junto.
+        // ⚠️ E SE ESTA VALIDADA, NAO SE TOCA -- mas a razao que eu escrevi aqui era
+        // FALSA. Eu dizia "o carimbo e da validacao do placar"; o Guardiao de
+        // Regulamento mediu e o `APLICAR_WO` SOBRESCREVE esse campo com o instante
+        // do W.O. (fixture 2026-01-01 saiu 2026-11-16). Logo, no caso validado o
+        // carimbo guardado e o do W.O., nao o da validacao.
+        // Nao se toca mesmo assim, e agora pelo motivo certo: no Sistema A este
+        // campo ORDENA o calculo do rating (`order("admin_aprovado_em")`) e vira a
+        // data do `rating_historico`. Zera-lo numa partida que continua valendo
+        // mudaria a ordem -- e o rating em A e sequencial, entao a ordem muda os
+        // numeros. Restaurar o carimbo anterior exigiria guarda-lo antes, que e
+        // trabalho proprio: ver ROADMAP.
+        if (!mwValidado) limpeza.admin_aprovado_em = null;
+        // ⚠️ So limpa o `rejeitado` quando ELE veio do W.O. O mesmo campo e usado
+        // para RECUSAR UM PLACAR (`VALIDATE_RESULT` com `aprovado: false`, que
+        // grava o motivo que o organizador digitou). Limpar sem conferir o motivo
+        // ressuscitaria um placar recusado -- e o organizador nem saberia.
+        if (ehWoJustificadoA) { limpeza.rejeitado = false; limpeza.motivo_rejeicao = null; }
+        const { error: eLimp } = await supabase.from("partidas").update(limpeza).eq("id", matchId);
+        if (eLimp) throw eLimp;
+        // Reconta os DOIS, derivado das partidas -- mesma regra do `APLICAR_WO`:
+        // DERIVAR, NAO PERSEGUIR. Quem tinha a falta por esta partida a perde;
+        // quem tinha por outra, mantem.
+        const alvosW = new Set<string>();
+        if (mw.atleta1_id) alvosW.add(String(mw.atleta1_id));
+        if (mw.atleta2_id) alvosW.add(String(mw.atleta2_id));
+        if (mw.wo_faltoso_id) alvosW.add(String(mw.wo_faltoso_id));
+        for (const id of alvosW) await recontarWoCulposos(circuitoId, id);
+        return jsonResponse({ sucesso: true });
+      }
+
       case "MARCAR_RESULTADO_COMUNICADO": {
         const { matchId, comunicado } = payload || {};
         if (!matchId) return jsonResponse({ sucesso: false, erro: "matchId é obrigatório" }, 400);
@@ -1978,7 +2071,8 @@ Deno.serve(async (req) => {
               // O motivo nao precisa do texto: a justificativa vive em
               // `solicitacoes_wo`, que e o lugar dela, e o organizador tem o pedido a
               // mao. Aqui basta o rotulo.
-              rejeitado: true, motivo_rejeicao: "W.O. Justificado",
+              // Mesmo discriminador do `APLICAR_WO` -- ver o comentario longo la.
+              rejeitado: true, motivo_rejeicao: "W.O. Justificado", wo_tipo: "justificado",
             }).eq("id", matchId);
             if (errMatch) throw errMatch;
           }
@@ -2269,7 +2363,23 @@ Deno.serve(async (req) => {
         // das partidas e idempotente, entao recontar a mais nunca erra; recontar
         // a menos erra sempre. Isso cobre as tres transicoes e as que ninguem pensou.
         const { data: woAntes } = await supabase.from("partidas")
-          .select("wo_faltoso_id,atleta1_id,atleta2_id").eq("id", matchId).maybeSingle();
+          .select("wo_faltoso_id,atleta1_id,atleta2_id,calculado").eq("id", matchId).maybeSingle();
+        // ⛔ A GUARDA IRMA DA DO `DESFAZER_WO`, e sem ela aquela era CONTORNAVEL.
+        // Medido pelo Guardiao de Regulamento em 15/11/2026: processa a rodada ->
+        // `DESFAZER_WO` recusa com 409 (certo) -> `APLICAR_WO` de novo responde
+        // 200 e regrava `calculado: false` -> `DESFAZER_WO` agora passa. Resultado:
+        // partida sem W.O., sem placar, nao validada -- e os 2 pontos continuam no
+        // atleta. Dois pontos de um jogo que nao existe: a contabilidade fechada,
+        // que e a invariante no 1 desta casa, rompida por um caminho de duas
+        // chamadas.
+        // E o irmao, ja registrado em ROADMAP 1.3k: reaplicar e reprocessar dava
+        // ao beneficiario 4 pontos e 2 vitorias de UMA partida.
+        // Nao era alcancavel pela tela (o botao de W.O. so aparece em partida
+        // `incomplete`), mas o motor e a autoridade -- e o comentario do DESFAZER
+        // se declarava fail-closed sem ser.
+        if (woAntes?.calculado) {
+          return jsonResponse({ sucesso: false, erro: "A rodada já foi processada: os pontos dela já estão no ranking. Para mexer no W.O. desta partida seria preciso estornar o processamento, o que o app ainda não faz." }, 409);
+        }
         const faltosoAnterior = woAntes?.wo_faltoso_id || null;
         const recontarEnvolvidos = async (novoFaltoso: string | null) => {
           const alvos = new Set<string>();
@@ -2304,7 +2414,15 @@ Deno.serve(async (req) => {
         // nenhum W.O. contado. Na tela o botao se chama "Justificado (anula)".
         if (tipo === "duplo_culposo") {
           if ((await getSistema(circuitoId)) !== "B") {
-            return jsonResponse({ sucesso: false, erro: "Neste circuito, quando nenhum dos dois jogou, o regulamento manda ANULAR a rodada — sem pontos e sem rating para os dois (v03-13, Cap. 07). Use o botão \"Justificado (anula)\", que faz exatamente isso. O W.O. duplo (0 ponto e falta para os dois) é dos circuitos por pontos." }, 409);
+            // ⚠️ A ULTIMA FRASE E UM AVISO, NAO ENFEITE. Exigida pelo Supervisor
+            // de Regulamento em 18/11/2026: esta mensagem manda o organizador de
+            // Sistema A usar o "Justificado (anula)" -- e esse e exatamente o
+            // unico tipo de W.O. que a tela NAO oferece desfazer, porque o botao
+            // vive na lista `woPendente`, que filtra `!rejeitado` (ROADMAP 1.3o).
+            // Numa onda cujo titulo e "agora da para desfazer", empurrar alguem
+            // para o caminho sem volta sem avisar seria o app prometendo o que
+            // nao entrega.
+            return jsonResponse({ sucesso: false, erro: "Neste circuito, quando nenhum dos dois jogou, o regulamento manda ANULAR a rodada — sem pontos e sem rating para os dois (v03-13, Cap. 07). Use o botão \"Justificado (anula)\", que faz exatamente isso. O W.O. duplo (0 ponto e falta para os dois) é dos circuitos por pontos. Atenção: a anulação ainda não tem botão de desfazer na tela — confira antes de aplicar." }, 409);
           }
           const { data: mD, error: eMD } = await supabase.from("partidas")
             .select("atleta1_id,atleta2_id").eq("id", matchId).maybeSingle();
@@ -2352,7 +2470,26 @@ Deno.serve(async (req) => {
           return jsonResponse({ sucesso: true });
         }
         if (tipo === "justificado") {
-          const { error } = await supabase.from("partidas").update({ rejeitado: true, motivo_rejeicao: "W.O. Justificado" }).eq("id", matchId);
+          // ⚠️ O `wo_tipo: "justificado"` ENTROU EM 15/11/2026 e e consertando um
+          // buraco de verdade, nao arrumacao. Ate aqui o Sistema A marcava a
+          // anulacao SO com `rejeitado: true` + a frase `"W.O. Justificado"`, e o
+          // `DESFAZER_WO` usava essa FRASE para saber se podia limpar o
+          // `rejeitado`. Mas `motivo_rejeicao` e TEXTO LIVRE que o organizador
+          // digita ao recusar um placar (`VALIDATE_RESULT`, :1749) -- e a frase
+          // sentinela e o rotulo do proprio botao do app ("Justificado (anula)").
+          // O Guardiao de Regulamento provou rodando: bastava o organizador
+          // escrever exatamente "W.O. Justificado" ao RECUSAR um placar, e o
+          // desfazer RESSUSCITAVA esse placar, que entao pontuava.
+          // Discriminador que o usuario pode digitar nao e discriminador. Agora a
+          // pergunta e sobre um CAMPO.
+          // Conferido que nao muda comportamento nenhum: a varredura de W.O. do
+          // PROCESSAR_RODADA filtra `rejeitado = false` (entao a linha continua
+          // fora), o `pendentes` filtra `wo_tipo is null` (ja estava fora pelo
+          // `rejeitado`), e o `recontarWoCulposos` so conta culposo/a_favor e
+          // ignora rejeitadas.
+          const { error } = await supabase.from("partidas").update({
+            rejeitado: true, motivo_rejeicao: "W.O. Justificado", wo_tipo: "justificado",
+          }).eq("id", matchId);
           if (error) throw error;
           // ⚠️ ESTE `return` SAIA ANTES DE RECONTAR (ate 29/09/2026). No Sistema A,
           // trocar um W.O. de culposo para justificado NAO devolvia o ponto: o

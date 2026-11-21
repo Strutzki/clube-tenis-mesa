@@ -1362,6 +1362,19 @@ function reducer(state, action) {
       return { ...state, solicitacoesWo: state.solicitacoesWo.filter(s => s.id !== id) };
     }
 
+    case "DESFAZER_WO": {
+      // Tira o W.O. da partida na tela. O servidor é a autoridade (ele recusa se
+      // a rodada já foi processada); isto é só o otimismo, e o `loadFromSupabase`
+      // que vem em seguida traz o estado de verdade.
+      // O `wo_culposos_temporada` NÃO é mexido aqui de propósito — mesma razão do
+      // APLICAR_WO logo abaixo: o servidor DERIVA esse número das partidas, e
+      // somar/subtrair na tela já fez o painel de suspensão discordar do banco.
+      const { matchId } = action.payload;
+      return { ...state, matches: state.matches.map(m =>
+        m.id !== matchId ? m : { ...m, woTipo: null, woFaltosoId: null, woBeneficiarioId: null,
+          ...(m.motivoRejeicao === "W.O. Justificado" ? { rejeitado: false, motivoRejeicao: null } : {}) }) };
+    }
+
     case "APLICAR_WO": {
       // Classifica um W.O. numa partida. Justificado anula; Culposo/A Favor
       // gravam a classificação (pontos entram no processamento da rodada).
@@ -7033,6 +7046,17 @@ export default function App() {
     else if (action.type === "DEFINIR_CONFIG_CIRCUITO") {
       await chamarAdminAction("DEFINIR_CONFIG_CIRCUITO", action.payload || {});
     }
+    else if (action.type === "DESFAZER_WO") {
+      await chamarAdminAction("DESFAZER_WO", action.payload);
+      // ⚠️ O `loadFromSupabase` NÃO é decoração, e faltava aqui: o comentário do
+      // reducer prometia que ele vinha "em seguida" e isso era FALSO no caminho de
+      // sucesso. Sem ele, o contador de faltas e o painel das "2 faltas →
+      // suspensão" ficam velhos na tela depois de desfazer — exatamente o que o
+      // próprio comentário diz para não fazer. Os irmãos (APLICAR_WO,
+      // VALIDATE_RESULT, DESFAZER_VALIDACAO) todos recarregam.
+      // (Guardião de Confiabilidade, 15/11/2026.)
+      await loadFromSupabase();
+    }
     else if (action.type === "APLICAR_WO") {
       await chamarAdminAction("APLICAR_WO", action.payload);
       await loadFromSupabase();
@@ -11538,6 +11562,7 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
   const [motivoRecusaWo, setMotivoRecusaWo] = useState({});
   const [notificados, setNotificados] = useState({});   // marca visual local de "já cliquei em notificar"
   const [finalizExcl, setFinalizExcl] = useState({});   // { [atletaId]: bool } — confirmação de finalizar exclusão
+  const [desfazerWo, setDesfazerWo] = useState(null);   // id da partida cujo "desfazer W.O." está pedindo confirmação
   // ⚠️ ESTA LINHA É O QUE DIZ "a partida está RESOLVIDA". Quem não está aqui
   // continua em "Resultado Incompleto" E ENTRA NA CONTA que TRAVA o botão de
   // processar a rodada (`naoResolvidos`, abaixo). Ou seja: esquecer um tipo aqui
@@ -11819,6 +11844,30 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
                       ? `A Favor — ${benef?.name?.split(" ")[0]} 2 · ${falt?.name?.split(" ")[0]} 0`
                       : `A Favor — ${benef?.name?.split(" ")[0]} +8`)}
                 <span style={{color:"#7d9188"}}> · aplica no processamento da rodada</span>
+              </div>
+              {/* DESFAZER — pedido do Juliano em 15/11/2026, logo depois de eu
+                  avisá-lo de que o W.O. só podia ser reclassificado, nunca
+                  removido. Era beco sem saída: registrar por engano não tinha
+                  volta. O motor recusa se a rodada já foi processada, então este
+                  botão só aparece enquanto dá para desfazer de verdade. */}
+              <div style={{marginTop:8}}>
+                {desfazerWo === m.id ? (
+                  <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                    {/* A frase dizia "devolver a partida ao estado anterior" e isso é
+                        só QUASE verdade: o `admin_aprovado_em` não é restaurado ao
+                        valor de antes. Medido pelo Guardião de Confiabilidade. Dizer
+                        o que a ação faz — "tira o W.O." — é mais honesto do que
+                        prometer um retorno exato que ela não entrega. */}
+                    <span style={{fontSize:11,color:"#9db3a8"}}>Tirar o W.O. desta partida?</span>
+                    <Btn small color="#c25a45" onClick={()=>{ dispatch({type:"DESFAZER_WO", payload:{matchId:m.id}}); setDesfazerWo(null); }}>Sim, desfazer</Btn>
+                    <Btn small color={T.borda} onClick={()=>setDesfazerWo(null)}>Cancelar</Btn>
+                  </div>
+                ) : (
+                  <button onClick={()=>setDesfazerWo(m.id)}
+                    style={{fontFamily:T.mono,fontSize:10,letterSpacing:0.5,textTransform:"uppercase",color:"#7d9188",background:"transparent",border:"1px solid rgba(125,145,136,0.4)",borderRadius:10,padding:"5px 10px",cursor:"pointer"}}>
+                    ↩️ Desfazer W.O.
+                  </button>
+                )}
               </div>
             </Card>
           );

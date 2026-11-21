@@ -2401,7 +2401,15 @@ Os itens abaixo são o que o piloto abriu. Numeração **1.x**, livre de colisã
   calcula ponto — são contagem e aviso. **Não bloqueiam.** O conserto natural é o
   mesmo `ehWo`, que já existe e já está protegido por asserção que o executa.
 
-- **1.3k — 🔴 REAPLICAR W.O. NUMA PARTIDA JÁ PROCESSADA CONTA EM DOBRO.**
+- **1.3k — ✅ FECHADO EM 15/11/2026, na onda do desfazer. REAPLICAR W.O. NUMA
+  PARTIDA JÁ PROCESSADA CONTAVA EM DOBRO.**
+  **O conserto:** o `APLICAR_WO` ganhou a mesma guarda `calculado` que o
+  `DESFAZER_WO` já tinha — recusa com 409 em partida já processada. Entrou porque
+  o Guardião de Regulamento mediu que, **sem ela, a guarda do `DESFAZER_WO` era
+  contornável**: processa → desfazer recusa (certo) → reaplica o W.O. (que
+  regravava `calculado: false`) → desfazer passa, e sobram pontos de um jogo que
+  não existe. Asserção + mutação vermelha.
+  *(O relato original, mantido como registro:)*
   Achado e **medido** pelo Supervisor de Confiabilidade em 15/11/2026, rodando o
   motor, ao responder a pergunta "o conserto do 1.3i deixa algum caminho de pé?".
   **É anterior à onda** e vale para os quatro tipos de W.O.
@@ -2482,6 +2490,92 @@ Os itens abaixo são o que o piloto abriu. Numeração **1.x**, livre de colisã
      quem lê a pular linha: vale prefixar como esperado.
   3. **2119 asserções / 18 seções** — `testes/README.md` e `CLAUDE.md` seguem com
      números velhos, e a dívida da tabela de 12/10 (6 arquivos fora) continua.
+
+- **1.3o — 🟠 NO SISTEMA A, DESFAZER W.O. SÓ EXISTE NO SERVIDOR.** Medido pelo
+  Guardião de Regulamento em 15/11/2026, na onda do desfazer.
+  No Sistema A o W.O. "Justificado" **anula** a partida (`rejeitado: true`), e o
+  botão "↩️ Desfazer W.O." vive só na lista `woPendente` (`App.jsx:11579`), que
+  filtra `!m.rejeitado`. Resultado: **a tela não oferece o botão**, e o
+  `incomplete` e o `calculoPendente` também não a mostram.
+  ⚠️ **E é justamente o botão que o 409 do W.O. duplo manda o organizador de A
+  usar** ("Use o botão *Justificado (anula)*") — então o beco sem saída que o
+  Juliano pediu para fechar **continua fechado** no sistema de rating.
+  *Atendido em parte em 18/11/2026: o 409 passou a avisar, na própria mensagem,
+  que a anulação não tem botão de desfazer. O aviso não é o conserto.*
+
+  ⛔ **E O SERVIDOR TAMBÉM NÃO ACEITA, para o que já existe. Esta linha dizia
+  "o motor aceita desfazer (200)" e o Supervisor de Regulamento mediu em
+  18/11/2026 que é FALSO** para todas as linhas gravadas antes desta onda: os
+  **7** justificados que o `bh` tem no banco têm `wo_tipo` **nulo** (só
+  `rejeitado: true` + o motivo), e para eles o `DESFAZER_WO` responde **409
+  "Esta partida não tem W.O. registrado"**. O conserto do discriminador trocou
+  um falso-positivo perigoso (a frase digitável) por um falso-negativo seguro —
+  está certo assim, mas o efeito é que **no único circuito Sistema A que existe
+  o desfazer não funciona nem pela tela nem pelo servidor**. Só vale para
+  justificados gravados a partir da v69.
+  ⚠️ **E "o BH encerrou" não descreve o banco.** Esta linha dizia "hoje não
+  morde: o BH encerrou". Medido: o `bh` está com `fase = "etapa"`,
+  `publico = true` e essas 7 partidas em `calculado = false`. Encerrou como
+  negócio; não está encerrado como estado. O `bh2` é Sistema B, e
+  `CRIAR_CIRCUITO` aceita `"A"` — então um circuito novo de rating nasce com a
+  funcionalidade pela metade.
+  **Decisão pendente do Juliano:** fazer ou não o backfill
+  `update partidas set wo_tipo='justificado' where rejeitado and
+  motivo_rejeicao='W.O. Justificado' and wo_tipo is null`. O supervisor conferiu
+  que é **inerte para pontuação** (o `PROCESSAR_RODADA` filtra `rejeitado=false`
+  nas duas varreduras, e o `ehWo` da tela sai pelo `!m.rejeitado`).
+  Recomendação dele e minha: **não fazer**, porque o BH encerrou.
+  **Conserto:** uma lista própria para "W.O. que anulou a partida" no painel, ou
+  incluir no `woPendente` as rejeitadas cujo `wo_tipo` é `justificado` — o que
+  agora é possível, porque a onda passou a gravar esse campo no Sistema A.
+  **A asserção de tela que existe prova PRESENÇA da string, não ALCANCE** — foi o
+  guardião que apontou a diferença, e ela é a mesma lição da fatia 0.6.21.
+
+- **1.3p — 🟠 A ORDEM DAS RODADAS DO CAP. 08 NÃO É GARANTIDA PELO MOTOR.**
+  Medido pelo Supervisor de Regulamento em 18/11/2026, rodando o motor, na onda
+  do desfazer. **A invariante 7 ("app × regulamento") passa a ✗ no motor** — era
+  dada como ✓ no parecer do guardião, e é ✓ só no texto das telas.
+  O v03-13 **Cap. 08** (`:209-234`) e o vB-01 **Cap. 08** exigem que a rodada só
+  seja processada quando **todas** as partidas dela estiverem resolvidas, e
+  **"sempre na ordem: 1ª rodada primeiro, 2ª rodada depois"**.
+  **O que a guarda do motor faz** (`admin-action`, no `PROCESSAR_RODADA`): conta
+  as partidas da rodada anterior que estão **validadas e não calculadas**, ou
+  que **têm `wo_tipo`**. Ela nunca vê partida **não resolvida** — sem placar e
+  sem W.O. Então:
+  - r1 com uma partida em aberto + r2 validada → **processar r2 devolve 200**.
+    Medido, e **o furo é anterior à onda**: acontece sem desfazer nenhum.
+  - o desfazer **acrescenta uma porta** — ele converte um estado que a guarda
+    barrava (W.O. na r1) num estado que ela deixa passar (r1 em aberto). É a
+    porta que o organizador vai usar como rotina.
+  - **no Sistema A isso muda números**, porque o rating é sequencial: processar
+    a r2 antes e a r1 depois calcula a r1 com ratings pós-r2.
+    **MEDIDO em 20/11/2026**, com `A1 = 500`, `A2 = 480`, r2 = A1 vence 3×1,
+    r3 = A2 vence 3×1:
+    `ordem certa (r2→r3)` → **A1 500 · A2 484** · `ordem trocada (r3→r2)` →
+    **A1 501 · A2 483**. A causa é a tabela CBTM ser em **faixas** de diferença
+    (`CBTM_FAVORITO`/`CBTM_AZARAO`, lidas por `calcRatingCBTM` com `diff <= f.max`):
+    a faixa em que a 2ª partida cai depende do resultado da 1ª. Um ponto por
+    atleta num par de partidas, e acumula ao longo da temporada.
+    ⚠️ **E o aviso que economiza o tempo de quem for consertar: o efeito NÃO
+    aparece em fixture simétrica.** Quem montar as duas partidas com o mesmo
+    vencedor vai medir empate nas duas ordens e concluir que não há efeito — foi
+    o que aconteceu nas duas primeiras tentativas do supervisor. O fixture
+    precisa de vencedores diferentes.
+  ⚠️ **E a segunda metade, MEDIDA em 20/11/2026 pelo Supervisor de Regulamento:**
+  a guarda está dentro de `if (round % 2 === 0 && ...)`, ou seja **só é
+  consultada em rodada par**. Rodando:
+  `r1 com W.O. em aberto → processar r2 = 409` (certo) ·
+  `r2 com W.O. em aberto → processar r3 = 200` ·
+  `r2 com placar validado e não calculado → processar r3 = 200`.
+  A r3 com a r2 em aberto **não é checada por nada**, nem pelo W.O. nem pelo
+  placar.
+  **Conserto, para quando for:** a guarda contar também as partidas da rodada
+  anterior que não estão validadas, nem com W.O., nem rejeitadas — isto é,
+  igualar a guarda do servidor ao `naoResolvidos` da tela (`App.jsx:11643`) — e
+  tirar o `round % 2`.
+  **NÃO consertar junto do desfazer:** apertar essa guarda é mudança de
+  comportamento do `PROCESSAR_RODADA` com o `bh2` no meio da temporada, e não
+  passou por guardião. Onda própria.
 
 - **1.4 — ⚖️ "Não coletamos dados financeiros" é impreciso.** A tela de
   consentimento promete isso, e o app **guarda** `pagamentos.valor`,

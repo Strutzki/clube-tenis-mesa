@@ -2389,7 +2389,14 @@ Os itens abaixo são o que o piloto abriu. Numeração **1.x**, livre de colisã
   200 e grava o `wo_tipo` na linha rejeitada. Sem efeito — recontagem e
   processamento filtram `rejeitado` —, e é padrão pré-existente dos outros tipos.)*
 
-- **1.3j — 🟡 QUATRO LUGARES DA TELA IGNORAM O W.O. — anteriores à onda.**
+- **1.3j — ✅ FECHADO EM 20/11/2026, na onda das telas. ERAM MUITO MAIS DE QUATRO
+  LUGARES.** O gatilho foi o Juliano ver, na tela, o jogo Fabio × Molina do `bh2`
+  — decidido por W.O. e com a rodada processada — anunciado como *"Vencida há 5
+  dias"*. **O conserto:** a lista de tipos virou **uma** função de topo, `temWo`,
+  e **catorze** pontos passaram a consultá-la, cada um com asserção ancorada e
+  mutação vermelha. Os quatro originais estão entre eles.
+  *(O relato original, mantido como registro:)*
+  **1.3j — 🟡 QUATRO LUGARES DA TELA IGNORAM O W.O. — anteriores à onda.**
   Achados pelo Supervisor de Confiabilidade em 15/11/2026, ao procurar um "sexto
   ponto de uso" que eu pedi:
   - **`AthleteDashboard:12816`** — `open = myMatches.filter(!validated && !rejeitado)`:
@@ -2525,6 +2532,12 @@ Os itens abaixo são o que o piloto abriu. Numeração **1.x**, livre de colisã
   que é **inerte para pontuação** (o `PROCESSAR_RODADA` filtra `rejeitado=false`
   nas duas varreduras, e o `ehWo` da tela sai pelo `!m.rejeitado`).
   Recomendação dele e minha: **não fazer**, porque o BH encerrou.
+  ✅ **DECIDIDO EM 20/11/2026 PELO JULIANO: não se faz.** Palavras dele: *"não
+  mecher mais no circuito BH"*. O item deixa de ter decisão pendente. Os 7
+  registros ficam como estão e o desfazer simplesmente não se aplica a eles — o
+  que não custa nada, porque não há nada lá para desfazer. **O que continua aberto
+  é outra coisa:** um circuito NOVO no Sistema A nasceria com o desfazer pela
+  metade na tela. Isso é dívida de funcionalidade futura, não tarefa no BH.
   **Conserto:** uma lista própria para "W.O. que anulou a partida" no painel, ou
   incluir no `woPendente` as rejeitadas cujo `wo_tipo` é `justificado` — o que
   agora é possível, porque a onda passou a gravar esse campo no Sistema A.
@@ -2535,9 +2548,40 @@ Os itens abaixo são o que o piloto abriu. Numeração **1.x**, livre de colisã
   Medido pelo Supervisor de Regulamento em 18/11/2026, rodando o motor, na onda
   do desfazer. **A invariante 7 ("app × regulamento") passa a ✗ no motor** — era
   dada como ✓ no parecer do guardião, e é ✓ só no texto das telas.
-  O v03-13 **Cap. 08** (`:209-234`) e o vB-01 **Cap. 08** exigem que a rodada só
-  seja processada quando **todas** as partidas dela estiverem resolvidas, e
+  O v03-13 **Cap. 08** (`:229`) exige que a rodada só seja processada quando
+  **todas** as partidas dela estiverem resolvidas (validadas ou W.O.), e
   **"sempre na ordem: 1ª rodada primeiro, 2ª rodada depois"**.
+  ⚠️ **CORREÇÃO DE 20/11/2026, medida pelo Guardião de Regulamento: esta linha
+  dizia "e o vB-01 Cap. 08", e isso é FALSO.** O `grep "resolvid"` no
+  `docs/REGULAMENTO_vB-01.md` devolve só a linha de casos omissos (Cap. 13); o
+  **Cap. 08** dele tem três frases e **não tem pré-condição nem ordem**.
+  ⚠️ **E a redação importa, para não virar a terceira versão do mesmo erro** —
+  ressalva do Supervisor de Regulamento: diga **"o Cap. 08 não tem pré-condição
+  nem ordem"**, nunca *"o vB-01 não fala de ordem"*. O **Cap. 03** (a seção do
+  bye, linha 45) fala de sequência: *"os dois confrontos do mês são fotografados
+  no início do mês (antes de processar a 1ª rodada)"*. Aquilo **não** é obrigação
+  de ordem (é congelamento de pareamento), então a conclusão se mantém — mas a
+  frase larga seria desmentida pelo Cap. 03. Logo:
+  a obrigação de ordem é **textualmente só do Sistema A**, e no Sistema B o
+  assunto é **caso omisso (vB-01 Cap. 13)** — a tela e o motor são *compatíveis*
+  com o texto do B, não contrários a ele.
+  ⚠️ **E o circuito que está no ar é NUMERICAMENTE IMUNE.** Medido rodando o
+  motor, com vencedores diferentes: no **Sistema A** processar a r3 antes da r2 dá
+  `A1 0 · A2 4` na ordem certa e `A1 1 · A2 3` na trocada (**muda**); no
+  **Sistema B** as duas ordens dão **números idênticos** (`A1 3 V1 D1 · A2 3 V1
+  D1`). O `bh2` é B. Isso não torna o furo aceitável — torna-o **não urgente**.
+  ⚠️ **E A IMUNIDADE DO B TEM MECANISMO, não só observação** — reforço do
+  Supervisor de Regulamento, e isto envelhece melhor do que "medido em um par":
+  o `gerarPareamentoB` monta a **rodada 1 e a rodada 2 do par na mesma chamada**,
+  as duas a partir do **mesmo array `athletes`** (`parearRodadaB(athletes, …)`
+  duas vezes, `admin-action:1010` e `:1015` — conferido). Então o modo "grupos por
+  faixa", que pareia pela tabela de pontos e seria o único candidato a depender da
+  ordem, **não consegue** usar uma tabela do meio do mês. Isso fecha a única porta
+  pela qual o B poderia ser sensível à ordem — e é o app **cumprindo** o vB-01
+  Cap. 03 por construção.
+  *(E a guarda de rodada par **não ramifica por sistema**: 409 nos dois. O motor
+  impõe no B uma ordem que o vB-01 não exige — legítimo como caso omisso, e é o
+  lado estrito.)*
   **O que a guarda do motor faz** (`admin-action`, no `PROCESSAR_RODADA`): conta
   as partidas da rodada anterior que estão **validadas e não calculadas**, ou
   que **têm `wo_tipo`**. Ela nunca vê partida **não resolvida** — sem placar e
@@ -2576,6 +2620,94 @@ Os itens abaixo são o que o piloto abriu. Numeração **1.x**, livre de colisã
   **NÃO consertar junto do desfazer:** apertar essa guarda é mudança de
   comportamento do `PROCESSAR_RODADA` com o `bh2` no meio da temporada, e não
   passou por guardião. Onda própria.
+
+- **1.3q — 🟡 A TELA NÃO SABE QUE O MOTOR VAI RECUSAR: "Processar Rodada" com
+  W.O. pendente na rodada anterior é CLIQUE MORTO.** Medido pelos dois lados pelo
+  Guardião de Regulamento em 20/11/2026, na onda das telas.
+  O `bloqueado` de rodada par (`App.jsx:11683`) conta só as partidas
+  `validated && !calculado` da rodada anterior. A guarda do motor conta **também
+  as que têm `wo_tipo`** (`admin-action:1344`). Resultado medido: com um W.O. não
+  processado na r1, a tela **não** considera a r2 bloqueada e oferece "Processar
+  Rodada 2"; o motor responde **409 "A rodada anterior ainda tem resultados sem
+  calcular"**. **Nenhum número errado** — é botão que não funciona, e o
+  organizador não descobre por quê.
+  **Não entrou na onda das telas** porque alinhar a tela ao motor significa
+  esconder o botão e escrever a frase que explica o porquê — é mudança de fluxo do
+  admin, não de rótulo, e pede a dupla de admin. **Conserto:** a conta da tela
+  passar a contar o W.O. não calculado da rodada anterior, com o aviso em texto.
+  *(É parente do 1.3p: as duas são a guarda da tela e a do motor discordando sobre
+  o que é "rodada anterior resolvida".)*
+  ⚠️ **E ELE TEM UM GÊMEO, QUE A ONDA DAS TELAS CONSERTOU — leia os dois como UM
+  enunciado**, porque foi essa junção que fez a varredura acontecer em vez de o
+  conserto ser um de cada vez:
+  **a tela e o motor discordam sobre o que é "rodada resolvida", NAS DUAS
+  DIREÇÕES.** O 1.3q é a tela **oferecendo** um clique que o motor recusa. O gêmeo
+  era a tela **não oferecendo** o clique que o motor aceita: o botão "Processar
+  Rodada" desaparecia quando o único pendente da rodada era um W.O., então o W.O.
+  nunca ficava `calculado` e o par mensal travava — pela porta oposta à do
+  `todasResolvidas`. Medido pelo Supervisor de Regulamento em 20/11/2026 e
+  consertado na mesma onda, com asserção e mutação.
+
+- **1.3r — 📊 A LISTA DE TIPOS DE W.O. AINDA TEM UMA CÓPIA FORA DO `App.jsx`.**
+  Medido pelo Guardião de Regulamento em 20/11/2026. A onda das telas unificou a
+  regra **dentro** do `App.jsx` (de duas cópias para uma, a `temWo`), e o
+  comentário que eu escrevi lá chegou a afirmar que a partir dali "muda esta linha
+  e pronto" — **falso no repositório**: `supabase/functions/despachos-do-dia/index.ts`
+  (`:147`, `:160`, `:171`) guarda a lista **antiga, de três tipos, sem
+  `duplo_culposo`**. O comentário já foi corrigido para dizer isso.
+  É o mesmo defeito que o **1.3f** registra (o painel de despachos subconta rodada
+  com W.O. duplo); fica anotado aqui também porque agora tem nome: é a **última
+  cópia** da regra.
+  ⚠️ **E O QUE MUDA A PRIORIDADE, apontado pelo Supervisor de Regulamento: o
+  `despachos-do-dia` é uma OITAVA Edge Function, e a bateria NÃO a carrega.** As
+  sete carregadas são `admin-action` (o default do `montarMotor`),
+  `athlete-action`, `login-atleta`, `comprovante-url`, `circuito-dados`,
+  `anonimizar-atleta` e `backup-clube-tenis-mesa`. Logo este item **não pode**
+  ganhar asserção sem antes tornar a função carregável — é trabalho de infra de
+  teste, não de conserto. O Curador precisa saber: o acervo fala em "sete
+  funções"; existe uma **oitava**, sem cobertura nenhuma.
+  *(As três cópias são `despachos-do-dia/index.ts:147`, `:160` e `:171`; o `:153`
+  usa `.is("wo_tipo", null)` e é imune.)*
+
+- **1.3s — 📐 LIMITE CONHECIDO DAS ASSERÇÕES DE FONTE: elas prendem a linha que
+  CALCULA, não a que CONSOME.** Apontado pelo Supervisor de Confiabilidade em
+  20/11/2026, na onda das telas, com medição.
+  As asserções do `App.jsx` são checagens no texto fonte (o arquivo não é
+  executado por teste, fora os quatro recortes puros — ver `CLAUDE.md`). Uma
+  asserção por ponto prova que *aquela linha faz a pergunta certa*; ela **não**
+  prova que alguém usa o resultado. Medido: desligar o consumo deixava a bateria
+  verde em três casos — `hasNextRound = false && …`, o `pct` deixando de usar o
+  `val`, e o `semSub` esvaziado.
+  **Dois foram fechados nesta onda** (o `pct` ganhou asserção própria, porque é a
+  barra que o organizador olha; o `naoResolvidos` do botão idem). **Ficam
+  abertos** o `hasNextRound` e o `semSub`: neutralizar o CONSUMO deles passa
+  verde.
+  **Não há conserto barato** — o conserto de verdade é executar o componente, que
+  é precisamente o que a casa decidiu não fazer no `App.jsx`. O que vale é saber:
+  **"tem asserção" significa "a conta está certa", não "a tela mostra".** Quem
+  mexer nesses pontos confere na tela, não só na bateria.
+
+  **E os TRÊS pontos que ainda fazem a pergunta pela metade**, varridos pelo
+  Supervisor de Confiabilidade em 20/11/2026 para a próxima onda não os
+  redescobrir:
+  - **`App.jsx:7441`, o `pendencias:`** — conta `p1Submitted && p2Submitted &&
+    !validated && !rejeitado`, sem perguntar pelo W.O. É a mesma família do
+    `waitingVal`, que esta onda consertou.
+  - **`App.jsx:11268`, a lista de partidas com prazo por chave** — mantém a
+    rodada com W.O. como aberta. Já estava entre as sobras do guardião.
+  - **`App.jsx:9927`, o `pctValidado` do painel** — conta só `validated`. Aqui
+    pode ser certo: o nome dele é "validado", não "resolvido". Decidir, não
+    copiar o conserto do `val`.
+
+  ⚠️ **E A PERGUNTA QUE FICOU ABERTA NA REVISÃO ESTÁ MEDIDA: o caso É alcançável.**
+  Eu e o supervisor deixamos em aberto se um W.O. pode coexistir com os dois
+  placares já enviados. **Pode.** Medido lendo as quatro escritas do `APLICAR_WO`
+  (`admin-action`): ele grava `wo_tipo`, `wo_faltoso_id`, `wo_beneficiario_id`,
+  `admin_aprovado_em` e `calculado`, e **não toca** em `p1_placar*`,
+  `p2_placar*`, `p1_enviado_em` nem `p2_enviado_em`. Logo a sequência "os dois
+  atletas enviam o placar → o organizador aplica W.O." deixa a partida com W.O. e
+  com os dois placares de pé. Isso torna o `:7441` um defeito **real**, não
+  hipotético — e confirma que o conserto do `waitingVal` nesta onda não era zelo.
 
 - **1.4 — ⚖️ "Não coletamos dados financeiros" é impreciso.** A tela de
   consentimento promete isso, e o app **guarda** `pagamentos.valor`,

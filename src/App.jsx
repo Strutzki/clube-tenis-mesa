@@ -1734,6 +1734,80 @@ function deadlineStatus(dateStr) {
   return { color:"#7d9188", label:`até ${fmtDate(dateStr)}`, urgent:false };
 }
 
+// "Esta partida já está RESOLVIDA por W.O." — a ÚNICA cópia desta regra no app.
+//
+// ⚠️ ELA NASCEU DE UM DEFEITO QUE O JULIANO VIU NA TELA, em 20/11/2026: o jogo
+// Fabio × Molina do `bh2` estava decidido por W.O., com a rodada já processada,
+// e o cartão dizia "Partida: ⚠️ Vencido há 5d". A causa é a forma da pergunta:
+// o app perguntava "foi validada?" e "foi rejeitada?", e um W.O. não é nem uma
+// coisa nem outra — então caía no ramo do prazo e cobrava um placar que nunca
+// vai existir. Eram NOVE lugares fazendo essa pergunta pela metade, entre eles a
+// faixa vermelha de urgência do atleta e a lista que ainda oferecia a ele o
+// botão de enviar placar num jogo encerrado (ROADMAP 1.3g e 1.3j).
+//
+// ⚠️ E ELA É UMA SÓ DE PROPÓSITO. Até aqui havia DUAS cópias (`ehWo` no painel e
+// `ehWoCal` no lembrete de calendário) e um comentário pedindo para mudar as
+// duas juntas — pedido que a bateria precisava vigiar com uma asserção de
+// igualdade. Duas cópias que precisam de um guarda para não divergir são uma
+// cópia a mais: agora quem acrescentar um tipo de W.O. muda esta linha, e no
+// `App.jsx` é só ela.
+// ⚠️ MAS NÃO É SÓ ELA NO REPOSITÓRIO, e a frase anterior afirmava isso. O
+// Guardião de Regulamento mediu: `supabase/functions/despachos-do-dia/index.ts`
+// guarda a lista ANTIGA, de três tipos, sem o `duplo_culposo` (ROADMAP 1.3f).
+// ── O QUE JÁ CUSTOU CARO NESTA LINHA ────────────────────────────────────────
+// ⚠️ ESTA LINHA É O QUE DIZ "a partida está RESOLVIDA". Quem não está aqui
+// continua em "Resultado Incompleto" E ENTRA NA CONTA que TRAVA o botão de
+// processar a rodada (`naoResolvidos`, abaixo). Ou seja: esquecer um tipo aqui
+// não deixa um W.O. "meio registrado" — deixa a RODADA INTEIRA travada.
+//
+// `duplo_culposo` entrou em 15/11/2026, com a funcionalidade. O Guardião de
+// Confiabilidade deu NO-GO na tela por isto: o motor gravava certo, a tela
+// continuava mostrando o jogo como pendente, e o organizador não conseguia
+// processar a rodada. Feature que parece pronta e não termina o trabalho.
+//
+// `justificado` entrou JUNTO, e é conserto de um defeito IRMÃO, anterior: no
+// Sistema A o justificado grava `rejeitado: true` e some por outro caminho
+// (`!m.rejeitado`, nos filtros abaixo), mas no Sistema B ele NÃO rejeita
+// (`admin-action` do ramo B) — então caía na mesma armadilha. Nunca mordeu
+// porque o bh2 não teve W.O. nenhum até hoje. Acrescentá-lo é inócuo no A,
+// justamente porque lá a partida já saiu por `rejeitado`.
+function temWo(m) {
+  return m.woTipo === "culposo" || m.woTipo === "a_favor"
+      || m.woTipo === "duplo_culposo" || m.woTipo === "justificado";
+}
+
+// "Esta partida ainda falta CALCULAR" — a ÚNICA cópia desta regra, e ela nasceu
+// de uma regressão que eu mesmo introduzi em 20/11/2026 e o Supervisor de
+// Regulamento mediu.
+//
+// O que aconteceu: ao consertar o botão de processar (que não via W.O.), eu
+// montei a união como CONCATENAÇÃO — `[...calculoPendente, ...woPendente]` — e
+// ela conta DUAS VEZES a partida que é `validated` **e** tem W.O. Esse estado é
+// alcançável em duas chamadas comuns, as duas respondendo 200: o organizador
+// valida o placar e depois descobre que alguém não jogou e aplica o W.O. (o
+// próprio motor documenta o estado, no `PROCESSAR_RODADA`).
+// Medido: a tela de Pendências dizia **3**, o painel dizia **2**, o motor fazia
+// **2** — e o 3 aparecia na confirmação de uma ação que se anuncia como "não pode
+// ser desfeita". Nenhum ponto de competição errado; a CONTAGEM que o organizador
+// lê, errada. É a mesma família da barra que dizia "5 de 5 validadas" com quatro.
+//
+// ⚠️ E A LIÇÃO É A DO `admin-action`, que já pagou por ela: DERIVAR, NÃO
+// ENUMERAR. Duas declarações de uma regra não são proteção quando elas discordam.
+// Por isso a regra subiu para cá, ao lado da `temWo`: as duas telas agora chamam
+// a MESMA função, e a bateria a executa em vez de procurar o texto dela.
+function faltaCalcular(m) {
+  return (m.validated || temWo(m)) && !m.calculado && !m.rejeitado;
+}
+
+// O rótulo curto do W.O., para o lugar onde o prazo apareceria. Dizer "W.O." é
+// o que torna a correção VISÍVEL: esconder o aviso de atraso e não pôr nada no
+// lugar deixaria o cartão mudo sobre por que aquele jogo não tem placar.
+function rotuloWo(m) {
+  if (m.woTipo === "duplo_culposo") return "🏳️ W.O. — os dois faltaram";
+  if (m.woTipo === "justificado")   return "🏳️ W.O. justificado";
+  return "🏳️ W.O.";
+}
+
 // ── LOGIN SCREEN ─────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin, onAthleteLogin, onVisitante, athletes, onInscricao, onOrganizadorLogin, regulamentoVersao, sistemaAtivo }) {
   const [mode, setMode] = useState("select"); // select | admin | athlete | inscricao | regulamento | organizador
@@ -4641,6 +4715,9 @@ function gerarMensagensCategoria(cat, state, telefones = {}, versaoAlvo = "") {
       const hoje = new Date();
       const pendentes = state.matches.filter(m => {
         if (m.validated || m.rejeitado) return false;
+        // Não se cobra placar de quem já tem W.O. registrado: a mensagem diria
+        // "sua partida vence em 2 dias" sobre um jogo decidido.
+        if (temWo(m)) return false;
         if (!m.deadline) return false;
         const prazo = new Date(m.deadline);
         const diff = (prazo - hoje) / (1000*60*60*24);
@@ -4965,15 +5042,18 @@ function AdminMensagens({ state, dispatch, telefones, garantirTelefones, msgsSta
       .map((a,i) => `${i+1}. ${nomeExibicao(a)} — ${(a.saldoTemp||0) > 0 ? "+" : ""}${a.saldoTemp||0} pts`);
 
     const [rodadaA, rodadaB] = rodadasDoMes.length ? rodadasDoMes : [1, 2];
+    // `!temWo(m)`: o lembrete INDIVIDUAL ganhou a guarda e o disparo COLETIVO não,
+    // então o grupo recebia "⚔️ Fabio vs Molina" como confronto a jogar num jogo
+    // decidido por W.O. (Guardião de Regulamento, 20/11/2026.)
     const confrontosA = state.matches
-      .filter(m => m.round === rodadaA && !m.validated && !m.rejeitado)
+      .filter(m => m.round === rodadaA && !m.validated && !m.rejeitado && !temWo(m))
       .map(m => {
         const p1 = state.athletes.find(a => a.id === m.p1Id);
         const p2 = state.athletes.find(a => a.id === m.p2Id);
         return p1 && p2 ? `⚔️ ${nomeExibicao(p1)} vs ${nomeExibicao(p2)}` : null;
       }).filter(Boolean);
     const confrontosB = state.matches
-      .filter(m => m.round === rodadaB && !m.validated && !m.rejeitado)
+      .filter(m => m.round === rodadaB && !m.validated && !m.rejeitado && !temWo(m))
       .map(m => {
         const p1 = state.athletes.find(a => a.id === m.p1Id);
         const p2 = state.athletes.find(a => a.id === m.p2Id);
@@ -9804,9 +9884,28 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
   const ativosTotal = (state.athletes || []).filter(a => a.status === "ativo").length;
   const backlogCount = state.athletes.filter(a => a.status === "ativo" && a.pendenteCircuito).length;
   const pendentes = state.athletes.filter(a => a.status === "pendente");
-  const roundMatches = state.matches.filter(m => !m.validated && !m.rejeitado);
-  const waitingVal = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado);
+  // `!temWo(m)`: partida decidida por W.O. NÃO está "em aberto". Sem isto ela
+  // entrava no contador do painel e na conta de "partidas em risco" logo abaixo,
+  // que é a que acende o aviso de prazo vencido.
+  const roundMatches = state.matches.filter(m => !m.validated && !m.rejeitado && !temWo(m));
+  // `!temWo(m)`: partida com W.O. não está "aguardando validação" — o resultado
+  // dela está decidido pelo W.O., nunca pelo placar (é a regra que o motor
+  // aplica, no `PROCESSAR_RODADA`). Sem isto, o PAINEL contava esse jogo em
+  // "Aguardando validação" e no aviso "N resultado(s) para validar" enquanto a
+  // página de Pendências, que já perguntava, NÃO o mostrava — as duas telas se
+  // contradiziam. Apontado pelo Guardião e pelo Supervisor de Confiabilidade em
+  // 20/11/2026.
+  const waitingVal = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado && !temWo(m));
   const calculoPendente = state.matches.filter(m => m.validated && !m.calculado && !m.rejeitado);
+  // ⛔ A UNIÃO, e ela conserta uma FRASE FALSA que eu tinha declarado verdadeira.
+  // Medido pelo Supervisor de Regulamento em 20/11/2026: um W.O. nunca é
+  // `validated`, então com um W.O. não processado o `calculoPendente` ficava VAZIO
+  // e o card laranja caía sempre no ramo genérico — "Alguma partida de uma rodada
+  // ANTERIOR ainda não foi processada" — quando a partida sem processar era a da
+  // rodada ATUAL. O comentário logo abaixo afirmava que essa frase "passa a ser
+  // verdadeira sempre que o card aparece": era regra 6 violada dentro do próprio
+  // comentário que celebrava o conserto de 03/10.
+  const aCalcular = state.matches.filter(faltaCalcular);
   const pendentesWoCount = state.solicitacoesWo.filter(s => s.status === "pendente").length;
   // Mesma função compartilhada com Mensagens — sem telefone aqui, só contagem
   // (telefone só é necessário na hora de montar o link de WhatsApp de verdade).
@@ -9827,10 +9926,29 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
   // Uma nova rodada pode ser gerada quando TODAS as partidas atuais foram resolvidas.
   const allCurrentValidated = currentRound > 0 && state.matches
     .filter(m => m.round === currentRound)
-    .every(m => m.validated || m.rejeitado);
+    .every(m => m.validated || m.rejeitado || temWo(m));
   // Exige validated E calculado — evita avançar de par mensal com rating desatualizado
   // (ex: jogo da Rodada 2 validado cedo, mas ainda sem o cálculo processado).
-  const todasResolvidas = state.matches.length > 0 && state.matches.every(m => (m.validated && m.calculado) || m.rejeitado);
+  // ⛔ O `|| (temWo(m) && m.calculado)` DESTRANCA A TEMPORADA DO bh2, e a forma
+  // dele foi MEDIDA pelo Guardião de Regulamento em 20/11/2026 — não é zelo.
+  //
+  // O problema: no Sistema B o motor fecha um W.O. só com `calculado: true`; ele
+  // NUNCA grava `validado` (o `APLICAR_WO` não grava, e o `PROCESSAR_RODADA`
+  // também não). Então a partida do Fabio × Molina jamais satisfazia
+  // `(validated && calculado)` — nem depois de processada. E como esta linha é o
+  // `hasNextRound`, que é o ÚNICO portão do botão de gerar o par mensal seguinte,
+  // a temporada do bh2 não tinha caminho para o mês 2: 11 atletas reais, 6 rodadas
+  // pelo vB-01 Cap. 12, e o botão nunca apareceria. Nunca mordeu antes porque o BH
+  // é Sistema A e todos os W.O. dele saem por `rejeitado`.
+  //
+  // ⚠️ E O `&& m.calculado` É O QUE IMPEDE O CONSERTO DE ABRIR OUTRO BURACO.
+  // Medido, com a linha trocada e executada: a forma ingênua `|| temWo(m)` também
+  // destrava o caso real, MAS passa a liberar o avanço do par mensal com um W.O.
+  // ainda NÃO processado — que é exatamente o que esta linha existe para impedir
+  // ("evita avançar de par mensal com rating desatualizado", logo acima) e a porta
+  // do ROADMAP 1.3p. Com o `&& m.calculado`, o caso real destrava e o perigoso
+  // continua barrado.
+  const todasResolvidas = state.matches.length > 0 && state.matches.every(m => (m.validated && m.calculado) || m.rejeitado || (temWo(m) && m.calculado));
   const maxRodadaTemporada = Math.max(0, ...state.matches.map(m => m.round || 0));
   const rodadasPorTemp = state.rodadasPorTemporada || 6;
   const temporadaCompleta = maxRodadaTemporada >= rodadasPorTemp; // Cap. 13: 6 rodadas, fixas
@@ -9851,7 +9969,7 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
     // senão quem já jogou a Rodada 1 mas não a Rodada 2 aparece como pendente
     // numa lista que fala só da Rodada 1.
     partidasRodadaAtual
-      .filter(m => !m.validated && !m.rejeitado)
+      .filter(m => !m.validated && !m.rejeitado && !temWo(m))
       .forEach(m => {
         if (!m.p1Submitted) ids.add(m.p1Id);
         if (!m.p2Submitted) ids.add(m.p2Id);
@@ -9862,10 +9980,6 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
   // ── Lembrete por calendário (Fase 2a): destaca quando o prazo de uma rodada
   //    fechou e ela precisa ser processada. SÓ informa — nunca processa sozinho.
   //    Pega a menor rodada que ainda tem partida não-calculada (a próxima a processar).
-  // Mesma lista do `ehWo` — e são DUAS cópias da mesma regra, de propósito
-  // nenhum: elas vivem em componentes diferentes. Ao acrescentar tipo, mude AS
-  // DUAS. A bateria exige que estejam idênticas (seção do W.O. duplo).
-  const ehWoCal = m => m.woTipo === "culposo" || m.woTipo === "a_favor" || m.woTipo === "duplo_culposo" || m.woTipo === "justificado";
   const hojeStrCal = new Date().toISOString().slice(0, 10);
   let calRodada = null;
   {
@@ -9875,7 +9989,7 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
       if (doR.length === 0 || !doR.some(m => !m.calculado)) continue;
       const prazo = doR.map(m => m.deadline).filter(Boolean).sort()[0] || null;
       const total = doR.length;
-      const resolvidas = doR.filter(m => m.validated || ehWoCal(m)).length;
+      const resolvidas = doR.filter(m => m.validated || temWo(m)).length;
       calRodada = { r, prazo, total, resolvidas, pendentes: total - resolvidas, prazoPassou: prazo ? hojeStrCal >= prazo : false };
       break;
     }
@@ -9885,14 +9999,19 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
   const saudeDaRodada = (r) => {
     const ps = state.matches.filter(m => m.round === r);
     const total = ps.length;
-    const val = ps.filter(m => m.validated).length;
+    // O W.O. conta como RESOLVIDO: ele nunca vira "validado", então sem isto a
+    // barra de progresso da rodada jamais chegava a 100% com um W.O. dentro.
+    const val = ps.filter(m => m.validated || temWo(m)).length;
     const pct = total > 0 ? Math.round((val / total) * 100) : 0;
+    // W.O. resolvido não está "em risco" — era daqui que saía parte do aviso de
+    // prazo vencido num jogo já decidido.
     const emRisco = ps.filter(m => {
+      if (temWo(m)) return false;
       const hasScore = m.p1Submitted || m.p2Submitted;
       return deadlineStatus(hasScore ? m.scoreDeadline : m.deadline).urgent;
     }).length;
     const semSubIds = new Set();
-    ps.filter(m => !m.validated && !m.rejeitado).forEach(m => {
+    ps.filter(m => !m.validated && !m.rejeitado && !temWo(m)).forEach(m => {
       if (!m.p1Submitted) semSubIds.add(m.p1Id);
       if (!m.p2Submitted) semSubIds.add(m.p2Id);
     });
@@ -10059,7 +10178,11 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
               <div style={{fontSize:12,fontWeight:700,color: h.pct===100?"#6a9d7a":"#D85A30",minWidth:40,textAlign:"right"}}>{h.pct}%</div>
             </div>
             <div style={{fontSize:11,color:"#9db3a8",marginBottom:8}}>
-              {h.val} de {h.total} partidas validadas
+              {/* "resolvidas (validadas ou W.O.)" é a expressão do v03-13 Cap. 08.
+                   Dizia "validadas", e com o W.O. do bh2 a barra afirmava "5 de 5
+                   partidas validadas" com QUATRO validadas e uma decidida por W.O.,
+                   que o motor nunca valida. (Guardião de Regulamento, 20/11/2026.) */}
+              {h.val} de {h.total} partidas resolvidas (validadas ou W.O.)
             </div>
             {h.emRisco > 0 && (
               <div style={{fontSize:12,color:"#c25a45",marginTop:6}}>
@@ -10120,16 +10243,24 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
           rejeitadas, ZERO validadas sem processar. Não havia nada pendente mesmo.
 
           Agora exige `!todasResolvidas`, que é exatamente "falta processar alguma
-          coisa" — e com isso a frase de baixo ("Alguma partida de uma rodada anterior
-          ainda não foi processada") passa a ser verdadeira sempre que o card aparece.
-          Antes ela era o ramo que sobrava quando `calculoPendente` estava VAZIO, ou
-          seja: a frase afirmava algo justamente quando não havia o que afirmar. */}
+          coisa".
+
+          ⚠️ E ESTE COMENTÁRIO AFIRMAVA, ATÉ 20/11/2026, que com isso a frase de
+          baixo "passa a ser verdadeira sempre que o card aparece". O Supervisor de
+          Regulamento MEDIU e refutou: um W.O. nunca é `validated`, então com um
+          W.O. não processado o `calculoPendente` ficava vazio e o card caía no ramo
+          genérico — dizendo "rodada ANTERIOR" quando a pendência era da rodada
+          ATUAL. A frase afirmava algo justamente quando não havia o que afirmar,
+          que é exatamente o defeito que este comentário se orgulhava de ter
+          consertado, de volta por outra porta.
+          Consertado de verdade agora: o ramo olha `aCalcular`, que é
+          `(validated || temWo) && !calculado`. */}
       {state.phase === "etapa" && allCurrentValidated && !hasNextRound && !todasResolvidas && (
         <Card style={{border:"1px solid rgba(216,90,48,0.3)"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#D85A30",marginBottom:6}}>🧮 Rodada {currentRound} validada, mas ainda não processada</div>
           <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>
-            {calculoPendente.length > 0
-              ? `Faltam ${calculoPendente.length} partida(s) processar (Processar Rodada) antes de poder avançar pro próximo mês.`
+            {aCalcular.length > 0
+              ? `Faltam ${aCalcular.length} partida(s) processar (Processar Rodada) antes de poder avançar pro próximo mês.`
               : "Alguma partida de uma rodada anterior ainda não foi processada."}
           </div>
           <Btn onClick={()=>setTab("pendencias")} color="#D85A30">Ir para Pendências</Btn>
@@ -10154,9 +10285,11 @@ function AdminDashboard({ setAcaoErro, state, setTab, dispatch, chamarAdminActio
         </Card>
       )}
 
-      {state.phase === "etapa" && calculoPendente.length > 0 && (
+      {state.phase === "etapa" && aCalcular.length > 0 && (
         <Card style={{border:`1px solid ${T.madeira}55`}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.madeira,marginBottom:6}}>🧮 {calculoPendente.length} resultado(s) validado(s) aguardando cálculo de rating</div>
+          {/* "resolvido(s)" e a contagem da união: dizia "validado(s)" e deixava o
+              W.O. de fora da conta e do rótulo — o C2 desta onda, uma linha abaixo. */}
+          <div style={{fontSize:13,fontWeight:700,color:T.madeira,marginBottom:6}}>🧮 {aCalcular.length} resultado(s) aguardando cálculo (validados ou W.O.)</div>
           <div style={{fontSize:12,color:"#9db3a8",marginBottom:10}}>O rating só é aplicado depois que o prazo da respectiva rodada fecha.</div>
           <Btn onClick={()=>setTab("pendencias")} color={T.madeira}>Ver agora</Btn>
         </Card>
@@ -11266,7 +11399,9 @@ function ProcessarRodadaButton({ round, pendentes, bloqueadoPorRodadaAnterior, n
   return (
     <Card style={{border:`1px solid ${(bloqueadoPorRodadaAnterior || naoResolvidos > 0) ? T.vermelho+"44" : T.madeira+"44"}`}}>
       <div style={{fontFamily:T.mono,fontSize:10,color:T.madeira,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>
-        Rodada {round} · {pendentes.length} validado{pendentes.length>1?"s":""}, aguardando cálculo
+        {/* "resolvido" e não "validado": desde 20/11/2026 esta lista inclui os
+            W.O., que o motor processa junto e que nunca são `validated`. */}
+        Rodada {round} · {pendentes.length} resolvido{pendentes.length>1?"s":""}, aguardando cálculo
       </div>
 
       {naoResolvidos > 0 ? (
@@ -11563,28 +11698,33 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
   const [notificados, setNotificados] = useState({});   // marca visual local de "já cliquei em notificar"
   const [finalizExcl, setFinalizExcl] = useState({});   // { [atletaId]: bool } — confirmação de finalizar exclusão
   const [desfazerWo, setDesfazerWo] = useState(null);   // id da partida cujo "desfazer W.O." está pedindo confirmação
-  // ⚠️ ESTA LINHA É O QUE DIZ "a partida está RESOLVIDA". Quem não está aqui
-  // continua em "Resultado Incompleto" E ENTRA NA CONTA que TRAVA o botão de
-  // processar a rodada (`naoResolvidos`, abaixo). Ou seja: esquecer um tipo aqui
-  // não deixa um W.O. "meio registrado" — deixa a RODADA INTEIRA travada.
-  //
-  // `duplo_culposo` entrou em 15/11/2026, com a funcionalidade. O Guardião de
-  // Confiabilidade deu NO-GO na tela por isto: o motor gravava certo, a tela
-  // continuava mostrando o jogo como pendente, e o organizador não conseguia
-  // processar a rodada. Feature que parece pronta e não termina o trabalho.
-  //
-  // `justificado` entrou JUNTO, e é conserto de um defeito IRMÃO, anterior: no
-  // Sistema A o justificado grava `rejeitado: true` e some por outro caminho
-  // (`!m.rejeitado`, nos filtros abaixo), mas no Sistema B ele NÃO rejeita
-  // (`admin-action` do ramo B) — então caía na mesma armadilha. Nunca mordeu
-  // porque o bh2 não teve W.O. nenhum até hoje. Acrescentá-lo é inócuo no A,
-  // justamente porque lá a partida já saiu por `rejeitado`.
-  const ehWo = m => m.woTipo === "culposo" || m.woTipo === "a_favor" || m.woTipo === "duplo_culposo" || m.woTipo === "justificado";
-  const waiting = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado && !ehWo(m));
-  const incomplete = state.matches.filter(m => !m.validated && !m.rejeitado && !(m.p1Submitted && m.p2Submitted) && !ehWo(m));
+  // A regra de "esta partida está resolvida por W.O." é a `temWo`, no topo do
+  // arquivo — uma só, compartilhada. O que ela decide aqui: quem não é W.O. nem
+  // está validado continua em "Resultado Incompleto" E ENTRA NA CONTA que TRAVA
+  // o botão de processar a rodada (`naoResolvidos`, abaixo).
+  const waiting = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado && !temWo(m));
+  const incomplete = state.matches.filter(m => !m.validated && !m.rejeitado && !(m.p1Submitted && m.p2Submitted) && !temWo(m));
   const calculoPendente = state.matches.filter(m => m.validated && !m.calculado && !m.rejeitado);
   // W.O. Culposo / A Favor classificados, aguardando entrar no cálculo da rodada.
-  const woPendente = state.matches.filter(m => ehWo(m) && !m.calculado && !m.rejeitado);
+  const woPendente = state.matches.filter(m => temWo(m) && !m.calculado && !m.rejeitado);
+  // ⛔ A UNIÃO É O QUE O MOTOR PROCESSA, e sem ela a temporada travava — gêmeo do
+  // defeito do portão, medido pelo Supervisor de Regulamento em 20/11/2026.
+  // O `ProcessarRodadaButton` faz `if (pendentes.length === 0) return null`, e
+  // recebia só o `calculoPendente` (`m.validated`). Um W.O. NUNCA é `validated`.
+  // Logo: rodada cujo único pendente é um W.O. **não tinha botão de processar** ⇒
+  // o W.O. nunca ficava `calculado` ⇒ o portão `todasResolvidas` (que esta onda
+  // acabou de consertar) continuava `false` ⇒ o botão de avançar o par mensal não
+  // aparecia. A temporada trancava pela outra porta.
+  // O motor aceita: chamado na mão, `PROCESSAR_RODADA` devolveu 200 e
+  // `processadas: 2`. Era a TELA que não oferecia o caminho, sem explicar nada.
+  // ⚠️ E a saída que sobrava ao organizador PRODUZ NÚMERO ERRADO: desfazer o W.O.
+  // e imputar um placar dá 1 ponto a quem devia ter 0 e APAGA o W.O. injustificado
+  // — que é o que suspende (vB-01 Cap. 07) e o que ordena o 2º desempate (Cap. 09).
+  // ⚠️ `filter(faltaCalcular)` e NÃO `[...calculoPendente, ...woPendente]`: a
+  // concatenação contava duas vezes a partida que é validada E tem W.O., e essa
+  // contagem aparecia na confirmação de uma ação irreversível. Ver o comentário da
+  // `faltaCalcular`, no topo do arquivo, com a medição.
+  const aCalcular = state.matches.filter(faltaCalcular);
   // Atletas que atingiram 2 W.O. culposos na temporada — admin decide a exclusão.
   const atletasCulposos = state.athletes.filter(a => (a.woCulpososTemporada || 0) >= 2 && a.status === "ativo");
   const pendentesWo = state.solicitacoesWo.filter(s => s.status === "pendente");
@@ -11637,12 +11777,15 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
   //    prazo já venceu — dentro do prazo é espera normal pelo atleta.
   const agora = new Date();
   // Rodadas GENUINAMENTE prontas pra processar (mesma regra do botão de processar):
-  const rodadasProntas = [...new Set(calculoPendente.map(m => m.round))].filter(round => {
+  // `aCalcular` e não `calculoPendente`: o resumo "Precisa de você" nunca
+  // anunciava uma rodada cujo único pendente é um W.O., embora o comentário dela
+  // diga ser "a mesma regra do botão de processar". Mesma causa do F2.
+  const rodadasProntas = [...new Set(aCalcular.map(m => m.round))].filter(round => {
     const ehSegundaDoPar = round % 2 === 0;
     const bloqueado = ehSegundaDoPar && state.matches.some(m => m.round === round - 1 && m.validated && !m.calculado && !m.rejeitado);
-    const naoResolvidos = state.matches.filter(m => m.round === round && !m.validated && !m.rejeitado && !ehWo(m)).length;
+    const naoResolvidos = state.matches.filter(m => m.round === round && !m.validated && !m.rejeitado && !temWo(m)).length;
     if (bloqueado || naoResolvidos > 0) return false;
-    const prazo = calculoPendente.find(m => m.round === round)?.deadline;
+    const prazo = aCalcular.find(m => m.round === round)?.deadline;
     const liberado = ehSegundaDoPar ? true : (prazo ? agora >= new Date(prazo) : true);
     return liberado;
   }).sort((a, b) => a - b);
@@ -11957,13 +12100,13 @@ function AdminPendencias({ state, dispatch, setTab, telefones, garantirTelefones
           // sem resolver (nem validada, nem rejeitada) — evita divulgar
           // ranking parcial antes do previsto.
           const naoResolvidos = state.matches.filter(
-            m => m.round === round && !m.validated && !m.rejeitado && !ehWo(m)
+            m => m.round === round && !m.validated && !m.rejeitado && !temWo(m)
           ).length;
           return (
             <ProcessarRodadaButton
               key={round}
               round={round}
-              pendentes={calculoPendente.filter(m=>m.round===round)}
+              pendentes={aCalcular.filter(m=>m.round===round)}
               bloqueadoPorRodadaAnterior={bloqueado}
               naoResolvidos={naoResolvidos}
               dispatch={dispatch}
@@ -12191,7 +12334,15 @@ function MatchCard({ m, state, admin=false, currentAthleteId }) {
         {m.rejeitado && (
           <span style={{fontFamily:T.mono,fontSize:9,fontWeight:700,color:T.vermelho,letterSpacing:0.8,textTransform:"uppercase"}}>✗ Rejeitado</span>
         )}
-        {!m.validated && !m.rejeitado && (() => {
+        {/* ⚠️ O `!temWo(m)` É O CONSERTO QUE O JULIANO PEDIU EM 20/11/2026. Sem
+            ele, a partida decidida por W.O. caía aqui (não é `validated` nem
+            `rejeitado`) e o cartão imprimia "Partida: ⚠️ Vencido há 5d" num
+            jogo encerrado e já processado — cobrando um placar que nunca vai
+            existir. O ramo próprio abaixo diz o que de fato aconteceu. */}
+        {!m.validated && !m.rejeitado && temWo(m) && (
+          <span style={{fontFamily:T.mono,fontSize:9,fontWeight:700,color:"#9C6F3E",letterSpacing:0.8,textTransform:"uppercase"}}>{rotuloWo(m)}</span>
+        )}
+        {!m.validated && !m.rejeitado && !temWo(m) && (() => {
           const hasScore = m.p1Submitted || m.p2Submitted;
           const ds = hasScore ? deadlineStatus(m.scoreDeadline) : deadlineStatus(m.deadline);
           const label = hasScore ? `Placar: ${ds.label}` : `Partida: ${ds.label}`;
@@ -12879,7 +13030,11 @@ function AthleteGames({ state, dispatch, athlete }) {
   const [cartaAberta, setCartaAberta] = useState(false);
   const [editarAberto, setEditarAberto] = useState(false);
   const myMatches = state.matches.filter(m => m.p1Id === athlete.id || m.p2Id === athlete.id);
-  const open = myMatches.filter(m => !m.validated && !m.rejeitado);
+  // ⚠️ `!temWo(m)` fecha o ROADMAP 1.3g/1.3j pelo lado do atleta: a partida com
+  // W.O. continuava "em aberto" para os DOIS, que seguiam vendo a ação de enviar
+  // placar num jogo que o organizador já decidiu. O placar que chegasse ali ficava
+  // inerte no motor (o W.O. manda), então era oferta de uma ação sem efeito.
+  const open = myMatches.filter(m => !m.validated && !m.rejeitado && !temWo(m));
   const done = myMatches.filter(m => m.validated);
 
   // Dados do atleta para o cabeçalho editorial
@@ -13173,6 +13328,12 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
       {(() => {
         // Faixa de urgência: só aparece quando o prazo está apertado (urgent),
         // pra criar senso de urgência sem poluir quando ainda há tempo de sobra.
+        // ⚠️ `temWo(m)` PRIMEIRO. Sem isto o atleta via a faixa vermelha
+        // "VENCIDO HÁ 5D / PRA REGISTRAR O PLACAR" numa partida já decidida por
+        // W.O. — foi o que o Juliano viu do lado do organizador em 20/11/2026, e
+        // do lado do atleta era pior, porque a faixa é desenhada para criar
+        // urgência sobre uma ação que ali não existe mais.
+        if (temWo(m)) return null;
         const ds = deadlineStatus(m.scoreDeadline || m.deadline);
         if (!ds.urgent) return null;
         return (
@@ -13193,6 +13354,8 @@ function SubmitMatchCard({ m, state, dispatch, athlete }) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
         <span style={{fontFamily:T.mono,fontSize:10,color:T.cinza,letterSpacing:1.5,textTransform:"uppercase"}}>Rodada {m.round}</span>
         {(() => {
+          // Partida resolvida por W.O. não tem prazo de placar: diz o W.O.
+          if (temWo(m)) return <span style={{fontFamily:T.mono,fontSize:9,fontWeight:700,color:"#9C6F3E",letterSpacing:0.8,textTransform:"uppercase"}}>{rotuloWo(m)}</span>;
           const ds = deadlineStatus(m.scoreDeadline || m.deadline);
           // Quando a faixa de urgência já está visível, aqui só mostramos a data
           // "seca" pra não repetir a mesma informação duas vezes.
@@ -13323,7 +13486,11 @@ function TabelaView({ state, athlete }) {
       </div>
 
       {rounds.map(({round, matches}) => {
-        const todasResolvidas = matches.every(m => m.validated || m.rejeitado);
+        // `temWo(m)`: a rodada toda processada do bh2 aparecia como "Atual · até
+        // 15/11" em vez de "Realizada", porque a partida de W.O. não é `validated`
+        // nem `rejeitado`. É a queixa do Juliano uma tela ao lado — e esta o
+        // VISITANTE vê. (Guardião de Regulamento, 20/11/2026.)
+        const todasResolvidas = matches.every(m => m.validated || m.rejeitado || temWo(m));
         const status = todasResolvidas ? (() => {
           const datas = matches.map(m=>m.adminAprovadoEm).filter(Boolean).map(d=>new Date(d).getTime());
           const maisRecente = datas.length ? new Date(Math.max(...datas)) : null;

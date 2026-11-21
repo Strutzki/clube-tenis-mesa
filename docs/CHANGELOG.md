@@ -5,6 +5,168 @@ Formato: **data — o quê** (versão do edge/regulamento, notas).
 
 ---
 
+### 2026-11-21 — A tela para de cobrar placar de jogo já decidido
+
+*Construída em 20/11; o de acordo do Juliano veio em 21/11 ("pode"), e é esta
+a data em que o pacote foi ao ar.*
+
+**App só** (`src/App.jsx`). Nenhuma Edge Function muda: `admin-action` segue
+**v69**, `login-atleta` v13, `athlete-action` v24. **Nenhuma migração.**
+
+**O gatilho foi o Juliano, olhando a tela:** *"na rodada 1 fala que o jogo do
+fábio e molina está como Vencida há 5 dias"*. A partida estava **decidida por
+W.O.** e a rodada **já processada** — e o cartão cobrava um placar que nunca
+existiria.
+
+**A causa, e é de FORMA DA PERGUNTA:** o app perguntava *"foi validada?"* e
+*"foi rejeitada?"*. Um W.O. não é nem uma coisa nem outra, então caía no ramo do
+prazo. Eram **catorze** pontos com a pergunta pela metade, e a lista de tipos de
+W.O. vivia em **duas cópias** (`ehWo` e `ehWoCal`) vigiadas por uma asserção de
+igualdade — duas cópias que precisam de guarda para não divergir são uma cópia a
+mais.
+
+**O que mudou:** uma função de topo, `function temWo(m)`, mais `rotuloWo(m)` para
+o rótulo que entra onde o prazo entrava. Catorze pontos passaram a consultá-la:
+o cartão da rodada, a faixa de urgência e o rótulo de prazo do atleta, a lista
+"em aberto" dele, o lembrete individual de prazo, a mensagem coletiva de abertura,
+o contador "Partidas em aberto", "em risco", "quem não enviou placar" (duas
+listas), a barra de progresso e seu rótulo, o lembrete de calendário, a fila de
+validação, "Resultado Incompleto", a Tabela pública e o portão do par mensal.
+
+⛔ **E o achado que valia a onda inteira: a temporada do `bh2` estava TRANCADA.**
+Medido pelo Guardião de Regulamento. O `todasResolvidas` — único portão do botão
+de gerar o par mensal seguinte — exigia `(validated && calculado) || rejeitado`.
+No Sistema B o motor fecha um W.O. com `calculado: true` e **nunca** grava
+`validado`, então a partida do Fabio × Molina jamais satisfazia a conta, **nem
+depois de processada**. Com 11 atletas reais e 6 rodadas pelo vB-01 Cap. 12, não
+havia caminho para o mês 2. Nunca mordeu antes porque o BH é Sistema A e todos os
+W.O. dele saem por `rejeitado`.
+**E a FORMA do conserto foi medida, não escolhida:** `|| (temWo(m) && m.calculado)`.
+A forma ingênua `|| temWo(m)` também destrancaria, **mas** liberaria avançar o par
+mensal com W.O. ainda não processado — exatamente o que essa linha existe para
+impedir. As duas formas foram executadas e comparadas, e o Supervisor de
+Regulamento depois chegou ao estado perigoso **pelo motor**, não por fixture:
+processar a rodada com uma partida incompleta dentro (ela fica de fora) e só então
+classificar o W.O.
+
+⛔ **E A TRAVA TINHA UM GÊMEO, que o conserto do portão NÃO cobria — achado pelo
+Supervisor de Regulamento, e é o que devolveu a onda.** O portão aprendeu a
+**reconhecer** um W.O. já processado; ninguém tinha varrido os portões que o
+**processam**. O `ProcessarRodadaButton` sai por `if (pendentes.length === 0)
+return null`, e recebia só os `validated` — e um W.O. nunca é `validated`. Logo:
+**rodada cujo único pendente era um W.O. não tinha botão de "Processar Rodada"**,
+o W.O. nunca ficava `calculado`, e o portão recém-consertado continuava falso. A
+temporada travava pela porta oposta. O motor aceitava (200, `processadas: 2`): era
+a tela que não oferecia o caminho, sem explicar nada.
+⚠️ **E a saída que sobrava ao organizador produzia NÚMERO ERRADO:** desfazer o
+W.O. e imputar um placar dá **1 ponto** a quem devia ter **0** e **apaga o W.O.
+injustificado** — que é o que suspende (vB-01 Cap. 07) e o que ordena o 2º
+desempate (Cap. 09). Ponto criado e falta sumida.
+**Consertado:** o botão passou a receber a **união** de validados e W.O., que é o
+mesmo conjunto que o motor processa. A linha **não tinha asserção nenhuma** — dava
+para apagar o botão inteiro com a bateria verde.
+
+⚠️ **E ESSE CONSERTO INTRODUZIU UMA REGRESSÃO, achada pelo Supervisor de
+Regulamento na revisão seguinte.** Eu montei a união como **concatenação**
+(`[...calculoPendente, ...woPendente]`), e ela conta **duas vezes** a partida que
+é `validated` **e** tem W.O. — estado alcançável em duas chamadas comuns, as duas
+respondendo 200: o organizador valida o placar e depois descobre que alguém não
+jogou e aplica o W.O. (o próprio motor documenta esse estado). Medido: a tela de
+Pendências dizia **3**, o painel dizia **2**, o motor fazia **2** — e o **3**
+aparecia na confirmação de uma ação que se anuncia como *"não pode ser desfeita"*.
+Nenhum ponto de competição errado; a contagem que o organizador lê, errada. Troquei
+um cego por um vesgo, e é a mesma família do rótulo "5 de 5 validadas" que esta
+onda existe para fechar.
+⛔ **E A MINHA ASSERÇÃO PRENDIA A FORMA ERRADA.** Eu havia prendido o literal da
+concatenação, então trocar pela forma certa deixava a bateria **vermelha** — quem
+fosse consertar veria vermelho e concluiria que o conserto era o defeito.
+**Conserto final:** a regra subiu para **uma** função de topo, `faltaCalcular`, ao
+lado da `temWo`; as duas telas chamam a mesma função; e a bateria a **executa** em
+vez de procurar o texto dela — inclusive exigindo que a partida validada-com-W.O.
+conte **uma** vez. *(É a lição que o `admin-action` já tinha escrito: **derivar,
+não enumerar** — duas declarações de uma regra não são proteção quando discordam.)*
+
+**E um comentário meu virou falso no mesmo lugar onde celebrava um conserto.** O
+card "Rodada N validada, mas ainda não processada" afirmava, em comentário, que
+sua frase "passa a ser verdadeira sempre que o card aparece". O supervisor mediu e
+refutou: com um W.O. não processado, a conta ficava vazia e o card caía no ramo
+genérico, dizendo *"rodada ANTERIOR"* com a pendência na rodada **atual** — que é
+exatamente o defeito que aquele comentário se orgulhava de ter consertado em
+03/10, de volta por outra porta. Corrigido o comentário, a conta e o rótulo.
+
+**Bateria: 2239 asserções em 18 seções, 0 falhas, saída 0.** Build saída 0.
+**Mutação: 39 sabotagens, as 39 vermelhas** — entre elas recolocar o defeito que o
+Juliano viu, e a forma ingênua do portão.
+⚠️ **DEZ asserções desta onda nasceram VERDES**, e as três famílias de erro valem
+registro, porque todas são "a asserção parecia proteger":
+1. **Trecho literal que casa em mais de um lugar.** Dois pontos diferentes presos
+   pelo mesmo `if (temWo(m)) return false;` — sabotei um, a bateria ficou verde
+   porque o trecho continuava no outro. **Asserção ambígua não protege nenhum dos
+   dois.**
+2. **Testar o NOME e não a FORMA.** Com janela por vizinhança, mas checando só
+   `/temWo\(m\)/`, neutralizar para `if (false && temWo(m))` passava verde.
+3. **Contador no lugar de asserção.** `usos >= 12` com 23 chamadas no arquivo
+   tolerava perder onze: o Guardião de Confiabilidade sabotou oito pontos e a
+   bateria saiu 0 nos oito. Hoje cada ponto tem asserção própria, e o contador é
+   só piso contra remoção em massa.
+4. **E a família (1) me pegou de novo, DEPOIS de eu dizer que tinha conferido a
+   unicidade de todos os trechos.** O Supervisor de Confiabilidade achou duas
+   âncoras ambíguas que escaparam: `.every(m => m.validated || m.rejeitado ||
+   temWo(m))` existe em DOIS lugares (o portão do par mensal e a Tabela pública),
+   e o `naoResolvidos` tem duas cópias **formatadas de formas diferentes** — a de
+   uma linha, que a regex pega, e a do botão "Processar Rodada", quebrada em
+   várias linhas, que ela não vê. A desprotegida era justamente a do botão.
+   **Conferir unicidade é rodar `str.count`, não lembrar de ter rodado.**
+5. **A asserção prende a linha que CALCULA, não a que CONSOME.** Desligar o
+   consumo passava verde em três pontos. Dois foram fechados (a barra de
+   progresso e o botão); o limite ficou registrado como **ROADMAP 1.3s**.
+
+**Vereditos:** `guardiao-confiabilidade` GO-com-condições (cobertura) e
+`guardiao-regulamento` GO-com-condições (o portão trancado, o rótulo
+"validadas", e duas sobras visíveis ao atleta) — todas atendidas.
+`supervisor-confiabilidade`: **REVISAR** (duas mutações verdes, uma delas no botão
+"Processar Rodada") → corrigido → **APROVADO**, e depois **APROVADO de novo** sobre
+o delta do F2, chamado com os hashes novos porque ele havia aprovado uma árvore que
+não continha aquele conserto.
+`supervisor-regulamento`: **REVISAR** duas vezes — a 1ª pelo F2 e pelo card laranja,
+a 2ª pela contagem dupla que o conserto do F2 introduziu — → corrigido →
+**APROVADO**, com a cadeia até o mês 2 medida ponta a ponta por ele.
+
+**O caminho até o mês 2 do `bh2`, medido pelo `supervisor-regulamento` no código
+final**, com um W.O. culposo na r1 e um duplo na r2, motor de verdade e os portões
+recortados do fonte: os dois W.O. classificados → botão de processar aparece com o
+W.O. dentro → `PROCESSAR_RODADA` r1 e r2, `processadas: 5` em cada → portão abre →
+`AVANCAR_RODADA` **200**, `{rodadas:[3,4], partidas:10}`, prazos **15/12** e
+**27/12**. Os injustificados contados um a um pelo Cap. 07. **Antes desta onda o mês
+2 não abria, por duas portas independentes.**
+
+**Correção de documento, pela regra 6:** o ROADMAP 1.3p afirmava que *"o vB-01
+Cap. 08 exige"* a ordem das rodadas. **É falso** — medido: o Cap. 08 do vB-01 não
+fala de pré-condição nem de ordem; a obrigação é **textualmente só do Sistema A**,
+e no B o assunto é caso omisso (Cap. 13). Corrigido lá.
+
+**Dívidas novas registradas:** **1.3q** (a tela oferece "Processar Rodada" onde o
+motor responde 409 — clique morto; e ela ganhou o enunciado do par: *a tela e o
+motor discordam sobre o que é "rodada resolvida", nas DUAS direções*), **1.3r** (a
+última cópia da lista de tipos, em `despachos-do-dia` — e o registro de que essa é
+uma **oitava** Edge Function, que a bateria não carrega) e **1.3s** (o limite das
+asserções de fonte: elas prendem o cálculo, não o consumo, com os três pontos que
+restam e a medição de que o `APLICAR_WO` **não** limpa os placares enviados).
+
+**Correção de documento, nº 2, pela regra 6:** o 1.3p dizia *"o vB-01 não fala de
+ordem"*. A forma certa é **"o Cap. 08 não tem pré-condição nem ordem"** — o
+Cap. 03 do vB-01 fala de sequência (congelamento do pareamento no início do mês), e
+a frase larga seria desmentida por ele. E a imunidade do Sistema B passou a ser
+registrada **por mecanismo**, não por observação: o `gerarPareamentoB` monta as
+duas rodadas do par a partir do **mesmo** array de atletas (conferido em
+`admin-action:1010` e `:1015`), então o pareamento por faixa não consegue usar uma
+tabela do meio do mês.
+**Fechado:** **1.3j**.
+**Decidido pelo Juliano:** *"não mecher mais no circuito BH"* — o backfill dos 7
+justificados antigos **não será feito**.
+
+---
+
 ### 2026-11-20 — O W.O. registrado por engano passa a ter volta
 
 **Motor: `admin-action` v68 → v69** (ação nova `DESFAZER_WO`). **App: sobe junto,

@@ -2501,8 +2501,16 @@ secao("Painel: dois cards não podem se contradizer na mesma tela");
   const corpo = fonteApp.slice(iCard, iCard + 700);
   ok(/Alguma partida de uma rodada anterior ainda não foi processada/.test(corpo),
     "a frase de recurso continua lá");
-  ok(/calculoPendente\.length > 0/.test(corpo),
-    "e a outra frase, com o número, também — as duas são verdadeiras sob `!todasResolvidas`");
+  // ⚠️ ERA `calculoPendente.length > 0` ATÉ 20/11/2026, e a troca é conserto, não
+  // acomodação da asserção. O Supervisor de Regulamento mediu: um W.O. nunca é
+  // `validated`, então com um W.O. não processado o `calculoPendente` ficava VAZIO
+  // e o card caía sempre na frase de recurso — dizendo "rodada ANTERIOR" com a
+  // pendência na rodada ATUAL. Era exatamente o defeito que esta seção celebra ter
+  // consertado em 03/10 ("a frase afirmava algo justamente quando não havia o que
+  // afirmar"), de volta por outra porta. A conta agora é `aCalcular`, que é
+  // `(validated || temWo) && !calculado && !rejeitado`.
+  ok(/aCalcular\.length > 0/.test(corpo),
+    "e a outra frase, com o número, usa a conta que INCLUI o W.O. — senão o card diz \"rodada anterior\" com a pendência na rodada atual");
 
   // E o card de temporada completa não pode depender da mesma condição, senão os
   // dois voltam a aparecer juntos.
@@ -4421,37 +4429,299 @@ secao("W.O. DUPLO — ninguém jogou, ninguém ganha (vB-01 Cap. 07) — RODANDO
   // por isso esta asserção EXTRAI a função e a EXECUTA, que é a técnica das
   // quatro condições do CLAUDE.md: `ehWo` é pura (recebe uma partida, devolve
   // booleano), não fecha sobre nada, e a âncora é a declaração inteira.
+  //
+  // ⚠️ EM 20/11/2026 A REGRA VIROU UMA SÓ, e por um defeito que o Juliano viu na
+  // tela: o jogo Fabio × Molina do `bh2`, decidido por W.O. e com a rodada já
+  // processada, aparecia como "Partida: ⚠️ Vencido há 5d". A causa era a pergunta
+  // pela metade ("foi validada? foi rejeitada?") repetida em NOVE lugares, e duas
+  // cópias da lista de tipos que a bateria vigiava com uma asserção de igualdade.
+  // Duas cópias que precisam de um guarda para não divergir são uma cópia a mais.
+  // Agora é a `temWo`, declaração de topo, e esta seção exige que ela seja ÚNICA.
   {
-    const marca = "const ehWo = ";
+    const marca = "function temWo(m) {";
     const i = fonteSemComentario.indexOf(marca);
-    ok(i > 0, "o `ehWo` da tela foi localizado");
-    const fim = fonteSemComentario.indexOf(";", i);
-    const expr = fonteSemComentario.slice(i + marca.length, fim);
-    const ehWo = new Function("return " + expr)();
+    ok(i > 0, "a `temWo` da tela foi localizada");
+    const fim = fonteSemComentario.indexOf("\n}", i);
+    ok(fim > i, "e tem fim localizável — a âncora é a declaração inteira, não contagem de caracteres");
+    const corpo = fonteSemComentario.slice(i, fim + 2);
+    const temWo = new Function("return " + corpo.replace("function temWo", "function"))();
 
-    ok(ehWo({ woTipo: "duplo_culposo" }) === true,
-      "RODANDO o `ehWo`: a partida de W.O. DUPLO conta como RESOLVIDA — sem isto ela trava o botão de processar a rodada");
-    ok(ehWo({ woTipo: "culposo" }) === true, "e o culposo continua resolvido");
-    ok(ehWo({ woTipo: "a_favor" }) === true, "e o a_favor também");
-    ok(ehWo({ woTipo: "justificado" }) === true,
+    ok(temWo({ woTipo: "duplo_culposo" }) === true,
+      "RODANDO a `temWo`: a partida de W.O. DUPLO conta como RESOLVIDA — sem isto ela trava o botão de processar a rodada");
+    ok(temWo({ woTipo: "culposo" }) === true, "e o culposo continua resolvido");
+    ok(temWo({ woTipo: "a_favor" }) === true, "e o a_favor também");
+    ok(temWo({ woTipo: "justificado" }) === true,
       "e o justificado também — no Sistema B ele NÃO rejeita a partida, então sem isto caía na mesma armadilha (defeito irmão, anterior a esta onda)");
-    ok(ehWo({ woTipo: null }) === false, "e partida SEM W.O. continua pendente — a conta não pode liberar tudo");
-    ok(ehWo({}) === false, "nem a partida sem o campo");
+    ok(temWo({ woTipo: null }) === false, "e partida SEM W.O. continua pendente — a conta não pode liberar tudo");
+    ok(temWo({}) === false, "nem a partida sem o campo");
+    ok(temWo({ woTipo: "" }) === false, "nem com o campo vazio");
 
-    // As duas cópias da regra têm de dizer a mesma coisa. Elas vivem em
-    // componentes diferentes e já divergiram antes.
-    const marcaCal = "const ehWoCal = ";
-    const j = fonteSemComentario.indexOf(marcaCal);
-    ok(j > 0, "o `ehWoCal` do lembrete de calendário foi localizado");
-    const exprCal = fonteSemComentario.slice(j + marcaCal.length, fonteSemComentario.indexOf(";", j));
-    igual(exprCal.trim(), expr.trim(),
-      "e as DUAS cópias da regra são idênticas — divergir faz o lembrete do calendário contar rodada que já está resolvida");
+    // ⚠️ UMA CÓPIA, E A ASSERÇÃO É SOBRE ISSO. As antigas `ehWo`/`ehWoCal` não
+    // podem voltar: era a divergência entre elas que fazia o lembrete do
+    // calendário contar rodada já resolvida.
+    ok(!/\bconst ehWo\b/.test(fonteSemComentario) && !/\bconst ehWoCal\b/.test(fonteSemComentario),
+      "e NÃO existe segunda cópia da regra no arquivo — nem `ehWo`, nem `ehWoCal`");
+    // ⚠️ O NÚMERO É 3, E CADA UM TEM NOME — foi a própria asserção que me
+    // corrigiu: eu escrevi 2 e ela veio vermelha com "veio 3". As três são
+    // legítimas e fazem coisas DIFERENTES: a `temWo` decide "está resolvida?", a
+    // `rotuloWo` escreve o rótulo curto do cartão, e o cartão de "W.O. Aguardando
+    // Cálculo" escreve a frase com os PONTOS, que é ramificada por sistema (A/B).
+    // Uma quarta ocorrência é cópia da regra voltando pela porta dos fundos.
+    const ocorrenciasDaLista = (fonteSemComentario.match(/woTipo === "duplo_culposo"/g) || []).length;
+    igual(ocorrenciasDaLista, 3,
+      'a lista de tipos aparece exatamente TRÊS vezes: `temWo` (decide), `rotuloWo` (rótulo) e o cartão de pontos (frase A/B) — uma quarta é cópia da regra');
 
-    // E o ponto de uso que importa: é o `ehWo` que decide o `naoResolvidos`.
-    // Contar o ponto de chamada é a lição da fatia 0.6.21 — a janela ancorada na
-    // função é cega para quem a invoca.
-    ok(/naoResolvidos = state\.matches\.filter\([^)]*!ehWo\(m\)\)/.test(fonteSemComentario),
-      "e o `naoResolvidos` (a conta que trava o botão) usa o `ehWo` — não uma terceira cópia da lista");
+    // O rótulo que entra onde o prazo entrava. Sem ele o conserto fica invisível:
+    // o cartão esconderia o aviso de atraso e não diria por que não há placar.
+    const marcaRot = "function rotuloWo(m) {";
+    const iR = fonteSemComentario.indexOf(marcaRot);
+    ok(iR > 0, "a `rotuloWo` foi localizada");
+    const corpoR = fonteSemComentario.slice(iR, fonteSemComentario.indexOf("\n}", iR) + 2);
+    const rotuloWo = new Function("return " + corpoR.replace("function rotuloWo", "function"))();
+    ok(/W\.O\./.test(rotuloWo({ woTipo: "culposo" })), "RODANDO a `rotuloWo`: o culposo é anunciado como W.O.");
+    ok(/dois/i.test(rotuloWo({ woTipo: "duplo_culposo" })), "e o duplo diz que os DOIS faltaram");
+    ok(/justificado/i.test(rotuloWo({ woTipo: "justificado" })), "e o justificado se identifica");
+
+    // E OS PONTOS DE USO. Contar o ponto de chamada é a lição da fatia 0.6.21 —
+    // a janela ancorada na função é cega para quem a invoca. Aqui isso virou
+    // literal: a regra estava certa e NOVE lugares não a consultavam.
+    ok(/naoResolvidos = state\.matches\.filter\([^)]*!temWo\(m\)\)/.test(fonteSemComentario),
+      "e o `naoResolvidos` (a conta que trava o botão) usa a `temWo` — não uma terceira cópia da lista");
+
+    // ⚠️ OS NOVE PONTOS DE CHAMADA, UM POR UM. Esta é a asserção que o defeito do
+    // Juliano pediu: cada lugar que tratava W.O. como pendência tem de PERGUNTAR.
+    // Sem contar os pontos de chamada, o conserto de um deles deixa os outros
+    // oito verdes — que é exatamente como o app chegou a 20/11/2026 com a regra
+    // certa e a tela errada.
+    // ⚠️ O CONTADOR SOZINHO NÃO PROTEGE NADA, e isto é medição, não opinião: a
+    // primeira versão desta linha dizia `usos >= 12` e havia 23 chamadas no
+    // arquivo — então ela tolerava perder ONZE. O Guardião de Confiabilidade
+    // sabotou oito pontos diferentes e a bateria saiu 0 nas oito. O contador fica
+    // como piso contra remoção em massa; quem protege são as asserções POR PONTO,
+    // abaixo, uma para cada lugar que faz a pergunta.
+    const usos = (fonteSemComentario.match(/temWo\(m\)/g) || []).length;
+    ok(usos >= 20, `a \`temWo\` é consultada em todos os pontos (achei ${usos} chamadas)`);
+    const janela = (ancora, tamanho) => {
+      const k = fonteSemComentario.indexOf(ancora);
+      ok(k > 0, `a âncora \`${ancora}\` foi localizada`);
+      return fonteSemComentario.slice(k, k + tamanho);
+    };
+
+    for (const [trecho, oQuePrende] of [
+      ['const roundMatches = state.matches.filter(m => !m.validated && !m.rejeitado && !temWo(m))',
+       'o contador "Partidas em aberto" não conta W.O. resolvido'],
+      ['const open = myMatches.filter(m => !m.validated && !m.rejeitado && !temWo(m))',
+       'a lista "em aberto" DO ATLETA exclui o W.O. — era ela que oferecia a ele enviar placar num jogo encerrado'],
+      ['if (temWo(m)) return null;',
+       'a faixa vermelha de urgência do atleta não aparece em partida com W.O.'],
+      ['!m.validated && !m.rejeitado && temWo(m) && (',
+       'o cartão da rodada tem um ramo PRÓPRIO para o W.O. — é ele que entra onde o "Vencido há 5d" entrava'],
+      ['!m.validated && !m.rejeitado && !temWo(m) && (() => {',
+       'e o ramo do prazo passou a excluir o W.O. — o defeito que o Juliano viu em 20/11/2026'],
+
+      // ⛔ O PORTÃO QUE TRANCAVA A TEMPORADA, e a FORMA dele.
+      // Medido pelo Guardião de Regulamento: no Sistema B o motor fecha o W.O. com
+      // `calculado: true` e NUNCA grava `validado`, então a partida do Fabio ×
+      // Molina jamais satisfazia `(validated && calculado)` — e esta linha é o
+      // único portão do botão de gerar o par mensal seguinte. O bh2 não tinha
+      // caminho para o mês 2.
+      // O `&& m.calculado` É PARTE DA ASSERÇÃO: a forma ingênua `|| temWo(m)`
+      // destrancaria o caso real E liberaria avançar o par com W.O. ainda NÃO
+      // processado, que é o que esta linha existe para impedir (a porta do 1.3p).
+      ['|| (temWo(m) && m.calculado));',
+       'o `todasResolvidas` aceita W.O. JÁ PROCESSADO — e só processado, senão libera avançar o par mensal com W.O. pendente'],
+
+      // As oito que o Guardião de Confiabilidade sabotou e viu passar VERDES.
+      ['const val = ps.filter(m => m.validated || temWo(m)).length;',
+       'a barra de progresso da rodada conta o W.O. como resolvido — senão a rodada com W.O. nunca chega a 100%'],
+      ['partidas resolvidas (validadas ou W.O.)',
+       'e o RÓTULO dela diz "resolvidas", não "validadas" — dizia "5 de 5 validadas" com quatro validadas e um W.O.'],
+      ['const resolvidas = doR.filter(m => m.validated || temWo(m)).length;',
+       'o lembrete de calendário conta o W.O. como resolvido'],
+      ['const waiting = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado && !temWo(m));',
+       'a fila "aguardando validação" exclui o W.O. — partida com W.O. tem o resultado decidido pelo W.O., nunca pelo placar'],
+      ['const incomplete = state.matches.filter(m => !m.validated && !m.rejeitado && !(m.p1Submitted && m.p2Submitted) && !temWo(m));',
+       'e "Resultado Incompleto" também — era aqui que o duplo travava o botão de processar a rodada, em 15/11'],
+      ['const woPendente = state.matches.filter(m => temWo(m) && !m.calculado && !m.rejeitado);',
+       'e a lista "W.O. Aguardando Cálculo" USA a regra — é ela que mostra o cartão e o botão de desfazer'],
+      ['if (temWo(m)) return <span',
+       'o cartão do atleta mostra o rótulo do W.O. no lugar do prazo'],
+
+      // As duas sobras que o atleta e o visitante vêem, apontadas pelo Guardião de
+      // Regulamento. São a queixa do Juliano uma tela ao lado.
+      ['matches.every(m => m.validated || m.rejeitado || temWo(m))',
+       'a Tabela PÚBLICA marca a rodada como "Realizada" — com o W.O. ela dizia "Atual · até 15/11" numa rodada já processada'],
+      ['m.round === rodadaA && !m.validated && !m.rejeitado && !temWo(m)',
+       'a mensagem coletiva de abertura não anuncia como confronto a jogar um jogo decidido por W.O. (1ª rodada do mês)'],
+      ['m.round === rodadaB && !m.validated && !m.rejeitado && !temWo(m)',
+       'e a 2ª rodada do mês também não'],
+    ]) {
+      ok(fonteSemComentario.includes(trecho), oQuePrende);
+    }
+
+    // Os dois pontos que precisam de janela porque o trecho literal não é único.
+    ok(/!temWo\(m\)/.test(janela("const atletasSemSubmeter", 420)),
+      "a lista de atletas que não enviaram placar exclui o W.O. — senão cobra placar de quem já tem o jogo decidido");
+    ok(/!temWo\(m\)/.test(janela("const semSubIds = new Set();", 260)),
+      "e a mesma lista dentro do `saudeDaRodada` também");
+
+    // ⛔ AS QUATRO QUE O SUPERVISOR DE CONFIABILIDADE ACHOU VERDES EM 20/11/2026,
+    // e as duas primeiras são a MESMA armadilha pela TERCEIRA vez nesta onda:
+    // âncora que casa em mais de um lugar. Eu afirmei ter conferido a unicidade de
+    // todos os trechos — e dois não eram únicos. Conferir unicidade é rodar
+    // `str.count`, não lembrar de ter rodado.
+    //
+    // N1: `.every(m => m.validated || m.rejeitado || temWo(m))` existe DUAS vezes
+    // (o `allCurrentValidated` e a Tabela pública). Sabotar o primeiro ficava verde
+    // porque o segundo satisfazia a asserção sozinho.
+    ok(janela("    .filter(m => m.round === currentRound)", 160)
+         .includes(".every(m => m.validated || m.rejeitado || temWo(m))"),
+      "o `allCurrentValidated` aceita o W.O. como resolvido — ancorado no `.filter` dele, porque o literal sozinho casa também na Tabela pública");
+
+    // N2: `naoResolvidos` tem DUAS cópias, e elas são formatadas de formas
+    // diferentes — a de uma linha (a regex acima a pega) e a do
+    // `ProcessarRodadaButton`, quebrada em várias linhas, que a regex NÃO vê.
+    // É o ponto que travou o botão de processar em 15/11: a cópia desprotegida é
+    // justamente a que alimenta o botão.
+    ok(/naoResolvidos = state\.matches\.filter\(\s*\n\s*m => m\.round === round && !m\.validated && !m\.rejeitado && !temWo\(m\)/
+         .test(fonteSemComentario),
+      "a SEGUNDA cópia do `naoResolvidos` (a do botão Processar Rodada, quebrada em linhas) também pergunta pelo W.O.");
+
+    // N12: o painel e a página de Pendências se contradiziam — `waiting` já
+    // perguntava, `waitingVal` não.
+    ok(fonteSemComentario.includes("const waitingVal = state.matches.filter(m => m.p1Submitted && m.p2Submitted && !m.validated && !m.rejeitado && !temWo(m));"),
+      '"Aguardando validação" do painel exclui o W.O. — senão ele e a página de Pendências contam coisas diferentes');
+
+    // N10: as asserções por ponto prendem a linha que CALCULA, não a que CONSOME.
+    // O supervisor mostrou que desligar o consumo (o `pct` deixar de usar o `val`)
+    // ficava verde. Esta prende o consumo da barra de progresso, que é a que o
+    // Juliano olha. O limite geral está registrado no ROADMAP.
+    ok(/pct = total > 0 \? Math\.round\(\(val \/ total\) \* 100\)/.test(fonteSemComentario),
+      "e a porcentagem da barra USA o `val` que conta o W.O. — prender o cálculo sem prender o consumo deixa a conta certa e a tela errada");
+
+    // ⛔ O GÊMEO DA TRAVA: o botão que PRODUZ o `calculado` de um W.O.
+    // Medido pelo Supervisor de Regulamento em 20/11/2026, e é a lacuna que
+    // devolveu a onda. O conserto do portão ensinou a tela a RECONHECER um W.O.
+    // processado — e ninguém tinha varrido os portões que o PROCESSAM.
+    // O `ProcessarRodadaButton` sai por `if (pendentes.length === 0) return null`,
+    // e recebia só os `validated`. Um W.O. nunca é `validated`. Logo rodada cujo
+    // único pendente é um W.O. não tinha botão, o W.O. nunca ficava `calculado`, e
+    // o portão consertado continuava falso: a temporada trancava pela outra porta.
+    // O motor aceita (200, `processadas: 2`); era a tela que não oferecia.
+    // ⚠️ E a saída que sobrava produzia NÚMERO ERRADO: desfazer e imputar placar dá
+    // 1 ponto a quem devia ter 0 e apaga o injustificado do Cap. 07 / Cap. 09.
+    // As duas sabotagens do supervisor (apagar o botão inteiro, e o próprio
+    // conserto) ficavam VERDES: a linha não tinha asserção nenhuma.
+    // ⛔ ESTA ASSERÇÃO SUBSTITUI UMA QUE PRENDIA A FORMA ERRADA, e a história é a
+    // lição. Eu consertei o botão montando a união como CONCATENAÇÃO
+    // (`[...calculoPendente, ...woPendente]`) e prendi esse literal aqui. O
+    // Supervisor de Regulamento mediu: a concatenação conta DUAS VEZES a partida
+    // que é `validated` **e** tem W.O. — estado alcançável em duas chamadas
+    // comuns (valida o placar, depois descobre que alguém não jogou e aplica o
+    // W.O.). A tela de Pendências dizia **3**, o painel **2**, o motor fazia
+    // **2** — e o 3 aparecia na confirmação de uma ação "que não pode ser
+    // desfeita".
+    // E a asserção de texto **impedia o conserto certo**: trocar pela forma de
+    // filtro deixava a bateria VERMELHA. Asserção que prende a forma em vez do
+    // comportamento entrincheira o defeito e faz quem conserta pensar que errou.
+    //
+    // Agora a regra é UMA, no topo do arquivo, e esta asserção a EXECUTA — a
+    // técnica das quatro condições do CLAUDE.md. `faltaCalcular` é pura e fecha
+    // sobre a `temWo`, então as DUAS entram no mesmo recorte, como no par de
+    // tradutores de atleta.
+    {
+      const iTem = fonteSemComentario.indexOf("function temWo(m) {");
+      const fimTem = fonteSemComentario.indexOf("\n}", iTem) + 2;
+      const iFalta = fonteSemComentario.indexOf("function faltaCalcular(m) {");
+      ok(iTem > 0 && iFalta > iTem, "a `temWo` e a `faltaCalcular` foram localizadas, nessa ordem");
+      const fimFalta = fonteSemComentario.indexOf("\n}", iFalta) + 2;
+      const recorte = fonteSemComentario.slice(iTem, fimTem) + "\n" +
+                      fonteSemComentario.slice(iFalta, fimFalta) + "\nreturn faltaCalcular;";
+      const faltaCalcular = new Function(recorte)();
+
+      ok(faltaCalcular({ validated: true, calculado: false }) === true,
+        "RODANDO a `faltaCalcular`: placar validado e não calculado FALTA calcular");
+      ok(faltaCalcular({ woTipo: "culposo", calculado: false }) === true,
+        "e o W.O. não calculado também — é o conserto que destravou o botão de processar");
+      ok(faltaCalcular({ woTipo: "duplo_culposo", calculado: false }) === true, "inclusive o duplo");
+      ok(faltaCalcular({ validated: true, calculado: true }) === false, "o que já foi calculado NÃO falta");
+      ok(faltaCalcular({ woTipo: "culposo", calculado: true }) === false, "nem o W.O. já calculado");
+      ok(faltaCalcular({ validated: true, rejeitado: true, calculado: false }) === false,
+        "nem a partida rejeitada");
+      ok(faltaCalcular({ calculado: false }) === false,
+        "e partida sem placar e sem W.O. não entra — ela não está pronta para calcular");
+
+      // ⛔ O NÚMERO, que é o que o organizador LÊ na confirmação irreversível.
+      // Com a concatenação, esta mesma lista dava 3.
+      const partidas = [
+        { id: "j1", validated: true, woTipo: "culposo", calculado: false },  // os DOIS ao mesmo tempo
+        { id: "j2", validated: true, calculado: false },
+        { id: "j3", validated: true, calculado: true },
+      ];
+      igual(partidas.filter(faltaCalcular).length, 2,
+        "a partida que é validada E tem W.O. conta UMA VEZ — a concatenação a contava duas, e o número ia para a tela de confirmação");
+      igual(partidas.filter(faltaCalcular).filter(m => m.id === "j1").length, 1,
+        "e é ela mesma, uma vez só");
+    }
+
+    // E as DUAS telas chamam a MESMA função — é aqui que a regra única se prova
+    // compartilhada, e não só existente.
+    igual((fonteSemComentario.match(/const aCalcular = state\.matches\.filter\(faltaCalcular\);/g) || []).length, 2,
+      "as DUAS telas (painel e Pendências) chamam a MESMA `faltaCalcular` — formas diferentes da mesma regra foi exatamente o defeito desta fatia");
+    // ⚠️ A asserção é sobre o `aCalcular`, NÃO sobre a concatenação em geral: ela
+    // continua existindo, legitimamente, no `roundsPendentes` — que monta um
+    // `Set` de rodadas, onde contar duas vezes não muda nada. A primeira versão
+    // desta linha proibia a concatenação no arquivo inteiro e ficou vermelha nesse
+    // uso inocente. Proibir a forma onde ela não faz mal é a mesma família de erro
+    // que prender a forma errada: a asserção tem de falar do EFEITO.
+    ok(!/const aCalcular = \[/.test(fonteSemComentario),
+      "e o `aCalcular` NÃO volta a ser concatenação — era ela que contava duas vezes a partida validada que tem W.O.");
+
+    // As duas últimas do CONSUMO, que o Supervisor de Confiabilidade mediu verdes
+    // e deixou como ressalva. Fechadas aqui porque são uma âncora cada, e porque o
+    // 1.3s já tem fila: dívida que custa uma linha não devia virar dívida.
+    ok(fonteSemComentario.includes('state.phase === "etapa" && aCalcular.length > 0 && ('),
+      "o cartão de \"aguardando cálculo\" do painel APARECE pela conta que inclui o W.O. — prender só o rótulo deixava a rodada só com W.O. sem cartão nenhum");
+    ok(fonteSemComentario.includes("const prazo = aCalcular.find(m => m.round === round)?.deadline;"),
+      "e o prazo da rodada pronta sai da mesma conta — senão a rodada ímpar só com W.O. fica sem prazo e passa por liberada");
+    ok(fonteSemComentario.includes("pendentes={aCalcular.filter(m=>m.round===round)}"),
+      "e é ela que vai para o botão Processar Rodada — senão a rodada só com W.O. não tem botão e a temporada tranca");
+    ok(janela("function ProcessarRodadaButton({", 420).includes("if (pendentes.length === 0) return null;"),
+      "e o botão só desaparece quando NÃO há nada a calcular — apagar essa saída some com o botão inteiro");
+    ok(fonteSemComentario.includes('resolvido{pendentes.length>1?"s":""}, aguardando cálculo'),
+      'e o rótulo dele diz "resolvido", não "validado" — a lista passou a incluir W.O., que nunca é validado');
+    ok(fonteSemComentario.includes("[...new Set(aCalcular.map(m => m.round))]"),
+      'o resumo "Precisa de você" anuncia a rodada pronta mesmo quando o único pendente é um W.O.');
+
+    // O card laranja e a frase que eu declarei verdadeira e a medição refutou.
+    // (a forma é conferida acima, pela `faltaCalcular` executada; aqui só o que o
+    // card laranja faz com ela)
+    ok(janela("Faltam ${aCalcular.length} partida(s) processar", 60).length > 0,
+      "e a frase do card usa essa conta, em vez de cair no ramo genérico");
+    ok(fonteSemComentario.includes("resultado(s) aguardando cálculo (validados ou W.O.)"),
+      "e o cartão de baixo conta e ROTULA os dois — mudar a conta sem mudar o rótulo era o mesmo defeito uma linha abaixo");
+
+    // ⚠️ AQUI HAVIA "existem exatamente DUAS declarações de `aCalcular`, uma por
+    // componente — uma terceira é cópia da regra", e o Supervisor de Regulamento
+    // desmontou a asserção, não só o código: **duas declarações de uma regra não
+    // são proteção quando elas discordam** — e as minhas discordavam. A asserção
+    // certa é a de cima: as duas chamam a MESMA função, e a função é executada.
+
+    // ⚠️ DOIS PONTOS PEDEM JANELA, E A LIÇÃO É DA PRÓPRIA MEDIÇÃO. A primeira
+    // versão deste bloco prendia os dois com o mesmo trecho solto,
+    // `if (temWo(m)) return false;` — e ele existe em DOIS lugares. Sabotei o do
+    // lembrete e a bateria ficou VERDE, porque o trecho continuava no `emRisco`.
+    // Asserção que casa em mais de um lugar não protege nenhum: ela só prova que
+    // ALGUÉM pergunta. Cada um tem de ser ancorado na sua vizinhança.
+    // E a FORMA da guarda, não só a presença do nome: `if (false && temWo(m))`
+    // continua "mencionando" a `temWo` e não pergunta nada. Foi a segunda
+    // medição desta rodada que mostrou isso — a janela resolveu a ambiguidade de
+    // lugar, e ainda ficava verde com a guarda neutralizada.
+    const GUARDA = "if (temWo(m)) return false;";
+    ok(janela('case "lembretes": {', 420).includes(GUARDA),
+      "o lembrete de prazo por WhatsApp pergunta pelo W.O. — senão manda \"sua partida vence em 2 dias\" sobre um jogo decidido");
+    ok(janela("const emRisco = ps.filter(m => {", 240).includes(GUARDA),
+      "e a conta de \"partidas em risco\" também — era uma das fontes do aviso de prazo vencido em jogo já resolvido");
   }
 
   // ── 5ter. A GUARDA DO SISTEMA A NO PROCESSAMENTO — medida VERDE pelo guardião
